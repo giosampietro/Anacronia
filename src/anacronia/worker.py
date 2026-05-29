@@ -1,8 +1,373 @@
+from dataclasses import dataclass
+from pathlib import Path
+import sqlite3
 import time
+
+
+ACTIVE_COLLECT_JOB_STATUSES = ("running", "paused")
+DEFAULT_REQUIRED_DISK_BYTES = 1_000_000
+DEFAULT_PROVIDER_FAILURE_PAUSE_THRESHOLD = 3
+PROVIDER_FAILURE_BACKOFF_SECONDS = (5, 15, 45)
+
+
+class CollectLockError(RuntimeError):
+    pass
+
+
+class DiskSpaceError(RuntimeError):
+    pass
+
+
+@dataclass(frozen=True)
+class WorkerStatus:
+    service: str
+    status: str
+    active_collect_job_id: int | None
+
+
+@dataclass(frozen=True)
+class CollectJob:
+    job_id: int
+    run_id: int
+    status: str
+    candidate_offset: int
+    candidate_limit: int
+    candidate_progress_total: int
+    last_processed_run_position: int | None
+    provider_failure_count: int
+    backoff_seconds: int
+    pause_reason: str
+    required_disk_bytes: int
+    last_disk_available_bytes: int | None
 
 
 def create_idle_worker_status() -> dict[str, str]:
     return {"service": "worker", "status": "idle"}
+
+
+def get_worker_status(*, database_path: Path) -> WorkerStatus:
+    with sqlite3.connect(database_path) as connection:
+        ensure_worker_schema(connection)
+        active_job = get_active_collect_job(connection=connection)
+
+    if active_job is None:
+        return WorkerStatus(
+            service="worker",
+            status="idle",
+            active_collect_job_id=None,
+        )
+
+    return WorkerStatus(
+        service="worker",
+        status=active_job.status,
+        active_collect_job_id=active_job.job_id,
+    )
+
+
+def start_collect_job(
+    *,
+    database_path: Path,
+    run_id: int,
+    candidate_offset: int,
+    candidate_limit: int,
+    candidate_progress_total: int,
+    available_disk_bytes: int,
+    required_disk_bytes: int = DEFAULT_REQUIRED_DISK_BYTES,
+) -> CollectJob:
+    if available_disk_bytes < required_disk_bytes:
+        raise DiskSpaceError("Not enough disk space to start collect job.")
+
+    with sqlite3.connect(database_path) as connection:
+        ensure_worker_schema(connection)
+        if get_active_collect_job(connection=connection) is not None:
+            raise CollectLockError("Another collect job is already active.")
+
+        cursor = connection.execute(
+            """
+            INSERT INTO collect_jobs (
+              run_id,
+              status,
+              candidate_offset,
+              candidate_limit,
+              candidate_progress_total,
+              provider_failure_count,
+              backoff_seconds,
+              pause_reason,
+              required_disk_bytes,
+              last_disk_available_bytes
+            )
+            VALUES (?, 'running', ?, ?, ?, 0, 0, '', ?, ?)
+            """,
+            (
+                run_id,
+                candidate_offset,
+                candidate_limit,
+                candidate_progress_total,
+                required_disk_bytes,
+                available_disk_bytes,
+            ),
+        )
+        job_id = int(cursor.lastrowid)
+
+    return get_collect_job(database_path=database_path, job_id=job_id)
+
+
+def pause_collect_job(
+    *,
+    database_path: Path,
+    job_id: int,
+    reason: str = "manual_pause",
+) -> CollectJob:
+    with sqlite3.connect(database_path) as connection:
+        ensure_worker_schema(connection)
+        connection.execute(
+            """
+            UPDATE collect_jobs
+            SET status = 'paused', pause_reason = ?
+            WHERE id = ?
+            """,
+            (reason, job_id),
+        )
+
+    return get_collect_job(database_path=database_path, job_id=job_id)
+
+
+def resume_collect_job(*, database_path: Path, job_id: int) -> CollectJob:
+    with sqlite3.connect(database_path) as connection:
+        ensure_worker_schema(connection)
+        connection.execute(
+            """
+            UPDATE collect_jobs
+            SET status = 'running', pause_reason = ''
+            WHERE id = ?
+            """,
+            (job_id,),
+        )
+
+    return get_collect_job(database_path=database_path, job_id=job_id)
+
+
+def cancel_collect_job(*, database_path: Path, job_id: int) -> CollectJob:
+    with sqlite3.connect(database_path) as connection:
+        ensure_worker_schema(connection)
+        connection.execute(
+            """
+            UPDATE collect_jobs
+            SET status = 'canceled'
+            WHERE id = ?
+            """,
+            (job_id,),
+        )
+
+    return get_collect_job(database_path=database_path, job_id=job_id)
+
+
+def complete_collect_job(*, database_path: Path, job_id: int) -> CollectJob:
+    with sqlite3.connect(database_path) as connection:
+        ensure_worker_schema(connection)
+        connection.execute(
+            """
+            UPDATE collect_jobs
+            SET status = 'completed'
+            WHERE id = ?
+            """,
+            (job_id,),
+        )
+
+    return get_collect_job(database_path=database_path, job_id=job_id)
+
+
+def mark_collect_candidate_processed(
+    *,
+    database_path: Path,
+    job_id: int,
+    run_position: int,
+) -> CollectJob:
+    with sqlite3.connect(database_path) as connection:
+        ensure_worker_schema(connection)
+        connection.execute(
+            """
+            UPDATE collect_jobs
+            SET last_processed_run_position = CASE
+              WHEN last_processed_run_position IS NULL THEN ?
+              WHEN last_processed_run_position < ? THEN ?
+              ELSE last_processed_run_position
+            END
+            WHERE id = ?
+            """,
+            (run_position, run_position, run_position, job_id),
+        )
+
+    return get_collect_job(database_path=database_path, job_id=job_id)
+
+
+def propose_continue_after_cancel(*, database_path: Path, job_id: int) -> int:
+    job = get_collect_job(database_path=database_path, job_id=job_id)
+    if job.status != "canceled":
+        raise ValueError("Continuation offset can only be proposed for canceled jobs.")
+    if job.last_processed_run_position is None:
+        return job.candidate_offset
+
+    return job.candidate_offset + job.last_processed_run_position + 1
+
+
+def check_collect_job_disk_availability(
+    *,
+    database_path: Path,
+    job_id: int,
+    available_disk_bytes: int,
+) -> CollectJob:
+    job = get_collect_job(database_path=database_path, job_id=job_id)
+    next_status = "paused" if available_disk_bytes < job.required_disk_bytes else job.status
+    pause_reason = "insufficient_disk" if next_status == "paused" else job.pause_reason
+
+    with sqlite3.connect(database_path) as connection:
+        ensure_worker_schema(connection)
+        connection.execute(
+            """
+            UPDATE collect_jobs
+            SET
+              status = ?,
+              pause_reason = ?,
+              last_disk_available_bytes = ?
+            WHERE id = ?
+            """,
+            (next_status, pause_reason, available_disk_bytes, job_id),
+        )
+
+    return get_collect_job(database_path=database_path, job_id=job_id)
+
+
+def record_collect_provider_failure(
+    *,
+    database_path: Path,
+    job_id: int,
+    pause_after_failures: int = DEFAULT_PROVIDER_FAILURE_PAUSE_THRESHOLD,
+) -> CollectJob:
+    job = get_collect_job(database_path=database_path, job_id=job_id)
+    failure_count = job.provider_failure_count + 1
+    status = "paused" if failure_count >= pause_after_failures else job.status
+    pause_reason = "repeated_provider_failures" if status == "paused" else job.pause_reason
+    backoff_seconds = provider_failure_backoff_seconds(failure_count)
+
+    with sqlite3.connect(database_path) as connection:
+        ensure_worker_schema(connection)
+        connection.execute(
+            """
+            UPDATE collect_jobs
+            SET
+              status = ?,
+              provider_failure_count = ?,
+              backoff_seconds = ?,
+              pause_reason = ?
+            WHERE id = ?
+            """,
+            (status, failure_count, backoff_seconds, pause_reason, job_id),
+        )
+
+    return get_collect_job(database_path=database_path, job_id=job_id)
+
+
+def provider_failure_backoff_seconds(failure_count: int) -> int:
+    index = min(failure_count, len(PROVIDER_FAILURE_BACKOFF_SECONDS)) - 1
+    return PROVIDER_FAILURE_BACKOFF_SECONDS[index]
+
+
+def get_collect_job(*, database_path: Path, job_id: int) -> CollectJob:
+    with sqlite3.connect(database_path) as connection:
+        ensure_worker_schema(connection)
+        row = connection.execute(
+            """
+            SELECT
+              id,
+              run_id,
+              status,
+              candidate_offset,
+              candidate_limit,
+              candidate_progress_total,
+              last_processed_run_position,
+              provider_failure_count,
+              backoff_seconds,
+              pause_reason,
+              required_disk_bytes,
+              last_disk_available_bytes
+            FROM collect_jobs
+            WHERE id = ?
+            """,
+            (job_id,),
+        ).fetchone()
+
+    if row is None:
+        raise LookupError(f"Collect job not found: {job_id}")
+
+    return collect_job_from_row(row)
+
+
+def get_active_collect_job(*, connection: sqlite3.Connection) -> CollectJob | None:
+    row = connection.execute(
+        """
+        SELECT
+          id,
+          run_id,
+          status,
+          candidate_offset,
+          candidate_limit,
+          candidate_progress_total,
+          last_processed_run_position,
+          provider_failure_count,
+          backoff_seconds,
+          pause_reason,
+          required_disk_bytes,
+          last_disk_available_bytes
+        FROM collect_jobs
+        WHERE status IN ('running', 'paused')
+        ORDER BY id DESC
+        LIMIT 1
+        """
+    ).fetchone()
+
+    if row is None:
+        return None
+
+    return collect_job_from_row(row)
+
+
+def collect_job_from_row(row: sqlite3.Row | tuple[object, ...]) -> CollectJob:
+    return CollectJob(
+        job_id=int(row[0]),
+        run_id=int(row[1]),
+        status=str(row[2]),
+        candidate_offset=int(row[3]),
+        candidate_limit=int(row[4]),
+        candidate_progress_total=int(row[5]),
+        last_processed_run_position=row[6],
+        provider_failure_count=int(row[7]),
+        backoff_seconds=int(row[8]),
+        pause_reason=str(row[9]),
+        required_disk_bytes=int(row[10]),
+        last_disk_available_bytes=row[11],
+    )
+
+
+def ensure_worker_schema(connection: sqlite3.Connection) -> None:
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS collect_jobs (
+          id INTEGER PRIMARY KEY,
+          run_id INTEGER NOT NULL,
+          status TEXT NOT NULL,
+          candidate_offset INTEGER NOT NULL,
+          candidate_limit INTEGER NOT NULL,
+          candidate_progress_total INTEGER NOT NULL,
+          last_processed_run_position INTEGER,
+          provider_failure_count INTEGER NOT NULL,
+          backoff_seconds INTEGER NOT NULL,
+          pause_reason TEXT NOT NULL,
+          required_disk_bytes INTEGER NOT NULL,
+          last_disk_available_bytes INTEGER
+        )
+        """
+    )
 
 
 def main() -> None:
