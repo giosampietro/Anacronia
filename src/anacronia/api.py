@@ -3,6 +3,12 @@ from pathlib import Path
 from fastapi import FastAPI
 from pydantic import BaseModel
 
+from anacronia.collection_runs import (
+    CandidateRun,
+    MetCandidateClient,
+    discover_met_candidates,
+)
+from anacronia.met_provider import HttpMetCandidateClient
 from anacronia.search_sets import (
     SearchSet,
     create_or_continue_search_set,
@@ -22,6 +28,11 @@ class DeactivateTermRequest(BaseModel):
     term: str
 
 
+class DiscoverMetCandidatesRequest(BaseModel):
+    candidate_offset: int = 0
+    candidate_limit: int = 100
+
+
 def serialize_search_set(search_set: SearchSet) -> dict[str, object]:
     return {
         "display_name": search_set.display_name,
@@ -36,11 +47,38 @@ def serialize_search_set(search_set: SearchSet) -> dict[str, object]:
     }
 
 
-def create_app(*, database_path: Path | None = None) -> FastAPI:
+def serialize_candidate_run(run: CandidateRun) -> dict[str, object]:
+    return {
+        "run_id": run.run_id,
+        "search_set_slug": run.search_set_slug,
+        "provider": run.provider,
+        "term_snapshot": run.term_snapshot,
+        "candidate_offset": run.candidate_offset,
+        "candidate_limit": run.candidate_limit,
+        "candidate_progress_total": run.candidate_progress_total,
+        "candidates": [
+            {
+                "object_id": candidate.object_id,
+                "source_term": candidate.source_term,
+                "source_term_index": candidate.source_term_index,
+                "provider_position": candidate.provider_position,
+                "run_position": candidate.run_position,
+            }
+            for candidate in run.candidates
+        ],
+    }
+
+
+def create_app(
+    *,
+    database_path: Path | None = None,
+    met_candidate_client: MetCandidateClient | None = None,
+) -> FastAPI:
     app = FastAPI(title="Anacronia")
     project_root = Path(__file__).resolve().parents[2]
     storage = initialize_storage(project_root=project_root)
     resolved_database_path = database_path if database_path is not None else storage.database_path
+    resolved_met_candidate_client = met_candidate_client or HttpMetCandidateClient()
 
     @app.get("/health")
     def health() -> dict[str, object]:
@@ -71,6 +109,20 @@ def create_app(*, database_path: Path | None = None) -> FastAPI:
             term=request.term,
         )
         return serialize_search_set(search_set)
+
+    @app.post("/search-sets/{slug}/provider-collections/met/runs")
+    def discover_met_candidate_run(
+        slug: str,
+        request: DiscoverMetCandidatesRequest,
+    ) -> dict[str, object]:
+        run = discover_met_candidates(
+            database_path=resolved_database_path,
+            search_set_slug=slug,
+            candidate_offset=request.candidate_offset,
+            candidate_limit=request.candidate_limit,
+            met_client=resolved_met_candidate_client,
+        )
+        return serialize_candidate_run(run)
 
     return app
 
