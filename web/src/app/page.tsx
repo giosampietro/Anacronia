@@ -27,6 +27,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
+import { ThemeSwitch } from "@/components/theme-switch";
 import { createSearchSetCards } from "@/lib/search-sets";
 import type { SearchSet } from "@/lib/search-sets";
 import { createStatusRows } from "@/lib/status";
@@ -151,10 +152,10 @@ export default async function Home() {
   const searchSetCards = createSearchSetCards(searchSets);
 
   return (
-    <div className="group/layout layout-fixed relative z-10 flex min-h-svh flex-col bg-background text-foreground [--footer-height:calc(var(--spacing)*14)] [--header-height:calc(var(--spacing)*14)] lg:[--header-height:calc(var(--spacing)*16)] xl:[--footer-height:calc(var(--spacing)*24)]">
+    <div className="group/layout relative z-10 flex min-h-svh flex-col bg-background text-foreground">
       <header className="sticky top-0 z-50 w-full bg-background">
         <div className="container-wrapper px-6">
-          <div className="mx-auto flex h-(--header-height) max-w-6xl items-center gap-4">
+          <div className="flex h-(--header-height) items-center gap-4 **:data-[slot=separator]:h-4!">
             <div className="flex min-w-0 items-center gap-2">
               <FolderSearch className="size-4 shrink-0" />
               <span className="truncate text-sm font-medium">Anacronia</span>
@@ -170,36 +171,34 @@ export default async function Home() {
                 Local data
               </Button>
             </nav>
-            <div className="ml-auto flex items-center gap-2">
-              <Badge variant="secondary">Mac-first</Badge>
-              <Separator className="hidden h-4 md:block" orientation="vertical" />
-              <Badge variant="outline">Local</Badge>
+            <div className="ml-auto flex items-center gap-2 md:flex-1 md:justify-end">
+              <ThemeSwitch />
             </div>
           </div>
         </div>
       </header>
 
       <main className="flex-1">
-        <div className="container-wrapper px-6">
-          <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 py-8 md:py-10">
+        <div className="container-wrapper">
+          <div className="container flex w-full flex-col gap-8 px-6 py-8 md:py-16 lg:py-20">
             <section className="flex flex-col gap-4">
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant="outline">Met public-domain material</Badge>
                 <Badge variant="secondary">Apple Silicon runtime</Badge>
               </div>
               <div className="flex flex-col gap-3">
-                <h1 className="font-heading text-3xl leading-tight font-semibold tracking-normal md:text-4xl">
+                <h1 className="font-heading text-4xl leading-tight font-semibold tracking-normal sm:text-5xl">
                   Search Sets
                 </h1>
-                <p className="max-w-2xl text-sm leading-6 text-muted-foreground md:text-base">
+                <p className="max-w-3xl text-base leading-7 text-muted-foreground md:text-xl">
                   Local-first collection workspace for Met public-domain material.
                 </p>
               </div>
             </section>
 
-            <section className="grid gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
+            <section className="grid gap-6 lg:grid-cols-[380px_minmax(0,1fr)]">
               <Card>
-                <form action={createSearchSet}>
+                <form action={createSearchSet} className="flex flex-col gap-5">
                   <CardHeader>
                     <CardTitle>Create or continue</CardTitle>
                     <CardDescription>Met collection research intent</CardDescription>
@@ -228,7 +227,7 @@ export default async function Home() {
                       </Field>
                     </FieldGroup>
                   </CardContent>
-                  <CardFooter className="justify-end">
+                  <CardFooter className="justify-end border-t bg-muted/50">
                     <Button type="submit">
                       <Plus data-icon="inline-start" />
                       Save Search Set
