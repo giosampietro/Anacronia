@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 
 import { TermsField } from "@/components/terms-field";
 import { ThemeSwitch } from "@/components/theme-switch";
+import { ProviderCollectionProgress } from "@/components/provider-collection-progress";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
@@ -29,11 +30,6 @@ import {
   FieldLabel,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import {
-  Progress,
-  ProgressLabel,
-  ProgressValue,
-} from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import {
   Activity,
@@ -60,6 +56,11 @@ import {
   normalizeCandidateOffset,
   normalizeMaxImagesPerObject,
 } from "@/lib/candidate-limits";
+import {
+  COLLECT_BUSY_NOTICE,
+  canStartCollect,
+  collectNoticeFromCode,
+} from "@/lib/collect-workflow";
 import { createStatusRows } from "@/lib/status";
 import type { ApiHealth } from "@/lib/status";
 import { cn } from "@/lib/utils";
@@ -77,6 +78,7 @@ const DEFAULT_API_PORT = 18670;
 
 type HomeProps = {
   searchParams?: Promise<{
+    collect_notice?: string | string[];
     filter?: string | string[];
     mode?: string | string[];
     search_set?: string | string[];
@@ -187,7 +189,7 @@ async function createSearchSetAndCollectFromMet(formData: FormData) {
   }
 
   const searchSet = (await searchSetResponse.json()) as { slug: string };
-  await fetch(`http://127.0.0.1:${apiPort}/search-sets/${searchSet.slug}/provider-collections/met/collects`, {
+  const collectResponse = await fetch(`http://127.0.0.1:${apiPort}/search-sets/${searchSet.slug}/provider-collections/met/collects`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -198,6 +200,9 @@ async function createSearchSetAndCollectFromMet(formData: FormData) {
   });
 
   revalidatePath("/");
+  if (!collectResponse.ok) {
+    redirect(`/?search_set=${searchSet.slug}&collect_notice=${COLLECT_BUSY_NOTICE}`);
+  }
   redirect(`/?search_set=${searchSet.slug}`);
 }
 
@@ -228,7 +233,7 @@ async function startMetCollect(formData: FormData) {
     formData.get("max_images_per_object"),
   );
 
-  await fetch(`http://127.0.0.1:${apiPort}/search-sets/${slug}/provider-collections/met/collects`, {
+  const response = await fetch(`http://127.0.0.1:${apiPort}/search-sets/${slug}/provider-collections/met/collects`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -239,6 +244,10 @@ async function startMetCollect(formData: FormData) {
   });
 
   revalidatePath("/");
+  if (!response.ok) {
+    redirect(`/?search_set=${slug}&collect_notice=${COLLECT_BUSY_NOTICE}`);
+  }
+  redirect(`/?search_set=${slug}`);
 }
 
 function statusVariant(state: string): "default" | "destructive" | "secondary" | "outline" {
@@ -312,7 +321,19 @@ function CollectControls({
   );
 }
 
-function NewSearchSetWorkspace() {
+function CollectBusyNote({ collectAvailable }: { collectAvailable: boolean }) {
+  if (collectAvailable) {
+    return null;
+  }
+
+  return (
+    <p className="text-sm text-muted-foreground">
+      A Met collection is already running. Save now or collect after it finishes.
+    </p>
+  );
+}
+
+function NewSearchSetWorkspace({ collectAvailable }: { collectAvailable: boolean }) {
   return (
     <div className="mx-auto flex max-w-4xl flex-col gap-7">
       <header className="flex flex-col gap-3">
@@ -352,12 +373,17 @@ function NewSearchSetWorkspace() {
           </CardHeader>
           <CardContent>
             <CollectControls idPrefix="new_search_set" />
+            <CollectBusyNote collectAvailable={collectAvailable} />
           </CardContent>
           <CardFooter className="justify-end gap-2 border-t bg-muted/50">
             <Button formAction={createSearchSet} type="submit" variant="outline">
               Save only
             </Button>
-            <Button formAction={createSearchSetAndCollectFromMet} type="submit">
+            <Button
+              disabled={!collectAvailable}
+              formAction={createSearchSetAndCollectFromMet}
+              type="submit"
+            >
               <Play data-icon="inline-start" />
               Create and collect from Met
             </Button>
@@ -403,6 +429,7 @@ function UserLibraryWorkspace({ imageCount }: { imageCount: number }) {
 export default async function Home({ searchParams }: HomeProps) {
   const resolvedSearchParams = await searchParams;
   const filterText = getFirstParam(resolvedSearchParams?.filter) ?? "";
+  const collectNoticeCode = getFirstParam(resolvedSearchParams?.collect_notice);
   const requestedWorkspaceMode = getFirstParam(resolvedSearchParams?.mode);
   const activeSearchSetSlug = getFirstParam(resolvedSearchParams?.search_set);
   const uiPort = getPort("ANACRONIA_UI_PORT", DEFAULT_UI_PORT);
@@ -416,6 +443,8 @@ export default async function Home({ searchParams }: HomeProps) {
   const rows = createStatusRows({ uiPort, apiPort, apiHealth });
   const filteredSearchSets = filterSearchSets(dashboardView.searchSets, filterText);
   const activeSearchSet = dashboardView.activeSearchSet;
+  const collectAvailable = canStartCollect(dashboardView.workerStatus);
+  const collectNotice = collectNoticeFromCode(collectNoticeCode);
   const workspaceMode = createWorkspaceMode(requestedWorkspaceMode, activeSearchSet);
   const activeProviderCollections = activeSearchSet?.providerCollections ?? [];
   const resultSlotCount = Math.min(activeSearchSet?.importedImageCount ?? 0, 28);
@@ -555,11 +584,11 @@ export default async function Home({ searchParams }: HomeProps) {
 
       <main className="min-w-0 px-5 py-6 md:px-8 lg:px-10 lg:py-9">
         {workspaceMode === "new-search-set" ? (
-          <NewSearchSetWorkspace />
+          <NewSearchSetWorkspace collectAvailable={collectAvailable} />
         ) : workspaceMode === "user-library" ? (
           <UserLibraryWorkspace imageCount={dashboardView.libraryImageCount} />
         ) : activeSearchSet === null ? (
-          <NewSearchSetWorkspace />
+          <NewSearchSetWorkspace collectAvailable={collectAvailable} />
         ) : (
           <div className="mx-auto flex max-w-7xl flex-col gap-7">
             <header className="flex flex-col gap-5">
@@ -613,6 +642,12 @@ export default async function Home({ searchParams }: HomeProps) {
                   ))
                 )}
               </div>
+
+              {collectNotice ? (
+                <div className="rounded-2xl border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
+                  {collectNotice}
+                </div>
+              ) : null}
             </header>
 
             <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
@@ -680,9 +715,10 @@ export default async function Home({ searchParams }: HomeProps) {
                       <input name="slug" type="hidden" value={activeSearchSet.slug} />
                       <CardContent>
                         <CollectControls idPrefix={`${activeSearchSet.slug}_met`} />
+                        <CollectBusyNote collectAvailable={collectAvailable} />
                       </CardContent>
                       <CardFooter className="justify-end border-t bg-muted/50">
-                        <Button size="sm" type="submit">
+                        <Button disabled={!collectAvailable} size="sm" type="submit">
                           <Play data-icon="inline-start" />
                           Collect from Met
                         </Button>
@@ -704,31 +740,13 @@ export default async function Home({ searchParams }: HomeProps) {
                           </Badge>
                         </CardAction>
                       </CardHeader>
-                      <CardContent className="flex flex-col gap-4">
-                        <Progress value={providerCollection.progressPercent}>
-                          <ProgressLabel>Candidate progress</ProgressLabel>
-                          <ProgressValue>{() => providerCollection.progressLabel}</ProgressValue>
-                        </Progress>
-                        <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
-                          <div className="flex items-center justify-between gap-3">
-                            <span className="text-sm text-muted-foreground">Image Assets</span>
-                            <span className="text-sm font-medium">
-                              {providerCollection.importedImageCount}
-                            </span>
-                          </div>
-                          <div className="flex items-center justify-between gap-3">
-                            <span className="text-sm text-muted-foreground">Progress</span>
-                            <span className="text-sm font-medium">
-                              {providerCollection.progressPercent}%
-                            </span>
-                          </div>
-                          <div className="flex items-center justify-between gap-3">
-                            <span className="text-sm text-muted-foreground">Continue offset</span>
-                            <span className="text-sm font-medium">
-                              {providerCollection.continueCandidateOffset ?? "none"}
-                            </span>
-                          </div>
-                        </div>
+                      <CardContent>
+                        <ProviderCollectionProgress
+                          continueCandidateOffset={providerCollection.continueCandidateOffset}
+                          importedImageCount={providerCollection.importedImageCount}
+                          progressLabel={providerCollection.progressLabel}
+                          progressPercent={providerCollection.progressPercent}
+                        />
                       </CardContent>
                       <form action={startMetCollect}>
                         <CardFooter className="flex-col items-stretch gap-4 border-t bg-muted/50">
@@ -738,7 +756,12 @@ export default async function Home({ searchParams }: HomeProps) {
                             startAtCandidate={providerCollection.nextCandidateOffset}
                           />
                           <div className="flex justify-end gap-2">
-                            <Button size="sm" type="submit" variant="outline">
+                            <Button
+                              disabled={!collectAvailable}
+                              size="sm"
+                              type="submit"
+                              variant="outline"
+                            >
                               <RotateCcw data-icon="inline-start" />
                               Continue same terms
                             </Button>
@@ -767,13 +790,19 @@ export default async function Home({ searchParams }: HomeProps) {
                           placeholder="cobra, serpent"
                         />
                         <CollectControls idPrefix={`${activeSearchSet.slug}_add_terms`} />
+                        <CollectBusyNote collectAvailable={collectAvailable} />
                       </FieldGroup>
                     </CardContent>
                     <CardFooter className="justify-end gap-2 border-t bg-muted/50">
                       <Button formAction={createSearchSet} size="sm" type="submit" variant="outline">
                         Save terms only
                       </Button>
-                      <Button formAction={createSearchSetAndCollectFromMet} size="sm" type="submit">
+                      <Button
+                        disabled={!collectAvailable}
+                        formAction={createSearchSetAndCollectFromMet}
+                        size="sm"
+                        type="submit"
+                      >
                         <Play data-icon="inline-start" />
                         Add terms and collect from Met
                       </Button>

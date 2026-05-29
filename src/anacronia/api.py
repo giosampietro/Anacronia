@@ -25,7 +25,11 @@ from anacronia.search_sets import (
     list_search_sets,
 )
 from anacronia.storage import initialize_storage
-from anacronia.worker import CollectLockError, create_idle_worker_status, start_collect_job
+from anacronia.worker import (
+    CollectLockError,
+    get_worker_status,
+    start_collect_job,
+)
 
 
 DEFAULT_CANDIDATE_LIMIT = 1000
@@ -167,10 +171,15 @@ def create_app(
 
     @app.get("/health")
     def health() -> dict[str, object]:
+        worker_status = get_worker_status(database_path=resolved_database_path)
         return {
             "service": "api",
             "status": "ok",
-            "worker": create_idle_worker_status(),
+            "worker": {
+                "service": worker_status.service,
+                "status": worker_status.status,
+                "active_collect_job_id": worker_status.active_collect_job_id,
+            },
         }
 
     @app.post("/search-sets")
@@ -219,6 +228,9 @@ def create_app(
         slug: str,
         request: StartMetCollectRequest,
     ) -> dict[str, object]:
+        if get_worker_status(database_path=resolved_database_path).active_collect_job_id is not None:
+            raise HTTPException(status_code=409, detail="Another collect job is already active.")
+
         run = discover_met_candidates(
             database_path=resolved_database_path,
             search_set_slug=slug,

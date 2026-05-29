@@ -44,8 +44,11 @@ def ppm_image_bytes(*, width: int, height: int) -> bytes:
     return header + row * height
 
 
-def test_health_reports_api_and_idle_worker():
-    client = TestClient(create_app())
+def test_health_reports_api_and_idle_worker(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    client = TestClient(
+        create_app(database_path=storage.database_path, data_root=storage.data_root)
+    )
 
     response = client.get("/health")
 
@@ -53,7 +56,11 @@ def test_health_reports_api_and_idle_worker():
     assert response.json() == {
         "service": "api",
         "status": "ok",
-        "worker": {"service": "worker", "status": "idle"},
+        "worker": {
+            "service": "worker",
+            "status": "idle",
+            "active_collect_job_id": None,
+        },
     }
 
 
@@ -232,6 +239,80 @@ def test_api_starts_met_collect_job_from_search_set(tmp_path):
         "active_collect_job_id": 1,
     }
     assert dashboard["search_sets"][0]["provider_collections"][0]["candidate_limit"] == 1000
+
+
+def test_health_reports_running_worker_when_collect_job_is_active(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            met_candidate_client=FakeMetCandidateClient(),
+        )
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda"},
+    )
+    client.post(
+        "/search-sets/snake-studies/provider-collections/met/collects",
+        json={
+            "candidate_offset": 0,
+            "candidate_limit": DEFAULT_CANDIDATE_LIMIT,
+            "max_images_per_object": DEFAULT_MAX_IMAGES_PER_OBJECT,
+        },
+    )
+
+    response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "service": "api",
+        "status": "ok",
+        "worker": {
+            "service": "worker",
+            "status": "running",
+            "active_collect_job_id": 1,
+        },
+    }
+
+
+def test_api_rejects_met_collect_before_discovery_when_collect_job_is_active(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    met_client = FakeMetCandidateClient()
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            met_candidate_client=met_client,
+        )
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda"},
+    )
+    client.post(
+        "/search-sets/snake-studies/provider-collections/met/collects",
+        json={
+            "candidate_offset": 0,
+            "candidate_limit": DEFAULT_CANDIDATE_LIMIT,
+            "max_images_per_object": DEFAULT_MAX_IMAGES_PER_OBJECT,
+        },
+    )
+
+    response = client.post(
+        "/search-sets/snake-studies/provider-collections/met/collects",
+        json={
+            "candidate_offset": DEFAULT_CANDIDATE_LIMIT,
+            "candidate_limit": DEFAULT_CANDIDATE_LIMIT,
+            "max_images_per_object": DEFAULT_MAX_IMAGES_PER_OBJECT,
+        },
+    )
+
+    assert response.status_code == 409
+    assert met_client.queries == ["snake", "anaconda"]
+    dashboard = client.get("/dashboard").json()
+    assert dashboard["search_sets"][0]["provider_collections"][0]["latest_run_id"] == 1
 
 
 def test_api_ingests_met_records_for_a_candidate_run(tmp_path):
