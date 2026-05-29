@@ -1,4 +1,5 @@
 import { revalidatePath } from "next/cache";
+import Link from "next/link";
 
 import { ThemeSwitch } from "@/components/theme-switch";
 import { Badge } from "@/components/ui/badge";
@@ -45,23 +46,67 @@ import {
   Plus,
   RotateCcw,
   Search,
-  ServerCog,
 } from "lucide-react";
 
 import {
   createOperationalDashboardView,
+  type DashboardSearchSetView,
   type OperationalDashboard,
 } from "@/lib/dashboard";
 import { createStatusRows } from "@/lib/status";
 import type { ApiHealth } from "@/lib/status";
+import { cn } from "@/lib/utils";
 
 const DEFAULT_UI_PORT = 18660;
 const DEFAULT_API_PORT = 18670;
 const DEFAULT_CANDIDATE_LIMIT = 100;
 
+type HomeProps = {
+  searchParams?: Promise<{
+    filter?: string | string[];
+    search_set?: string | string[];
+  }>;
+};
+
 function getPort(name: string, fallback: number): number {
   const value = Number.parseInt(process.env[name] ?? "", 10);
   return Number.isFinite(value) ? value : fallback;
+}
+
+function getFirstParam(value: string | string[] | undefined): string | undefined {
+  if (Array.isArray(value)) {
+    return value[0];
+  }
+
+  return value;
+}
+
+function createSearchSetHref(slug: string, filterText: string): string {
+  const params = new URLSearchParams({ search_set: slug });
+
+  if (filterText.trim() !== "") {
+    params.set("filter", filterText.trim());
+  }
+
+  return `/?${params.toString()}`;
+}
+
+function filterSearchSets(
+  searchSets: DashboardSearchSetView[],
+  filterText: string,
+): DashboardSearchSetView[] {
+  const normalizedFilter = filterText.trim().toLowerCase();
+
+  if (normalizedFilter === "") {
+    return searchSets;
+  }
+
+  return searchSets.filter((searchSet) =>
+    [searchSet.displayName, searchSet.termSummary, searchSet.slug]
+      .join(" ")
+      .toLowerCase()
+      .includes(normalizedFilter),
+  );
 }
 
 async function getApiHealth(apiPort: number): Promise<ApiHealth> {
@@ -195,7 +240,10 @@ function statusIcon(state: string) {
   return <Activity data-icon="inline-start" />;
 }
 
-export default async function Home() {
+export default async function Home({ searchParams }: HomeProps) {
+  const resolvedSearchParams = await searchParams;
+  const filterText = getFirstParam(resolvedSearchParams?.filter) ?? "";
+  const activeSearchSetSlug = getFirstParam(resolvedSearchParams?.search_set);
   const uiPort = getPort("ANACRONIA_UI_PORT", DEFAULT_UI_PORT);
   const apiPort = getPort("ANACRONIA_API_PORT", DEFAULT_API_PORT);
   const [apiHealth, dashboardResponse] = await Promise.all([
@@ -203,213 +251,305 @@ export default async function Home() {
     getDashboard(apiPort),
   ]);
   const dashboard = dashboardResponse ?? emptyDashboard(apiHealth.worker.status);
-  const dashboardView = createOperationalDashboardView(dashboard);
+  const dashboardView = createOperationalDashboardView(dashboard, activeSearchSetSlug);
   const rows = createStatusRows({ uiPort, apiPort, apiHealth });
-  const providerCollectionCount = dashboardView.searchSets.reduce(
-    (total, searchSet) => total + searchSet.providerCollections.length,
-    0,
-  );
-  const importedImageCount = dashboardView.providerFocus.reduce(
-    (total, provider) => total + provider.importedImageCount,
-    0,
-  );
+  const filteredSearchSets = filterSearchSets(dashboardView.searchSets, filterText);
+  const activeSearchSet = dashboardView.activeSearchSet;
+  const activeProviderCollections = activeSearchSet?.providerCollections ?? [];
+  const resultSlotCount = Math.min(activeSearchSet?.importedImageCount ?? 0, 28);
 
   return (
-    <div className="group/layout relative z-10 flex min-h-svh flex-col bg-background text-foreground">
-      <header className="sticky top-0 z-50 w-full bg-background">
-        <div className="container-wrapper px-6">
-          <div className="flex h-(--header-height) items-center gap-4 **:data-[slot=separator]:h-4!">
-            <div className="flex min-w-0 items-center gap-2">
-              <FolderSearch className="size-4 shrink-0" />
-              <span className="truncate text-sm font-medium">Anacronia</span>
-            </div>
-            <nav className="hidden items-center gap-0 md:flex">
-              <Button size="sm" type="button" variant="ghost">
-                Search Sets
-              </Button>
-              <Button size="sm" type="button" variant="ghost">
-                Provider Collections
-              </Button>
-              <Button size="sm" type="button" variant="ghost">
-                Worker
-              </Button>
-            </nav>
-            <div className="ml-auto flex items-center gap-2 md:flex-1 md:justify-end">
-              <ThemeSwitch />
-            </div>
+    <div className="grid min-h-svh bg-background text-foreground lg:grid-cols-[340px_minmax(0,1fr)]">
+      <aside className="flex min-h-svh flex-col gap-5 border-r bg-card/20 p-5 lg:sticky lg:top-0 lg:h-svh lg:overflow-y-auto">
+        <div className="flex items-center gap-3">
+          <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl border bg-background font-heading text-lg font-semibold">
+            A
           </div>
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate text-lg font-semibold">Anacronia</h1>
+          </div>
+          <ThemeSwitch />
         </div>
-      </header>
 
-      <main className="flex-1">
-        <div className="container-wrapper">
-          <div className="container flex w-full flex-col gap-6 px-6 py-8 md:py-10">
-            <section className="grid gap-4 md:grid-cols-3">
-              <Card size="sm">
+        <details
+          className="group rounded-2xl border bg-card"
+          open={dashboardView.searchSets.length === 0}
+        >
+          <summary className="flex cursor-pointer list-none items-center justify-center gap-2 px-4 py-3 text-sm font-medium marker:hidden">
+            <Plus data-icon="inline-start" />
+            New Search Set
+          </summary>
+          <form action={createSearchSet} className="flex flex-col gap-4 border-t">
+            <div className="px-4 pt-4">
+              <FieldGroup>
+                <Field>
+                  <FieldLabel htmlFor="display_name">Display name</FieldLabel>
+                  <Input id="display_name" name="display_name" required />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="terms_text">Terms</FieldLabel>
+                  <Textarea
+                    className="min-h-20 resize-y"
+                    id="terms_text"
+                    name="terms_text"
+                    placeholder="snake, anaconda, serpent"
+                    required
+                  />
+                  <FieldDescription>
+                    Commas and new lines both create terms.
+                  </FieldDescription>
+                </Field>
+              </FieldGroup>
+            </div>
+            <div className="flex justify-end border-t bg-muted/50 px-4 py-3">
+              <Button type="submit">
+                <Plus data-icon="inline-start" />
+                Save Search Set
+              </Button>
+            </div>
+          </form>
+        </details>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>User Library</CardTitle>
+            <CardDescription>
+              {dashboardView.libraryImageCount} collected Image Asset
+              {dashboardView.libraryImageCount === 1 ? "" : "s"}
+            </CardDescription>
+          </CardHeader>
+        </Card>
+
+        <section className="flex flex-1 flex-col gap-3">
+          <div className="flex items-center justify-between gap-3 px-1">
+            <h2 className="text-sm font-medium text-muted-foreground">Search Sets</h2>
+            <Badge variant="secondary">{dashboardView.searchSets.length}</Badge>
+          </div>
+
+          <form className="flex gap-2">
+            {activeSearchSet ? (
+              <input name="search_set" type="hidden" value={activeSearchSet.slug} />
+            ) : null}
+            <Input
+              aria-label="Filter Search Sets"
+              defaultValue={filterText}
+              name="filter"
+              placeholder="Filter by title or term"
+            />
+            <Button size="icon" type="submit" variant="outline">
+              <Search data-icon="inline-start" />
+            </Button>
+          </form>
+
+          <div className="flex flex-col gap-2">
+            {filteredSearchSets.length === 0 ? (
+              <Empty className="border">
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <Search />
+                  </EmptyMedia>
+                  <EmptyTitle>No matching Search Sets</EmptyTitle>
+                </EmptyHeader>
+              </Empty>
+            ) : (
+              filteredSearchSets.map((searchSet) => (
+                <Link
+                  className={cn(
+                    "flex flex-col gap-2 rounded-2xl border bg-card p-4 transition-colors hover:bg-muted/50",
+                    searchSet.isActive && "border-ring bg-muted shadow-xs",
+                  )}
+                  href={createSearchSetHref(searchSet.slug, filterText)}
+                  key={searchSet.slug}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="truncate text-sm font-medium">
+                      {searchSet.displayName}
+                    </span>
+                    <Badge variant="secondary">{searchSet.activeTerms.length}</Badge>
+                  </div>
+                  <p className="truncate text-sm text-muted-foreground">
+                    {searchSet.termSummary || "No active terms"}
+                  </p>
+                </Link>
+              ))
+            )}
+          </div>
+        </section>
+
+        <Separator />
+
+        <section className="flex flex-col gap-3">
+          <div className="flex items-center gap-2 px-1">
+            <HardDrive className="size-4 text-muted-foreground" />
+            <h2 className="text-sm font-medium text-muted-foreground">Local runtime</h2>
+          </div>
+          <div className="flex flex-col gap-2">
+            {rows.map((row) => (
+              <div className="flex items-center justify-between gap-3 text-sm" key={row.name}>
+                <span className="truncate text-muted-foreground">{row.name}</span>
+                <Badge variant={statusVariant(row.state)}>
+                  {statusIcon(row.state)}
+                  {row.state}
+                </Badge>
+              </div>
+            ))}
+          </div>
+        </section>
+      </aside>
+
+      <main className="min-w-0 px-5 py-6 md:px-8 lg:px-10 lg:py-9">
+        {activeSearchSet === null ? (
+          <div className="flex min-h-[70svh] items-center justify-center">
+            <Empty className="max-w-lg border">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <FolderSearch />
+                </EmptyMedia>
+                <EmptyTitle>No Search Set selected</EmptyTitle>
+                <EmptyDescription>
+                  Save a Search Set in the left panel to start a local collection workspace.
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          </div>
+        ) : (
+          <div className="mx-auto flex max-w-7xl flex-col gap-7">
+            <header className="flex flex-col gap-5">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="min-w-0 flex-1">
+                  <h1 className="truncate font-heading text-4xl leading-tight font-semibold tracking-normal md:text-5xl">
+                    {activeSearchSet.displayName}
+                  </h1>
+                </div>
+                <form action={createMetCandidateRun}>
+                  <input name="slug" type="hidden" value={activeSearchSet.slug} />
+                  <input name="candidate_offset" type="hidden" value="0" />
+                  <input
+                    name="candidate_limit"
+                    type="hidden"
+                    value={DEFAULT_CANDIDATE_LIMIT}
+                  />
+                  <Button type="submit">
+                    <Play data-icon="inline-start" />
+                    Run Met collection
+                  </Button>
+                </form>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                {activeSearchSet.activeTerms.map((term) => (
+                  <form
+                    action={deactivateSearchSetTerm}
+                    className="flex items-center gap-1"
+                    key={term}
+                  >
+                    <input name="slug" type="hidden" value={activeSearchSet.slug} />
+                    <input name="term" type="hidden" value={term} />
+                    <Badge>{term}</Badge>
+                    <Button
+                      aria-label={`Deactivate ${term}`}
+                      size="icon-xs"
+                      type="submit"
+                      variant="ghost"
+                    >
+                      <MinusCircle data-icon="inline-start" />
+                    </Button>
+                  </form>
+                ))}
+                {activeSearchSet.inactiveTerms.map((term) => (
+                  <Badge key={term} variant="secondary">
+                    {term}
+                  </Badge>
+                ))}
+              </div>
+
+              <div className="flex items-center gap-2 rounded-2xl border bg-card px-4 py-3 text-muted-foreground">
+                <Search className="size-4 shrink-0" />
+                <span className="truncate text-sm">
+                  Search within {activeSearchSet.displayName}
+                </span>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                {activeProviderCollections.length === 0 ? (
+                  <Badge variant="outline">No Provider Collection yet</Badge>
+                ) : (
+                  activeProviderCollections.map((providerCollection) => (
+                    <Badge
+                      key={`${activeSearchSet.slug}-${providerCollection.provider}`}
+                      variant="outline"
+                    >
+                      {providerCollection.providerLabel} (
+                      {providerCollection.importedImageCount})
+                    </Badge>
+                  ))
+                )}
+              </div>
+            </header>
+
+            <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+              <Card className="min-w-0">
                 <CardHeader>
-                  <CardDescription>Worker</CardDescription>
-                  <CardTitle>{dashboardView.workerStatus}</CardTitle>
+                  <div className="min-w-0">
+                    <CardTitle>Results</CardTitle>
+                    <CardDescription>
+                      {activeSearchSet.importedImageCount} Image Asset
+                      {activeSearchSet.importedImageCount === 1 ? "" : "s"} in this Search Set
+                    </CardDescription>
+                  </div>
                   <CardAction>
-                    <Badge variant={statusVariant(dashboardView.workerStatus)}>
-                      {statusIcon(dashboardView.workerStatus)}
-                      {dashboardView.workerStatus}
+                    <Badge variant="secondary">
+                      {activeSearchSet.importedImageCount} shown
                     </Badge>
                   </CardAction>
                 </CardHeader>
-              </Card>
-              <Card size="sm">
-                <CardHeader>
-                  <CardDescription>Provider Collections</CardDescription>
-                  <CardTitle>{providerCollectionCount}</CardTitle>
-                </CardHeader>
-              </Card>
-              <Card size="sm">
-                <CardHeader>
-                  <CardDescription>Imported Image Assets</CardDescription>
-                  <CardTitle>{importedImageCount}</CardTitle>
-                </CardHeader>
-              </Card>
-            </section>
+                <CardContent>
+                  {resultSlotCount === 0 ? (
+                    <Empty className="border">
+                      <EmptyHeader>
+                        <EmptyMedia variant="icon">
+                          <Database />
+                        </EmptyMedia>
+                        <EmptyTitle>No Image Assets yet</EmptyTitle>
+                        <EmptyDescription>
+                          Run the Met Provider Collection to collect local Image Assets.
+                        </EmptyDescription>
+                      </EmptyHeader>
+                    </Empty>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+                      {Array.from({ length: resultSlotCount }).map((_, index) => {
+                        const providerCollection =
+                          activeProviderCollections[index % activeProviderCollections.length];
 
-            <section className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
-              <aside className="flex flex-col gap-4">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Search Set navigation</CardTitle>
-                    <CardDescription>Primary workspace structure</CardDescription>
-                  </CardHeader>
-                  <CardContent className="flex flex-col gap-3">
-                    {dashboardView.searchSets.length === 0 ? (
-                      <Empty className="border">
-                        <EmptyHeader>
-                          <EmptyMedia variant="icon">
-                            <Search />
-                          </EmptyMedia>
-                          <EmptyTitle>No Search Sets</EmptyTitle>
-                          <EmptyDescription>
-                            Save one to create the first workspace.
-                          </EmptyDescription>
-                        </EmptyHeader>
-                      </Empty>
-                    ) : (
-                      dashboardView.searchSets.map((searchSet) => (
-                        <div className="flex flex-col gap-2" key={searchSet.slug}>
-                          <div className="flex min-w-0 items-center justify-between gap-3">
-                            <div className="flex min-w-0 flex-col">
-                              <span className="truncate text-sm font-medium">
-                                {searchSet.displayName}
-                              </span>
-                              <span className="truncate text-xs text-muted-foreground">
-                                {searchSet.slug}
-                              </span>
-                            </div>
-                            <Badge variant="secondary">
-                              {searchSet.activeTerms.length}
-                            </Badge>
+                        return (
+                          <div
+                            className="relative aspect-[4/5] overflow-hidden rounded-2xl border bg-muted"
+                            key={`${activeSearchSet.slug}-asset-${index}`}
+                          >
+                            <div className="absolute inset-0 bg-gradient-to-br from-muted via-background/20 to-muted" />
+                            {providerCollection ? (
+                              <Badge className="absolute bottom-2 left-2" variant="secondary">
+                                {providerCollection.providerLabel}
+                              </Badge>
+                            ) : null}
                           </div>
-                          <div className="flex flex-wrap gap-1.5">
-                            {searchSet.providerCollections.length === 0 ? (
-                              <Badge variant="outline">No Provider Collection</Badge>
-                            ) : (
-                              searchSet.providerCollections.map((providerCollection) => (
-                                <Badge
-                                  key={`${searchSet.slug}-${providerCollection.providerLabel}`}
-                                  variant="outline"
-                                >
-                                  {providerCollection.providerLabel}
-                                </Badge>
-                              ))
-                            )}
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <form action={createSearchSet} className="flex flex-col gap-5">
-                    <CardHeader>
-                      <CardTitle>Create or continue</CardTitle>
-                      <CardDescription>Search Set research intent</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <FieldGroup>
-                        <Field>
-                          <FieldLabel htmlFor="display_name">Display name</FieldLabel>
-                          <Input id="display_name" name="display_name" required />
-                          <FieldDescription>
-                            Reusing a name continues that Search Set.
-                          </FieldDescription>
-                        </Field>
-                        <Field>
-                          <FieldLabel htmlFor="terms_text">Terms</FieldLabel>
-                          <Textarea
-                            className="min-h-24 resize-y"
-                            id="terms_text"
-                            name="terms_text"
-                            placeholder="snake, anaconda, serpent"
-                            required
-                          />
-                          <FieldDescription>
-                            Commas and new lines both create terms.
-                          </FieldDescription>
-                        </Field>
-                      </FieldGroup>
-                    </CardContent>
-                    <CardFooter className="justify-end border-t bg-muted/50">
-                      <Button type="submit">
-                        <Plus data-icon="inline-start" />
-                        Save Search Set
-                      </Button>
-                    </CardFooter>
-                  </form>
-                </Card>
-              </aside>
+                        );
+                      })}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
 
               <section className="flex flex-col gap-4">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex flex-col gap-1">
-                    <h1 className="font-heading text-2xl leading-tight font-semibold tracking-normal">
-                      Operational Dashboard
-                    </h1>
-                    <p className="text-sm text-muted-foreground">
-                      Search Set-first collect status and Provider Collection controls.
-                    </p>
-                  </div>
-                  <Badge variant="secondary">Met provider first</Badge>
-                </div>
-
-                {dashboardView.searchSets.length === 0 ? (
+                {activeProviderCollections.length === 0 ? (
                   <Card>
-                    <CardContent className="py-6">
-                      <Empty className="border">
-                        <EmptyHeader>
-                          <EmptyMedia variant="icon">
-                            <FolderSearch />
-                          </EmptyMedia>
-                          <EmptyTitle>No dashboard data</EmptyTitle>
-                          <EmptyDescription>
-                            Create a Search Set to begin collecting.
-                          </EmptyDescription>
-                        </EmptyHeader>
-                      </Empty>
-                    </CardContent>
-                  </Card>
-                ) : (
-                  dashboardView.searchSets.map((searchSet) => (
-                    <section className="flex flex-col gap-3" key={searchSet.slug}>
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div className="flex min-w-0 flex-col gap-1">
-                          <h2 className="truncate text-sm font-medium">
-                            {searchSet.displayName}
-                          </h2>
-                          <p className="truncate text-sm text-muted-foreground">
-                            {searchSet.activeTerms.join(", ") || "No active terms"}
-                          </p>
-                        </div>
+                    <CardHeader>
+                      <CardTitle>Met Provider Collection</CardTitle>
+                      <CardDescription>No run yet</CardDescription>
+                      <CardAction>
                         <form action={createMetCandidateRun}>
-                          <input name="slug" type="hidden" value={searchSet.slug} />
+                          <input name="slug" type="hidden" value={activeSearchSet.slug} />
                           <input name="candidate_offset" type="hidden" value="0" />
                           <input
                             name="candidate_limit"
@@ -418,215 +558,115 @@ export default async function Home() {
                           />
                           <Button size="sm" type="submit" variant="outline">
                             <Play data-icon="inline-start" />
-                            Collect Met
+                            Run
                           </Button>
                         </form>
-                      </div>
-
-                      {searchSet.activeTerms.length > 0 ? (
-                        <div className="flex flex-wrap gap-2">
-                          {searchSet.activeTerms.map((term) => (
-                            <form
-                              action={deactivateSearchSetTerm}
-                              className="flex items-center gap-1"
-                              key={term}
-                            >
-                              <input name="slug" type="hidden" value={searchSet.slug} />
-                              <input name="term" type="hidden" value={term} />
-                              <Badge>{term}</Badge>
-                              <Button size="xs" type="submit" variant="ghost">
-                                <MinusCircle data-icon="inline-start" />
-                                Deactivate
-                              </Button>
-                            </form>
-                          ))}
-                          {searchSet.inactiveTerms.map((term) => (
-                            <Badge key={term} variant="secondary">
-                              {term}
-                            </Badge>
-                          ))}
+                      </CardAction>
+                    </CardHeader>
+                  </Card>
+                ) : (
+                  activeProviderCollections.map((providerCollection) => (
+                    <Card key={`${activeSearchSet.slug}-${providerCollection.provider}`}>
+                      <CardHeader>
+                        <div className="min-w-0">
+                          <CardTitle>{providerCollection.providerLabel}</CardTitle>
+                          <CardDescription>{providerCollection.latestRunLabel}</CardDescription>
                         </div>
-                      ) : null}
-
-                      {searchSet.providerCollections.length === 0 ? (
-                        <Card>
-                          <CardContent className="py-6">
-                            <Empty className="border">
-                              <EmptyHeader>
-                                <EmptyMedia variant="icon">
-                                  <Database />
-                                </EmptyMedia>
-                                <EmptyTitle>No Provider Collection</EmptyTitle>
-                                <EmptyDescription>
-                                  Collect Met candidates to create one under this Search Set.
-                                </EmptyDescription>
-                              </EmptyHeader>
-                            </Empty>
-                          </CardContent>
-                        </Card>
-                      ) : (
-                        searchSet.providerCollections.map((providerCollection) => (
-                          <Card key={`${searchSet.slug}-${providerCollection.providerLabel}`}>
-                            <CardHeader>
-                              <div className="flex min-w-0 flex-col gap-1">
-                                <CardTitle>{providerCollection.providerLabel}</CardTitle>
-                                <CardDescription>
-                                  {providerCollection.latestRunLabel}
-                                </CardDescription>
-                              </div>
-                              <CardAction>
-                                <Badge variant={statusVariant(providerCollection.status)}>
-                                  {statusIcon(providerCollection.status)}
-                                  {providerCollection.status}
-                                </Badge>
-                              </CardAction>
-                            </CardHeader>
-                            <CardContent className="flex flex-col gap-4">
-                              <Progress value={providerCollection.progressPercent}>
-                                <ProgressLabel>Candidate progress</ProgressLabel>
-                                <ProgressValue>
-                                  {() => providerCollection.progressLabel}
-                                </ProgressValue>
-                              </Progress>
-                              <div className="grid gap-3 sm:grid-cols-3">
-                                <div className="flex flex-col gap-1">
-                                  <span className="text-xs text-muted-foreground">
-                                    Imported Image Assets
-                                  </span>
-                                  <span className="text-sm font-medium">
-                                    {providerCollection.importedImageCount}
-                                  </span>
-                                </div>
-                                <div className="flex flex-col gap-1">
-                                  <span className="text-xs text-muted-foreground">
-                                    Progress
-                                  </span>
-                                  <span className="text-sm font-medium">
-                                    {providerCollection.progressPercent}%
-                                  </span>
-                                </div>
-                                <div className="flex flex-col gap-1">
-                                  <span className="text-xs text-muted-foreground">
-                                    Continue offset
-                                  </span>
-                                  <span className="text-sm font-medium">
-                                    {providerCollection.continueCandidateOffset ?? "none"}
-                                  </span>
-                                </div>
-                              </div>
-                            </CardContent>
-                            <CardFooter className="justify-end gap-2 border-t bg-muted/50">
-                              {providerCollection.continueCandidateOffset === null ? (
-                                <Button disabled type="button" variant="outline">
-                                  <RotateCcw data-icon="inline-start" />
-                                  Continue
-                                </Button>
-                              ) : (
-                                <form action={createMetCandidateRun}>
-                                  <input name="slug" type="hidden" value={searchSet.slug} />
-                                  <input
-                                    name="candidate_offset"
-                                    type="hidden"
-                                    value={providerCollection.continueCandidateOffset}
-                                  />
-                                  <input
-                                    name="candidate_limit"
-                                    type="hidden"
-                                    value={DEFAULT_CANDIDATE_LIMIT}
-                                  />
-                                  <Button type="submit" variant="outline">
-                                    <RotateCcw data-icon="inline-start" />
-                                    Continue from {providerCollection.continueCandidateOffset}
-                                  </Button>
-                                </form>
-                              )}
-                            </CardFooter>
-                          </Card>
-                        ))
-                      )}
-                    </section>
+                        <CardAction>
+                          <Badge variant={statusVariant(providerCollection.status)}>
+                            {statusIcon(providerCollection.status)}
+                            {providerCollection.status}
+                          </Badge>
+                        </CardAction>
+                      </CardHeader>
+                      <CardContent className="flex flex-col gap-4">
+                        <Progress value={providerCollection.progressPercent}>
+                          <ProgressLabel>Candidate progress</ProgressLabel>
+                          <ProgressValue>{() => providerCollection.progressLabel}</ProgressValue>
+                        </Progress>
+                        <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-sm text-muted-foreground">Image Assets</span>
+                            <span className="text-sm font-medium">
+                              {providerCollection.importedImageCount}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-sm text-muted-foreground">Progress</span>
+                            <span className="text-sm font-medium">
+                              {providerCollection.progressPercent}%
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-sm text-muted-foreground">Continue offset</span>
+                            <span className="text-sm font-medium">
+                              {providerCollection.continueCandidateOffset ?? "none"}
+                            </span>
+                          </div>
+                        </div>
+                      </CardContent>
+                      <CardFooter className="justify-end gap-2 border-t bg-muted/50">
+                        <form action={createMetCandidateRun}>
+                          <input name="slug" type="hidden" value={activeSearchSet.slug} />
+                          <input name="candidate_offset" type="hidden" value="0" />
+                          <input
+                            name="candidate_limit"
+                            type="hidden"
+                            value={DEFAULT_CANDIDATE_LIMIT}
+                          />
+                          <Button size="sm" type="submit" variant="outline">
+                            <Play data-icon="inline-start" />
+                            Run again
+                          </Button>
+                        </form>
+                        {providerCollection.continueCandidateOffset === null ? null : (
+                          <form action={createMetCandidateRun}>
+                            <input name="slug" type="hidden" value={activeSearchSet.slug} />
+                            <input
+                              name="candidate_offset"
+                              type="hidden"
+                              value={providerCollection.continueCandidateOffset}
+                            />
+                            <input
+                              name="candidate_limit"
+                              type="hidden"
+                              value={DEFAULT_CANDIDATE_LIMIT}
+                            />
+                            <Button size="sm" type="submit" variant="outline">
+                              <RotateCcw data-icon="inline-start" />
+                              Continue
+                            </Button>
+                          </form>
+                        )}
+                      </CardFooter>
+                    </Card>
                   ))
                 )}
 
-                <Separator />
-
-                <section className="flex flex-col gap-4">
-                  <div className="flex items-center gap-2">
-                    <ServerCog className="size-4" />
-                    <h2 className="text-sm font-medium">Provider focus</h2>
-                  </div>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    {dashboardView.providerFocus.length === 0 ? (
-                      <Card size="sm">
-                        <CardHeader>
-                          <CardTitle>No provider data</CardTitle>
-                          <CardDescription>
-                            Provider Collections appear after candidate discovery.
-                          </CardDescription>
-                        </CardHeader>
-                      </Card>
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Provider focus</CardTitle>
+                    <CardDescription>Secondary Provider Collection view</CardDescription>
+                  </CardHeader>
+                  <CardContent className="flex flex-col gap-2">
+                    {activeProviderCollections.length === 0 ? (
+                      <Badge variant="outline">Met pending</Badge>
                     ) : (
-                      dashboardView.providerFocus.map((provider) => (
-                        <Card key={provider.providerLabel} size="sm">
-                          <CardHeader>
-                            <CardDescription>{provider.providerLabel}</CardDescription>
-                            <CardTitle>
-                              {provider.importedImageCount} imported images
-                            </CardTitle>
-                          </CardHeader>
-                          <CardContent>
-                            <p className="text-sm text-muted-foreground">
-                              {provider.searchSetCount} Search Set
-                              {provider.searchSetCount === 1 ? "" : "s"}
-                            </p>
-                          </CardContent>
-                        </Card>
+                      activeProviderCollections.map((providerCollection) => (
+                        <Badge
+                          key={`${activeSearchSet.slug}-${providerCollection.provider}-focus`}
+                          variant="outline"
+                        >
+                          {providerCollection.providerLabel}
+                        </Badge>
                       ))
                     )}
-                  </div>
-                </section>
-
-                <section className="flex flex-col gap-4">
-                  <div className="flex items-center gap-2">
-                    <HardDrive className="size-4" />
-                    <h2 className="text-sm font-medium">Local runtime</h2>
-                  </div>
-                  <div className="grid gap-4 md:grid-cols-3">
-                    {rows.map((row) => (
-                      <Card key={row.name} size="sm">
-                        <CardHeader>
-                          <div className="flex min-w-0 gap-3">
-                            <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted">
-                              {row.name === "Next.js UI" ? (
-                                <Database className="size-4" />
-                              ) : row.name === "FastAPI backend" ? (
-                                <ServerCog className="size-4" />
-                              ) : (
-                                <HardDrive className="size-4" />
-                              )}
-                            </div>
-                            <div className="flex min-w-0 flex-col gap-1">
-                              <CardTitle className="truncate">{row.name}</CardTitle>
-                              <CardDescription className="truncate">
-                                {row.detail}
-                              </CardDescription>
-                            </div>
-                          </div>
-                          <CardAction>
-                            <Badge variant={statusVariant(row.state)}>
-                              {statusIcon(row.state)}
-                              {row.state}
-                            </Badge>
-                          </CardAction>
-                        </CardHeader>
-                      </Card>
-                    ))}
-                  </div>
-                </section>
+                  </CardContent>
+                </Card>
               </section>
             </section>
           </div>
-        </div>
+        )}
       </main>
     </div>
   );
