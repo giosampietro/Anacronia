@@ -1,9 +1,10 @@
 import { revalidatePath } from "next/cache";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 import { ThemeSwitch } from "@/components/theme-switch";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Card,
   CardAction,
@@ -39,7 +40,6 @@ import {
   CircleAlert,
   CircleCheck,
   Database,
-  FolderSearch,
   HardDrive,
   MinusCircle,
   Play,
@@ -50,12 +50,19 @@ import {
 
 import {
   createOperationalDashboardView,
-  type DashboardSearchSetView,
   type OperationalDashboard,
 } from "@/lib/dashboard";
 import { createStatusRows } from "@/lib/status";
 import type { ApiHealth } from "@/lib/status";
 import { cn } from "@/lib/utils";
+import {
+  createNewSearchSetHref,
+  createSearchSetHref,
+  createUserLibraryHref,
+  createWorkspaceMode,
+  filterSearchSets,
+  getFirstParam,
+} from "@/lib/workspace";
 
 const DEFAULT_UI_PORT = 18660;
 const DEFAULT_API_PORT = 18670;
@@ -64,6 +71,7 @@ const DEFAULT_CANDIDATE_LIMIT = 100;
 type HomeProps = {
   searchParams?: Promise<{
     filter?: string | string[];
+    mode?: string | string[];
     search_set?: string | string[];
   }>;
 };
@@ -71,42 +79,6 @@ type HomeProps = {
 function getPort(name: string, fallback: number): number {
   const value = Number.parseInt(process.env[name] ?? "", 10);
   return Number.isFinite(value) ? value : fallback;
-}
-
-function getFirstParam(value: string | string[] | undefined): string | undefined {
-  if (Array.isArray(value)) {
-    return value[0];
-  }
-
-  return value;
-}
-
-function createSearchSetHref(slug: string, filterText: string): string {
-  const params = new URLSearchParams({ search_set: slug });
-
-  if (filterText.trim() !== "") {
-    params.set("filter", filterText.trim());
-  }
-
-  return `/?${params.toString()}`;
-}
-
-function filterSearchSets(
-  searchSets: DashboardSearchSetView[],
-  filterText: string,
-): DashboardSearchSetView[] {
-  const normalizedFilter = filterText.trim().toLowerCase();
-
-  if (normalizedFilter === "") {
-    return searchSets;
-  }
-
-  return searchSets.filter((searchSet) =>
-    [searchSet.displayName, searchSet.termSummary, searchSet.slug]
-      .join(" ")
-      .toLowerCase()
-      .includes(normalizedFilter),
-  );
 }
 
 async function getApiHealth(apiPort: number): Promise<ApiHealth> {
@@ -164,7 +136,7 @@ async function createSearchSet(formData: FormData) {
   const displayName = String(formData.get("display_name") ?? "");
   const termsText = String(formData.get("terms_text") ?? "");
 
-  await fetch(`http://127.0.0.1:${apiPort}/search-sets`, {
+  const response = await fetch(`http://127.0.0.1:${apiPort}/search-sets`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -174,6 +146,53 @@ async function createSearchSet(formData: FormData) {
   });
 
   revalidatePath("/");
+  if (!response.ok) {
+    return;
+  }
+
+  const searchSet = (await response.json()) as { slug: string };
+  redirect(`/?search_set=${searchSet.slug}`);
+}
+
+async function createSearchSetAndCollectFromMet(formData: FormData) {
+  "use server";
+
+  const apiPort = getPort("ANACRONIA_API_PORT", DEFAULT_API_PORT);
+  const displayName = String(formData.get("display_name") ?? "");
+  const termsText = String(formData.get("terms_text") ?? "");
+  const candidateOffset = Number.parseInt(String(formData.get("candidate_offset") ?? "0"), 10);
+  const candidateLimit = Number.parseInt(
+    String(formData.get("candidate_limit") ?? `${DEFAULT_CANDIDATE_LIMIT}`),
+    10,
+  );
+  const searchSetResponse = await fetch(`http://127.0.0.1:${apiPort}/search-sets`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      display_name: displayName,
+      terms_text: termsText,
+    }),
+  });
+
+  if (!searchSetResponse.ok) {
+    revalidatePath("/");
+    return;
+  }
+
+  const searchSet = (await searchSetResponse.json()) as { slug: string };
+  await fetch(`http://127.0.0.1:${apiPort}/search-sets/${searchSet.slug}/provider-collections/met/runs`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      candidate_offset: Number.isFinite(candidateOffset) ? candidateOffset : 0,
+      candidate_limit: Number.isFinite(candidateLimit)
+        ? candidateLimit
+        : DEFAULT_CANDIDATE_LIMIT,
+    }),
+  });
+
+  revalidatePath("/");
+  redirect(`/?search_set=${searchSet.slug}`);
 }
 
 async function deactivateSearchSetTerm(formData: FormData) {
@@ -240,9 +259,123 @@ function statusIcon(state: string) {
   return <Activity data-icon="inline-start" />;
 }
 
+function NewSearchSetWorkspace() {
+  return (
+    <div className="mx-auto flex max-w-4xl flex-col gap-7">
+      <header className="flex flex-col gap-3">
+        <p className="text-sm font-medium text-muted-foreground">Create</p>
+        <h1 className="font-heading text-4xl leading-tight font-semibold tracking-normal md:text-5xl">
+          New Search Set
+        </h1>
+      </header>
+
+      <form className="flex flex-col gap-4">
+        <Card>
+          <CardHeader>
+            <CardTitle>Search Set</CardTitle>
+            <CardDescription>
+              Give this workspace a name and paste the terms to collect from.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <FieldGroup>
+              <Field>
+                <FieldLabel htmlFor="display_name">Display name</FieldLabel>
+                <Input id="display_name" name="display_name" required />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="terms_text">Terms</FieldLabel>
+                <Textarea
+                  className="min-h-32 resize-y"
+                  id="terms_text"
+                  name="terms_text"
+                  placeholder="snake, anaconda, serpent"
+                  required
+                />
+                <FieldDescription>
+                  Commas and new lines both create terms. Multi-word terms do not need quotes.
+                </FieldDescription>
+              </Field>
+            </FieldGroup>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Met collect</CardTitle>
+            <CardDescription>
+              Met is the MVP provider. The collect creates the first Met source for this Search Set.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <FieldGroup>
+              <Field>
+                <FieldLabel htmlFor="candidate_limit">Candidate limit</FieldLabel>
+                <Input
+                  defaultValue={DEFAULT_CANDIDATE_LIMIT}
+                  id="candidate_limit"
+                  min={1}
+                  name="candidate_limit"
+                  type="number"
+                />
+                <FieldDescription>
+                  Provider records to process for this collect.
+                </FieldDescription>
+              </Field>
+            </FieldGroup>
+            <input name="candidate_offset" type="hidden" value="0" />
+          </CardContent>
+          <CardFooter className="justify-end gap-2 border-t bg-muted/50">
+            <Button formAction={createSearchSet} type="submit" variant="outline">
+              Save only
+            </Button>
+            <Button formAction={createSearchSetAndCollectFromMet} type="submit">
+              <Play data-icon="inline-start" />
+              Create and collect from Met
+            </Button>
+          </CardFooter>
+        </Card>
+      </form>
+    </div>
+  );
+}
+
+function UserLibraryWorkspace({ imageCount }: { imageCount: number }) {
+  return (
+    <div className="mx-auto flex max-w-4xl flex-col gap-7">
+      <header className="flex flex-col gap-3">
+        <p className="text-sm font-medium text-muted-foreground">Library</p>
+        <h1 className="font-heading text-4xl leading-tight font-semibold tracking-normal md:text-5xl">
+          User Library
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          {imageCount} collected Image Asset{imageCount === 1 ? "" : "s"} across all Search Sets.
+        </p>
+      </header>
+
+      <Card>
+        <CardContent className="py-6">
+          <Empty className="border">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <Database />
+              </EmptyMedia>
+              <EmptyTitle>No library grid yet</EmptyTitle>
+              <EmptyDescription>
+                Collected Image Assets from every Search Set will appear here.
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 export default async function Home({ searchParams }: HomeProps) {
   const resolvedSearchParams = await searchParams;
   const filterText = getFirstParam(resolvedSearchParams?.filter) ?? "";
+  const requestedWorkspaceMode = getFirstParam(resolvedSearchParams?.mode);
   const activeSearchSetSlug = getFirstParam(resolvedSearchParams?.search_set);
   const uiPort = getPort("ANACRONIA_UI_PORT", DEFAULT_UI_PORT);
   const apiPort = getPort("ANACRONIA_API_PORT", DEFAULT_API_PORT);
@@ -255,6 +388,7 @@ export default async function Home({ searchParams }: HomeProps) {
   const rows = createStatusRows({ uiPort, apiPort, apiHealth });
   const filteredSearchSets = filterSearchSets(dashboardView.searchSets, filterText);
   const activeSearchSet = dashboardView.activeSearchSet;
+  const workspaceMode = createWorkspaceMode(requestedWorkspaceMode, activeSearchSet);
   const activeProviderCollections = activeSearchSet?.providerCollections ?? [];
   const resultSlotCount = Math.min(activeSearchSet?.importedImageCount ?? 0, 28);
 
@@ -271,54 +405,30 @@ export default async function Home({ searchParams }: HomeProps) {
           <ThemeSwitch />
         </div>
 
-        <details
-          className="group rounded-2xl border bg-card"
-          open={dashboardView.searchSets.length === 0}
+        <Link
+          className={cn(
+            buttonVariants({ variant: workspaceMode === "new-search-set" ? "default" : "outline" }),
+            "h-11 w-full",
+          )}
+          href={createNewSearchSetHref(filterText)}
         >
-          <summary className="flex cursor-pointer list-none items-center justify-center gap-2 px-4 py-3 text-sm font-medium marker:hidden">
-            <Plus data-icon="inline-start" />
-            New Search Set
-          </summary>
-          <form action={createSearchSet} className="flex flex-col gap-4 border-t">
-            <div className="px-4 pt-4">
-              <FieldGroup>
-                <Field>
-                  <FieldLabel htmlFor="display_name">Display name</FieldLabel>
-                  <Input id="display_name" name="display_name" required />
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor="terms_text">Terms</FieldLabel>
-                  <Textarea
-                    className="min-h-20 resize-y"
-                    id="terms_text"
-                    name="terms_text"
-                    placeholder="snake, anaconda, serpent"
-                    required
-                  />
-                  <FieldDescription>
-                    Commas and new lines both create terms.
-                  </FieldDescription>
-                </Field>
-              </FieldGroup>
-            </div>
-            <div className="flex justify-end border-t bg-muted/50 px-4 py-3">
-              <Button type="submit">
-                <Plus data-icon="inline-start" />
-                Save Search Set
-              </Button>
-            </div>
-          </form>
-        </details>
+          <Plus data-icon="inline-start" />
+          New Search Set
+        </Link>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>User Library</CardTitle>
-            <CardDescription>
-              {dashboardView.libraryImageCount} collected Image Asset
-              {dashboardView.libraryImageCount === 1 ? "" : "s"}
-            </CardDescription>
-          </CardHeader>
-        </Card>
+        <Link
+          className={cn(
+            "flex flex-col gap-1 rounded-2xl border bg-card p-4 transition-colors hover:bg-muted/50",
+            workspaceMode === "user-library" && "border-ring bg-muted shadow-xs",
+          )}
+          href={createUserLibraryHref(filterText)}
+        >
+          <span className="text-sm font-medium">User Library</span>
+          <span className="text-sm text-muted-foreground">
+            {dashboardView.libraryImageCount} collected Image Asset
+            {dashboardView.libraryImageCount === 1 ? "" : "s"}
+          </span>
+        </Link>
 
         <section className="flex flex-1 flex-col gap-3">
           <div className="flex items-center justify-between gap-3 px-1">
@@ -327,8 +437,11 @@ export default async function Home({ searchParams }: HomeProps) {
           </div>
 
           <form className="flex gap-2">
-            {activeSearchSet ? (
+            {workspaceMode === "search-set" && activeSearchSet ? (
               <input name="search_set" type="hidden" value={activeSearchSet.slug} />
+            ) : null}
+            {workspaceMode === "new-search-set" || workspaceMode === "user-library" ? (
+              <input name="mode" type="hidden" value={workspaceMode} />
             ) : null}
             <Input
               aria-label="Filter Search Sets"
@@ -370,6 +483,19 @@ export default async function Home({ searchParams }: HomeProps) {
                   <p className="truncate text-sm text-muted-foreground">
                     {searchSet.termSummary || "No active terms"}
                   </p>
+                  {searchSet.providerCollections.length === 0 ? null : (
+                    <div className="flex flex-wrap gap-1">
+                      {searchSet.providerCollections.map((providerCollection) => (
+                        <Badge
+                          key={`${searchSet.slug}-${providerCollection.provider}`}
+                          variant="outline"
+                        >
+                          {providerCollection.providerLabel} (
+                          {providerCollection.importedImageCount})
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
                 </Link>
               ))
             )}
@@ -398,20 +524,12 @@ export default async function Home({ searchParams }: HomeProps) {
       </aside>
 
       <main className="min-w-0 px-5 py-6 md:px-8 lg:px-10 lg:py-9">
-        {activeSearchSet === null ? (
-          <div className="flex min-h-[70svh] items-center justify-center">
-            <Empty className="max-w-lg border">
-              <EmptyHeader>
-                <EmptyMedia variant="icon">
-                  <FolderSearch />
-                </EmptyMedia>
-                <EmptyTitle>No Search Set selected</EmptyTitle>
-                <EmptyDescription>
-                  Save a Search Set in the left panel to start a local collection workspace.
-                </EmptyDescription>
-              </EmptyHeader>
-            </Empty>
-          </div>
+        {workspaceMode === "new-search-set" ? (
+          <NewSearchSetWorkspace />
+        ) : workspaceMode === "user-library" ? (
+          <UserLibraryWorkspace imageCount={dashboardView.libraryImageCount} />
+        ) : activeSearchSet === null ? (
+          <NewSearchSetWorkspace />
         ) : (
           <div className="mx-auto flex max-w-7xl flex-col gap-7">
             <header className="flex flex-col gap-5">
@@ -431,7 +549,7 @@ export default async function Home({ searchParams }: HomeProps) {
                   />
                   <Button type="submit">
                     <Play data-icon="inline-start" />
-                    Run Met collection
+                    Collect from Met
                   </Button>
                 </form>
               </div>
@@ -472,7 +590,7 @@ export default async function Home({ searchParams }: HomeProps) {
 
               <div className="flex flex-wrap gap-2">
                 {activeProviderCollections.length === 0 ? (
-                  <Badge variant="outline">No Provider Collection yet</Badge>
+                  <Badge variant="outline">Met not collected yet</Badge>
                 ) : (
                   activeProviderCollections.map((providerCollection) => (
                     <Badge
@@ -512,7 +630,7 @@ export default async function Home({ searchParams }: HomeProps) {
                         </EmptyMedia>
                         <EmptyTitle>No Image Assets yet</EmptyTitle>
                         <EmptyDescription>
-                          Run the Met Provider Collection to collect local Image Assets.
+                          Collect from Met to add local Image Assets to this Search Set.
                         </EmptyDescription>
                       </EmptyHeader>
                     </Empty>
@@ -545,7 +663,7 @@ export default async function Home({ searchParams }: HomeProps) {
                 {activeProviderCollections.length === 0 ? (
                   <Card>
                     <CardHeader>
-                      <CardTitle>Met Provider Collection</CardTitle>
+                      <CardTitle>Met collect</CardTitle>
                       <CardDescription>No run yet</CardDescription>
                       <CardAction>
                         <form action={createMetCandidateRun}>
@@ -558,7 +676,7 @@ export default async function Home({ searchParams }: HomeProps) {
                           />
                           <Button size="sm" type="submit" variant="outline">
                             <Play data-icon="inline-start" />
-                            Run
+                            Collect
                           </Button>
                         </form>
                       </CardAction>
@@ -646,7 +764,7 @@ export default async function Home({ searchParams }: HomeProps) {
                 <Card>
                   <CardHeader>
                     <CardTitle>Provider focus</CardTitle>
-                    <CardDescription>Secondary Provider Collection view</CardDescription>
+                    <CardDescription>Secondary source view</CardDescription>
                   </CardHeader>
                   <CardContent className="flex flex-col gap-2">
                     {activeProviderCollections.length === 0 ? (
