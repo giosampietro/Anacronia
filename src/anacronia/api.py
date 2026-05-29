@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Callable
 
 from fastapi import FastAPI
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from anacronia.collection_runs import (
     CandidateRun,
@@ -26,6 +26,10 @@ from anacronia.storage import initialize_storage
 from anacronia.worker import create_idle_worker_status
 
 
+DEFAULT_CANDIDATE_LIMIT = 100
+MAX_CANDIDATE_LIMIT = 500
+
+
 class SearchSetRequest(BaseModel):
     display_name: str
     terms_text: str
@@ -36,8 +40,8 @@ class DeactivateTermRequest(BaseModel):
 
 
 class DiscoverMetCandidatesRequest(BaseModel):
-    candidate_offset: int = 0
-    candidate_limit: int = 100
+    candidate_offset: int = Field(default=0, ge=0)
+    candidate_limit: int = Field(default=DEFAULT_CANDIDATE_LIMIT, ge=1, le=MAX_CANDIDATE_LIMIT)
 
 
 def serialize_search_set(search_set: SearchSet) -> dict[str, object]:

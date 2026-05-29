@@ -52,6 +52,11 @@ import {
   createOperationalDashboardView,
   type OperationalDashboard,
 } from "@/lib/dashboard";
+import {
+  DEFAULT_CANDIDATE_LIMIT,
+  MAX_CANDIDATE_LIMIT,
+  normalizeCandidateLimit,
+} from "@/lib/candidate-limits";
 import { createStatusRows } from "@/lib/status";
 import type { ApiHealth } from "@/lib/status";
 import { cn } from "@/lib/utils";
@@ -66,7 +71,6 @@ import {
 
 const DEFAULT_UI_PORT = 18660;
 const DEFAULT_API_PORT = 18670;
-const DEFAULT_CANDIDATE_LIMIT = 100;
 
 type HomeProps = {
   searchParams?: Promise<{
@@ -161,10 +165,7 @@ async function createSearchSetAndCollectFromMet(formData: FormData) {
   const displayName = String(formData.get("display_name") ?? "");
   const termsText = String(formData.get("terms_text") ?? "");
   const candidateOffset = Number.parseInt(String(formData.get("candidate_offset") ?? "0"), 10);
-  const candidateLimit = Number.parseInt(
-    String(formData.get("candidate_limit") ?? `${DEFAULT_CANDIDATE_LIMIT}`),
-    10,
-  );
+  const candidateLimit = normalizeCandidateLimit(formData.get("candidate_limit"));
   const searchSetResponse = await fetch(`http://127.0.0.1:${apiPort}/search-sets`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -185,9 +186,7 @@ async function createSearchSetAndCollectFromMet(formData: FormData) {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       candidate_offset: Number.isFinite(candidateOffset) ? candidateOffset : 0,
-      candidate_limit: Number.isFinite(candidateLimit)
-        ? candidateLimit
-        : DEFAULT_CANDIDATE_LIMIT,
+      candidate_limit: candidateLimit,
     }),
   });
 
@@ -217,19 +216,14 @@ async function createMetCandidateRun(formData: FormData) {
   const apiPort = getPort("ANACRONIA_API_PORT", DEFAULT_API_PORT);
   const slug = String(formData.get("slug") ?? "");
   const candidateOffset = Number.parseInt(String(formData.get("candidate_offset") ?? "0"), 10);
-  const candidateLimit = Number.parseInt(
-    String(formData.get("candidate_limit") ?? `${DEFAULT_CANDIDATE_LIMIT}`),
-    10,
-  );
+  const candidateLimit = normalizeCandidateLimit(formData.get("candidate_limit"));
 
   await fetch(`http://127.0.0.1:${apiPort}/search-sets/${slug}/provider-collections/met/runs`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       candidate_offset: Number.isFinite(candidateOffset) ? candidateOffset : 0,
-      candidate_limit: Number.isFinite(candidateLimit)
-        ? candidateLimit
-        : DEFAULT_CANDIDATE_LIMIT,
+      candidate_limit: candidateLimit,
     }),
   });
 
@@ -257,6 +251,25 @@ function statusIcon(state: string) {
     return <CircleAlert data-icon="inline-start" />;
   }
   return <Activity data-icon="inline-start" />;
+}
+
+function CandidateLimitField({ id }: { id: string }) {
+  return (
+    <Field>
+      <FieldLabel htmlFor={id}>Candidate limit</FieldLabel>
+      <Input
+        defaultValue={DEFAULT_CANDIDATE_LIMIT}
+        id={id}
+        max={MAX_CANDIDATE_LIMIT}
+        min={1}
+        name="candidate_limit"
+        type="number"
+      />
+      <FieldDescription>
+        Default {DEFAULT_CANDIDATE_LIMIT}. Maximum {MAX_CANDIDATE_LIMIT} candidates per collect.
+      </FieldDescription>
+    </Field>
+  );
 }
 
 function NewSearchSetWorkspace() {
@@ -309,19 +322,7 @@ function NewSearchSetWorkspace() {
           </CardHeader>
           <CardContent>
             <FieldGroup>
-              <Field>
-                <FieldLabel htmlFor="candidate_limit">Candidate limit</FieldLabel>
-                <Input
-                  defaultValue={DEFAULT_CANDIDATE_LIMIT}
-                  id="candidate_limit"
-                  min={1}
-                  name="candidate_limit"
-                  type="number"
-                />
-                <FieldDescription>
-                  Provider records to process for this collect.
-                </FieldDescription>
-              </Field>
+              <CandidateLimitField id="new_search_set_candidate_limit" />
             </FieldGroup>
             <input name="candidate_offset" type="hidden" value="0" />
           </CardContent>
@@ -539,19 +540,6 @@ export default async function Home({ searchParams }: HomeProps) {
                     {activeSearchSet.displayName}
                   </h1>
                 </div>
-                <form action={createMetCandidateRun}>
-                  <input name="slug" type="hidden" value={activeSearchSet.slug} />
-                  <input name="candidate_offset" type="hidden" value="0" />
-                  <input
-                    name="candidate_limit"
-                    type="hidden"
-                    value={DEFAULT_CANDIDATE_LIMIT}
-                  />
-                  <Button type="submit">
-                    <Play data-icon="inline-start" />
-                    Collect from Met
-                  </Button>
-                </form>
               </div>
 
               <div className="flex flex-wrap gap-2">
@@ -665,22 +653,24 @@ export default async function Home({ searchParams }: HomeProps) {
                     <CardHeader>
                       <CardTitle>Met collect</CardTitle>
                       <CardDescription>No run yet</CardDescription>
-                      <CardAction>
-                        <form action={createMetCandidateRun}>
-                          <input name="slug" type="hidden" value={activeSearchSet.slug} />
-                          <input name="candidate_offset" type="hidden" value="0" />
-                          <input
-                            name="candidate_limit"
-                            type="hidden"
-                            value={DEFAULT_CANDIDATE_LIMIT}
-                          />
-                          <Button size="sm" type="submit" variant="outline">
-                            <Play data-icon="inline-start" />
-                            Collect
-                          </Button>
-                        </form>
-                      </CardAction>
                     </CardHeader>
+                    <form action={createMetCandidateRun}>
+                      <input name="slug" type="hidden" value={activeSearchSet.slug} />
+                      <input name="candidate_offset" type="hidden" value="0" />
+                      <CardContent>
+                        <FieldGroup>
+                          <CandidateLimitField
+                            id={`${activeSearchSet.slug}-met-candidate-limit`}
+                          />
+                        </FieldGroup>
+                      </CardContent>
+                      <CardFooter className="justify-end border-t bg-muted/50">
+                        <Button size="sm" type="submit">
+                          <Play data-icon="inline-start" />
+                          Collect from Met
+                        </Button>
+                      </CardFooter>
+                    </form>
                   </Card>
                 ) : (
                   activeProviderCollections.map((providerCollection) => (
@@ -723,40 +713,40 @@ export default async function Home({ searchParams }: HomeProps) {
                           </div>
                         </div>
                       </CardContent>
-                      <CardFooter className="justify-end gap-2 border-t bg-muted/50">
-                        <form action={createMetCandidateRun}>
+                      <form action={createMetCandidateRun}>
+                        <CardFooter className="flex-col items-stretch gap-4 border-t bg-muted/50">
                           <input name="slug" type="hidden" value={activeSearchSet.slug} />
-                          <input name="candidate_offset" type="hidden" value="0" />
-                          <input
-                            name="candidate_limit"
-                            type="hidden"
-                            value={DEFAULT_CANDIDATE_LIMIT}
-                          />
-                          <Button size="sm" type="submit" variant="outline">
-                            <Play data-icon="inline-start" />
-                            Run again
-                          </Button>
-                        </form>
-                        {providerCollection.continueCandidateOffset === null ? null : (
-                          <form action={createMetCandidateRun}>
-                            <input name="slug" type="hidden" value={activeSearchSet.slug} />
-                            <input
+                          <FieldGroup>
+                            <CandidateLimitField
+                              id={`${activeSearchSet.slug}-${providerCollection.provider}-candidate-limit`}
+                            />
+                          </FieldGroup>
+                          <div className="flex justify-end gap-2">
+                            <Button
                               name="candidate_offset"
-                              type="hidden"
-                              value={providerCollection.continueCandidateOffset}
-                            />
-                            <input
-                              name="candidate_limit"
-                              type="hidden"
-                              value={DEFAULT_CANDIDATE_LIMIT}
-                            />
-                            <Button size="sm" type="submit" variant="outline">
-                              <RotateCcw data-icon="inline-start" />
-                              Continue
+                              size="sm"
+                              type="submit"
+                              value="0"
+                              variant="outline"
+                            >
+                              <Play data-icon="inline-start" />
+                              Run again
                             </Button>
-                          </form>
-                        )}
-                      </CardFooter>
+                            {providerCollection.continueCandidateOffset === null ? null : (
+                              <Button
+                                name="candidate_offset"
+                                size="sm"
+                                type="submit"
+                                value={providerCollection.continueCandidateOffset}
+                                variant="outline"
+                              >
+                                <RotateCcw data-icon="inline-start" />
+                                Continue
+                              </Button>
+                            )}
+                          </div>
+                        </CardFooter>
+                      </form>
                     </Card>
                   ))
                 )}

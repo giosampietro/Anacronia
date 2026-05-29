@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-from anacronia.api import create_app
+from anacronia.api import MAX_CANDIDATE_LIMIT, create_app
 from anacronia.worker import start_collect_job
 from anacronia.met_ingest import get_met_matches, get_met_museum_objects
 from anacronia.storage import initialize_storage
@@ -192,6 +192,27 @@ def test_api_discovers_met_candidates_without_listing_runs_as_search_sets(tmp_pa
             ],
         }
     ]
+
+
+def test_api_rejects_met_candidate_runs_above_the_safety_limit(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            met_candidate_client=FakeMetCandidateClient(),
+        )
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda"},
+    )
+
+    response = client.post(
+        "/search-sets/snake-studies/provider-collections/met/runs",
+        json={"candidate_offset": 0, "candidate_limit": MAX_CANDIDATE_LIMIT + 1},
+    )
+
+    assert response.status_code == 422
 
 
 def test_api_ingests_met_records_for_a_candidate_run(tmp_path):
