@@ -31,13 +31,13 @@ In user-facing workspace design, a Collection is the working dataset: the accumu
 
 The user interface may also expose a User Library view for searching and filtering across all locally collected Image Assets, regardless of Collection. The User Library is a cross-Collection discovery view; it does not replace Collections as the primary way to organize research intent.
 
-If a new Collection request resolves to an existing slug, Anacronia should treat it as continuing or expanding the existing Collection rather than creating a duplicate.
+No draft Collection is saved before the user starts the first search.
 
-If an existing Collection is continued with new terms, the new terms are added to the Collection. Existing terms are not removed or replaced implicitly.
+When the user starts the first search, the Collection is created and its MVP definition is locked: title, terms, and initial Provider Source are not edited, replaced, appended, or deactivated in the MVP.
 
-User-facing expansion of a Collection has two distinct meanings: adding terms to broaden the research intent, or continuing collection over the same active terms by moving to a later candidate range. The interface should distinguish these actions.
+If a new Collection request resolves to an existing slug, Anacronia should avoid creating a duplicate and must not silently mutate the locked Collection definition.
 
-Collection terms can be deactivated for future Runs. Deactivating a term does not delete already imported Image Assets or historical match records.
+Future workflows may support editing titles, adding terms, deactivating terms, or adding another Provider Source to an existing locked Collection. Those workflows are outside the MVP and must preserve historical search state.
 
 The interface should support adding multiple Collection terms at once. Each line or comma-separated segment is one term, even when the term contains spaces. Quotes are not required for multi-word terms.
 
@@ -52,11 +52,11 @@ The local material accumulated for one Collection against one Provider.
 
 The primary user interface should organize work by Collection, with Provider Sources shown underneath. Provider-focused views can exist as secondary navigation.
 
-The MVP includes a basic image grid for imported Image Assets. Advanced clustering, maps, and WebGL visualization are future work.
+The MVP includes a basic object-first grid for downloaded Museum Objects. Advanced clustering, maps, and WebGL visualization are future work.
 
 The MVP interface should be dense, clear, and operational. Image grid and detail views should be polished, but the immersive visual atlas is future work.
 
-Selecting an Image Asset in the MVP grid opens a side detail panel with the `standard-1024` image and essential metadata.
+Selecting a Museum Object tile in the MVP Collection grid opens a detail overlay with the `standard-1024` image carousel and essential metadata.
 
 The image detail panel should provide a link to open the original provider object page when available.
 
@@ -66,15 +66,17 @@ The image detail panel should show source provider rights/license information. T
 
 The image detail panel can show when related provider images were skipped because of the per-object image limit.
 
-### Collect
+### Provider Search
 
-The user-facing action of building or expanding a Provider Source from a Collection. "Collect" is preferred over "import" in user-facing CLI and UI language when it describes the research workflow.
+The user-facing action of building or extending a Provider Source from a locked Collection definition.
 
-The MVP image grid should support simple local text search within the current Collection context. Broader faceted filtering is outside the MVP.
+Primary UI labels are `Start search`, `Stop search`, `Resume search`, and `Keep searching`. The term `collect` can remain in internal code, CLI, or technical documentation where it describes the ingestion pipeline, but it should not be used for primary workflow buttons.
+
+Local result search within a Collection is deferred beyond the Start New Collection workflow. Broader faceted filtering is outside the MVP.
 
 ### Run
 
-An internal execution of a Provider Source with a specific candidate offset, candidate limit, and term snapshot. Runs are kept for resume, audit, progress, and error handling, but the user interface should primarily show the Collection and Provider Source, not expose a technical list of runs.
+An internal execution of a Provider Source with a specific candidate cursor, candidate processing limits, user-selected batch target, and term snapshot. Runs are kept for resume, audit, progress, and error handling, but the user interface should primarily show the Collection and Provider Source, not expose a technical list of runs.
 
 ### Candidate
 
@@ -82,11 +84,11 @@ A provider object returned by searching the provider with the terms from a Colle
 
 ### Candidate Offset
 
-The starting position in the deduplicated candidate list for a Run. It applies to provider candidates, not guaranteed final imported images.
+The internal starting position in the deduplicated candidate list for a Run. It applies to provider candidates, not guaranteed final downloaded images, and is not shown in the primary MVP UI.
 
 ### Candidate Limit
 
-The maximum number of deduplicated provider candidates processed by a Run.
+An internal processing limit over deduplicated provider candidates. The primary MVP UI instead shows a batch dropdown for target usable downloaded results.
 
 ### Museum Object
 
@@ -99,7 +101,7 @@ One image associated with a Museum Object. A single Museum Object can have multi
 - An Image Asset is considered imported only when both its `standard-1024` and `thumb-256` derivatives exist and pass validation.
 - Future user-driven exclusion or deletion of an Image Asset is global across Anacronia, not limited to a single Collection.
 
-Collection and User Library grids are image-first: one visible grid item represents one Image Asset, not one Museum Object. When a Museum Object has multiple imported sibling Image Assets, those siblings should appear as separate grid items and also be grouped in the image detail overlay carousel for quick inspection in object context.
+Collection grids are object-first: one visible grid tile represents one Museum Object with at least one downloaded Image Asset. When a Museum Object has multiple downloaded sibling Image Assets, the tile shows a carousel indicator and the detail overlay provides carousel navigation. The User Library may remain image-first when it is implemented as a cross-Collection asset view.
 
 ### Match
 
@@ -161,19 +163,21 @@ The primary export unit is the Image Asset: one exported row or JSONL object per
 - A Run belongs to one Provider Source.
 - A Museum Object belongs to one Provider.
 - A Museum Object can have many Image Assets.
-- A Provider Source can include many Image Assets through their Museum Objects.
+- A Provider Source can include many Museum Objects and Image Assets.
 - A Museum Object or Image Asset can belong to many Collections without duplicating local image files.
 - A Museum Object can have many Descriptors extracted from provider-specific metadata.
 - An Image Asset can have many Analysis Results generated by Anacronia.
 
 ## Invariants
 
-- The user should see one continuing Collection/Provider Source rather than separate visible searches for each Run.
-- Anacronia should avoid duplicate visible Collections for the same slug; matching slugs indicate continuation unless the user explicitly creates a distinct name.
-- When a Collection is expanded after provider results have changed, Anacronia should continue importing from the current provider response without interrupting the user. Historical run details may remain available internally, but provider drift is not a blocking user-facing event.
-- Candidate offset and candidate limit apply after term queries are merged, deduplicated, and ordered.
+- The user should see one locked Collection and Provider Source rather than separate visible searches for each Run.
+- Anacronia should avoid duplicate visible Collections for the same slug; matching slugs must not silently mutate an existing locked Collection definition.
+- Starting the first search creates the Collection and locks its title, terms, and initial Provider Source for the MVP.
+- User-facing batch size means target usable downloaded results, not provider candidates processed. The MVP batch dropdown values are `100`, `500`, and `1000`, defaulting to `100`.
+- Candidate offset and candidate limit remain internal Run mechanics and apply after term queries are merged, deduplicated, and ordered.
 - Candidate order follows term insertion order, preserving provider order within each term and skipping duplicates already seen.
-- Import progress should show candidate processing progress and completed image counts. Candidate progress drives the main progress bar; image counts show the material actually imported.
+- Search feedback should show the search state plus stable `Objects` and `Images` counters. The MVP should not show percentage progress or candidate counts in the primary UI.
+- `Objects` counts Museum Objects with at least one successfully downloaded Image Asset. `Images` counts complete Image Assets with validated `standard-1024` and `thumb-256` derivatives.
 - For accepted Met material, Anacronia must require `isPublicDomain === true`.
 - Anacronia stores local `standard-1024` and `thumb-256` derivatives, not full-resolution originals by default.
 - User-facing imported image counts include only complete Image Assets with validated `standard-1024` and `thumb-256` derivatives.
@@ -192,10 +196,10 @@ The primary export unit is the Image Asset: one exported row or JSONL object per
 - Next.js should act as a lightweight UI/API gateway where useful, proxying application calls to FastAPI instead of requiring the browser UI to know every FastAPI endpoint directly.
 - The user-facing local URL should use one public UI port, defaulting to `localhost:18660`. FastAPI can run on an internal local port, defaulting to `18670`. Both should use incremental fallback if occupied.
 - The worker should run while Anacronia is open and remain idle when there are no jobs, rather than being launched only for individual collect actions.
-- The MVP supports one active collect job at a time and does not need a job queue. Starting another collect while one is active should be prevented.
-- A paused collect job still owns the collect lock. The user must resume, cancel, or otherwise resolve it before starting another collect.
-- The MVP should support canceling a collect job. Canceling stops future processing but keeps already completed Image Assets and metadata.
-- Continuing a Collection after cancel should propose the next candidate offset after the last processed candidate, rather than restarting the canceled range by default.
+- The MVP supports one active Provider Search at a time and does not need a job queue. Starting another search while one is searching or paused should be prevented.
+- A paused/error search still owns the search lock. The user must resume or otherwise resolve it before starting another search.
+- The MVP should support `Stop search` as a normal user action. Stopping finishes the current Museum Object safely, preserves completed material, and can later be resumed.
+- Resuming or keeping a search going should continue from the next safe internal candidate cursor rather than restarting already processed provider records by default.
 - Provider record timestamps or versions should be stored when available.
 - Future export workflows may optionally fetch or package provider full-resolution images for imported Image Assets, but this is outside the MVP.
 - Full-resolution originals are temporary inputs for derivative generation and are deleted after successful processing. Before deletion, Anacronia should capture original technical metadata such as width and height.
