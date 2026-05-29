@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 from anacronia.api import create_app
+from anacronia.worker import start_collect_job
 from anacronia.met_ingest import get_met_matches, get_met_museum_objects
 from anacronia.storage import initialize_storage
 
@@ -231,4 +232,57 @@ def test_api_ingests_met_records_for_a_candidate_run(tmp_path):
     ]
     assert [(match.object_id, match.search_term, match.verified) for match in get_met_matches(database_path=storage.database_path, run_id=1)] == [
         (20, "snake", True)
+    ]
+
+
+def test_api_returns_operational_dashboard(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            met_candidate_client=FakeMetCandidateClient(),
+            met_record_client=FakeMetRecordClient(),
+            download_image_bytes=lambda _url: ppm_image_bytes(width=1600, height=800),
+        )
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda"},
+    )
+    run_response = client.post(
+        "/search-sets/snake-studies/provider-collections/met/runs",
+        json={"candidate_offset": 1, "candidate_limit": 2},
+    )
+    client.post(f"/provider-collections/met/runs/{run_response.json()['run_id']}/ingest")
+    start_collect_job(
+        database_path=storage.database_path,
+        run_id=run_response.json()["run_id"],
+        candidate_offset=1,
+        candidate_limit=2,
+        candidate_progress_total=2,
+        available_disk_bytes=10_000_000,
+    )
+
+    response = client.get("/dashboard")
+
+    assert response.status_code == 200
+    assert response.json()["worker_status"] == {
+        "service": "worker",
+        "status": "running",
+        "active_collect_job_id": 1,
+    }
+    assert response.json()["search_sets"][0]["provider_collections"][0] == {
+        "provider": "met",
+        "latest_run_id": 1,
+        "collect_status": "running",
+        "candidate_offset": 1,
+        "candidate_limit": 2,
+        "candidate_progress_processed": 0,
+        "candidate_progress_total": 2,
+        "imported_image_count": 1,
+        "continue_candidate_offset": None,
+    }
+    assert response.json()["provider_focus"] == [
+        {"provider": "met", "search_set_count": 1, "imported_image_count": 1}
     ]

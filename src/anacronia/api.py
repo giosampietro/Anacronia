@@ -9,6 +9,7 @@ from anacronia.collection_runs import (
     MetCandidateClient,
     discover_met_candidates,
 )
+from anacronia.dashboard import OperationalDashboard, get_operational_dashboard
 from anacronia.met_ingest import (
     MetIngestSummary,
     MetRecordClient,
@@ -90,6 +91,52 @@ def serialize_met_ingest_summary(summary: MetIngestSummary) -> dict[str, object]
     }
 
 
+def serialize_operational_dashboard(dashboard: OperationalDashboard) -> dict[str, object]:
+    return {
+        "worker_status": {
+            "service": dashboard.worker_status.service,
+            "status": dashboard.worker_status.status,
+            "active_collect_job_id": dashboard.worker_status.active_collect_job_id,
+        },
+        "search_sets": [
+            {
+                "display_name": search_set.display_name,
+                "slug": search_set.slug,
+                "terms": [
+                    {
+                        "term": term.term,
+                        "active": term.active,
+                    }
+                    for term in search_set.terms
+                ],
+                "provider_collections": [
+                    {
+                        "provider": provider_collection.provider,
+                        "latest_run_id": provider_collection.latest_run_id,
+                        "collect_status": provider_collection.collect_status,
+                        "candidate_offset": provider_collection.candidate_offset,
+                        "candidate_limit": provider_collection.candidate_limit,
+                        "candidate_progress_processed": provider_collection.candidate_progress_processed,
+                        "candidate_progress_total": provider_collection.candidate_progress_total,
+                        "imported_image_count": provider_collection.imported_image_count,
+                        "continue_candidate_offset": provider_collection.continue_candidate_offset,
+                    }
+                    for provider_collection in search_set.provider_collections
+                ],
+            }
+            for search_set in dashboard.search_sets
+        ],
+        "provider_focus": [
+            {
+                "provider": provider.provider,
+                "search_set_count": provider.search_set_count,
+                "imported_image_count": provider.imported_image_count,
+            }
+            for provider in dashboard.provider_focus
+        ],
+    }
+
+
 def create_app(
     *,
     database_path: Path | None = None,
@@ -127,6 +174,11 @@ def create_app(
     @app.get("/search-sets")
     def get_search_sets() -> list[dict[str, object]]:
         return [serialize_search_set(search_set) for search_set in list_search_sets(database_path=resolved_database_path)]
+
+    @app.get("/dashboard")
+    def get_dashboard() -> dict[str, object]:
+        dashboard = get_operational_dashboard(database_path=resolved_database_path)
+        return serialize_operational_dashboard(dashboard)
 
     @app.post("/search-sets/{slug}/terms/deactivate")
     def deactivate_term(slug: str, request: DeactivateTermRequest) -> dict[str, object]:
