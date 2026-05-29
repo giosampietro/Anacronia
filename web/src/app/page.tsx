@@ -26,7 +26,6 @@ import {
 } from "@/components/ui/empty";
 import {
   Field,
-  FieldDescription,
   FieldGroup,
   FieldLabel,
 } from "@/components/ui/field";
@@ -53,7 +52,6 @@ import { shouldAutoRefreshDashboard } from "@/lib/dashboard-refresh";
 import {
   DEFAULT_CANDIDATE_LIMIT,
   DEFAULT_CANDIDATE_OFFSET,
-  DEFAULT_MAX_IMAGES_PER_OBJECT,
   normalizeCandidateLimit,
   normalizeCandidateOffset,
   normalizeMaxImagesPerObject,
@@ -315,23 +313,6 @@ function CollectControls({
           name="candidate_limit"
           type="number"
         />
-      </Field>
-      <Field>
-        <FieldLabel htmlFor={`${idPrefix}_max_images_per_object`}>
-          Max images per object
-        </FieldLabel>
-        <Input
-          defaultValue={DEFAULT_MAX_IMAGES_PER_OBJECT}
-          id={`${idPrefix}_max_images_per_object`}
-          max={DEFAULT_MAX_IMAGES_PER_OBJECT}
-          min={1}
-          name="max_images_per_object"
-          readOnly
-          type="number"
-        />
-        <FieldDescription>
-          Hard limit for MVP collection.
-        </FieldDescription>
       </Field>
     </FieldGroup>
   );
