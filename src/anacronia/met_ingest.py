@@ -2,9 +2,10 @@ from dataclasses import dataclass
 import json
 from pathlib import Path
 import sqlite3
-from typing import Protocol
+from typing import Callable, Protocol
 
 from anacronia.collection_runs import ensure_collection_run_schema
+from anacronia.image_pipeline import ProcessedMetImageAsset, process_met_image_asset
 from anacronia.search_sets import normalize_search_term
 from anacronia.storage import met_raw_object_path
 
@@ -35,6 +36,7 @@ MET_DESCRIPTOR_FIELD_TYPES = {
     "region": "place",
     "city": "place",
 }
+DEFAULT_MAX_IMAGES_PER_OBJECT = 10
 
 
 class MetRecordClient(Protocol):
@@ -45,6 +47,24 @@ class MetRecordClient(Protocol):
 @dataclass(frozen=True)
 class SkippedMetCandidate:
     object_id: int
+    reason: str
+
+
+@dataclass(frozen=True)
+class MetImageReference:
+    object_id: int
+    source_image_url: str
+    image_role: str
+    image_index: int | None
+    primary_image_small_url: str
+
+
+@dataclass(frozen=True)
+class SkippedMetImageReference:
+    object_id: int
+    source_image_url: str
+    image_role: str
+    image_index: int | None
     reason: str
 
 
@@ -68,6 +88,20 @@ class MetMuseumObject:
 
 
 @dataclass(frozen=True)
+class MetImageAsset:
+    object_id: int
+    source_image_url: str
+    image_role: str
+    image_index: int | None
+    primary_image_small_url: str
+    original_width: int
+    original_height: int
+    standard_path: Path
+    thumb_path: Path
+    imported: bool
+
+
+@dataclass(frozen=True)
 class MetMatch:
     object_id: int
     search_term: str
@@ -83,16 +117,75 @@ class MetDescriptor:
     source_field: str
 
 
+def select_met_image_references(
+    *,
+    record: dict[str, object],
+    max_images_per_object: int = DEFAULT_MAX_IMAGES_PER_OBJECT,
+) -> tuple[list[MetImageReference], list[SkippedMetImageReference]]:
+    object_id = int(record["objectID"])
+    unique_references: list[tuple[str, str, str]] = []
+    seen_source_urls: set[str] = set()
+    primary_image_url = string_value(record.get("primaryImage"))
+    primary_image_small_url = string_value(record.get("primaryImageSmall"))
+
+    if primary_image_url:
+        unique_references.append(("primary", primary_image_url, primary_image_small_url))
+        seen_source_urls.add(primary_image_url)
+
+    for additional_image_url in string_list(record.get("additionalImages")):
+        if additional_image_url in seen_source_urls:
+            continue
+        unique_references.append(("additional", additional_image_url, ""))
+        seen_source_urls.add(additional_image_url)
+
+    selected_references: list[MetImageReference] = []
+    skipped_references: list[SkippedMetImageReference] = []
+    additional_image_index = 1
+
+    for image_role, source_image_url, small_url in unique_references:
+        image_index = None
+        if image_role == "additional":
+            image_index = additional_image_index
+            additional_image_index += 1
+
+        if len(selected_references) < max_images_per_object:
+            selected_references.append(
+                MetImageReference(
+                    object_id=object_id,
+                    source_image_url=source_image_url,
+                    image_role=image_role,
+                    image_index=image_index,
+                    primary_image_small_url=small_url,
+                )
+            )
+            continue
+
+        skipped_references.append(
+            SkippedMetImageReference(
+                object_id=object_id,
+                source_image_url=source_image_url,
+                image_role=image_role,
+                image_index=image_index,
+                reason="beyond_max_images_per_object",
+            )
+        )
+
+    return selected_references, skipped_references
+
+
 def ingest_met_run(
     *,
     database_path: Path,
     data_root: Path,
     run_id: int,
     met_client: MetRecordClient,
+    download_image_bytes: Callable[[str], bytes] | None = None,
+    max_images_per_object: int = DEFAULT_MAX_IMAGES_PER_OBJECT,
 ) -> MetIngestSummary:
     fetched_object_ids: list[int] = []
     imported_object_ids: list[int] = []
     skipped_candidates: list[SkippedMetCandidate] = []
+    resolved_download_image_bytes = download_image_bytes or missing_image_downloader
 
     with sqlite3.connect(database_path) as connection:
         ensure_met_ingest_schema(connection)
@@ -110,6 +203,63 @@ def ingest_met_run(
                 continue
 
             raw_record_path = write_met_raw_record(data_root=data_root, record=record)
+            image_references, skipped_image_references = select_met_image_references(
+                record=record,
+                max_images_per_object=max_images_per_object,
+            )
+            for skipped_image_reference in skipped_image_references:
+                record_met_skipped_image_reference(
+                    connection=connection,
+                    reference=skipped_image_reference,
+                )
+
+            processed_image_assets: list[ProcessedMetImageAsset] = []
+            for image_reference in image_references:
+                try:
+                    image_asset = process_met_image_asset(
+                        data_root=data_root,
+                        object_id=image_reference.object_id,
+                        image_role=image_reference.image_role,
+                        image_index=image_reference.image_index,
+                        source_image_url=image_reference.source_image_url,
+                        primary_image_small_url=image_reference.primary_image_small_url,
+                        download_bytes=resolved_download_image_bytes,
+                    )
+                except Exception:
+                    record_met_skipped_image_reference(
+                        connection=connection,
+                        reference=SkippedMetImageReference(
+                            object_id=image_reference.object_id,
+                            source_image_url=image_reference.source_image_url,
+                            image_role=image_reference.image_role,
+                            image_index=image_reference.image_index,
+                            reason="image_processing_failed",
+                        ),
+                    )
+                    continue
+
+                if not image_asset.imported:
+                    record_met_skipped_image_reference(
+                        connection=connection,
+                        reference=SkippedMetImageReference(
+                            object_id=image_reference.object_id,
+                            source_image_url=image_reference.source_image_url,
+                            image_role=image_reference.image_role,
+                            image_index=image_reference.image_index,
+                            reason="image_processing_failed",
+                        ),
+                    )
+                    continue
+
+                record_met_image_asset(connection=connection, image_asset=image_asset)
+                processed_image_assets.append(image_asset)
+
+            if not processed_image_assets:
+                skipped_candidates.append(
+                    SkippedMetCandidate(object_id=object_id, reason="no_imported_image_assets")
+                )
+                continue
+
             upsert_met_museum_object(
                 connection=connection,
                 record=record,
@@ -169,6 +319,74 @@ def get_met_museum_objects(*, database_path: Path) -> list[MetMuseumObject]:
             raw_record_path=Path(row[4]),
             rights_and_reproduction=row[5],
             metadata_date=row[6],
+        )
+        for row in rows
+    ]
+
+
+def get_met_image_assets(*, database_path: Path) -> list[MetImageAsset]:
+    with sqlite3.connect(database_path) as connection:
+        ensure_met_ingest_schema(connection)
+        rows = connection.execute(
+            """
+            SELECT
+              object_id,
+              source_image_url,
+              image_role,
+              image_index,
+              primary_image_small_url,
+              original_width,
+              original_height,
+              standard_path,
+              thumb_path,
+              imported
+            FROM image_assets
+            WHERE provider = ?
+            ORDER BY object_id, COALESCE(image_index, 0), source_image_url
+            """,
+            (MET_PROVIDER,),
+        ).fetchall()
+
+    return [
+        MetImageAsset(
+            object_id=row[0],
+            source_image_url=row[1],
+            image_role=row[2],
+            image_index=row[3],
+            primary_image_small_url=row[4],
+            original_width=row[5],
+            original_height=row[6],
+            standard_path=Path(row[7]),
+            thumb_path=Path(row[8]),
+            imported=bool(row[9]),
+        )
+        for row in rows
+    ]
+
+
+def get_met_skipped_image_references(
+    *,
+    database_path: Path,
+) -> list[SkippedMetImageReference]:
+    with sqlite3.connect(database_path) as connection:
+        ensure_met_ingest_schema(connection)
+        rows = connection.execute(
+            """
+            SELECT object_id, source_image_url, image_role, image_index, reason
+            FROM skipped_image_references
+            WHERE provider = ?
+            ORDER BY object_id, COALESCE(image_index, 0), source_image_url, reason
+            """,
+            (MET_PROVIDER,),
+        ).fetchall()
+
+    return [
+        SkippedMetImageReference(
+            object_id=row[0],
+            source_image_url=row[1],
+            image_role=row[2],
+            image_index=row[3],
+            reason=row[4],
         )
         for row in rows
     ]
@@ -326,6 +544,81 @@ def record_met_match(
     )
 
 
+def record_met_image_asset(
+    *,
+    connection: sqlite3.Connection,
+    image_asset: ProcessedMetImageAsset,
+) -> None:
+    connection.execute(
+        """
+        INSERT INTO image_assets (
+          provider,
+          object_id,
+          source_image_url,
+          image_role,
+          image_index,
+          primary_image_small_url,
+          original_width,
+          original_height,
+          standard_path,
+          thumb_path,
+          imported
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(provider, object_id, source_image_url) DO UPDATE SET
+          image_role = excluded.image_role,
+          image_index = excluded.image_index,
+          primary_image_small_url = excluded.primary_image_small_url,
+          original_width = excluded.original_width,
+          original_height = excluded.original_height,
+          standard_path = excluded.standard_path,
+          thumb_path = excluded.thumb_path,
+          imported = excluded.imported
+        """,
+        (
+            MET_PROVIDER,
+            image_asset.object_id,
+            image_asset.source_image_url,
+            image_asset.image_role,
+            image_asset.image_index,
+            image_asset.primary_image_small_url,
+            image_asset.original_width,
+            image_asset.original_height,
+            str(image_asset.standard_path),
+            str(image_asset.thumb_path),
+            int(image_asset.imported),
+        ),
+    )
+
+
+def record_met_skipped_image_reference(
+    *,
+    connection: sqlite3.Connection,
+    reference: SkippedMetImageReference,
+) -> None:
+    connection.execute(
+        """
+        INSERT OR REPLACE INTO skipped_image_references (
+          provider,
+          object_id,
+          source_image_url,
+          image_role,
+          image_index,
+          reason
+        )
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (
+            MET_PROVIDER,
+            reference.object_id,
+            reference.source_image_url,
+            reference.image_role,
+            reference.image_index,
+            reference.reason,
+        ),
+    )
+
+
 def replace_met_descriptors(
     *,
     connection: sqlite3.Connection,
@@ -435,6 +728,17 @@ def string_value(value: object) -> str:
     return value.strip() if isinstance(value, str) else ""
 
 
+def string_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+
+    return [item.strip() for item in value if isinstance(item, str) and item.strip()]
+
+
+def missing_image_downloader(url: str) -> bytes:
+    raise RuntimeError(f"Image downloader is required to import {url}")
+
+
 def ensure_met_ingest_schema(connection: sqlite3.Connection) -> None:
     ensure_collection_run_schema(connection)
     connection.execute(
@@ -467,6 +771,39 @@ def ensure_met_ingest_schema(connection: sqlite3.Connection) -> None:
           matched_fields_json TEXT NOT NULL,
           FOREIGN KEY (run_id) REFERENCES collection_runs(id),
           UNIQUE (run_id, provider, object_id, search_term)
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS image_assets (
+          id INTEGER PRIMARY KEY,
+          provider TEXT NOT NULL,
+          object_id INTEGER NOT NULL,
+          source_image_url TEXT NOT NULL,
+          image_role TEXT NOT NULL,
+          image_index INTEGER,
+          primary_image_small_url TEXT NOT NULL,
+          original_width INTEGER NOT NULL,
+          original_height INTEGER NOT NULL,
+          standard_path TEXT NOT NULL,
+          thumb_path TEXT NOT NULL,
+          imported INTEGER NOT NULL,
+          UNIQUE (provider, object_id, source_image_url)
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS skipped_image_references (
+          id INTEGER PRIMARY KEY,
+          provider TEXT NOT NULL,
+          object_id INTEGER NOT NULL,
+          source_image_url TEXT NOT NULL,
+          image_role TEXT NOT NULL,
+          image_index INTEGER,
+          reason TEXT NOT NULL,
+          UNIQUE (provider, object_id, source_image_url, reason)
         )
         """
     )

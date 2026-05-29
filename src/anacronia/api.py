@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Callable
 
 from fastapi import FastAPI
 from pydantic import BaseModel
@@ -13,7 +14,7 @@ from anacronia.met_ingest import (
     MetRecordClient,
     ingest_met_run,
 )
-from anacronia.met_provider import HttpMetCandidateClient
+from anacronia.met_provider import HttpMetCandidateClient, fetch_bytes_url
 from anacronia.search_sets import (
     SearchSet,
     create_or_continue_search_set,
@@ -95,6 +96,7 @@ def create_app(
     data_root: Path | None = None,
     met_candidate_client: MetCandidateClient | None = None,
     met_record_client: MetRecordClient | None = None,
+    download_image_bytes: Callable[[str], bytes] | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Anacronia")
     project_root = Path(__file__).resolve().parents[2]
@@ -103,6 +105,7 @@ def create_app(
     resolved_data_root = data_root if data_root is not None else storage.data_root
     resolved_met_candidate_client = met_candidate_client or HttpMetCandidateClient()
     resolved_met_record_client = met_record_client or HttpMetCandidateClient()
+    resolved_download_image_bytes = download_image_bytes or fetch_bytes_url
 
     @app.get("/health")
     def health() -> dict[str, object]:
@@ -155,6 +158,7 @@ def create_app(
             data_root=resolved_data_root,
             run_id=run_id,
             met_client=resolved_met_record_client,
+            download_image_bytes=resolved_download_image_bytes,
         )
         return serialize_met_ingest_summary(summary)
 

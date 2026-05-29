@@ -26,6 +26,7 @@ class FakeMetRecordClient:
                 "title": "Coiled Snake Vessel",
                 "objectName": "Vessel",
                 "tags": [{"term": "Snakes"}],
+                "primaryImage": "https://images.metmuseum.org/20.jpg",
                 "objectURL": "https://www.metmuseum.org/art/collection/search/20",
             },
             30: {
@@ -34,6 +35,12 @@ class FakeMetRecordClient:
                 "title": "Restricted Anaconda Study",
             },
         }[object_id]
+
+
+def ppm_image_bytes(*, width: int, height: int) -> bytes:
+    header = f"P6\n{width} {height}\n255\n".encode("ascii")
+    row = bytes([180, 40, 120]) * width
+    return header + row * height
 
 
 def test_health_reports_api_and_idle_worker():
@@ -194,6 +201,7 @@ def test_api_ingests_met_records_for_a_candidate_run(tmp_path):
             data_root=storage.data_root,
             met_candidate_client=FakeMetCandidateClient(),
             met_record_client=FakeMetRecordClient(),
+            download_image_bytes=lambda _url: ppm_image_bytes(width=1600, height=800),
         )
     )
     client.post(

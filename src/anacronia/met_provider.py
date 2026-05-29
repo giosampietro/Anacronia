@@ -12,6 +12,11 @@ def fetch_json_url(url: str) -> dict[str, object]:
         return json.loads(response.read().decode("utf-8"))
 
 
+def fetch_bytes_url(url: str) -> bytes:
+    with urlopen(url, timeout=30) as response:
+        return response.read()
+
+
 class HttpMetCandidateClient:
     def __init__(
         self,
