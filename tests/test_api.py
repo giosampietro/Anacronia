@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 from anacronia.api import DEFAULT_CANDIDATE_LIMIT, DEFAULT_MAX_IMAGES_PER_OBJECT, create_app
+from anacronia.collection_runs import get_candidate_run
 from anacronia.worker import get_collect_job, start_collect_job
 from anacronia.met_ingest import get_met_matches, get_met_museum_objects
 from anacronia.storage import initialize_storage
@@ -200,7 +201,9 @@ def test_api_discovers_met_candidates_without_listing_runs_as_search_sets(tmp_pa
         "term_snapshot": ["snake", "anaconda"],
         "candidate_offset": 1,
         "candidate_limit": 2,
+        "batch_target": 100,
         "candidate_progress_total": 2,
+        "status": "discovered",
         "candidates": [
             {
                 "object_id": 20,
@@ -261,6 +264,7 @@ def test_api_starts_met_collect_job_from_search_set(tmp_path):
         "run_id": 1,
         "collect_job_id": 1,
         "status": "running",
+        "batch_target": 100,
     }
     dashboard = client.get("/dashboard").json()
     assert dashboard["worker_status"] == {
@@ -268,8 +272,64 @@ def test_api_starts_met_collect_job_from_search_set(tmp_path):
         "status": "running",
         "active_collect_job_id": 1,
     }
-    assert dashboard["search_sets"][0]["provider_collections"][0]["candidate_limit"] == 1000
+    assert dashboard["search_sets"][0]["provider_collections"][0]["candidate_limit"] == 3
     assert get_collect_job(database_path=storage.database_path, job_id=1).max_images_per_object == DEFAULT_MAX_IMAGES_PER_OBJECT
+
+
+def test_api_starts_met_search_from_batch_target(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    met_client = FakeMetCandidateClient()
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            met_candidate_client=met_client,
+        )
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda"},
+    )
+
+    response = client.post(
+        "/search-sets/snake-studies/provider-collections/met/collects",
+        json={"batch_target": 100},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "run_id": 1,
+        "collect_job_id": 1,
+        "status": "running",
+        "batch_target": 100,
+    }
+    run = get_candidate_run(database_path=storage.database_path, run_id=1)
+    assert run.batch_target == 100
+    assert run.candidate_offset == 0
+    assert run.candidate_limit == 3
+    assert get_collect_job(database_path=storage.database_path, job_id=1).batch_target == 100
+
+
+def test_api_rejects_unsupported_met_batch_targets(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            met_candidate_client=FakeMetCandidateClient(),
+        )
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Snake Studies", "terms_text": "snake"},
+    )
+
+    response = client.post(
+        "/search-sets/snake-studies/provider-collections/met/collects",
+        json={"batch_target": 250},
+    )
+
+    assert response.status_code == 422
 
 
 def test_api_caps_met_collect_to_three_images_per_object(tmp_path):

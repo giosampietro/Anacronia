@@ -44,6 +44,7 @@ class CollectJob:
     candidate_offset: int
     candidate_limit: int
     candidate_progress_total: int
+    batch_target: int
     last_processed_run_position: int | None
     provider_failure_count: int
     backoff_seconds: int
@@ -84,6 +85,7 @@ def start_collect_job(
     candidate_limit: int,
     candidate_progress_total: int,
     available_disk_bytes: int,
+    batch_target: int = 100,
     max_images_per_object: int = DEFAULT_MAX_IMAGES_PER_OBJECT,
     required_disk_bytes: int = DEFAULT_REQUIRED_DISK_BYTES,
 ) -> CollectJob:
@@ -104,6 +106,7 @@ def start_collect_job(
               candidate_offset,
               candidate_limit,
               candidate_progress_total,
+              batch_target,
               provider_failure_count,
               backoff_seconds,
               pause_reason,
@@ -111,19 +114,21 @@ def start_collect_job(
               last_disk_available_bytes,
               max_images_per_object
             )
-            VALUES (?, 'running', ?, ?, ?, 0, 0, '', ?, ?, ?)
+            VALUES (?, 'running', ?, ?, ?, ?, 0, 0, '', ?, ?, ?)
             """,
             (
                 run_id,
                 candidate_offset,
                 candidate_limit,
                 candidate_progress_total,
+                batch_target,
                 required_disk_bytes,
                 available_disk_bytes,
                 clamped_max_images_per_object,
             ),
         )
         job_id = int(cursor.lastrowid)
+        mark_collection_run_status(connection=connection, run_id=run_id, status="running")
 
     return get_collect_job(database_path=database_path, job_id=job_id)
 
@@ -150,6 +155,7 @@ def process_running_collect_job(
             met_client=met_client,
             download_image_bytes=download_image_bytes,
             max_images_per_object=job.max_images_per_object,
+            batch_target=job.batch_target,
             on_candidate_processed=lambda run_position: mark_collect_candidate_processed(
                 database_path=database_path,
                 job_id=job.job_id,
@@ -163,13 +169,17 @@ def process_running_collect_job(
         )
         return None
 
-    if job.candidate_progress_total > 0:
-        mark_collect_candidate_processed(
+    if (
+        summary.imported_image_count < job.batch_target
+        and len(summary.fetched_object_ids) >= job.candidate_progress_total
+    ):
+        finish_collect_job(
             database_path=database_path,
             job_id=job.job_id,
-            run_position=job.candidate_progress_total - 1,
+            status="no_more_results",
         )
-    complete_collect_job(database_path=database_path, job_id=job.job_id)
+    else:
+        complete_collect_job(database_path=database_path, job_id=job.job_id)
 
     return summary
 
@@ -225,16 +235,31 @@ def cancel_collect_job(*, database_path: Path, job_id: int) -> CollectJob:
 
 
 def complete_collect_job(*, database_path: Path, job_id: int) -> CollectJob:
+    return finish_collect_job(
+        database_path=database_path,
+        job_id=job_id,
+        status="completed",
+    )
+
+
+def finish_collect_job(
+    *,
+    database_path: Path,
+    job_id: int,
+    status: str,
+) -> CollectJob:
     with sqlite3.connect(database_path) as connection:
         ensure_worker_schema(connection)
+        job = get_collect_job_for_update(connection=connection, job_id=job_id)
         connection.execute(
             """
             UPDATE collect_jobs
-            SET status = 'completed'
+            SET status = ?
             WHERE id = ?
             """,
-            (job_id,),
+            (status, job_id),
         )
+        mark_collection_run_status(connection=connection, run_id=job.run_id, status=status)
 
     return get_collect_job(database_path=database_path, job_id=job_id)
 
@@ -347,6 +372,7 @@ def get_collect_job(*, database_path: Path, job_id: int) -> CollectJob:
               candidate_offset,
               candidate_limit,
               candidate_progress_total,
+              batch_target,
               last_processed_run_position,
               provider_failure_count,
               backoff_seconds,
@@ -366,6 +392,66 @@ def get_collect_job(*, database_path: Path, job_id: int) -> CollectJob:
     return collect_job_from_row(row)
 
 
+def get_collect_job_for_update(
+    *,
+    connection: sqlite3.Connection,
+    job_id: int,
+) -> CollectJob:
+    row = connection.execute(
+        """
+        SELECT
+          id,
+          run_id,
+          status,
+          candidate_offset,
+          candidate_limit,
+          candidate_progress_total,
+          batch_target,
+          last_processed_run_position,
+          provider_failure_count,
+          backoff_seconds,
+          pause_reason,
+          required_disk_bytes,
+          last_disk_available_bytes,
+          max_images_per_object
+        FROM collect_jobs
+        WHERE id = ?
+        """,
+        (job_id,),
+    ).fetchone()
+
+    if row is None:
+        raise LookupError(f"Collect job not found: {job_id}")
+
+    return collect_job_from_row(row)
+
+
+def mark_collection_run_status(
+    *,
+    connection: sqlite3.Connection,
+    run_id: int,
+    status: str,
+) -> None:
+    collection_runs_exists = connection.execute(
+        """
+        SELECT name
+        FROM sqlite_master
+        WHERE type = 'table' AND name = 'collection_runs'
+        """
+    ).fetchone()
+    if collection_runs_exists is None:
+        return
+
+    connection.execute(
+        """
+        UPDATE collection_runs
+        SET status = ?
+        WHERE id = ?
+        """,
+        (status, run_id),
+    )
+
+
 def get_active_collect_job(*, connection: sqlite3.Connection) -> CollectJob | None:
     row = connection.execute(
         """
@@ -376,6 +462,7 @@ def get_active_collect_job(*, connection: sqlite3.Connection) -> CollectJob | No
           candidate_offset,
           candidate_limit,
           candidate_progress_total,
+          batch_target,
           last_processed_run_position,
           provider_failure_count,
           backoff_seconds,
@@ -406,6 +493,7 @@ def get_running_collect_job(*, connection: sqlite3.Connection) -> CollectJob | N
           candidate_offset,
           candidate_limit,
           candidate_progress_total,
+          batch_target,
           last_processed_run_position,
           provider_failure_count,
           backoff_seconds,
@@ -434,13 +522,14 @@ def collect_job_from_row(row: sqlite3.Row | tuple[object, ...]) -> CollectJob:
         candidate_offset=int(row[3]),
         candidate_limit=int(row[4]),
         candidate_progress_total=int(row[5]),
-        last_processed_run_position=row[6],
-        provider_failure_count=int(row[7]),
-        backoff_seconds=int(row[8]),
-        pause_reason=str(row[9]),
-        required_disk_bytes=int(row[10]),
-        last_disk_available_bytes=row[11],
-        max_images_per_object=int(row[12]),
+        batch_target=int(row[6]),
+        last_processed_run_position=row[7],
+        provider_failure_count=int(row[8]),
+        backoff_seconds=int(row[9]),
+        pause_reason=str(row[10]),
+        required_disk_bytes=int(row[11]),
+        last_disk_available_bytes=row[12],
+        max_images_per_object=int(row[13]),
     )
 
 
@@ -454,6 +543,7 @@ def ensure_worker_schema(connection: sqlite3.Connection) -> None:
           candidate_offset INTEGER NOT NULL,
           candidate_limit INTEGER NOT NULL,
           candidate_progress_total INTEGER NOT NULL,
+          batch_target INTEGER NOT NULL DEFAULT 100,
           last_processed_run_position INTEGER,
           provider_failure_count INTEGER NOT NULL,
           backoff_seconds INTEGER NOT NULL,
@@ -473,6 +563,13 @@ def ensure_worker_schema(connection: sqlite3.Connection) -> None:
             """
             ALTER TABLE collect_jobs
             ADD COLUMN max_images_per_object INTEGER NOT NULL DEFAULT 3
+            """
+        )
+    if "batch_target" not in columns:
+        connection.execute(
+            """
+            ALTER TABLE collect_jobs
+            ADD COLUMN batch_target INTEGER NOT NULL DEFAULT 100
             """
         )
 

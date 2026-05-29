@@ -12,6 +12,7 @@ from anacronia.search_sets import (
 
 
 MET_PROVIDER = "met"
+DEFAULT_BATCH_TARGET = 100
 
 
 class MetCandidateClient(Protocol):
@@ -37,6 +38,8 @@ class CandidateRun:
     candidate_offset: int
     candidate_limit: int
     candidate_progress_total: int
+    batch_target: int
+    status: str
     candidates: list[RunCandidate]
 
 
@@ -47,6 +50,7 @@ def discover_met_candidates(
     candidate_offset: int,
     candidate_limit: int,
     met_client: MetCandidateClient,
+    batch_target: int = DEFAULT_BATCH_TARGET,
 ) -> CandidateRun:
     if candidate_offset < 0:
         raise ValueError("Candidate offset must be 0 or greater.")
@@ -60,6 +64,7 @@ def discover_met_candidates(
         met_client=met_client,
     )
     selected_candidates = merged_candidates[candidate_offset : candidate_offset + candidate_limit]
+    effective_candidate_limit = len(selected_candidates)
 
     with sqlite3.connect(database_path) as connection:
         ensure_collection_run_schema(connection)
@@ -80,17 +85,19 @@ def discover_met_candidates(
               term_snapshot_json,
               candidate_offset,
               candidate_limit,
+              batch_target,
               candidate_progress_total,
               candidate_total
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 provider_collection_id,
                 MET_PROVIDER,
                 json.dumps(term_snapshot),
                 candidate_offset,
-                candidate_limit,
+                effective_candidate_limit,
+                batch_target,
                 len(selected_candidates),
                 len(merged_candidates),
             ),
@@ -160,7 +167,9 @@ def get_candidate_run(*, database_path: Path, run_id: int) -> CandidateRun:
               collection_runs.term_snapshot_json,
               collection_runs.candidate_offset,
               collection_runs.candidate_limit,
+              collection_runs.batch_target,
               collection_runs.candidate_progress_total,
+              collection_runs.status,
               search_sets.slug
             FROM collection_runs
             JOIN provider_collections
@@ -187,12 +196,14 @@ def get_candidate_run(*, database_path: Path, run_id: int) -> CandidateRun:
 
     return CandidateRun(
         run_id=run_id,
-        search_set_slug=run_row[5],
+        search_set_slug=run_row[7],
         provider=run_row[0],
         term_snapshot=json.loads(run_row[1]),
         candidate_offset=run_row[2],
         candidate_limit=run_row[3],
-        candidate_progress_total=run_row[4],
+        batch_target=run_row[4],
+        candidate_progress_total=run_row[5],
+        status=run_row[6],
         candidates=[
             RunCandidate(
                 object_id=row[0],
@@ -217,6 +228,7 @@ def ensure_collection_run_schema(connection: sqlite3.Connection) -> None:
           term_snapshot_json TEXT NOT NULL,
           candidate_offset INTEGER NOT NULL,
           candidate_limit INTEGER NOT NULL,
+          batch_target INTEGER NOT NULL DEFAULT 100,
           candidate_progress_total INTEGER NOT NULL,
           candidate_total INTEGER NOT NULL,
           processed_candidates INTEGER NOT NULL DEFAULT 0,
@@ -226,6 +238,17 @@ def ensure_collection_run_schema(connection: sqlite3.Connection) -> None:
         )
         """
     )
+    columns = {
+        row[1]
+        for row in connection.execute("PRAGMA table_info(collection_runs)").fetchall()
+    }
+    if "batch_target" not in columns:
+        connection.execute(
+            """
+            ALTER TABLE collection_runs
+            ADD COLUMN batch_target INTEGER NOT NULL DEFAULT 100
+            """
+        )
     connection.execute(
         """
         CREATE TABLE IF NOT EXISTS run_candidates (

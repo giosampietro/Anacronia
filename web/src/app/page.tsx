@@ -49,11 +49,9 @@ import {
 } from "@/lib/dashboard";
 import { shouldAutoRefreshDashboard } from "@/lib/dashboard-refresh";
 import {
-  DEFAULT_CANDIDATE_LIMIT,
-  DEFAULT_CANDIDATE_OFFSET,
-  normalizeCandidateLimit,
-  normalizeCandidateOffset,
-  normalizeMaxImagesPerObject,
+  BATCH_TARGET_OPTIONS,
+  DEFAULT_BATCH_TARGET,
+  normalizeBatchTarget,
 } from "@/lib/candidate-limits";
 import {
   getActionFormDataString,
@@ -147,14 +145,8 @@ async function createSearchSetAndCollectFromMet(formData: FormData) {
   const apiPort = getPort("ANACRONIA_API_PORT", DEFAULT_API_PORT);
   const displayName = getActionFormDataString(formData, "display_name");
   const termsText = getActionFormDataString(formData, "terms_text");
-  const candidateOffset = normalizeCandidateOffset(
-    getActionFormDataValue(formData, "candidate_offset"),
-  );
-  const candidateLimit = normalizeCandidateLimit(
-    getActionFormDataValue(formData, "candidate_limit"),
-  );
-  const maxImagesPerObject = normalizeMaxImagesPerObject(
-    getActionFormDataValue(formData, "max_images_per_object"),
+  const batchTarget = normalizeBatchTarget(
+    getActionFormDataValue(formData, "batch_target"),
   );
   const searchSetResponse = await fetch(`http://127.0.0.1:${apiPort}/search-sets`, {
     method: "POST",
@@ -175,9 +167,7 @@ async function createSearchSetAndCollectFromMet(formData: FormData) {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      candidate_offset: candidateOffset,
-      candidate_limit: candidateLimit,
-      max_images_per_object: maxImagesPerObject,
+      batch_target: batchTarget,
     }),
   });
 
@@ -193,23 +183,15 @@ async function startMetCollect(formData: FormData) {
 
   const apiPort = getPort("ANACRONIA_API_PORT", DEFAULT_API_PORT);
   const slug = getActionFormDataString(formData, "slug");
-  const candidateOffset = normalizeCandidateOffset(
-    getActionFormDataValue(formData, "candidate_offset"),
-  );
-  const candidateLimit = normalizeCandidateLimit(
-    getActionFormDataValue(formData, "candidate_limit"),
-  );
-  const maxImagesPerObject = normalizeMaxImagesPerObject(
-    getActionFormDataValue(formData, "max_images_per_object"),
+  const batchTarget = normalizeBatchTarget(
+    getActionFormDataValue(formData, "batch_target"),
   );
 
   const response = await fetch(`http://127.0.0.1:${apiPort}/search-sets/${slug}/provider-collections/met/collects`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      candidate_offset: candidateOffset,
-      candidate_limit: candidateLimit,
-      max_images_per_object: maxImagesPerObject,
+      batch_target: batchTarget,
     }),
   });
 
@@ -243,34 +225,46 @@ function statusIcon(state: string) {
   return <Activity data-icon="inline-start" />;
 }
 
-function CollectControls({
+function statusLabel(state: string): string {
+  if (state === "no_more_results") {
+    return "No more results";
+  }
+  if (state === "running") {
+    return "searching";
+  }
+  if (state === "completed") {
+    return "ready";
+  }
+  if (state === "canceled") {
+    return "stopped";
+  }
+
+  return state;
+}
+
+function BatchTargetControl({
   idPrefix,
-  startAtCandidate = DEFAULT_CANDIDATE_OFFSET,
+  defaultBatchTarget = DEFAULT_BATCH_TARGET,
 }: {
   idPrefix: string;
-  startAtCandidate?: number;
+  defaultBatchTarget?: number;
 }) {
   return (
     <FieldGroup>
       <Field>
-        <FieldLabel htmlFor={`${idPrefix}_candidate_offset`}>Start at candidate</FieldLabel>
-        <Input
-          defaultValue={startAtCandidate}
-          id={`${idPrefix}_candidate_offset`}
-          min={0}
-          name="candidate_offset"
-          type="number"
-        />
-      </Field>
-      <Field>
-        <FieldLabel htmlFor={`${idPrefix}_candidate_limit`}>Candidate limit</FieldLabel>
-        <Input
-          defaultValue={DEFAULT_CANDIDATE_LIMIT}
-          id={`${idPrefix}_candidate_limit`}
-          min={1}
-          name="candidate_limit"
-          type="number"
-        />
+        <FieldLabel htmlFor={`${idPrefix}_batch_target`}>Batch target</FieldLabel>
+        <select
+          className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          defaultValue={defaultBatchTarget}
+          id={`${idPrefix}_batch_target`}
+          name="batch_target"
+        >
+          {BATCH_TARGET_OPTIONS.map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+        </select>
       </Field>
     </FieldGroup>
   );
@@ -328,7 +322,7 @@ function NewSearchSetWorkspace({ collectAvailable }: { collectAvailable: boolean
               <CardTitle>Met</CardTitle>
             </CardHeader>
             <CardContent>
-              <CollectControls idPrefix="new_search_set" />
+              <BatchTargetControl idPrefix="new_search_set" />
             </CardContent>
             <CardFooter className="justify-end gap-2 border-t bg-muted/50">
               <Button formAction={createSearchSetAndCollectFromMet} type="submit">
@@ -658,7 +652,7 @@ export default async function Home({ searchParams }: HomeProps) {
                     <form action={startMetCollect}>
                       <input name="slug" type="hidden" value={activeSearchSet.slug} />
                       <CardContent>
-                        <CollectControls idPrefix={`${activeSearchSet.slug}_met`} />
+                        <BatchTargetControl idPrefix={`${activeSearchSet.slug}_met`} />
                         <CollectBusyNote collectAvailable={collectAvailable} />
                       </CardContent>
                       <CardFooter className="justify-end border-t bg-muted/50">
@@ -675,43 +669,43 @@ export default async function Home({ searchParams }: HomeProps) {
                       <CardHeader>
                         <div className="min-w-0">
                           <CardTitle>{providerCollection.providerLabel}</CardTitle>
-                          <CardDescription>{providerCollection.latestRunLabel}</CardDescription>
+                          <CardDescription>Provider Source</CardDescription>
                         </div>
                         <CardAction>
                           <Badge variant={statusVariant(providerCollection.status)}>
                             {statusIcon(providerCollection.status)}
-                            {providerCollection.status}
+                            {statusLabel(providerCollection.status)}
                           </Badge>
                         </CardAction>
                       </CardHeader>
                       <CardContent>
                         <ProviderCollectionProgress
-                          continueCandidateOffset={providerCollection.continueCandidateOffset}
                           importedImageCount={providerCollection.importedImageCount}
-                          progressLabel={providerCollection.progressLabel}
-                          progressPercent={providerCollection.progressPercent}
                         />
                       </CardContent>
-                      <form action={startMetCollect}>
-                        <CardFooter className="flex-col items-stretch gap-4 border-t bg-muted/50">
-                          <input name="slug" type="hidden" value={activeSearchSet.slug} />
-                          <CollectControls
-                            idPrefix={`${activeSearchSet.slug}_${providerCollection.provider}`}
-                            startAtCandidate={providerCollection.nextCandidateOffset}
-                          />
-                          <div className="flex justify-end gap-2">
-                            <Button
-                              disabled={!collectAvailable}
-                              size="sm"
-                              type="submit"
-                              variant="outline"
-                            >
-                              <RotateCcw data-icon="inline-start" />
-                              Continue same terms
-                            </Button>
-                          </div>
-                        </CardFooter>
-                      </form>
+                      {providerCollection.status !== "no_more_results" &&
+                      providerCollection.status !== "running" &&
+                      collectAvailable ? (
+                        <form action={startMetCollect}>
+                          <CardFooter className="flex-col items-stretch gap-4 border-t bg-muted/50">
+                            <input name="slug" type="hidden" value={activeSearchSet.slug} />
+                            <BatchTargetControl
+                              idPrefix={`${activeSearchSet.slug}_${providerCollection.provider}`}
+                            />
+                            <div className="flex justify-end gap-2">
+                              <Button
+                                disabled={!collectAvailable}
+                                size="sm"
+                                type="submit"
+                                variant="outline"
+                              >
+                                <RotateCcw data-icon="inline-start" />
+                                Keep searching
+                              </Button>
+                            </div>
+                          </CardFooter>
+                        </form>
+                      ) : null}
                     </Card>
                   ))
                 )}

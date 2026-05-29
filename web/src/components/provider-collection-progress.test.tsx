@@ -4,18 +4,17 @@ import { describe, expect, it } from "vitest";
 import { ProviderCollectionProgress } from "./provider-collection-progress";
 
 describe("ProviderCollectionProgress", () => {
-  it("renders a running Provider Source progress summary", () => {
+  it("renders Provider Source counters without candidate mechanics", () => {
     const html = renderToString(
       <ProviderCollectionProgress
-        continueCandidateOffset={null}
-        importedImageCount={0}
-        progressLabel="0/100 candidates"
-        progressPercent={0}
+        importedImageCount={5}
       />,
     );
 
-    expect(html).toContain("0/100 candidates");
-    expect(html).toContain("0%");
-    expect(html).toContain("none");
+    expect(html).toContain("Images");
+    expect(html).toContain("5");
+    expect(html).not.toContain("Candidate");
+    expect(html).not.toContain("Progress");
+    expect(html).not.toContain("offset");
   });
 });

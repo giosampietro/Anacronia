@@ -1,13 +1,13 @@
-export const DEFAULT_CANDIDATE_OFFSET = 0;
-export const DEFAULT_CANDIDATE_LIMIT = 1000;
+export const BATCH_TARGET_OPTIONS = [100, 500, 1000] as const;
+export type BatchTarget = (typeof BATCH_TARGET_OPTIONS)[number];
+export const DEFAULT_BATCH_TARGET: BatchTarget = 100;
 export const DEFAULT_MAX_IMAGES_PER_OBJECT = 3;
 
-export function normalizeCandidateOffset(value: FormDataEntryValue | number | null): number {
-  return normalizeWholeNumber(value, DEFAULT_CANDIDATE_OFFSET, 0);
-}
-
-export function normalizeCandidateLimit(value: FormDataEntryValue | number | null): number {
-  return normalizeWholeNumber(value, DEFAULT_CANDIDATE_LIMIT, 1);
+export function normalizeBatchTarget(value: FormDataEntryValue | number | null): BatchTarget {
+  const parsed = normalizeWholeNumber(value, DEFAULT_BATCH_TARGET, 1);
+  return BATCH_TARGET_OPTIONS.includes(parsed as BatchTarget)
+    ? (parsed as BatchTarget)
+    : DEFAULT_BATCH_TARGET;
 }
 
 export function normalizeMaxImagesPerObject(value: FormDataEntryValue | number | null): number {

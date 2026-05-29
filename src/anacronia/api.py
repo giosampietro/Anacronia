@@ -1,12 +1,13 @@
 from pathlib import Path
 import shutil
-from typing import Callable
+from typing import Callable, Literal
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from anacronia.collection_runs import (
     CandidateRun,
+    DEFAULT_BATCH_TARGET,
     MetCandidateClient,
     discover_met_candidates,
 )
@@ -32,6 +33,8 @@ from anacronia.worker import (
 
 
 DEFAULT_CANDIDATE_LIMIT = 1000
+INTERNAL_CANDIDATE_LIMIT = 1_000_000_000
+BatchTarget = Literal[100, 500, 1000]
 
 
 class SearchSetRequest(BaseModel):
@@ -45,9 +48,7 @@ class DiscoverMetCandidatesRequest(BaseModel):
 
 
 class StartMetCollectRequest(BaseModel):
-    candidate_offset: int = Field(default=0, ge=0)
-    candidate_limit: int = Field(default=DEFAULT_CANDIDATE_LIMIT, ge=1)
-    max_images_per_object: int = Field(default=DEFAULT_MAX_IMAGES_PER_OBJECT, ge=1)
+    batch_target: BatchTarget = DEFAULT_BATCH_TARGET
 
 
 def serialize_search_set(search_set: SearchSet) -> dict[str, object]:
@@ -72,7 +73,9 @@ def serialize_candidate_run(run: CandidateRun) -> dict[str, object]:
         "term_snapshot": run.term_snapshot,
         "candidate_offset": run.candidate_offset,
         "candidate_limit": run.candidate_limit,
+        "batch_target": run.batch_target,
         "candidate_progress_total": run.candidate_progress_total,
+        "status": run.status,
         "candidates": [
             {
                 "object_id": candidate.object_id,
@@ -228,18 +231,20 @@ def create_app(
         run = discover_met_candidates(
             database_path=resolved_database_path,
             search_set_slug=slug,
-            candidate_offset=request.candidate_offset,
-            candidate_limit=request.candidate_limit,
+            candidate_offset=0,
+            candidate_limit=INTERNAL_CANDIDATE_LIMIT,
             met_client=resolved_met_candidate_client,
+            batch_target=request.batch_target,
         )
         try:
             collect_job = start_collect_job(
                 database_path=resolved_database_path,
                 run_id=run.run_id,
-                candidate_offset=request.candidate_offset,
-                candidate_limit=request.candidate_limit,
+                candidate_offset=run.candidate_offset,
+                candidate_limit=run.candidate_limit,
                 candidate_progress_total=run.candidate_progress_total,
-                max_images_per_object=request.max_images_per_object,
+                batch_target=run.batch_target,
+                max_images_per_object=DEFAULT_MAX_IMAGES_PER_OBJECT,
                 available_disk_bytes=shutil.disk_usage(resolved_data_root).free,
             )
         except CollectLockError as error:
@@ -249,6 +254,7 @@ def create_app(
             "run_id": run.run_id,
             "collect_job_id": collect_job.job_id,
             "status": collect_job.status,
+            "batch_target": collect_job.batch_target,
         }
 
     @app.post("/provider-collections/met/runs/{run_id}/ingest")

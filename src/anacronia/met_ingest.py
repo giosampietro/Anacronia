@@ -73,6 +73,7 @@ class MetIngestSummary:
     run_id: int
     fetched_object_ids: list[int]
     imported_object_ids: list[int]
+    imported_image_count: int
     skipped_candidates: list[SkippedMetCandidate]
 
 
@@ -186,10 +187,12 @@ def ingest_met_run(
     met_client: MetRecordClient,
     download_image_bytes: Callable[[str], bytes] | None = None,
     max_images_per_object: int = DEFAULT_MAX_IMAGES_PER_OBJECT,
+    batch_target: int | None = None,
     on_candidate_processed: Callable[[int], None] | None = None,
 ) -> MetIngestSummary:
     fetched_object_ids: list[int] = []
     imported_object_ids: list[int] = []
+    imported_image_count = 0
     skipped_candidates: list[SkippedMetCandidate] = []
     resolved_download_image_bytes = download_image_bytes or missing_image_downloader
 
@@ -295,13 +298,17 @@ def ingest_met_run(
                 descriptors=extract_met_descriptors(record),
             )
         imported_object_ids.append(object_id)
+        imported_image_count += len(processed_image_assets)
         if on_candidate_processed is not None:
             on_candidate_processed(run_position)
+        if batch_target is not None and imported_image_count >= batch_target:
+            break
 
     return MetIngestSummary(
         run_id=run_id,
         fetched_object_ids=fetched_object_ids,
         imported_object_ids=imported_object_ids,
+        imported_image_count=imported_image_count,
         skipped_candidates=skipped_candidates,
     )
 

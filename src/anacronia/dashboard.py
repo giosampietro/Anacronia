@@ -218,6 +218,7 @@ def get_latest_collect_job_for_run(
           candidate_offset,
           candidate_limit,
           candidate_progress_total,
+          batch_target,
           last_processed_run_position,
           provider_failure_count,
           backoff_seconds,
