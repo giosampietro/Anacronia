@@ -14,7 +14,8 @@ This is a single-context repo.
 ## Domain Rules
 
 - Do not redesign the product scope while implementing issues.
-- MVP is local-first, Mac-first, and Met provider first.
+- MVP is local-first, Apple Silicon Mac-first, and Met provider first.
+- Intel Mac support is outside the MVP.
 - Use Next.js and shadcn/ui for the UI.
 - Use FastAPI and a Python worker for backend and processing work.
 - Keep generated data under `./data` and out of git.

@@ -176,6 +176,7 @@ The primary export unit is the Image Asset: one exported row or JSONL object per
 - Database backup and restore from the user interface are outside the MVP.
 - GitHub MVP installation can be terminal-based, but documentation should be detailed enough for non-technical Mac users. A packaged installer or desktop app is future work.
 - MVP setup should provide a guided setup script and documented manual steps for users who prefer transparency or need to debug installation.
+- The MVP targets Apple Silicon Macs, M1 or newer. Intel Mac support is outside the MVP.
 - The MVP developer/user setup can use `uv` for Python dependencies and `npm` for the web frontend.
 - Homebrew can be used when available during Mac setup, but installation docs should include alternatives or explain what to do when Homebrew is absent.
 - The MVP web interface should use shadcn/ui components.

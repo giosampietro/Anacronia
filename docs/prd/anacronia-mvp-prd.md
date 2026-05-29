@@ -133,7 +133,7 @@ The MVP will not try to become the future visual atlas. It will provide the oper
 
 ## Implementation Decisions
 
-- Build Anacronia as a single-user local application for Mac-first use.
+- Build Anacronia as a single-user local application for Apple Silicon Mac-first use, targeting M1 or newer Macs in the MVP.
 - Keep all project code and default data under one Anacronia project root, with `./data` as the default data directory and config override support for larger storage needs.
 - Use `localhost:18660` as the default user-facing UI port, with incremental fallback. Use an internal FastAPI port defaulting to `18670`, also with fallback.
 - Use Next.js for the frontend and shadcn/ui for interface components.
