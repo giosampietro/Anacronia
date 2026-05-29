@@ -8,11 +8,11 @@ Anacronia should solve the first stage of this workflow: collect museum records 
 
 ## Solution
 
-Anacronia will be a local-first collection builder. It will let the user define a Search Set made of explicit terms, collect matching Met records, filter to eligible public-domain material, download source images temporarily, generate local `standard-1024` and `thumb-256` derivatives, store raw provider records, extract Descriptors from provider-specific metadata, and expose the resulting Image Assets in a dense operational web interface.
+Anacronia will be a local-first collection builder. It will let the user define a Collection made of explicit terms, collect matching Met records, filter to eligible public-domain material, download source images temporarily, generate local `standard-1024` and `thumb-256` derivatives, store raw provider records, extract Descriptors from provider-specific metadata, and expose the resulting Image Assets in a dense operational web interface.
 
 The user will run Anacronia locally from the terminal. A single command will start the Next.js interface, FastAPI backend, and Python worker. The browser UI will open on `localhost:18660` when available. The worker will process one collect job at a time, prioritizing correctness, resumability, provider tolerance, and data integrity over raw speed.
 
-The MVP will not try to become the future visual atlas. It will provide the operational foundation: create and continue Search Sets, monitor progress, inspect imported Image Assets, view details and source metadata, search locally across canonical fields and Descriptors, and export imported Image Assets as JSONL/CSV or complete packages.
+The MVP will not try to become the future visual atlas. It will provide the operational foundation: create and continue Collections, monitor progress, inspect imported Image Assets, view details and source metadata, search locally across canonical fields and Descriptors, and export imported Image Assets as JSONL/CSV or complete packages.
 
 ## User Stories
 
@@ -25,21 +25,21 @@ The MVP will not try to become the future visual atlas. It will provide the oper
 7. As a non-technical Mac user, I want a guided setup script, so that I can install the project with minimal manual setup.
 8. As a technical user, I want documented manual setup steps, so that I can debug installation issues.
 9. As a GitHub user, I want the repository to exclude generated data, so that cloning the project does not download someone else's dataset.
-10. As a collection builder, I want to create a Search Set with a readable name, so that my research intent is clear.
-11. As a collection builder, I want Search Set names to generate stable slugs, so that folders and identifiers remain clean.
-12. As a collection builder, I want reusing the same Search Set name to continue the existing Search Set, so that I do not create duplicate visible searches.
-13. As a collection builder, I want adding new terms to an existing Search Set to append terms, so that previous terms are not lost.
-14. As a collection builder, I want to deactivate terms for future Runs, so that I can refine a Search Set without deleting historical data.
-15. As a collection builder, I want to paste multiple terms at once, so that I can create Search Sets quickly.
+10. As a collection builder, I want to create a Collection with a readable name, so that my research intent is clear.
+11. As a collection builder, I want Collection names to generate stable slugs, so that folders and identifiers remain clean.
+12. As a collection builder, I want reusing the same Collection name to continue the existing Collection, so that I do not create duplicate visible searches.
+13. As a collection builder, I want adding new terms to an existing Collection to append terms, so that previous terms are not lost.
+14. As a collection builder, I want to deactivate terms for future Runs, so that I can refine a Collection without deleting historical data.
+15. As a collection builder, I want to paste multiple terms at once, so that I can create Collections quickly.
 16. As a collection builder, I want each input line or comma-separated segment to be treated as one term even if it contains spaces, so that terms like `garden snake` work without quotes.
 17. As a collection builder, I want duplicate terms to be deduplicated case-insensitively, so that repeated terms do not create duplicate provider queries.
 18. As a collection builder, I want terms to run as separate provider searches, so that Anacronia can record which terms matched which records.
 19. As a collection builder, I want provider candidates from multiple terms to be merged and deduplicated before offset and limit are applied, so that `limit` means candidate objects, not candidates per term.
 20. As a collection builder, I want candidate order to follow term insertion order and provider order, so that early terms define priority.
 21. As a collection builder, I want to set offset and limit for a collect job, so that I can collect the first 1,000 candidates and continue later.
-22. As a collection builder, I want Continue to propose the next candidate offset, so that expanding an existing Search Set is easy.
+22. As a collection builder, I want Continue to propose the next candidate offset, so that expanding an existing Collection is easy.
 23. As a collection builder, I want offset and limit to apply to provider candidates, so that the collect operation is reproducible and explainable.
-24. As a collection builder, I want the UI to hide technical Run complexity by default, so that I see one continuing Search Set rather than many internal executions.
+24. As a collection builder, I want the UI to hide technical Run complexity by default, so that I see one continuing Collection rather than many internal executions.
 25. As a collection builder, I want technical details to remain available, so that progress, errors, and resumes can be audited.
 26. As a collection builder, I want Anacronia to collect immediately without manual pre-review, so that large searches do not require me to inspect thousands of records.
 27. As a collection builder, I want only public-domain Met records to be accepted in the MVP, so that the first provider has a clear rights rule.
@@ -58,8 +58,8 @@ The MVP will not try to become the future visual atlas. It will provide the oper
 40. As a collection builder, I want Anacronia to import Met objects with valid additional images even when `primaryImage` is missing, so that useful images are not discarded.
 41. As a collection builder, I want Met `primaryImageSmall` stored as metadata but not downloaded, so that source information is preserved without redundant local files.
 42. As a collection builder, I want `primaryImageSmall` not used as fallback for failed source downloads, so that local image quality stays consistent.
-43. As a collection builder, I want all valid images on an object attempted up to a configurable limit, so that additional views are not missed.
-44. As a collection builder, I want the default per-object image limit to be 10, so that unusually image-heavy objects do not explode the collect job.
+43. As a collection builder, I want valid images on an object attempted up to the MVP per-object image limit, so that additional views are considered without exploding collect size.
+44. As a collection builder, I want the MVP per-object image limit to be 3 and not exposed as a routine UI control, so that collection setup stays simple.
 45. As a collection builder, I want image URLs beyond the per-object limit stored as skipped references, so that I know more images exist.
 46. As a collection builder, I want the detail panel to show when related images were skipped by limit, so that I understand incomplete object image coverage.
 47. As a collection builder, I want each Image Asset accepted independently, so that one failed image does not block other images from the same Museum Object.
@@ -98,15 +98,15 @@ The MVP will not try to become the future visual atlas. It will provide the oper
 80. As a collection builder, I want Anacronia to show status and logs in the MVP, so that I can understand completion, pauses, and errors.
 81. As a collection builder, I do not need macOS notifications in the MVP, so that the first version stays focused.
 82. As a collection builder, I want a dense operational dashboard, so that collect state and controls are easy to scan.
-83. As a collection builder, I want Search Sets as the primary navigation, so that the UI follows my research themes.
-84. As a collection builder, I want provider collections shown underneath Search Sets, so that later multi-provider work remains organized.
+83. As a collection builder, I want Collections as the primary navigation, so that the UI follows my research themes.
+84. As a collection builder, I want provider sources shown underneath Collections, so that later multi-provider work remains organized.
 85. As a collection builder, I want provider-first views available secondarily, so that I can inspect work by museum when needed.
 86. As a collection builder, I want a basic image grid in the MVP, so that I can quickly see what was collected.
 87. As a collection builder, I want the grid to be functional and dense, so that it behaves like an operational tool rather than a finished visual atlas.
 88. As a collection builder, I want image details in a side panel, so that browsing remains fast without navigating away.
 89. As a collection builder, I want the side panel to show `standard-1024`, essential metadata, source links, match info, and license info, so that each Image Asset is inspectable.
 90. As a collection builder, I want a button to open the provider object page, so that I can verify source context.
-91. As a collection builder, I want simple local text search inside the current collection context, so that I can narrow visible Image Assets.
+91. As a collection builder, I want simple local text search inside the current Collection context, so that I can narrow visible Image Assets.
 92. As a collection builder, I do not need advanced faceted filtering in the MVP, so that the interface remains focused.
 93. As a collection builder, I want exports to include only imported material, so that exported datasets are clean.
 94. As a collection builder, I want export rows to be Image Assets, so that multi-image Museum Objects produce one record per usable image.
@@ -153,10 +153,10 @@ The MVP will not try to become the future visual atlas. It will provide the oper
 - Prevent starting a new collect while a job is active or paused.
 - Support canceling a collect job; cancel stops future work, preserves completed Image Assets, and frees the collect lock.
 - Continuing after cancel should propose the next candidate offset after the last processed candidate.
-- Define the domain model around Search Set, Provider Collection, Run, Candidate, Museum Object, Image Asset, Descriptor, Match, Verified Match, Unverified Match, Standard-1024, Thumb-256, Export, and Analysis Result.
-- Make Search Sets user-visible research intents with display names and stable slugs.
-- Treat matching Search Set slugs as continuation rather than duplicate creation unless a user explicitly creates a distinct name.
-- Add new terms to an existing Search Set rather than replacing prior terms.
+- Define the domain model around Collection, Provider Source, Run, Candidate, Museum Object, Image Asset, Descriptor, Match, Verified Match, Unverified Match, Standard-1024, Thumb-256, Export, and Analysis Result.
+- Make Collections user-visible research intents with display names and stable slugs.
+- Treat matching Collection slugs as continuation rather than duplicate creation unless a user explicitly creates a distinct name.
+- Add new terms to an existing Collection rather than replacing prior terms.
 - Allow terms to be deactivated for future Runs without deleting existing material or historical matches.
 - Parse multiline and comma-separated term input as one term per line or comma-separated segment, including terms with spaces.
 - Trim and deduplicate terms case-insensitively.
@@ -167,7 +167,7 @@ The MVP will not try to become the future visual atlas. It will provide the oper
 - Hide Run complexity from the primary UI while retaining Run data for state, progress, and auditing.
 - Treat provider drift across days or weeks as non-blocking; continuation should use the current provider response without interrupting the user.
 - MVP provider support is Met only.
-- Met collection requires `isPublicDomain === true`.
+- Met accepted material requires `isPublicDomain === true`.
 - Met Museum Objects can be accepted when at least one valid image URL exists across `primaryImage` or `additionalImages`.
 - Met `primaryImageSmall` is stored as source metadata but not downloaded locally.
 - Met `primaryImageSmall` is not used as a fallback source for derivatives.
@@ -182,8 +182,9 @@ The MVP will not try to become the future visual atlas. It will provide the oper
 - Store source filenames and source URLs in metadata rather than local filenames.
 - Define Image Asset identity by provider, Museum Object, and source image URL.
 - Deduplicate repeated source image URLs within a Museum Object and prefer the `primary` role if present.
-- Attempt multiple Image Assets per Museum Object up to `max_images_per_object`, defaulting to 10.
-- Preserve metadata/skipped references for image URLs beyond `max_images_per_object`.
+- Attempt multiple Image Assets per Museum Object up to the MVP per-object image limit of 3.
+- Do not expose the per-object image limit as a routine UI control in the MVP.
+- Preserve metadata/skipped references for image URLs beyond the per-object image limit.
 - Accept or reject each Image Asset independently; failed Image Assets do not block other images from the same Museum Object.
 - Count an Image Asset as imported only when both `standard-1024` and `thumb-256` exist and validate.
 - Generate `standard-1024` as a JPEG derivative with 1024-pixel long edge and quality 90.
@@ -208,16 +209,16 @@ The MVP will not try to become the future visual atlas. It will provide the oper
 - Use case-insensitive substring matching for MVP verified-match logic.
 - Store unverified matches when the provider returned a candidate but no inspected field explains the match.
 - Extract Met Descriptors from a broader curated field set than verified-match fields while avoiding noisy administrative fields.
-- MVP Search Sets are text-term only. Provider-specific structured filters such as department, date range, geography, and medium are out of scope.
+- MVP Collections are text-term only. Provider-specific structured filters such as department, date range, geography, and medium are out of scope.
 - Local post-import search should use canonical fields and Descriptors, not arbitrary raw provider JSON.
 - Build a dense, clear, operational MVP interface.
-- Organize the primary UI by Search Set, with Provider Collections underneath.
+- Organize the primary UI by Collection, with Provider Sources underneath.
 - Provider-focused views can exist as secondary navigation.
 - Include a dashboard for collect control and status.
 - Include a basic image grid for imported Image Assets.
 - Selecting an Image Asset opens a side detail panel.
 - The detail panel shows `standard-1024`, essential metadata, source provider object link, match info, license/rights information, and skipped related image counts when applicable.
-- The grid supports simple local text search within the current collection context.
+- The grid supports simple local text search within the current Collection context.
 - Advanced faceted filtering is out of scope.
 - Export only imported Image Assets and their metadata, not failed or skipped candidates.
 - Use one Image Asset per exported JSONL object or CSV row, with linked Museum Object metadata included or referenced.
@@ -227,11 +228,11 @@ The MVP will not try to become the future visual atlas. It will provide the oper
 
 ### Module Sketch
 
-- **Domain/Core**: Owns core Anacronia vocabulary, state rules, and relationships. This should be a deep module with stable interfaces for Search Sets, Provider Collections, Runs, Museum Objects, Image Assets, Descriptors, Matches, Exports, and Analysis Results.
+- **Domain/Core**: Owns core Anacronia vocabulary, state rules, and relationships. This should be a deep module with stable interfaces for Collections, Provider Sources, Runs, Museum Objects, Image Assets, Descriptors, Matches, Exports, and Analysis Results.
 - **Provider Adapter Interface**: Defines what any provider must supply: search candidates, fetch records, extract image references, evaluate provider-specific eligibility, normalize minimal canonical fields, produce raw records, and provide descriptor mappings.
 - **Met Provider**: Implements the first provider adapter against the Met Collection API, including term search, object fetch, public-domain filter, image extraction, verified-match logic, and descriptor extraction.
 - **Descriptor Mapping Engine**: Applies explicit provider mapping rules, records source fields, assigns descriptor types, and supports rebuilds from raw records.
-- **Collection Engine**: Owns Search Set term handling, candidate merge/deduplication/order, offset/limit, continuation, cancel semantics, and membership between Provider Collections and Image Assets.
+- **Collection Engine**: Owns Collection term handling, candidate merge/deduplication/order, offset/limit, continuation, cancel semantics, and membership between Provider Sources and Image Assets.
 - **Image Pipeline**: Downloads source images temporarily, captures original metadata, creates derivatives, validates outputs, and deletes originals.
 - **Storage Layer**: Owns SQLite schema access, filesystem layout, raw JSON persistence, derivative paths, state persistence, and idempotent checks.
 - **Worker**: Owns the single active collect lifecycle, pause/resume/cancel, provider backoff, disk checks, and progress state.
@@ -256,7 +257,7 @@ The MVP will not try to become the future visual atlas. It will provide the oper
 - Worker tests should verify that paused jobs retain the collect lock and canceled jobs release it.
 - Exporter should be tested for one row/object per Image Asset, JSONL structure, CSV simplification, clean exclusion of failed/skipped candidates, and package generation.
 - FastAPI should have API contract tests for collect creation, status, pause, resume, cancel, grid query, detail query, descriptor rebuild, and export initiation.
-- Next.js UI should have smoke/interaction tests for creating a Search Set, starting a collect, seeing progress, viewing the grid, opening the detail panel, searching within a collection, and exporting.
+- Next.js UI should have smoke/interaction tests for creating a Collection, starting a collect, seeing progress, viewing the grid, opening the detail panel, searching within a collection, and exporting.
 - CLI should have command-level tests for startup orchestration, collect invocation, status, pause, resume, cancel, and descriptor rebuild.
 - Setup script should have at least smoke-level validation on a clean Mac-like environment or CI approximation.
 - Good tests should avoid asserting database table internals or component implementation structure unless the test is specifically for storage layout.

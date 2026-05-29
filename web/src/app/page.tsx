@@ -325,7 +325,7 @@ function CollectBusyNote({ collectAvailable }: { collectAvailable: boolean }) {
 
   return (
     <p className="text-sm text-muted-foreground">
-      A Met collection is already running. Collection actions will be available after it finishes.
+      A collect is already active. Collection actions will be available after it finishes.
     </p>
   );
 }
@@ -336,14 +336,14 @@ function NewSearchSetWorkspace({ collectAvailable }: { collectAvailable: boolean
       <header className="flex flex-col gap-3">
         <p className="text-sm font-medium text-muted-foreground">Create</p>
         <h1 className="font-heading text-4xl leading-tight font-semibold tracking-normal md:text-5xl">
-          New Search Set
+          New Collection
         </h1>
       </header>
 
       <form className="flex flex-col gap-4">
         <Card>
           <CardHeader>
-            <CardTitle>Search Set</CardTitle>
+            <CardTitle>Collection</CardTitle>
             <CardDescription>
               Give this workspace a name and paste the terms to collect from.
             </CardDescription>
@@ -385,15 +385,15 @@ function NewSearchSetWorkspace({ collectAvailable }: { collectAvailable: boolean
         ) : (
           <Card>
             <CardHeader>
-              <CardTitle>Met collection unavailable</CardTitle>
+              <CardTitle>Collect unavailable</CardTitle>
               <CardDescription>
-                Another Met collection is already running. Save this Search Set now,
+                Another collect is already active. Save this Collection now,
                 then collect from Met after the current job finishes.
               </CardDescription>
             </CardHeader>
             <CardFooter className="justify-end border-t bg-muted/50">
               <Button formAction={createSearchSet} type="submit">
-                Save Search Set
+                Save Collection
               </Button>
             </CardFooter>
           </Card>
@@ -412,7 +412,7 @@ function UserLibraryWorkspace({ imageCount }: { imageCount: number }) {
           User Library
         </h1>
         <p className="text-sm text-muted-foreground">
-          {imageCount} collected Image Asset{imageCount === 1 ? "" : "s"} across all Search Sets.
+          {imageCount} collected Image Asset{imageCount === 1 ? "" : "s"} across all Collections.
         </p>
       </header>
 
@@ -425,7 +425,7 @@ function UserLibraryWorkspace({ imageCount }: { imageCount: number }) {
               </EmptyMedia>
               <EmptyTitle>No library grid yet</EmptyTitle>
               <EmptyDescription>
-                Collected Image Assets from every Search Set will appear here.
+                Collected Image Assets from every Collection will appear here.
               </EmptyDescription>
             </EmptyHeader>
           </Empty>
@@ -480,7 +480,7 @@ export default async function Home({ searchParams }: HomeProps) {
           href={createNewSearchSetHref(filterText)}
         >
           <Plus data-icon="inline-start" />
-          New Search Set
+          New Collection
         </Link>
 
         <Link
@@ -499,7 +499,7 @@ export default async function Home({ searchParams }: HomeProps) {
 
         <section className="flex flex-1 flex-col gap-3">
           <div className="flex items-center justify-between gap-3 px-1">
-            <h2 className="text-sm font-medium text-muted-foreground">Search Sets</h2>
+            <h2 className="text-sm font-medium text-muted-foreground">Collections</h2>
             <Badge variant="secondary">{dashboardView.searchSets.length}</Badge>
           </div>
 
@@ -511,7 +511,7 @@ export default async function Home({ searchParams }: HomeProps) {
               <input name="mode" type="hidden" value={workspaceMode} />
             ) : null}
             <Input
-              aria-label="Filter Search Sets"
+              aria-label="Filter Collections"
               defaultValue={filterText}
               name="filter"
               placeholder="Filter by title or term"
@@ -528,7 +528,7 @@ export default async function Home({ searchParams }: HomeProps) {
                   <EmptyMedia variant="icon">
                     <Search />
                   </EmptyMedia>
-                  <EmptyTitle>No matching Search Sets</EmptyTitle>
+                  <EmptyTitle>No matching Collections</EmptyTitle>
                 </EmptyHeader>
               </Empty>
             ) : (
@@ -667,7 +667,7 @@ export default async function Home({ searchParams }: HomeProps) {
                     <CardTitle>Results</CardTitle>
                     <CardDescription>
                       {activeSearchSet.importedImageCount} Image Asset
-                      {activeSearchSet.importedImageCount === 1 ? "" : "s"} in this Search Set
+                      {activeSearchSet.importedImageCount === 1 ? "" : "s"} in this Collection
                     </CardDescription>
                   </div>
                   <CardAction>
@@ -685,7 +685,7 @@ export default async function Home({ searchParams }: HomeProps) {
                         </EmptyMedia>
                         <EmptyTitle>No Image Assets yet</EmptyTitle>
                         <EmptyDescription>
-                          Collect from Met to add local Image Assets to this Search Set.
+                          Collect from Met to add local Image Assets to this Collection.
                         </EmptyDescription>
                       </EmptyHeader>
                     </Empty>

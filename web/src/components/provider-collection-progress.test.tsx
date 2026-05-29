@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { ProviderCollectionProgress } from "./provider-collection-progress";
 
 describe("ProviderCollectionProgress", () => {
-  it("renders a running Provider Collection progress summary", () => {
+  it("renders a running Provider Source progress summary", () => {
     const html = renderToString(
       <ProviderCollectionProgress
         continueCandidateOffset={null}

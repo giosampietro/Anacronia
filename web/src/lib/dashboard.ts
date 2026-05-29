@@ -108,8 +108,8 @@ export function createOperationalDashboardView(
       continueCandidateOffset: providerCollection.continue_candidate_offset,
       latestRunLabel:
         providerCollection.latest_run_id === null
-          ? "No Run yet"
-          : `Run ${providerCollection.latest_run_id}`,
+          ? "No collect yet"
+          : `Collect ${providerCollection.latest_run_id}`,
     }));
 
     return {

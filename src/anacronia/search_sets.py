@@ -79,7 +79,7 @@ def get_search_set(*, database_path: Path, slug: str) -> SearchSet:
             (slug,),
         ).fetchone()
         if search_set_row is None:
-            raise LookupError(f"Search Set not found: {slug}")
+            raise LookupError(f"Collection not found: {slug}")
 
         term_rows = connection.execute(
             """
@@ -121,7 +121,7 @@ def deactivate_search_set_term(
             (slug,),
         ).fetchone()
         if search_set_row is None:
-            raise LookupError(f"Search Set not found: {slug}")
+            raise LookupError(f"Collection not found: {slug}")
 
         connection.execute(
             """

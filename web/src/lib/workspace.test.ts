@@ -32,7 +32,7 @@ const masks: DashboardSearchSetView = {
 };
 
 describe("workspace navigation helpers", () => {
-  it("builds navigation hrefs that preserve Search Set filters", () => {
+  it("builds navigation hrefs that preserve Collection filters", () => {
     expect(createNewSearchSetHref("snake")).toBe("/?mode=new-search-set&filter=snake");
     expect(createSearchSetHref("snake-studies", "snake")).toBe(
       "/?search_set=snake-studies&filter=snake",
@@ -40,14 +40,14 @@ describe("workspace navigation helpers", () => {
     expect(createUserLibraryHref("snake")).toBe("/?mode=user-library&filter=snake");
   });
 
-  it("selects the New Search Set workspace when requested or no Search Set exists", () => {
+  it("selects the New Collection workspace when requested or no Collection exists", () => {
     expect(createWorkspaceMode("new-search-set", snakeStudy)).toBe("new-search-set");
     expect(createWorkspaceMode("user-library", snakeStudy)).toBe("user-library");
     expect(createWorkspaceMode(undefined, null)).toBe("new-search-set");
     expect(createWorkspaceMode(undefined, snakeStudy)).toBe("search-set");
   });
 
-  it("filters Search Sets by title, slug, or term summary", () => {
+  it("filters Collections by title, slug, or term summary", () => {
     expect(filterSearchSets([snakeStudy, masks], "anaconda").map((searchSet) => searchSet.slug)).toEqual([
       "snake-studies",
     ]);

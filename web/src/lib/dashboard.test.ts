@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createOperationalDashboardView } from "./dashboard";
 
 describe("createOperationalDashboardView", () => {
-  it("organizes Search Sets with Provider Collections, progress, and continuation", () => {
+  it("organizes Collections with Provider Sources, progress, and continuation", () => {
     const view = createOperationalDashboardView({
       worker_status: {
         service: "worker",
@@ -64,7 +64,7 @@ describe("createOperationalDashboardView", () => {
             progressPercent: 40,
             importedImageCount: 5,
             continueCandidateOffset: 18,
-            latestRunLabel: "Run 7",
+            latestRunLabel: "Collect 7",
           },
         ],
         importedImageCount: 5,
@@ -79,17 +79,17 @@ describe("createOperationalDashboardView", () => {
           isActive: true,
           providerCollections: [
             {
-            provider: "met",
-            providerLabel: "Met",
-            status: "canceled",
-            candidateOffset: 10,
-            candidateLimit: 20,
-            nextCandidateOffset: 18,
-            progressLabel: "8/20 candidates",
+              provider: "met",
+              providerLabel: "Met",
+              status: "canceled",
+              candidateOffset: 10,
+              candidateLimit: 20,
+              nextCandidateOffset: 18,
+              progressLabel: "8/20 candidates",
               progressPercent: 40,
               importedImageCount: 5,
               continueCandidateOffset: 18,
-              latestRunLabel: "Run 7",
+              latestRunLabel: "Collect 7",
             },
           ],
           importedImageCount: 5,
@@ -105,7 +105,7 @@ describe("createOperationalDashboardView", () => {
     });
   });
 
-  it("selects the requested Search Set for the main workspace", () => {
+  it("selects the requested Collection for the main workspace", () => {
     const view = createOperationalDashboardView(
       {
         worker_status: {

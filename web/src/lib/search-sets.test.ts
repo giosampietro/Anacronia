@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createSearchSetCards } from "./search-sets";
 
 describe("createSearchSetCards", () => {
-  it("summarizes active and inactive Search Set terms", () => {
+  it("summarizes active and inactive Collection terms", () => {
     const cards = createSearchSetCards([
       {
         display_name: "Snake Studies",
