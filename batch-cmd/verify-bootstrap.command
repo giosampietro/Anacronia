@@ -26,9 +26,20 @@ echo
 
 if [ ! -x ".venv/bin/python" ]; then
   echo "Missing Python environment at .venv/bin/python."
-  echo "Ask Codex to set up the local environment again."
+  echo "Double-click batch-cmd/setup-local-environment.command first."
   exit 1
 fi
+
+.venv/bin/python - <<'PY'
+import platform
+import sys
+
+if sys.version_info < (3, 12):
+    raise SystemExit("Anacronia requires Python 3.12 or newer.")
+
+if platform.system() != "Darwin" or platform.machine() not in {"arm64", "arm64e"}:
+    raise SystemExit("Anacronia requires an Apple Silicon Mac, M1 or newer.")
+PY
 
 if [ ! -d "web/node_modules" ]; then
   echo "Missing web dependencies at web/node_modules."

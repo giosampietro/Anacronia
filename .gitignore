@@ -24,10 +24,9 @@ pnpm-debug.log*
 !.env.example
 
 # Local Anacronia data
-data/database/
-data/museums/
-data/temp/
-data/exports/
+data/**
+!data/
+!data/README.md
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm

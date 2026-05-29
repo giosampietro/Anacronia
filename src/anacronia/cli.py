@@ -10,6 +10,7 @@ from typing import Optional
 import webbrowser
 
 from anacronia.ports import choose_port, is_port_available as socket_port_available
+from anacronia.storage import initialize_storage
 
 
 DEFAULT_UI_PORT = 18660
@@ -41,6 +42,8 @@ class ServicePlan:
 class StartupPlan:
     ui_port: int
     api_port: int
+    data_root: Path
+    database_path: Path
     open_browser: bool
     ui_url: str
     message: str
@@ -55,6 +58,8 @@ def build_startup_plan(
     is_port_available=socket_port_available,
     runtime_system: str = platform.system(),
     runtime_machine: str = platform.machine(),
+    project_root: Optional[Path] = None,
+    environment: Optional[dict[str, str]] = None,
 ) -> StartupPlan:
     validate_supported_runtime(system=runtime_system, machine=runtime_machine)
 
@@ -67,10 +72,14 @@ def build_startup_plan(
     ui_url = f"http://localhost:{selected_ui_port}"
     open_browser = not no_open
     message = f"Anacronia is available at {ui_url}"
-    project_root = Path(__file__).resolve().parents[2]
-    web_root = project_root / "web"
+    resolved_project_root = project_root if project_root is not None else Path(__file__).resolve().parents[2]
+    storage = initialize_storage(project_root=resolved_project_root, environment=environment)
+    web_root = resolved_project_root / "web"
     next_bin = web_root / "node_modules" / "next" / "dist" / "bin" / "next"
-    next_swc_path = project_root / "data" / "temp" / "next-swc"
+    next_swc_path = storage.data_root / "temp" / "next-swc"
+    service_environment = {
+        "ANACRONIA_DATA_ROOT": str(storage.data_root),
+    }
 
     services = [
         ServicePlan(
@@ -87,14 +96,14 @@ def build_startup_plan(
                 "--log-level",
                 "info",
             ],
-            cwd=project_root,
-            environment={},
+            cwd=resolved_project_root,
+            environment=service_environment,
         ),
         ServicePlan(
             name="Python worker",
             command=[sys.executable, "-m", "anacronia.worker"],
-            cwd=project_root,
-            environment={},
+            cwd=resolved_project_root,
+            environment=service_environment,
         ),
         ServicePlan(
             name="Next.js UI",
@@ -109,6 +118,7 @@ def build_startup_plan(
             ],
             cwd=web_root,
             environment={
+                **service_environment,
                 "ANACRONIA_API_PORT": str(selected_api_port),
                 "ANACRONIA_UI_PORT": str(selected_ui_port),
                 "NEXT_SWC_PATH": str(next_swc_path),
@@ -120,6 +130,8 @@ def build_startup_plan(
     return StartupPlan(
         ui_port=selected_ui_port,
         api_port=selected_api_port,
+        data_root=storage.data_root,
+        database_path=storage.database_path,
         open_browser=open_browser,
         ui_url=ui_url,
         message=message,

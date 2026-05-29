@@ -52,6 +52,30 @@ def test_startup_plan_includes_backend_worker_and_ui_services():
     assert plan.services[2].environment["NEXT_SWC_PATH"].endswith("data/temp/next-swc")
 
 
+def test_startup_plan_initializes_configured_storage_and_shares_data_root(tmp_path):
+    data_root = tmp_path / "external-data"
+
+    plan = build_startup_plan(
+        no_open=True,
+        ui_port=18660,
+        api_port=18670,
+        runtime_system="Darwin",
+        runtime_machine="arm64",
+        project_root=tmp_path / "project",
+        environment={"ANACRONIA_DATA_ROOT": str(data_root)},
+    )
+
+    assert plan.data_root == data_root
+    assert plan.database_path == data_root / "anacronia.sqlite"
+    assert plan.database_path.is_file()
+    assert [service.environment["ANACRONIA_DATA_ROOT"] for service in plan.services] == [
+        str(data_root),
+        str(data_root),
+        str(data_root),
+    ]
+    assert plan.services[2].environment["NEXT_SWC_PATH"] == str(data_root / "temp" / "next-swc")
+
+
 def test_runtime_requires_apple_silicon_mac():
     with pytest.raises(RuntimeError, match="Apple Silicon"):
         validate_supported_runtime(system="Darwin", machine="x86_64")

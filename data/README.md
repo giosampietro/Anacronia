@@ -8,12 +8,18 @@ Planned structure:
 
 ```text
 data/
-  database/
-  museums/
-    met/
-      raw-api/
-      images/
-      exports/
-      logs/
+  anacronia.sqlite
+  met/
+    raw-api/
+      objects/
+        436000-436999/
+          436535.json
+    images/
+      436000-436999/
+        436535/
+          primary-standard-1024.jpg
+          primary-thumb-256.jpg
+          additional-001-standard-1024.jpg
+          additional-001-thumb-256.jpg
   temp/
 ```
