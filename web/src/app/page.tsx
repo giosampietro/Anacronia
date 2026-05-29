@@ -323,12 +323,14 @@ function CollectControls({
         <Input
           defaultValue={DEFAULT_MAX_IMAGES_PER_OBJECT}
           id={`${idPrefix}_max_images_per_object`}
+          max={DEFAULT_MAX_IMAGES_PER_OBJECT}
           min={1}
           name="max_images_per_object"
+          readOnly
           type="number"
         />
         <FieldDescription>
-          Limits sibling images collected from image-heavy Museum Objects.
+          Hard limit for MVP collection.
         </FieldDescription>
       </Field>
     </FieldGroup>

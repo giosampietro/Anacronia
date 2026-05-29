@@ -1,6 +1,6 @@
 export const DEFAULT_CANDIDATE_OFFSET = 0;
 export const DEFAULT_CANDIDATE_LIMIT = 1000;
-export const DEFAULT_MAX_IMAGES_PER_OBJECT = 10;
+export const DEFAULT_MAX_IMAGES_PER_OBJECT = 3;
 
 export function normalizeCandidateOffset(value: FormDataEntryValue | number | null): number {
   return normalizeWholeNumber(value, DEFAULT_CANDIDATE_OFFSET, 0);
@@ -11,7 +11,10 @@ export function normalizeCandidateLimit(value: FormDataEntryValue | number | nul
 }
 
 export function normalizeMaxImagesPerObject(value: FormDataEntryValue | number | null): number {
-  return normalizeWholeNumber(value, DEFAULT_MAX_IMAGES_PER_OBJECT, 1);
+  return Math.min(
+    normalizeWholeNumber(value, DEFAULT_MAX_IMAGES_PER_OBJECT, 1),
+    DEFAULT_MAX_IMAGES_PER_OBJECT,
+  );
 }
 
 function normalizeWholeNumber(

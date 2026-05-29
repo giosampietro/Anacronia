@@ -8,6 +8,7 @@ from anacronia.met_ingest import (
     DEFAULT_MAX_IMAGES_PER_OBJECT,
     MetIngestSummary,
     MetRecordClient,
+    clamp_max_images_per_object,
     ingest_met_run,
 )
 from anacronia.met_provider import HttpMetCandidateClient, fetch_bytes_url
@@ -88,6 +89,7 @@ def start_collect_job(
 ) -> CollectJob:
     if available_disk_bytes < required_disk_bytes:
         raise DiskSpaceError("Not enough disk space to start collect job.")
+    clamped_max_images_per_object = clamp_max_images_per_object(max_images_per_object)
 
     with sqlite3.connect(database_path) as connection:
         ensure_worker_schema(connection)
@@ -118,7 +120,7 @@ def start_collect_job(
                 candidate_progress_total,
                 required_disk_bytes,
                 available_disk_bytes,
-                max_images_per_object,
+                clamped_max_images_per_object,
             ),
         )
         job_id = int(cursor.lastrowid)
@@ -458,7 +460,7 @@ def ensure_worker_schema(connection: sqlite3.Connection) -> None:
           pause_reason TEXT NOT NULL,
           required_disk_bytes INTEGER NOT NULL,
           last_disk_available_bytes INTEGER,
-          max_images_per_object INTEGER NOT NULL DEFAULT 10
+          max_images_per_object INTEGER NOT NULL DEFAULT 3
         )
         """
     )
@@ -470,7 +472,7 @@ def ensure_worker_schema(connection: sqlite3.Connection) -> None:
         connection.execute(
             """
             ALTER TABLE collect_jobs
-            ADD COLUMN max_images_per_object INTEGER NOT NULL DEFAULT 10
+            ADD COLUMN max_images_per_object INTEGER NOT NULL DEFAULT 3
             """
         )
 

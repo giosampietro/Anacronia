@@ -136,7 +136,7 @@ def test_selects_met_image_references_by_source_url_identity_primary_role_and_li
     ]
 
 
-def test_met_image_reference_limit_defaults_to_ten():
+def test_met_image_reference_limit_defaults_to_three():
     selected, skipped = select_met_image_references(
         record={
             "objectID": 436535,
@@ -147,17 +147,68 @@ def test_met_image_reference_limit_defaults_to_ten():
         },
     )
 
-    assert len(selected) == 10
+    assert len(selected) == 3
     assert [
         (reference.source_image_url, reference.image_index, reference.reason)
         for reference in skipped
     ] == [
+        (
+            "https://images.metmuseum.org/detail-4.jpg",
+            4,
+            "beyond_max_images_per_object",
+        ),
+        (
+            "https://images.metmuseum.org/detail-5.jpg",
+            5,
+            "beyond_max_images_per_object",
+        ),
+        (
+            "https://images.metmuseum.org/detail-6.jpg",
+            6,
+            "beyond_max_images_per_object",
+        ),
+        (
+            "https://images.metmuseum.org/detail-7.jpg",
+            7,
+            "beyond_max_images_per_object",
+        ),
+        (
+            "https://images.metmuseum.org/detail-8.jpg",
+            8,
+            "beyond_max_images_per_object",
+        ),
+        (
+            "https://images.metmuseum.org/detail-9.jpg",
+            9,
+            "beyond_max_images_per_object",
+        ),
+        (
+            "https://images.metmuseum.org/detail-10.jpg",
+            10,
+            "beyond_max_images_per_object",
+        ),
         (
             "https://images.metmuseum.org/detail-11.jpg",
             11,
             "beyond_max_images_per_object",
         )
     ]
+
+
+def test_met_image_reference_limit_is_hard_capped_to_three():
+    selected, skipped = select_met_image_references(
+        record={
+            "objectID": 436535,
+            "additionalImages": [
+                f"https://images.metmuseum.org/detail-{index}.jpg"
+                for index in range(1, 6)
+            ],
+        },
+        max_images_per_object=10,
+    )
+
+    assert len(selected) == 3
+    assert [reference.image_index for reference in skipped] == [4, 5]
 
 
 def test_ingests_additional_image_assets_with_limits_and_independent_failures(tmp_path):

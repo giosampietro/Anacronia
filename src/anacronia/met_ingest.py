@@ -36,7 +36,7 @@ MET_DESCRIPTOR_FIELD_TYPES = {
     "region": "place",
     "city": "place",
 }
-DEFAULT_MAX_IMAGES_PER_OBJECT = 10
+DEFAULT_MAX_IMAGES_PER_OBJECT = 3
 
 
 class MetRecordClient(Protocol):
@@ -122,6 +122,7 @@ def select_met_image_references(
     record: dict[str, object],
     max_images_per_object: int = DEFAULT_MAX_IMAGES_PER_OBJECT,
 ) -> tuple[list[MetImageReference], list[SkippedMetImageReference]]:
+    effective_max_images_per_object = clamp_max_images_per_object(max_images_per_object)
     object_id = int(record["objectID"])
     unique_references: list[tuple[str, str, str]] = []
     seen_source_urls: set[str] = set()
@@ -148,7 +149,7 @@ def select_met_image_references(
             image_index = additional_image_index
             additional_image_index += 1
 
-        if len(selected_references) < max_images_per_object:
+        if len(selected_references) < effective_max_images_per_object:
             selected_references.append(
                 MetImageReference(
                     object_id=object_id,
@@ -171,6 +172,10 @@ def select_met_image_references(
         )
 
     return selected_references, skipped_references
+
+
+def clamp_max_images_per_object(value: int) -> int:
+    return min(max(int(value), 1), DEFAULT_MAX_IMAGES_PER_OBJECT)
 
 
 def ingest_met_run(

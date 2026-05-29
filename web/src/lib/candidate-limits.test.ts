@@ -20,6 +20,6 @@ describe("collect settings", () => {
     expect(normalizeCandidateLimit("500000")).toBe(500000);
     expect(normalizeMaxImagesPerObject("")).toBe(DEFAULT_MAX_IMAGES_PER_OBJECT);
     expect(normalizeMaxImagesPerObject("0")).toBe(1);
-    expect(normalizeMaxImagesPerObject("12")).toBe(12);
+    expect(normalizeMaxImagesPerObject("12")).toBe(3);
   });
 });
