@@ -31,3 +31,6 @@ class HttpMetCandidateClient:
             return []
 
         return [int(object_id) for object_id in object_ids]
+
+    def fetch_object_record(self, object_id: int) -> dict[str, object]:
+        return self.fetch_json(f"{self.base_url}/objects/{object_id}")

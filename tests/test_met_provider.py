@@ -26,3 +26,20 @@ def test_met_candidate_client_handles_empty_met_results():
     )
 
     assert client.search_object_ids("not a likely term") == []
+
+
+def test_met_client_fetches_object_record_by_id():
+    requested_urls: list[str] = []
+
+    def fetch_json(url: str) -> dict[str, object]:
+        requested_urls.append(url)
+        return {"objectID": 436535, "title": "Wheat Field with Cypresses"}
+
+    client = HttpMetCandidateClient(fetch_json=fetch_json)
+
+    record = client.fetch_object_record(436535)
+
+    assert record == {"objectID": 436535, "title": "Wheat Field with Cypresses"}
+    assert requested_urls == [
+        "https://collectionapi.metmuseum.org/public/collection/v1/objects/436535"
+    ]

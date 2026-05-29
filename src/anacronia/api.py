@@ -8,6 +8,11 @@ from anacronia.collection_runs import (
     MetCandidateClient,
     discover_met_candidates,
 )
+from anacronia.met_ingest import (
+    MetIngestSummary,
+    MetRecordClient,
+    ingest_met_run,
+)
 from anacronia.met_provider import HttpMetCandidateClient
 from anacronia.search_sets import (
     SearchSet,
@@ -69,16 +74,35 @@ def serialize_candidate_run(run: CandidateRun) -> dict[str, object]:
     }
 
 
+def serialize_met_ingest_summary(summary: MetIngestSummary) -> dict[str, object]:
+    return {
+        "run_id": summary.run_id,
+        "fetched_object_ids": summary.fetched_object_ids,
+        "imported_object_ids": summary.imported_object_ids,
+        "skipped_candidates": [
+            {
+                "object_id": skipped.object_id,
+                "reason": skipped.reason,
+            }
+            for skipped in summary.skipped_candidates
+        ],
+    }
+
+
 def create_app(
     *,
     database_path: Path | None = None,
+    data_root: Path | None = None,
     met_candidate_client: MetCandidateClient | None = None,
+    met_record_client: MetRecordClient | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Anacronia")
     project_root = Path(__file__).resolve().parents[2]
     storage = initialize_storage(project_root=project_root)
     resolved_database_path = database_path if database_path is not None else storage.database_path
+    resolved_data_root = data_root if data_root is not None else storage.data_root
     resolved_met_candidate_client = met_candidate_client or HttpMetCandidateClient()
+    resolved_met_record_client = met_record_client or HttpMetCandidateClient()
 
     @app.get("/health")
     def health() -> dict[str, object]:
@@ -123,6 +147,16 @@ def create_app(
             met_client=resolved_met_candidate_client,
         )
         return serialize_candidate_run(run)
+
+    @app.post("/provider-collections/met/runs/{run_id}/ingest")
+    def ingest_met_candidate_run(run_id: int) -> dict[str, object]:
+        summary = ingest_met_run(
+            database_path=resolved_database_path,
+            data_root=resolved_data_root,
+            run_id=run_id,
+            met_client=resolved_met_record_client,
+        )
+        return serialize_met_ingest_summary(summary)
 
     return app
 
