@@ -9,6 +9,7 @@ from anacronia.worker import (
     cancel_collect_job,
     check_collect_job_disk_availability,
     complete_collect_job,
+    get_collect_job,
     create_idle_worker_status,
     get_worker_status,
     mark_collect_candidate_processed,
@@ -306,3 +307,58 @@ def test_worker_processes_running_collect_job_through_met_ingest(tmp_path):
         download_image_bytes=lambda _url: ppm_image_bytes(width=1600, height=800),
     ) is None
     assert get_worker_status(database_path=storage.database_path).active_collect_job_id is None
+
+
+def test_worker_marks_candidate_progress_during_met_ingest(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    from anacronia.search_sets import create_or_continue_search_set
+
+    class TwoCandidateClient:
+        def search_object_ids(self, term: str) -> list[int]:
+            assert term == "snake"
+            return [10, 40]
+
+    class ProgressAwareRecordClient(FakeMetRecordClient):
+        def __init__(self, *, job_id: int) -> None:
+            self.job_id = job_id
+
+        def fetch_object_record(self, object_id: int) -> dict[str, object]:
+            if object_id == 40:
+                job = get_collect_job(database_path=storage.database_path, job_id=self.job_id)
+                assert job.last_processed_run_position == 0
+            record = super().fetch_object_record(10)
+            return {**record, "objectID": object_id}
+
+    create_or_continue_search_set(
+        database_path=storage.database_path,
+        display_name="Snake Studies",
+        terms_text="snake",
+    )
+    run = discover_met_candidates(
+        database_path=storage.database_path,
+        search_set_slug="snake-studies",
+        candidate_offset=0,
+        candidate_limit=2,
+        met_client=TwoCandidateClient(),
+    )
+    job = start_collect_job(
+        database_path=storage.database_path,
+        run_id=run.run_id,
+        candidate_offset=0,
+        candidate_limit=2,
+        candidate_progress_total=2,
+        max_images_per_object=1,
+        available_disk_bytes=10_000_000,
+    )
+
+    summary = process_running_collect_job(
+        database_path=storage.database_path,
+        data_root=storage.data_root,
+        met_client=ProgressAwareRecordClient(job_id=job.job_id),
+        download_image_bytes=lambda _url: ppm_image_bytes(width=1600, height=800),
+    )
+
+    assert summary is not None
+    completed_job = get_collect_job(database_path=storage.database_path, job_id=job.job_id)
+    assert completed_job.status == "completed"
+    assert completed_job.last_processed_run_position == 1

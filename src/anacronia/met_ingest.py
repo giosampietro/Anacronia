@@ -181,6 +181,7 @@ def ingest_met_run(
     met_client: MetRecordClient,
     download_image_bytes: Callable[[str], bytes] | None = None,
     max_images_per_object: int = DEFAULT_MAX_IMAGES_PER_OBJECT,
+    on_candidate_processed: Callable[[int], None] | None = None,
 ) -> MetIngestSummary:
     fetched_object_ids: list[int] = []
     imported_object_ids: list[int] = []
@@ -193,6 +194,7 @@ def ingest_met_run(
 
     for candidate in run_candidates:
         object_id = candidate["object_id"]
+        run_position = int(candidate["run_position"])
         record = met_client.fetch_object_record(object_id)
         fetched_object_ids.append(object_id)
 
@@ -200,6 +202,8 @@ def ingest_met_run(
             skipped_candidates.append(
                 SkippedMetCandidate(object_id=object_id, reason="not_public_domain")
             )
+            if on_candidate_processed is not None:
+                on_candidate_processed(run_position)
             continue
 
         raw_record_path = write_met_raw_record(data_root=data_root, record=record)
@@ -254,6 +258,8 @@ def ingest_met_run(
                 database_path=database_path,
                 references=skipped_image_references,
             )
+            if on_candidate_processed is not None:
+                on_candidate_processed(run_position)
             continue
 
         with sqlite3.connect(database_path) as connection:
@@ -284,6 +290,8 @@ def ingest_met_run(
                 descriptors=extract_met_descriptors(record),
             )
         imported_object_ids.append(object_id)
+        if on_candidate_processed is not None:
+            on_candidate_processed(run_position)
 
     return MetIngestSummary(
         run_id=run_id,
@@ -464,7 +472,7 @@ def get_run_candidates_for_ingest(
 ) -> list[dict[str, object]]:
     rows = connection.execute(
         """
-        SELECT object_id, source_term
+        SELECT object_id, source_term, run_position
         FROM run_candidates
         WHERE run_id = ?
         ORDER BY run_position
@@ -472,7 +480,10 @@ def get_run_candidates_for_ingest(
         (run_id,),
     ).fetchall()
 
-    return [{"object_id": row[0], "source_term": row[1]} for row in rows]
+    return [
+        {"object_id": row[0], "source_term": row[1], "run_position": row[2]}
+        for row in rows
+    ]
 
 
 def write_met_raw_record(*, data_root: Path, record: dict[str, object]) -> Path:

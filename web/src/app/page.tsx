@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 
 import { TermsField } from "@/components/terms-field";
 import { ThemeSwitch } from "@/components/theme-switch";
+import { DashboardAutoRefresh } from "@/components/dashboard-auto-refresh";
 import { ProviderCollectionProgress } from "@/components/provider-collection-progress";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -48,6 +49,7 @@ import {
   createOperationalDashboardView,
   type OperationalDashboard,
 } from "@/lib/dashboard";
+import { shouldAutoRefreshDashboard } from "@/lib/dashboard-refresh";
 import {
   DEFAULT_CANDIDATE_LIMIT,
   DEFAULT_CANDIDATE_OFFSET,
@@ -475,6 +477,7 @@ export default async function Home({ searchParams }: HomeProps) {
 
   return (
     <div className="grid min-h-svh bg-background text-foreground lg:grid-cols-[340px_minmax(0,1fr)]">
+      <DashboardAutoRefresh enabled={shouldAutoRefreshDashboard(dashboardView.workerStatus)} />
       <aside className="flex min-h-svh flex-col gap-5 border-r bg-card/20 p-5 lg:sticky lg:top-0 lg:h-svh lg:overflow-y-auto">
         <div className="flex items-center gap-3">
           <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl border bg-background font-heading text-lg font-semibold">

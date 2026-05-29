@@ -148,6 +148,11 @@ def process_running_collect_job(
             met_client=met_client,
             download_image_bytes=download_image_bytes,
             max_images_per_object=job.max_images_per_object,
+            on_candidate_processed=lambda run_position: mark_collect_candidate_processed(
+                database_path=database_path,
+                job_id=job.job_id,
+                run_position=run_position,
+            ),
         )
     except Exception:
         record_collect_provider_failure(
