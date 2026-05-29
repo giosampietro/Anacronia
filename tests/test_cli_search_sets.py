@@ -46,7 +46,7 @@ def test_cli_creates_search_set_from_name_and_comma_separated_terms(tmp_path):
     assert [term.term for term in search_set.terms] == ["snake", "anaconda", "serpet"]
 
 
-def test_cli_deactivates_search_set_term(tmp_path):
+def test_cli_does_not_expose_term_deactivation(tmp_path):
     data_root = tmp_path / "data"
     environment = {
         **os.environ,
@@ -88,8 +88,5 @@ def test_cli_deactivates_search_set_term(tmp_path):
         capture_output=True,
     )
 
-    assert result.returncode == 0
-    assert json.loads(result.stdout)["terms"] == [
-        {"term": "snake", "active": False},
-        {"term": "anaconda", "active": True},
-    ]
+    assert result.returncode != 0
+    assert "invalid choice" in result.stderr

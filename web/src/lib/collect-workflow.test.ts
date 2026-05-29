@@ -16,7 +16,7 @@ describe("collect workflow", () => {
 
   it("explains a rejected collect request", () => {
     expect(collectNoticeFromCode(COLLECT_BUSY_NOTICE)).toBe(
-      "Another collect is active. Resume, cancel, or wait before starting a new collect.",
+      "Another search is active. Resume or wait before starting a new search.",
     );
     expect(collectNoticeFromCode("unknown")).toBeNull();
     expect(collectNoticeFromCode(null)).toBeNull();

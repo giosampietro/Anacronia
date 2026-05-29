@@ -64,7 +64,7 @@ def test_health_reports_api_and_idle_worker(tmp_path):
     }
 
 
-def test_api_creates_and_continues_search_set(tmp_path):
+def test_api_starts_locked_collection_with_initial_met_provider_source(tmp_path):
     storage = initialize_storage(project_root=tmp_path)
     client = TestClient(create_app(database_path=storage.database_path))
 
@@ -86,6 +86,21 @@ def test_api_creates_and_continues_search_set(tmp_path):
         ],
     }
 
+    dashboard = client.get("/dashboard").json()
+    assert dashboard["search_sets"][0]["provider_collections"] == [
+        {
+            "provider": "met",
+            "latest_run_id": None,
+            "collect_status": "idle",
+            "candidate_offset": 0,
+            "candidate_limit": 0,
+            "candidate_progress_processed": 0,
+            "candidate_progress_total": 0,
+            "imported_image_count": 0,
+            "continue_candidate_offset": None,
+        }
+    ]
+
     response = client.post(
         "/search-sets",
         json={
@@ -98,8 +113,27 @@ def test_api_creates_and_continues_search_set(tmp_path):
     assert response.json()["terms"] == [
         {"term": "snake", "active": True},
         {"term": "anaconda", "active": True},
-        {"term": "cobra", "active": True},
     ]
+
+
+def test_api_rejects_collection_without_title_or_terms(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    client = TestClient(create_app(database_path=storage.database_path))
+
+    missing_title = client.post(
+        "/search-sets",
+        json={"display_name": "  ", "terms_text": "snake"},
+    )
+    missing_terms = client.post(
+        "/search-sets",
+        json={"display_name": "Snake Studies", "terms_text": " , \n "},
+    )
+
+    assert missing_title.status_code == 422
+    assert missing_title.json()["detail"] == "Collection title is required."
+    assert missing_terms.status_code == 422
+    assert missing_terms.json()["detail"] == "At least one Collection term is required."
+    assert client.get("/search-sets").json() == []
 
 
 def test_api_lists_search_sets(tmp_path):
@@ -125,7 +159,7 @@ def test_api_lists_search_sets(tmp_path):
     ]
 
 
-def test_api_deactivates_search_set_term(tmp_path):
+def test_api_does_not_expose_term_deactivation(tmp_path):
     storage = initialize_storage(project_root=tmp_path)
     client = TestClient(create_app(database_path=storage.database_path))
     client.post(
@@ -138,11 +172,7 @@ def test_api_deactivates_search_set_term(tmp_path):
         json={"term": "SNAKE"},
     )
 
-    assert response.status_code == 200
-    assert response.json()["terms"] == [
-        {"term": "snake", "active": False},
-        {"term": "anaconda", "active": True},
-    ]
+    assert response.status_code == 404
 
 
 def test_api_discovers_met_candidates_without_listing_runs_as_search_sets(tmp_path):

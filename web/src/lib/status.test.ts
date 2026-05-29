@@ -31,7 +31,7 @@ describe("createStatusRows", () => {
         name: "Python worker",
         state: "idle",
         displayState: "idle",
-        detail: "Ready for collect jobs",
+        detail: "Ready for searches",
       },
     ]);
   });

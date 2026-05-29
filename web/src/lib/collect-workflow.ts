@@ -6,7 +6,7 @@ export function canStartCollect(workerStatus: string): boolean {
 
 export function collectNoticeFromCode(code: string | null | undefined): string | null {
   if (code === COLLECT_BUSY_NOTICE) {
-    return "Another collect is active. Resume, cancel, or wait before starting a new collect.";
+    return "Another search is active. Resume or wait before starting a new search.";
   }
 
   return null;

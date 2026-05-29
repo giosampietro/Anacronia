@@ -21,7 +21,6 @@ from anacronia.met_provider import HttpMetCandidateClient, fetch_bytes_url
 from anacronia.search_sets import (
     SearchSet,
     create_or_continue_search_set,
-    deactivate_search_set_term,
     list_search_sets,
 )
 from anacronia.storage import initialize_storage
@@ -38,10 +37,6 @@ DEFAULT_CANDIDATE_LIMIT = 1000
 class SearchSetRequest(BaseModel):
     display_name: str
     terms_text: str
-
-
-class DeactivateTermRequest(BaseModel):
-    term: str
 
 
 class DiscoverMetCandidatesRequest(BaseModel):
@@ -189,11 +184,14 @@ def create_app(
 
     @app.post("/search-sets")
     def create_search_set(request: SearchSetRequest) -> dict[str, object]:
-        search_set = create_or_continue_search_set(
-            database_path=resolved_database_path,
-            display_name=request.display_name,
-            terms_text=request.terms_text,
-        )
+        try:
+            search_set = create_or_continue_search_set(
+                database_path=resolved_database_path,
+                display_name=request.display_name,
+                terms_text=request.terms_text,
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
         return serialize_search_set(search_set)
 
     @app.get("/search-sets")
@@ -204,15 +202,6 @@ def create_app(
     def get_dashboard() -> dict[str, object]:
         dashboard = get_operational_dashboard(database_path=resolved_database_path)
         return serialize_operational_dashboard(dashboard)
-
-    @app.post("/search-sets/{slug}/terms/deactivate")
-    def deactivate_term(slug: str, request: DeactivateTermRequest) -> dict[str, object]:
-        search_set = deactivate_search_set_term(
-            database_path=resolved_database_path,
-            slug=slug,
-            term=request.term,
-        )
-        return serialize_search_set(search_set)
 
     @app.post("/search-sets/{slug}/provider-collections/met/runs")
     def discover_met_candidate_run(
@@ -234,7 +223,7 @@ def create_app(
         request: StartMetCollectRequest,
     ) -> dict[str, object]:
         if get_worker_status(database_path=resolved_database_path).active_collect_job_id is not None:
-            raise HTTPException(status_code=409, detail="Another collect job is already active.")
+            raise HTTPException(status_code=409, detail="Another search is already active.")
 
         run = discover_met_candidates(
             database_path=resolved_database_path,

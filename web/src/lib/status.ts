@@ -45,7 +45,7 @@ export function createStatusRows({
       name: "Python worker",
       state: apiHealth.worker.status,
       displayState: apiHealth.worker.status === "running" ? "active" : apiHealth.worker.status,
-      detail: apiHealth.worker.status === "idle" ? "Ready for collect jobs" : "Processing",
+      detail: apiHealth.worker.status === "idle" ? "Ready for searches" : "Processing",
     },
   ];
 }

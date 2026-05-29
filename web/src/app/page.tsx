@@ -37,7 +37,6 @@ import {
   CircleCheck,
   Database,
   HardDrive,
-  MinusCircle,
   Play,
   Plus,
   RotateCcw,
@@ -142,31 +141,6 @@ async function getDashboard(apiPort: number): Promise<OperationalDashboard | nul
   }
 }
 
-async function createSearchSet(formData: FormData) {
-  "use server";
-
-  const apiPort = getPort("ANACRONIA_API_PORT", DEFAULT_API_PORT);
-  const displayName = getActionFormDataString(formData, "display_name");
-  const termsText = getActionFormDataString(formData, "terms_text");
-
-  const response = await fetch(`http://127.0.0.1:${apiPort}/search-sets`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      display_name: displayName,
-      terms_text: termsText,
-    }),
-  });
-
-  revalidatePath("/");
-  if (!response.ok) {
-    return;
-  }
-
-  const searchSet = (await response.json()) as { slug: string };
-  redirect(`/?search_set=${searchSet.slug}`);
-}
-
 async function createSearchSetAndCollectFromMet(formData: FormData) {
   "use server";
 
@@ -212,22 +186,6 @@ async function createSearchSetAndCollectFromMet(formData: FormData) {
     redirect(`/?search_set=${searchSet.slug}&collect_notice=${COLLECT_BUSY_NOTICE}`);
   }
   redirect(`/?search_set=${searchSet.slug}`);
-}
-
-async function deactivateSearchSetTerm(formData: FormData) {
-  "use server";
-
-  const apiPort = getPort("ANACRONIA_API_PORT", DEFAULT_API_PORT);
-  const slug = getActionFormDataString(formData, "slug");
-  const term = getActionFormDataString(formData, "term");
-
-  await fetch(`http://127.0.0.1:${apiPort}/search-sets/${slug}/terms/deactivate`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ term }),
-  });
-
-  revalidatePath("/");
 }
 
 async function startMetCollect(formData: FormData) {
@@ -325,7 +283,7 @@ function CollectBusyNote({ collectAvailable }: { collectAvailable: boolean }) {
 
   return (
     <p className="text-sm text-muted-foreground">
-      A collect is already active. Collection actions will be available after it finishes.
+      A search is already active. Collection actions will be available after it finishes.
     </p>
   );
 }
@@ -345,7 +303,7 @@ function NewSearchSetWorkspace({ collectAvailable }: { collectAvailable: boolean
           <CardHeader>
             <CardTitle>Collection</CardTitle>
             <CardDescription>
-              Give this workspace a name and paste the terms to collect from.
+              Give this workspace a name and paste the terms to search with.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -373,29 +331,21 @@ function NewSearchSetWorkspace({ collectAvailable }: { collectAvailable: boolean
               <CollectControls idPrefix="new_search_set" />
             </CardContent>
             <CardFooter className="justify-end gap-2 border-t bg-muted/50">
-              <Button formAction={createSearchSet} type="submit" variant="outline">
-                Save only
-              </Button>
               <Button formAction={createSearchSetAndCollectFromMet} type="submit">
                 <Play data-icon="inline-start" />
-                Create and collect from Met
+                Start search
               </Button>
             </CardFooter>
           </Card>
         ) : (
           <Card>
             <CardHeader>
-              <CardTitle>Collect unavailable</CardTitle>
+              <CardTitle>Search unavailable</CardTitle>
               <CardDescription>
-                Another collect is already active. Save this Collection now,
-                then collect from Met after the current job finishes.
+                Another search is already active. New Collections can start after the current
+                search finishes.
               </CardDescription>
             </CardHeader>
-            <CardFooter className="justify-end border-t bg-muted/50">
-              <Button formAction={createSearchSet} type="submit">
-                Save Collection
-              </Button>
-            </CardFooter>
           </Card>
         )}
       </form>
@@ -612,23 +562,7 @@ export default async function Home({ searchParams }: HomeProps) {
 
               <div className="flex flex-wrap gap-2">
                 {activeSearchSet.activeTerms.map((term) => (
-                  <form
-                    action={deactivateSearchSetTerm}
-                    className="flex items-center gap-1"
-                    key={term}
-                  >
-                    <input name="slug" type="hidden" value={activeSearchSet.slug} />
-                    <input name="term" type="hidden" value={term} />
-                    <Badge>{term}</Badge>
-                    <Button
-                      aria-label={`Deactivate ${term}`}
-                      size="icon-xs"
-                      type="submit"
-                      variant="ghost"
-                    >
-                      <MinusCircle data-icon="inline-start" />
-                    </Button>
-                  </form>
+                  <Badge key={term}>{term}</Badge>
                 ))}
                 {activeSearchSet.inactiveTerms.map((term) => (
                   <Badge key={term} variant="secondary">
@@ -639,7 +573,7 @@ export default async function Home({ searchParams }: HomeProps) {
 
               <div className="flex flex-wrap gap-2">
                 {activeProviderCollections.length === 0 ? (
-                  <Badge variant="outline">Met not collected yet</Badge>
+                  <Badge variant="outline">Met not searched yet</Badge>
                 ) : (
                   activeProviderCollections.map((providerCollection) => (
                     <Badge
@@ -685,7 +619,7 @@ export default async function Home({ searchParams }: HomeProps) {
                         </EmptyMedia>
                         <EmptyTitle>No Image Assets yet</EmptyTitle>
                         <EmptyDescription>
-                          Collect from Met to add local Image Assets to this Collection.
+                          Start search to add local Image Assets to this Collection.
                         </EmptyDescription>
                       </EmptyHeader>
                     </Empty>
@@ -719,7 +653,7 @@ export default async function Home({ searchParams }: HomeProps) {
                   <Card>
                     <CardHeader>
                       <CardTitle>Met</CardTitle>
-                      <CardDescription>No run yet</CardDescription>
+                      <CardDescription>No search yet</CardDescription>
                     </CardHeader>
                     <form action={startMetCollect}>
                       <input name="slug" type="hidden" value={activeSearchSet.slug} />
@@ -730,7 +664,7 @@ export default async function Home({ searchParams }: HomeProps) {
                       <CardFooter className="justify-end border-t bg-muted/50">
                         <Button disabled={!collectAvailable} size="sm" type="submit">
                           <Play data-icon="inline-start" />
-                          Collect from Met
+                          Start search
                         </Button>
                       </CardFooter>
                     </form>
@@ -781,44 +715,6 @@ export default async function Home({ searchParams }: HomeProps) {
                     </Card>
                   ))
                 )}
-
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Add terms</CardTitle>
-                  </CardHeader>
-                  <form>
-                    <input
-                      name="display_name"
-                      type="hidden"
-                      value={activeSearchSet.displayName}
-                    />
-                    <CardContent>
-                      <FieldGroup>
-                        <TermsField
-                          id={`${activeSearchSet.slug}_additional_terms`}
-                          name="terms_text"
-                          placeholder="cobra, serpent"
-                        />
-                        <CollectControls idPrefix={`${activeSearchSet.slug}_add_terms`} />
-                        <CollectBusyNote collectAvailable={collectAvailable} />
-                      </FieldGroup>
-                    </CardContent>
-                    <CardFooter className="justify-end gap-2 border-t bg-muted/50">
-                      <Button formAction={createSearchSet} size="sm" type="submit" variant="outline">
-                        Save terms only
-                      </Button>
-                      <Button
-                        disabled={!collectAvailable}
-                        formAction={createSearchSetAndCollectFromMet}
-                        size="sm"
-                        type="submit"
-                      >
-                        <Play data-icon="inline-start" />
-                        Add terms and collect from Met
-                      </Button>
-                    </CardFooter>
-                  </form>
-                </Card>
               </section>
             </section>
           </div>

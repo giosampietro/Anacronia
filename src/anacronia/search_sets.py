@@ -3,6 +3,8 @@ from pathlib import Path
 import re
 import sqlite3
 
+MET_PROVIDER = "met"
+
 
 @dataclass(frozen=True)
 class SearchSetTerm:
@@ -47,26 +49,43 @@ def create_or_continue_search_set(
     slug = slugify_search_set_name(display_name)
     terms = parse_search_terms(terms_text)
 
+    if not slug:
+        raise ValueError("Collection title is required.")
+    if not terms:
+        raise ValueError("At least one Collection term is required.")
+
     with sqlite3.connect(database_path) as connection:
         ensure_search_set_schema(connection)
-        connection.execute(
-            "INSERT OR IGNORE INTO search_sets (display_name, slug) VALUES (?, ?)",
-            (display_name.strip(), slug),
-        )
-        search_set_id = connection.execute(
+        ensure_provider_collection_schema(connection)
+        search_set_row = connection.execute(
             "SELECT id FROM search_sets WHERE slug = ?",
             (slug,),
-        ).fetchone()[0]
+        ).fetchone()
 
-        for term in terms:
-            connection.execute(
-                """
-                INSERT OR IGNORE INTO search_set_terms
-                  (search_set_id, term, normalized_term, active)
-                VALUES (?, ?, ?, 1)
-                """,
-                (search_set_id, term, normalize_search_term(term)),
+        if search_set_row is None:
+            cursor = connection.execute(
+                "INSERT INTO search_sets (display_name, slug) VALUES (?, ?)",
+                (display_name.strip(), slug),
             )
+            search_set_id = int(cursor.lastrowid)
+
+            for term in terms:
+                connection.execute(
+                    """
+                    INSERT INTO search_set_terms
+                      (search_set_id, term, normalized_term, active)
+                    VALUES (?, ?, ?, 1)
+                    """,
+                    (search_set_id, term, normalize_search_term(term)),
+                )
+        else:
+            search_set_id = int(search_set_row[0])
+
+        ensure_provider_collection(
+            connection=connection,
+            search_set_id=search_set_id,
+            provider=MET_PROVIDER,
+        )
 
     return get_search_set(database_path=database_path, slug=slug)
 
@@ -158,6 +177,46 @@ def ensure_search_set_schema(connection: sqlite3.Connection) -> None:
         )
         """
     )
+
+
+def ensure_provider_collection_schema(connection: sqlite3.Connection) -> None:
+    ensure_search_set_schema(connection)
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS provider_collections (
+          id INTEGER PRIMARY KEY,
+          search_set_id INTEGER NOT NULL,
+          provider TEXT NOT NULL,
+          FOREIGN KEY (search_set_id) REFERENCES search_sets(id),
+          UNIQUE (search_set_id, provider)
+        )
+        """
+    )
+
+
+def ensure_provider_collection(
+    *,
+    connection: sqlite3.Connection,
+    search_set_id: int,
+    provider: str,
+) -> int:
+    ensure_provider_collection_schema(connection)
+    connection.execute(
+        """
+        INSERT OR IGNORE INTO provider_collections (search_set_id, provider)
+        VALUES (?, ?)
+        """,
+        (search_set_id, provider),
+    )
+
+    return connection.execute(
+        """
+        SELECT id
+        FROM provider_collections
+        WHERE search_set_id = ? AND provider = ?
+        """,
+        (search_set_id, provider),
+    ).fetchone()[0]
 
 
 def slugify_search_set_name(display_name: str) -> str:

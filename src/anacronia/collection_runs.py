@@ -4,7 +4,11 @@ from pathlib import Path
 import sqlite3
 from typing import Protocol
 
-from anacronia.search_sets import ensure_search_set_schema, get_search_set
+from anacronia.search_sets import (
+    ensure_provider_collection,
+    ensure_provider_collection_schema,
+    get_search_set,
+)
 
 
 MET_PROVIDER = "met"
@@ -202,43 +206,8 @@ def get_candidate_run(*, database_path: Path, run_id: int) -> CandidateRun:
     )
 
 
-def ensure_provider_collection(
-    *,
-    connection: sqlite3.Connection,
-    search_set_id: int,
-    provider: str,
-) -> int:
-    connection.execute(
-        """
-        INSERT OR IGNORE INTO provider_collections (search_set_id, provider)
-        VALUES (?, ?)
-        """,
-        (search_set_id, provider),
-    )
-
-    return connection.execute(
-        """
-        SELECT id
-        FROM provider_collections
-        WHERE search_set_id = ? AND provider = ?
-        """,
-        (search_set_id, provider),
-    ).fetchone()[0]
-
-
 def ensure_collection_run_schema(connection: sqlite3.Connection) -> None:
-    ensure_search_set_schema(connection)
-    connection.execute(
-        """
-        CREATE TABLE IF NOT EXISTS provider_collections (
-          id INTEGER PRIMARY KEY,
-          search_set_id INTEGER NOT NULL,
-          provider TEXT NOT NULL,
-          FOREIGN KEY (search_set_id) REFERENCES search_sets(id),
-          UNIQUE (search_set_id, provider)
-        )
-        """
-    )
+    ensure_provider_collection_schema(connection)
     connection.execute(
         """
         CREATE TABLE IF NOT EXISTS collection_runs (

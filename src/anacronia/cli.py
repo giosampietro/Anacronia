@@ -11,7 +11,7 @@ from typing import Optional
 import webbrowser
 
 from anacronia.ports import choose_port, is_port_available as socket_port_available
-from anacronia.search_sets import SearchSet, create_or_continue_search_set, deactivate_search_set_term
+from anacronia.search_sets import SearchSet, create_or_continue_search_set
 from anacronia.storage import initialize_storage
 
 
@@ -198,17 +198,6 @@ def run_search_set_create(*, name: str, terms: str) -> None:
     print(json.dumps(serialize_search_set(search_set)), flush=True)
 
 
-def run_search_set_deactivate_term(*, slug: str, term: str) -> None:
-    project_root = Path(__file__).resolve().parents[2]
-    storage = initialize_storage(project_root=project_root)
-    search_set = deactivate_search_set_term(
-        database_path=storage.database_path,
-        slug=slug,
-        term=term,
-    )
-    print(json.dumps(serialize_search_set(search_set)), flush=True)
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(prog="anacronia")
     parser.add_argument("--no-open", action="store_true", help="Print the local URL without opening a browser.")
@@ -218,16 +207,10 @@ def main() -> None:
     search_set_create_parser = search_set_subparsers.add_parser("create")
     search_set_create_parser.add_argument("--name", required=True)
     search_set_create_parser.add_argument("--terms", required=True)
-    search_set_deactivate_parser = search_set_subparsers.add_parser("deactivate-term")
-    search_set_deactivate_parser.add_argument("--slug", required=True)
-    search_set_deactivate_parser.add_argument("--term", required=True)
     args = parser.parse_args()
 
     if args.command == "search-set" and args.search_set_command == "create":
         run_search_set_create(name=args.name, terms=args.terms)
-        return
-    if args.command == "search-set" and args.search_set_command == "deactivate-term":
-        run_search_set_deactivate_term(slug=args.slug, term=args.term)
         return
 
     run_startup_plan(build_startup_plan(no_open=args.no_open))
