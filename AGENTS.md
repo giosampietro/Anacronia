@@ -13,3 +13,7 @@ Triage roles map to Anacronia's GitHub labels, with AFK work using `ready-for-ag
 ### Domain docs
 
 This is a single-context repo: read root `CONTEXT.md` first and use `docs/adr/` for future ADRs. See `docs/agents/domain.md`.
+
+### User test commands
+
+When giving the user terminal commands for local checks or manual testing, also add or update a double-clickable Mac `.command` file under `batch-cmd/` and link it in the chat. The user prefers not to type terminal commands.
