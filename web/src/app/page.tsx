@@ -601,7 +601,7 @@ export default async function Home({ searchParams }: HomeProps) {
                 <span className="truncate text-muted-foreground">{row.name}</span>
                 <Badge variant={statusVariant(row.state)}>
                   {statusIcon(row.state)}
-                  {row.state}
+                  {row.displayState}
                 </Badge>
               </div>
             ))}

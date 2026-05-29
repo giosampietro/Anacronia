@@ -13,6 +13,7 @@ export type ApiHealth = {
 export type StatusRow = {
   name: string;
   state: string;
+  displayState: string;
   detail: string;
 };
 
@@ -31,16 +32,19 @@ export function createStatusRows({
     {
       name: "Next.js UI",
       state: "ok",
+      displayState: "ok",
       detail: `Listening on localhost:${uiPort}`,
     },
     {
       name: "FastAPI backend",
       state: apiHealth.status,
+      displayState: apiHealth.status,
       detail: `Reachable on localhost:${apiPort}`,
     },
     {
       name: "Python worker",
       state: apiHealth.worker.status,
+      displayState: apiHealth.worker.status === "running" ? "active" : apiHealth.worker.status,
       detail: apiHealth.worker.status === "idle" ? "Ready for collect jobs" : "Processing",
     },
   ];
