@@ -22,6 +22,8 @@ trap finish EXIT
 
 echo "Anacronia bootstrap verification"
 echo "Project: $(pwd)"
+echo "This checks the project. It does not open the app."
+echo "To open Anacronia in your browser, double-click batch-cmd/open-anacronia.command."
 echo
 
 if [ ! -x ".venv/bin/python" ]; then

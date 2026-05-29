@@ -22,7 +22,7 @@ trap finish EXIT
 
 echo "Starting Anacronia"
 echo "Leave this window open while using the app."
-echo "The app will open at http://localhost:18660"
+echo "The browser will open automatically at http://localhost:18660 when Anacronia is ready."
 echo
 
 if [ ! -x ".venv/bin/anacronia" ]; then
