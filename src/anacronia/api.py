@@ -1,7 +1,8 @@
 from pathlib import Path
+import shutil
 from typing import Callable
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from anacronia.collection_runs import (
@@ -11,6 +12,7 @@ from anacronia.collection_runs import (
 )
 from anacronia.dashboard import OperationalDashboard, get_operational_dashboard
 from anacronia.met_ingest import (
+    DEFAULT_MAX_IMAGES_PER_OBJECT,
     MetIngestSummary,
     MetRecordClient,
     ingest_met_run,
@@ -23,11 +25,10 @@ from anacronia.search_sets import (
     list_search_sets,
 )
 from anacronia.storage import initialize_storage
-from anacronia.worker import create_idle_worker_status
+from anacronia.worker import CollectLockError, create_idle_worker_status, start_collect_job
 
 
-DEFAULT_CANDIDATE_LIMIT = 100
-MAX_CANDIDATE_LIMIT = 500
+DEFAULT_CANDIDATE_LIMIT = 1000
 
 
 class SearchSetRequest(BaseModel):
@@ -41,7 +42,13 @@ class DeactivateTermRequest(BaseModel):
 
 class DiscoverMetCandidatesRequest(BaseModel):
     candidate_offset: int = Field(default=0, ge=0)
-    candidate_limit: int = Field(default=DEFAULT_CANDIDATE_LIMIT, ge=1, le=MAX_CANDIDATE_LIMIT)
+    candidate_limit: int = Field(default=DEFAULT_CANDIDATE_LIMIT, ge=1)
+
+
+class StartMetCollectRequest(BaseModel):
+    candidate_offset: int = Field(default=0, ge=0)
+    candidate_limit: int = Field(default=DEFAULT_CANDIDATE_LIMIT, ge=1)
+    max_images_per_object: int = Field(default=DEFAULT_MAX_IMAGES_PER_OBJECT, ge=1)
 
 
 def serialize_search_set(search_set: SearchSet) -> dict[str, object]:
@@ -206,6 +213,37 @@ def create_app(
             met_client=resolved_met_candidate_client,
         )
         return serialize_candidate_run(run)
+
+    @app.post("/search-sets/{slug}/provider-collections/met/collects")
+    def start_met_collect(
+        slug: str,
+        request: StartMetCollectRequest,
+    ) -> dict[str, object]:
+        run = discover_met_candidates(
+            database_path=resolved_database_path,
+            search_set_slug=slug,
+            candidate_offset=request.candidate_offset,
+            candidate_limit=request.candidate_limit,
+            met_client=resolved_met_candidate_client,
+        )
+        try:
+            collect_job = start_collect_job(
+                database_path=resolved_database_path,
+                run_id=run.run_id,
+                candidate_offset=request.candidate_offset,
+                candidate_limit=request.candidate_limit,
+                candidate_progress_total=run.candidate_progress_total,
+                max_images_per_object=request.max_images_per_object,
+                available_disk_bytes=shutil.disk_usage(resolved_data_root).free,
+            )
+        except CollectLockError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+
+        return {
+            "run_id": run.run_id,
+            "collect_job_id": collect_job.job_id,
+            "status": collect_job.status,
+        }
 
     @app.post("/provider-collections/met/runs/{run_id}/ingest")
     def ingest_met_candidate_run(run_id: int) -> dict[str, object]:

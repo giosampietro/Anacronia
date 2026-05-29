@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-from anacronia.api import MAX_CANDIDATE_LIMIT, create_app
+from anacronia.api import DEFAULT_CANDIDATE_LIMIT, DEFAULT_MAX_IMAGES_PER_OBJECT, create_app
 from anacronia.worker import start_collect_job
 from anacronia.met_ingest import get_met_matches, get_met_museum_objects
 from anacronia.storage import initialize_storage
@@ -194,12 +194,14 @@ def test_api_discovers_met_candidates_without_listing_runs_as_search_sets(tmp_pa
     ]
 
 
-def test_api_rejects_met_candidate_runs_above_the_safety_limit(tmp_path):
+def test_api_starts_met_collect_job_from_search_set(tmp_path):
     storage = initialize_storage(project_root=tmp_path)
+    met_client = FakeMetCandidateClient()
     client = TestClient(
         create_app(
             database_path=storage.database_path,
-            met_candidate_client=FakeMetCandidateClient(),
+            data_root=storage.data_root,
+            met_candidate_client=met_client,
         )
     )
     client.post(
@@ -208,11 +210,28 @@ def test_api_rejects_met_candidate_runs_above_the_safety_limit(tmp_path):
     )
 
     response = client.post(
-        "/search-sets/snake-studies/provider-collections/met/runs",
-        json={"candidate_offset": 0, "candidate_limit": MAX_CANDIDATE_LIMIT + 1},
+        "/search-sets/snake-studies/provider-collections/met/collects",
+        json={
+            "candidate_offset": 0,
+            "candidate_limit": DEFAULT_CANDIDATE_LIMIT,
+            "max_images_per_object": DEFAULT_MAX_IMAGES_PER_OBJECT,
+        },
     )
 
-    assert response.status_code == 422
+    assert response.status_code == 200
+    assert met_client.queries == ["snake", "anaconda"]
+    assert response.json() == {
+        "run_id": 1,
+        "collect_job_id": 1,
+        "status": "running",
+    }
+    dashboard = client.get("/dashboard").json()
+    assert dashboard["worker_status"] == {
+        "service": "worker",
+        "status": "running",
+        "active_collect_job_id": 1,
+    }
+    assert dashboard["search_sets"][0]["provider_collections"][0]["candidate_limit"] == 1000
 
 
 def test_api_ingests_met_records_for_a_candidate_run(tmp_path):

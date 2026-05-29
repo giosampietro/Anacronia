@@ -1,5 +1,8 @@
 import pytest
 
+from anacronia.collection_runs import discover_met_candidates
+from anacronia.met_ingest import get_met_image_assets
+from anacronia.storage import initialize_storage
 from anacronia.worker import (
     CollectLockError,
     DiskSpaceError,
@@ -10,11 +13,36 @@ from anacronia.worker import (
     get_worker_status,
     mark_collect_candidate_processed,
     pause_collect_job,
+    process_running_collect_job,
     propose_continue_after_cancel,
     record_collect_provider_failure,
     resume_collect_job,
     start_collect_job,
 )
+
+
+class FakeMetCandidateClient:
+    def search_object_ids(self, term: str) -> list[int]:
+        return {"snake": [10]}[term]
+
+
+class FakeMetRecordClient:
+    def fetch_object_record(self, object_id: int) -> dict[str, object]:
+        return {
+            "objectID": object_id,
+            "isPublicDomain": True,
+            "title": "Snake Bowl",
+            "objectName": "Bowl",
+            "tags": [{"term": "Snake"}],
+            "primaryImage": "https://images.metmuseum.org/10.jpg",
+            "objectURL": "https://www.metmuseum.org/art/collection/search/10",
+        }
+
+
+def ppm_image_bytes(*, width: int, height: int) -> bytes:
+    header = f"P6\n{width} {height}\n255\n".encode("ascii")
+    row = bytes([180, 40, 120]) * width
+    return header + row * height
 
 
 def test_worker_starts_idle():
@@ -232,3 +260,49 @@ def test_repeated_provider_failures_trigger_backoff_then_automatic_pause(tmp_pat
             candidate_progress_total=5,
             available_disk_bytes=10_000_000,
         )
+
+
+def test_worker_processes_running_collect_job_through_met_ingest(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    from anacronia.search_sets import create_or_continue_search_set
+
+    create_or_continue_search_set(
+        database_path=storage.database_path,
+        display_name="Snake Studies",
+        terms_text="snake",
+    )
+    run = discover_met_candidates(
+        database_path=storage.database_path,
+        search_set_slug="snake-studies",
+        candidate_offset=0,
+        candidate_limit=1,
+        met_client=FakeMetCandidateClient(),
+    )
+    job = start_collect_job(
+        database_path=storage.database_path,
+        run_id=run.run_id,
+        candidate_offset=0,
+        candidate_limit=1,
+        candidate_progress_total=1,
+        max_images_per_object=1,
+        available_disk_bytes=10_000_000,
+    )
+
+    summary = process_running_collect_job(
+        database_path=storage.database_path,
+        data_root=storage.data_root,
+        met_client=FakeMetRecordClient(),
+        download_image_bytes=lambda _url: ppm_image_bytes(width=1600, height=800),
+    )
+
+    assert summary is not None
+    assert summary.imported_object_ids == [10]
+    assert get_worker_status(database_path=storage.database_path).status == "idle"
+    assert get_met_image_assets(database_path=storage.database_path)[0].object_id == 10
+    assert process_running_collect_job(
+        database_path=storage.database_path,
+        data_root=storage.data_root,
+        met_client=FakeMetRecordClient(),
+        download_image_bytes=lambda _url: ppm_image_bytes(width=1600, height=800),
+    ) is None
+    assert get_worker_status(database_path=storage.database_path).active_collect_job_id is None

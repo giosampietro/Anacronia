@@ -2,6 +2,16 @@ from dataclasses import dataclass
 from pathlib import Path
 import sqlite3
 import time
+from typing import Callable
+
+from anacronia.met_ingest import (
+    DEFAULT_MAX_IMAGES_PER_OBJECT,
+    MetIngestSummary,
+    MetRecordClient,
+    ingest_met_run,
+)
+from anacronia.met_provider import HttpMetCandidateClient, fetch_bytes_url
+from anacronia.storage import initialize_storage
 
 
 ACTIVE_COLLECT_JOB_STATUSES = ("running", "paused")
@@ -39,6 +49,7 @@ class CollectJob:
     pause_reason: str
     required_disk_bytes: int
     last_disk_available_bytes: int | None
+    max_images_per_object: int
 
 
 def create_idle_worker_status() -> dict[str, str]:
@@ -72,6 +83,7 @@ def start_collect_job(
     candidate_limit: int,
     candidate_progress_total: int,
     available_disk_bytes: int,
+    max_images_per_object: int = DEFAULT_MAX_IMAGES_PER_OBJECT,
     required_disk_bytes: int = DEFAULT_REQUIRED_DISK_BYTES,
 ) -> CollectJob:
     if available_disk_bytes < required_disk_bytes:
@@ -94,9 +106,10 @@ def start_collect_job(
               backoff_seconds,
               pause_reason,
               required_disk_bytes,
-              last_disk_available_bytes
+              last_disk_available_bytes,
+              max_images_per_object
             )
-            VALUES (?, 'running', ?, ?, ?, 0, 0, '', ?, ?)
+            VALUES (?, 'running', ?, ?, ?, 0, 0, '', ?, ?, ?)
             """,
             (
                 run_id,
@@ -105,11 +118,53 @@ def start_collect_job(
                 candidate_progress_total,
                 required_disk_bytes,
                 available_disk_bytes,
+                max_images_per_object,
             ),
         )
         job_id = int(cursor.lastrowid)
 
     return get_collect_job(database_path=database_path, job_id=job_id)
+
+
+def process_running_collect_job(
+    *,
+    database_path: Path,
+    data_root: Path,
+    met_client: MetRecordClient,
+    download_image_bytes: Callable[[str], bytes] | None = None,
+) -> MetIngestSummary | None:
+    with sqlite3.connect(database_path) as connection:
+        ensure_worker_schema(connection)
+        job = get_running_collect_job(connection=connection)
+
+    if job is None:
+        return None
+
+    try:
+        summary = ingest_met_run(
+            database_path=database_path,
+            data_root=data_root,
+            run_id=job.run_id,
+            met_client=met_client,
+            download_image_bytes=download_image_bytes,
+            max_images_per_object=job.max_images_per_object,
+        )
+    except Exception:
+        record_collect_provider_failure(
+            database_path=database_path,
+            job_id=job.job_id,
+        )
+        return None
+
+    if job.candidate_progress_total > 0:
+        mark_collect_candidate_processed(
+            database_path=database_path,
+            job_id=job.job_id,
+            run_position=job.candidate_progress_total - 1,
+        )
+    complete_collect_job(database_path=database_path, job_id=job.job_id)
+
+    return summary
 
 
 def pause_collect_job(
@@ -290,7 +345,8 @@ def get_collect_job(*, database_path: Path, job_id: int) -> CollectJob:
               backoff_seconds,
               pause_reason,
               required_disk_bytes,
-              last_disk_available_bytes
+              last_disk_available_bytes,
+              max_images_per_object
             FROM collect_jobs
             WHERE id = ?
             """,
@@ -318,10 +374,41 @@ def get_active_collect_job(*, connection: sqlite3.Connection) -> CollectJob | No
           backoff_seconds,
           pause_reason,
           required_disk_bytes,
-          last_disk_available_bytes
+          last_disk_available_bytes,
+          max_images_per_object
         FROM collect_jobs
         WHERE status IN ('running', 'paused')
         ORDER BY id DESC
+        LIMIT 1
+        """
+    ).fetchone()
+
+    if row is None:
+        return None
+
+    return collect_job_from_row(row)
+
+
+def get_running_collect_job(*, connection: sqlite3.Connection) -> CollectJob | None:
+    row = connection.execute(
+        """
+        SELECT
+          id,
+          run_id,
+          status,
+          candidate_offset,
+          candidate_limit,
+          candidate_progress_total,
+          last_processed_run_position,
+          provider_failure_count,
+          backoff_seconds,
+          pause_reason,
+          required_disk_bytes,
+          last_disk_available_bytes,
+          max_images_per_object
+        FROM collect_jobs
+        WHERE status = 'running'
+        ORDER BY id
         LIMIT 1
         """
     ).fetchone()
@@ -346,6 +433,7 @@ def collect_job_from_row(row: sqlite3.Row | tuple[object, ...]) -> CollectJob:
         pause_reason=str(row[9]),
         required_disk_bytes=int(row[10]),
         last_disk_available_bytes=row[11],
+        max_images_per_object=int(row[12]),
     )
 
 
@@ -364,14 +452,39 @@ def ensure_worker_schema(connection: sqlite3.Connection) -> None:
           backoff_seconds INTEGER NOT NULL,
           pause_reason TEXT NOT NULL,
           required_disk_bytes INTEGER NOT NULL,
-          last_disk_available_bytes INTEGER
+          last_disk_available_bytes INTEGER,
+          max_images_per_object INTEGER NOT NULL DEFAULT 10
         )
         """
     )
+    columns = {
+        row[1]
+        for row in connection.execute("PRAGMA table_info(collect_jobs)").fetchall()
+    }
+    if "max_images_per_object" not in columns:
+        connection.execute(
+            """
+            ALTER TABLE collect_jobs
+            ADD COLUMN max_images_per_object INTEGER NOT NULL DEFAULT 10
+            """
+        )
 
 
 def main() -> None:
+    project_root = Path(__file__).resolve().parents[2]
+    storage = initialize_storage(project_root=project_root)
+    met_client = HttpMetCandidateClient()
+
     while True:
+        try:
+            process_running_collect_job(
+                database_path=storage.database_path,
+                data_root=storage.data_root,
+                met_client=met_client,
+                download_image_bytes=fetch_bytes_url,
+            )
+        except Exception:
+            pass
         time.sleep(1)
 
 

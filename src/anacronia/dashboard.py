@@ -223,7 +223,8 @@ def get_latest_collect_job_for_run(
           backoff_seconds,
           pause_reason,
           required_disk_bytes,
-          last_disk_available_bytes
+          last_disk_available_bytes,
+          max_images_per_object
         FROM collect_jobs
         WHERE run_id = ?
         ORDER BY id DESC

@@ -41,6 +41,9 @@ export type DashboardProviderCollectionView = {
   provider: string;
   providerLabel: string;
   status: string;
+  candidateOffset: number;
+  candidateLimit: number;
+  nextCandidateOffset: number;
   progressLabel: string;
   progressPercent: number;
   importedImageCount: number;
@@ -91,6 +94,11 @@ export function createOperationalDashboardView(
       provider: providerCollection.provider,
       providerLabel: providerLabel(providerCollection.provider),
       status: providerCollection.collect_status,
+      candidateOffset: providerCollection.candidate_offset,
+      candidateLimit: providerCollection.candidate_limit,
+      nextCandidateOffset:
+        providerCollection.continue_candidate_offset ??
+        providerCollection.candidate_offset + providerCollection.candidate_limit,
       progressLabel: `${providerCollection.candidate_progress_processed}/${providerCollection.candidate_progress_total} candidates`,
       progressPercent: progressPercent(
         providerCollection.candidate_progress_processed,

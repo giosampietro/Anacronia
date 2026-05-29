@@ -2,6 +2,7 @@ import { revalidatePath } from "next/cache";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
+import { TermsField } from "@/components/terms-field";
 import { ThemeSwitch } from "@/components/theme-switch";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -34,7 +35,6 @@ import {
   ProgressValue,
 } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Activity,
   CircleAlert,
@@ -54,8 +54,11 @@ import {
 } from "@/lib/dashboard";
 import {
   DEFAULT_CANDIDATE_LIMIT,
-  MAX_CANDIDATE_LIMIT,
+  DEFAULT_CANDIDATE_OFFSET,
+  DEFAULT_MAX_IMAGES_PER_OBJECT,
   normalizeCandidateLimit,
+  normalizeCandidateOffset,
+  normalizeMaxImagesPerObject,
 } from "@/lib/candidate-limits";
 import { createStatusRows } from "@/lib/status";
 import type { ApiHealth } from "@/lib/status";
@@ -164,8 +167,11 @@ async function createSearchSetAndCollectFromMet(formData: FormData) {
   const apiPort = getPort("ANACRONIA_API_PORT", DEFAULT_API_PORT);
   const displayName = String(formData.get("display_name") ?? "");
   const termsText = String(formData.get("terms_text") ?? "");
-  const candidateOffset = Number.parseInt(String(formData.get("candidate_offset") ?? "0"), 10);
+  const candidateOffset = normalizeCandidateOffset(formData.get("candidate_offset"));
   const candidateLimit = normalizeCandidateLimit(formData.get("candidate_limit"));
+  const maxImagesPerObject = normalizeMaxImagesPerObject(
+    formData.get("max_images_per_object"),
+  );
   const searchSetResponse = await fetch(`http://127.0.0.1:${apiPort}/search-sets`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -181,12 +187,13 @@ async function createSearchSetAndCollectFromMet(formData: FormData) {
   }
 
   const searchSet = (await searchSetResponse.json()) as { slug: string };
-  await fetch(`http://127.0.0.1:${apiPort}/search-sets/${searchSet.slug}/provider-collections/met/runs`, {
+  await fetch(`http://127.0.0.1:${apiPort}/search-sets/${searchSet.slug}/provider-collections/met/collects`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      candidate_offset: Number.isFinite(candidateOffset) ? candidateOffset : 0,
+      candidate_offset: candidateOffset,
       candidate_limit: candidateLimit,
+      max_images_per_object: maxImagesPerObject,
     }),
   });
 
@@ -210,20 +217,24 @@ async function deactivateSearchSetTerm(formData: FormData) {
   revalidatePath("/");
 }
 
-async function createMetCandidateRun(formData: FormData) {
+async function startMetCollect(formData: FormData) {
   "use server";
 
   const apiPort = getPort("ANACRONIA_API_PORT", DEFAULT_API_PORT);
   const slug = String(formData.get("slug") ?? "");
-  const candidateOffset = Number.parseInt(String(formData.get("candidate_offset") ?? "0"), 10);
+  const candidateOffset = normalizeCandidateOffset(formData.get("candidate_offset"));
   const candidateLimit = normalizeCandidateLimit(formData.get("candidate_limit"));
+  const maxImagesPerObject = normalizeMaxImagesPerObject(
+    formData.get("max_images_per_object"),
+  );
 
-  await fetch(`http://127.0.0.1:${apiPort}/search-sets/${slug}/provider-collections/met/runs`, {
+  await fetch(`http://127.0.0.1:${apiPort}/search-sets/${slug}/provider-collections/met/collects`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      candidate_offset: Number.isFinite(candidateOffset) ? candidateOffset : 0,
+      candidate_offset: candidateOffset,
       candidate_limit: candidateLimit,
+      max_images_per_object: maxImagesPerObject,
     }),
   });
 
@@ -253,22 +264,51 @@ function statusIcon(state: string) {
   return <Activity data-icon="inline-start" />;
 }
 
-function CandidateLimitField({ id }: { id: string }) {
+function CollectControls({
+  idPrefix,
+  startAtCandidate = DEFAULT_CANDIDATE_OFFSET,
+}: {
+  idPrefix: string;
+  startAtCandidate?: number;
+}) {
   return (
-    <Field>
-      <FieldLabel htmlFor={id}>Candidate limit</FieldLabel>
-      <Input
-        defaultValue={DEFAULT_CANDIDATE_LIMIT}
-        id={id}
-        max={MAX_CANDIDATE_LIMIT}
-        min={1}
-        name="candidate_limit"
-        type="number"
-      />
-      <FieldDescription>
-        Default {DEFAULT_CANDIDATE_LIMIT}. Maximum {MAX_CANDIDATE_LIMIT} candidates per collect.
-      </FieldDescription>
-    </Field>
+    <FieldGroup>
+      <Field>
+        <FieldLabel htmlFor={`${idPrefix}_candidate_offset`}>Start at candidate</FieldLabel>
+        <Input
+          defaultValue={startAtCandidate}
+          id={`${idPrefix}_candidate_offset`}
+          min={0}
+          name="candidate_offset"
+          type="number"
+        />
+      </Field>
+      <Field>
+        <FieldLabel htmlFor={`${idPrefix}_candidate_limit`}>Candidate limit</FieldLabel>
+        <Input
+          defaultValue={DEFAULT_CANDIDATE_LIMIT}
+          id={`${idPrefix}_candidate_limit`}
+          min={1}
+          name="candidate_limit"
+          type="number"
+        />
+      </Field>
+      <Field>
+        <FieldLabel htmlFor={`${idPrefix}_max_images_per_object`}>
+          Max images per object
+        </FieldLabel>
+        <Input
+          defaultValue={DEFAULT_MAX_IMAGES_PER_OBJECT}
+          id={`${idPrefix}_max_images_per_object`}
+          min={1}
+          name="max_images_per_object"
+          type="number"
+        />
+        <FieldDescription>
+          Limits sibling images collected from image-heavy Museum Objects.
+        </FieldDescription>
+      </Field>
+    </FieldGroup>
   );
 }
 
@@ -296,35 +336,22 @@ function NewSearchSetWorkspace() {
                 <FieldLabel htmlFor="display_name">Display name</FieldLabel>
                 <Input id="display_name" name="display_name" required />
               </Field>
-              <Field>
-                <FieldLabel htmlFor="terms_text">Terms</FieldLabel>
-                <Textarea
-                  className="min-h-32 resize-y"
-                  id="terms_text"
-                  name="terms_text"
-                  placeholder="snake, anaconda, serpent"
-                  required
-                />
-                <FieldDescription>
-                  Commas and new lines both create terms. Multi-word terms do not need quotes.
-                </FieldDescription>
-              </Field>
+              <TermsField
+                id="terms_text"
+                name="terms_text"
+                placeholder="snake, anaconda, serpent"
+                required
+              />
             </FieldGroup>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle>Met collect</CardTitle>
-            <CardDescription>
-              Met is the MVP provider. The collect creates the first Met source for this Search Set.
-            </CardDescription>
+            <CardTitle>Met</CardTitle>
           </CardHeader>
           <CardContent>
-            <FieldGroup>
-              <CandidateLimitField id="new_search_set_candidate_limit" />
-            </FieldGroup>
-            <input name="candidate_offset" type="hidden" value="0" />
+            <CollectControls idPrefix="new_search_set" />
           </CardContent>
           <CardFooter className="justify-end gap-2 border-t bg-muted/50">
             <Button formAction={createSearchSet} type="submit" variant="outline">
@@ -470,7 +497,9 @@ export default async function Home({ searchParams }: HomeProps) {
                 <Link
                   className={cn(
                     "flex flex-col gap-2 rounded-2xl border bg-card p-4 transition-colors hover:bg-muted/50",
-                    searchSet.isActive && "border-ring bg-muted shadow-xs",
+                    workspaceMode === "search-set" &&
+                      searchSet.isActive &&
+                      "border-ring bg-muted shadow-xs",
                   )}
                   href={createSearchSetHref(searchSet.slug, filterText)}
                   key={searchSet.slug}
@@ -569,13 +598,6 @@ export default async function Home({ searchParams }: HomeProps) {
                 ))}
               </div>
 
-              <div className="flex items-center gap-2 rounded-2xl border bg-card px-4 py-3 text-muted-foreground">
-                <Search className="size-4 shrink-0" />
-                <span className="truncate text-sm">
-                  Search within {activeSearchSet.displayName}
-                </span>
-              </div>
-
               <div className="flex flex-wrap gap-2">
                 {activeProviderCollections.length === 0 ? (
                   <Badge variant="outline">Met not collected yet</Badge>
@@ -651,18 +673,13 @@ export default async function Home({ searchParams }: HomeProps) {
                 {activeProviderCollections.length === 0 ? (
                   <Card>
                     <CardHeader>
-                      <CardTitle>Met collect</CardTitle>
+                      <CardTitle>Met</CardTitle>
                       <CardDescription>No run yet</CardDescription>
                     </CardHeader>
-                    <form action={createMetCandidateRun}>
+                    <form action={startMetCollect}>
                       <input name="slug" type="hidden" value={activeSearchSet.slug} />
-                      <input name="candidate_offset" type="hidden" value="0" />
                       <CardContent>
-                        <FieldGroup>
-                          <CandidateLimitField
-                            id={`${activeSearchSet.slug}-met-candidate-limit`}
-                          />
-                        </FieldGroup>
+                        <CollectControls idPrefix={`${activeSearchSet.slug}_met`} />
                       </CardContent>
                       <CardFooter className="justify-end border-t bg-muted/50">
                         <Button size="sm" type="submit">
@@ -713,37 +730,18 @@ export default async function Home({ searchParams }: HomeProps) {
                           </div>
                         </div>
                       </CardContent>
-                      <form action={createMetCandidateRun}>
+                      <form action={startMetCollect}>
                         <CardFooter className="flex-col items-stretch gap-4 border-t bg-muted/50">
                           <input name="slug" type="hidden" value={activeSearchSet.slug} />
-                          <FieldGroup>
-                            <CandidateLimitField
-                              id={`${activeSearchSet.slug}-${providerCollection.provider}-candidate-limit`}
-                            />
-                          </FieldGroup>
+                          <CollectControls
+                            idPrefix={`${activeSearchSet.slug}_${providerCollection.provider}`}
+                            startAtCandidate={providerCollection.nextCandidateOffset}
+                          />
                           <div className="flex justify-end gap-2">
-                            <Button
-                              name="candidate_offset"
-                              size="sm"
-                              type="submit"
-                              value="0"
-                              variant="outline"
-                            >
-                              <Play data-icon="inline-start" />
-                              Run again
+                            <Button size="sm" type="submit" variant="outline">
+                              <RotateCcw data-icon="inline-start" />
+                              Continue same terms
                             </Button>
-                            {providerCollection.continueCandidateOffset === null ? null : (
-                              <Button
-                                name="candidate_offset"
-                                size="sm"
-                                type="submit"
-                                value={providerCollection.continueCandidateOffset}
-                                variant="outline"
-                              >
-                                <RotateCcw data-icon="inline-start" />
-                                Continue
-                              </Button>
-                            )}
                           </div>
                         </CardFooter>
                       </form>
@@ -753,23 +751,34 @@ export default async function Home({ searchParams }: HomeProps) {
 
                 <Card>
                   <CardHeader>
-                    <CardTitle>Provider focus</CardTitle>
-                    <CardDescription>Secondary source view</CardDescription>
+                    <CardTitle>Add terms</CardTitle>
                   </CardHeader>
-                  <CardContent className="flex flex-col gap-2">
-                    {activeProviderCollections.length === 0 ? (
-                      <Badge variant="outline">Met pending</Badge>
-                    ) : (
-                      activeProviderCollections.map((providerCollection) => (
-                        <Badge
-                          key={`${activeSearchSet.slug}-${providerCollection.provider}-focus`}
-                          variant="outline"
-                        >
-                          {providerCollection.providerLabel}
-                        </Badge>
-                      ))
-                    )}
-                  </CardContent>
+                  <form>
+                    <input
+                      name="display_name"
+                      type="hidden"
+                      value={activeSearchSet.displayName}
+                    />
+                    <CardContent>
+                      <FieldGroup>
+                        <TermsField
+                          id={`${activeSearchSet.slug}_additional_terms`}
+                          name="terms_text"
+                          placeholder="cobra, serpent"
+                        />
+                        <CollectControls idPrefix={`${activeSearchSet.slug}_add_terms`} />
+                      </FieldGroup>
+                    </CardContent>
+                    <CardFooter className="justify-end gap-2 border-t bg-muted/50">
+                      <Button formAction={createSearchSet} size="sm" type="submit" variant="outline">
+                        Save terms only
+                      </Button>
+                      <Button formAction={createSearchSetAndCollectFromMet} size="sm" type="submit">
+                        <Play data-icon="inline-start" />
+                        Add terms and collect from Met
+                      </Button>
+                    </CardFooter>
+                  </form>
                 </Card>
               </section>
             </section>
