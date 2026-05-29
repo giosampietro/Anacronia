@@ -42,7 +42,7 @@ class FakeMetRecordClient:
                 "artistDisplayName": "",
                 "primaryImage": "https://images.metmuseum.org/10.jpg",
                 "primaryImageSmall": "https://images.metmuseum.org/10-small.jpg",
-                "rightsAndReproduction": "",
+                "rightsAndReproduction": "Public domain via the Met Open Access policy",
                 "metadataDate": "2024-01-01",
                 "objectURL": "https://www.metmuseum.org/art/collection/search/10",
             },
@@ -61,7 +61,7 @@ class FakeMetRecordClient:
                 "tags": None,
                 "medium": "Ink",
                 "primaryImage": "https://images.metmuseum.org/40.jpg",
-                "rightsAndReproduction": "",
+                "rightsAndReproduction": "Public domain",
                 "metadataDate": "2024-02-01",
                 "objectURL": "https://www.metmuseum.org/art/collection/search/40",
             },
@@ -367,11 +367,33 @@ def test_ingests_public_domain_met_records_with_raw_json_matches_and_descriptors
 
     raw_object_path = met_raw_object_path(data_root=data_root, object_id=10)
     assert json.loads(raw_object_path.read_text())["title"] == "Coiled Snake Vessel"
+    assert met_raw_object_path(data_root=data_root, object_id=40).is_file()
 
     museum_objects = get_met_museum_objects(database_path=database_path)
-    assert [(museum_object.object_id, museum_object.title) for museum_object in museum_objects] == [
-        (10, "Coiled Snake Vessel"),
-        (40, "River Study"),
+    assert [
+        (
+            museum_object.object_id,
+            museum_object.title,
+            museum_object.rights_and_reproduction,
+            museum_object.metadata_date,
+            museum_object.raw_record_path,
+        )
+        for museum_object in museum_objects
+    ] == [
+        (
+            10,
+            "Coiled Snake Vessel",
+            "Public domain via the Met Open Access policy",
+            "2024-01-01",
+            raw_object_path,
+        ),
+        (
+            40,
+            "River Study",
+            "Public domain",
+            "2024-02-01",
+            met_raw_object_path(data_root=data_root, object_id=40),
+        ),
     ]
 
     matches = get_met_matches(database_path=database_path, run_id=run.run_id)
