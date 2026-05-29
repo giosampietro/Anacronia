@@ -162,9 +162,14 @@ def create_app(
 ) -> FastAPI:
     app = FastAPI(title="Anacronia")
     project_root = Path(__file__).resolve().parents[2]
-    storage = initialize_storage(project_root=project_root)
-    resolved_database_path = database_path if database_path is not None else storage.database_path
-    resolved_data_root = data_root if data_root is not None else storage.data_root
+    if database_path is None:
+        storage = initialize_storage(project_root=project_root, data_root=data_root)
+        resolved_database_path = storage.database_path
+        resolved_data_root = storage.data_root
+    else:
+        resolved_database_path = database_path
+        resolved_data_root = data_root if data_root is not None else database_path.parent
+        resolved_data_root.mkdir(parents=True, exist_ok=True)
     resolved_met_candidate_client = met_candidate_client or HttpMetCandidateClient()
     resolved_met_record_client = met_record_client or HttpMetCandidateClient()
     resolved_download_image_bytes = download_image_bytes or fetch_bytes_url
@@ -269,6 +274,3 @@ def create_app(
         return serialize_met_ingest_summary(summary)
 
     return app
-
-
-app = create_app()

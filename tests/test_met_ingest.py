@@ -10,7 +10,7 @@ from anacronia.met_ingest import (
     ingest_met_run,
     select_met_image_references,
 )
-from anacronia.search_sets import create_or_continue_search_set
+from anacronia.search_sets import create_or_continue_search_set, get_search_set
 from anacronia.storage import met_raw_object_path
 
 
@@ -344,3 +344,47 @@ def test_ingests_public_domain_met_records_with_raw_json_matches_and_descriptors
         ("tag", "Snakes", "tags.term"),
         ("title", "Coiled Snake Vessel", "title"),
     ]
+
+
+def test_ingest_does_not_block_search_set_creation_between_candidates(tmp_path):
+    class TwoPublicCandidateClient:
+        def search_object_ids(self, term: str) -> list[int]:
+            assert term == "snake"
+            return [10, 40]
+
+    class ConcurrentCreateRecordClient(FakeMetRecordClient):
+        def fetch_object_record(self, object_id: int) -> dict[str, object]:
+            if object_id == 40:
+                create_or_continue_search_set(
+                    database_path=database_path,
+                    display_name="Money",
+                    terms_text="mani, mano",
+                )
+            return super().fetch_object_record(object_id)
+
+    database_path = tmp_path / "anacronia.sqlite"
+    data_root = tmp_path / "data"
+    create_or_continue_search_set(
+        database_path=database_path,
+        display_name="Snake Studies",
+        terms_text="snake",
+    )
+    run = discover_met_candidates(
+        database_path=database_path,
+        search_set_slug="snake-studies",
+        candidate_offset=0,
+        candidate_limit=2,
+        met_client=TwoPublicCandidateClient(),
+    )
+
+    ingest_met_run(
+        database_path=database_path,
+        data_root=data_root,
+        run_id=run.run_id,
+        met_client=ConcurrentCreateRecordClient(),
+        download_image_bytes=lambda _url: ppm_image_bytes(width=1600, height=800),
+    )
+
+    money = get_search_set(database_path=database_path, slug="money")
+    assert money.display_name == "Money"
+    assert [term.term for term in money.terms] == ["mani", "mano"]

@@ -3,13 +3,14 @@ import pytest
 from anacronia.cli import build_startup_plan, validate_supported_runtime
 
 
-def test_no_open_prints_url_without_opening_browser():
+def test_no_open_prints_url_without_opening_browser(tmp_path):
     plan = build_startup_plan(
         no_open=True,
         ui_port=18660,
         api_port=18670,
         runtime_system="Darwin",
         runtime_machine="arm64",
+        project_root=tmp_path,
     )
 
     assert plan.open_browser is False
@@ -17,25 +18,27 @@ def test_no_open_prints_url_without_opening_browser():
     assert "http://localhost:18660" in plan.message
 
 
-def test_startup_plan_uses_default_ports():
+def test_startup_plan_uses_default_ports(tmp_path):
     plan = build_startup_plan(
         no_open=True,
         is_port_available=lambda port: True,
         runtime_system="Darwin",
         runtime_machine="arm64",
+        project_root=tmp_path,
     )
 
     assert plan.ui_port == 18660
     assert plan.api_port == 18670
 
 
-def test_startup_plan_includes_backend_worker_and_ui_services():
+def test_startup_plan_includes_backend_worker_and_ui_services(tmp_path):
     plan = build_startup_plan(
         no_open=True,
         ui_port=18660,
         api_port=18670,
         runtime_system="Darwin",
         runtime_machine="arm64",
+        project_root=tmp_path,
     )
 
     assert [service.name for service in plan.services] == [
@@ -43,7 +46,15 @@ def test_startup_plan_includes_backend_worker_and_ui_services():
         "Python worker",
         "Next.js UI",
     ]
-    assert plan.services[0].command[-4:] == ["--port", "18670", "--log-level", "info"]
+    assert "anacronia.api:create_app" in plan.services[0].command
+    assert "--factory" in plan.services[0].command
+    assert plan.services[0].command[-5:] == [
+        "--port",
+        "18670",
+        "--log-level",
+        "info",
+        "--factory",
+    ]
     assert plan.services[1].command[-1:] == ["anacronia.worker"]
     assert plan.services[2].setup_command[-1] == "build"
     assert "start" in plan.services[2].command

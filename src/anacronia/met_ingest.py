@@ -191,80 +191,83 @@ def ingest_met_run(
         ensure_met_ingest_schema(connection)
         run_candidates = get_run_candidates_for_ingest(connection=connection, run_id=run_id)
 
-        for candidate in run_candidates:
-            object_id = candidate["object_id"]
-            record = met_client.fetch_object_record(object_id)
-            fetched_object_ids.append(object_id)
+    for candidate in run_candidates:
+        object_id = candidate["object_id"]
+        record = met_client.fetch_object_record(object_id)
+        fetched_object_ids.append(object_id)
 
-            if record.get("isPublicDomain") is not True:
-                skipped_candidates.append(
-                    SkippedMetCandidate(object_id=object_id, reason="not_public_domain")
+        if record.get("isPublicDomain") is not True:
+            skipped_candidates.append(
+                SkippedMetCandidate(object_id=object_id, reason="not_public_domain")
+            )
+            continue
+
+        raw_record_path = write_met_raw_record(data_root=data_root, record=record)
+        image_references, skipped_image_references = select_met_image_references(
+            record=record,
+            max_images_per_object=max_images_per_object,
+        )
+
+        processed_image_assets: list[ProcessedMetImageAsset] = []
+        for image_reference in image_references:
+            try:
+                image_asset = process_met_image_asset(
+                    data_root=data_root,
+                    object_id=image_reference.object_id,
+                    image_role=image_reference.image_role,
+                    image_index=image_reference.image_index,
+                    source_image_url=image_reference.source_image_url,
+                    primary_image_small_url=image_reference.primary_image_small_url,
+                    download_bytes=resolved_download_image_bytes,
+                )
+            except Exception:
+                skipped_image_references.append(
+                    SkippedMetImageReference(
+                        object_id=image_reference.object_id,
+                        source_image_url=image_reference.source_image_url,
+                        image_role=image_reference.image_role,
+                        image_index=image_reference.image_index,
+                        reason="image_processing_failed",
+                    )
                 )
                 continue
 
-            raw_record_path = write_met_raw_record(data_root=data_root, record=record)
-            image_references, skipped_image_references = select_met_image_references(
-                record=record,
-                max_images_per_object=max_images_per_object,
+            if not image_asset.imported:
+                skipped_image_references.append(
+                    SkippedMetImageReference(
+                        object_id=image_reference.object_id,
+                        source_image_url=image_reference.source_image_url,
+                        image_role=image_reference.image_role,
+                        image_index=image_reference.image_index,
+                        reason="image_processing_failed",
+                    )
+                )
+                continue
+
+            processed_image_assets.append(image_asset)
+
+        if not processed_image_assets:
+            skipped_candidates.append(
+                SkippedMetCandidate(object_id=object_id, reason="no_imported_image_assets")
             )
+            record_skipped_met_image_references(
+                database_path=database_path,
+                references=skipped_image_references,
+            )
+            continue
+
+        with sqlite3.connect(database_path) as connection:
+            ensure_met_ingest_schema(connection)
             for skipped_image_reference in skipped_image_references:
                 record_met_skipped_image_reference(
                     connection=connection,
                     reference=skipped_image_reference,
                 )
 
-            processed_image_assets: list[ProcessedMetImageAsset] = []
-            for image_reference in image_references:
-                try:
-                    image_asset = process_met_image_asset(
-                        data_root=data_root,
-                        object_id=image_reference.object_id,
-                        image_role=image_reference.image_role,
-                        image_index=image_reference.image_index,
-                        source_image_url=image_reference.source_image_url,
-                        primary_image_small_url=image_reference.primary_image_small_url,
-                        download_bytes=resolved_download_image_bytes,
-                    )
-                except Exception:
-                    record_met_skipped_image_reference(
-                        connection=connection,
-                        reference=SkippedMetImageReference(
-                            object_id=image_reference.object_id,
-                            source_image_url=image_reference.source_image_url,
-                            image_role=image_reference.image_role,
-                            image_index=image_reference.image_index,
-                            reason="image_processing_failed",
-                        ),
-                    )
-                    continue
-
-                if not image_asset.imported:
-                    record_met_skipped_image_reference(
-                        connection=connection,
-                        reference=SkippedMetImageReference(
-                            object_id=image_reference.object_id,
-                            source_image_url=image_reference.source_image_url,
-                            image_role=image_reference.image_role,
-                            image_index=image_reference.image_index,
-                            reason="image_processing_failed",
-                        ),
-                    )
-                    continue
-
+            for image_asset in processed_image_assets:
                 record_met_image_asset(connection=connection, image_asset=image_asset)
-                processed_image_assets.append(image_asset)
 
-            if not processed_image_assets:
-                skipped_candidates.append(
-                    SkippedMetCandidate(object_id=object_id, reason="no_imported_image_assets")
-                )
-                continue
-
-            upsert_met_museum_object(
-                connection=connection,
-                record=record,
-                raw_record_path=raw_record_path,
-            )
+            upsert_met_museum_object(connection=connection, record=record, raw_record_path=raw_record_path)
             record_met_match(
                 connection=connection,
                 run_id=run_id,
@@ -280,7 +283,7 @@ def ingest_met_run(
                 object_id=object_id,
                 descriptors=extract_met_descriptors(record),
             )
-            imported_object_ids.append(object_id)
+        imported_object_ids.append(object_id)
 
     return MetIngestSummary(
         run_id=run_id,
@@ -288,6 +291,20 @@ def ingest_met_run(
         imported_object_ids=imported_object_ids,
         skipped_candidates=skipped_candidates,
     )
+
+
+def record_skipped_met_image_references(
+    *,
+    database_path: Path,
+    references: list[SkippedMetImageReference],
+) -> None:
+    if not references:
+        return
+
+    with sqlite3.connect(database_path) as connection:
+        ensure_met_ingest_schema(connection)
+        for reference in references:
+            record_met_skipped_image_reference(connection=connection, reference=reference)
 
 
 def get_met_museum_objects(*, database_path: Path) -> list[MetMuseumObject]:

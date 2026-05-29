@@ -57,6 +57,10 @@ import {
   normalizeMaxImagesPerObject,
 } from "@/lib/candidate-limits";
 import {
+  getActionFormDataString,
+  getActionFormDataValue,
+} from "@/lib/action-form-data";
+import {
   COLLECT_BUSY_NOTICE,
   canStartCollect,
   collectNoticeFromCode,
@@ -142,8 +146,8 @@ async function createSearchSet(formData: FormData) {
   "use server";
 
   const apiPort = getPort("ANACRONIA_API_PORT", DEFAULT_API_PORT);
-  const displayName = String(formData.get("display_name") ?? "");
-  const termsText = String(formData.get("terms_text") ?? "");
+  const displayName = getActionFormDataString(formData, "display_name");
+  const termsText = getActionFormDataString(formData, "terms_text");
 
   const response = await fetch(`http://127.0.0.1:${apiPort}/search-sets`, {
     method: "POST",
@@ -167,12 +171,16 @@ async function createSearchSetAndCollectFromMet(formData: FormData) {
   "use server";
 
   const apiPort = getPort("ANACRONIA_API_PORT", DEFAULT_API_PORT);
-  const displayName = String(formData.get("display_name") ?? "");
-  const termsText = String(formData.get("terms_text") ?? "");
-  const candidateOffset = normalizeCandidateOffset(formData.get("candidate_offset"));
-  const candidateLimit = normalizeCandidateLimit(formData.get("candidate_limit"));
+  const displayName = getActionFormDataString(formData, "display_name");
+  const termsText = getActionFormDataString(formData, "terms_text");
+  const candidateOffset = normalizeCandidateOffset(
+    getActionFormDataValue(formData, "candidate_offset"),
+  );
+  const candidateLimit = normalizeCandidateLimit(
+    getActionFormDataValue(formData, "candidate_limit"),
+  );
   const maxImagesPerObject = normalizeMaxImagesPerObject(
-    formData.get("max_images_per_object"),
+    getActionFormDataValue(formData, "max_images_per_object"),
   );
   const searchSetResponse = await fetch(`http://127.0.0.1:${apiPort}/search-sets`, {
     method: "POST",
@@ -210,8 +218,8 @@ async function deactivateSearchSetTerm(formData: FormData) {
   "use server";
 
   const apiPort = getPort("ANACRONIA_API_PORT", DEFAULT_API_PORT);
-  const slug = String(formData.get("slug") ?? "");
-  const term = String(formData.get("term") ?? "");
+  const slug = getActionFormDataString(formData, "slug");
+  const term = getActionFormDataString(formData, "term");
 
   await fetch(`http://127.0.0.1:${apiPort}/search-sets/${slug}/terms/deactivate`, {
     method: "POST",
@@ -226,11 +234,15 @@ async function startMetCollect(formData: FormData) {
   "use server";
 
   const apiPort = getPort("ANACRONIA_API_PORT", DEFAULT_API_PORT);
-  const slug = String(formData.get("slug") ?? "");
-  const candidateOffset = normalizeCandidateOffset(formData.get("candidate_offset"));
-  const candidateLimit = normalizeCandidateLimit(formData.get("candidate_limit"));
+  const slug = getActionFormDataString(formData, "slug");
+  const candidateOffset = normalizeCandidateOffset(
+    getActionFormDataValue(formData, "candidate_offset"),
+  );
+  const candidateLimit = normalizeCandidateLimit(
+    getActionFormDataValue(formData, "candidate_limit"),
+  );
   const maxImagesPerObject = normalizeMaxImagesPerObject(
-    formData.get("max_images_per_object"),
+    getActionFormDataValue(formData, "max_images_per_object"),
   );
 
   const response = await fetch(`http://127.0.0.1:${apiPort}/search-sets/${slug}/provider-collections/met/collects`, {
@@ -328,7 +340,7 @@ function CollectBusyNote({ collectAvailable }: { collectAvailable: boolean }) {
 
   return (
     <p className="text-sm text-muted-foreground">
-      A Met collection is already running. Save now or collect after it finishes.
+      A Met collection is already running. Collection actions will be available after it finishes.
     </p>
   );
 }
@@ -367,28 +379,40 @@ function NewSearchSetWorkspace({ collectAvailable }: { collectAvailable: boolean
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Met</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <CollectControls idPrefix="new_search_set" />
-            <CollectBusyNote collectAvailable={collectAvailable} />
-          </CardContent>
-          <CardFooter className="justify-end gap-2 border-t bg-muted/50">
-            <Button formAction={createSearchSet} type="submit" variant="outline">
-              Save only
-            </Button>
-            <Button
-              disabled={!collectAvailable}
-              formAction={createSearchSetAndCollectFromMet}
-              type="submit"
-            >
-              <Play data-icon="inline-start" />
-              Create and collect from Met
-            </Button>
-          </CardFooter>
-        </Card>
+        {collectAvailable ? (
+          <Card>
+            <CardHeader>
+              <CardTitle>Met</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <CollectControls idPrefix="new_search_set" />
+            </CardContent>
+            <CardFooter className="justify-end gap-2 border-t bg-muted/50">
+              <Button formAction={createSearchSet} type="submit" variant="outline">
+                Save only
+              </Button>
+              <Button formAction={createSearchSetAndCollectFromMet} type="submit">
+                <Play data-icon="inline-start" />
+                Create and collect from Met
+              </Button>
+            </CardFooter>
+          </Card>
+        ) : (
+          <Card>
+            <CardHeader>
+              <CardTitle>Met collection unavailable</CardTitle>
+              <CardDescription>
+                Another Met collection is already running. Save this Search Set now,
+                then collect from Met after the current job finishes.
+              </CardDescription>
+            </CardHeader>
+            <CardFooter className="justify-end border-t bg-muted/50">
+              <Button formAction={createSearchSet} type="submit">
+                Save Search Set
+              </Button>
+            </CardFooter>
+          </Card>
+        )}
       </form>
     </div>
   );
