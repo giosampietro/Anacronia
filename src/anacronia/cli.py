@@ -1,5 +1,6 @@
 import argparse
 from dataclasses import dataclass
+import json
 import os
 from pathlib import Path
 import platform
@@ -10,6 +11,7 @@ from typing import Optional
 import webbrowser
 
 from anacronia.ports import choose_port, is_port_available as socket_port_available
+from anacronia.search_sets import SearchSet, create_or_continue_search_set, deactivate_search_set_term
 from anacronia.storage import initialize_storage
 
 
@@ -170,10 +172,65 @@ def run_startup_plan(plan: StartupPlan) -> None:
                 process.kill()
 
 
+def serialize_search_set(search_set: SearchSet) -> dict[str, object]:
+    return {
+        "display_name": search_set.display_name,
+        "slug": search_set.slug,
+        "terms": [
+            {
+                "term": term.term,
+                "active": term.active,
+            }
+            for term in search_set.terms
+        ],
+    }
+
+
+def run_search_set_create(*, name: str, terms: str) -> None:
+    project_root = Path(__file__).resolve().parents[2]
+    storage = initialize_storage(project_root=project_root)
+    search_set = create_or_continue_search_set(
+        database_path=storage.database_path,
+        display_name=name,
+        terms_text=terms,
+    )
+    print(json.dumps(serialize_search_set(search_set)), flush=True)
+
+
+def run_search_set_deactivate_term(*, slug: str, term: str) -> None:
+    project_root = Path(__file__).resolve().parents[2]
+    storage = initialize_storage(project_root=project_root)
+    search_set = deactivate_search_set_term(
+        database_path=storage.database_path,
+        slug=slug,
+        term=term,
+    )
+    print(json.dumps(serialize_search_set(search_set)), flush=True)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="anacronia")
     parser.add_argument("--no-open", action="store_true", help="Print the local URL without opening a browser.")
+    subparsers = parser.add_subparsers(dest="command")
+    search_set_parser = subparsers.add_parser("search-set")
+    search_set_subparsers = search_set_parser.add_subparsers(dest="search_set_command")
+    search_set_create_parser = search_set_subparsers.add_parser("create")
+    search_set_create_parser.add_argument("--name", required=True)
+    search_set_create_parser.add_argument("--terms", required=True)
+    search_set_deactivate_parser = search_set_subparsers.add_parser("deactivate-term")
+    search_set_deactivate_parser.add_argument("--slug", required=True)
+    search_set_deactivate_parser.add_argument("--term", required=True)
     args = parser.parse_args()
 
-    plan = build_startup_plan(no_open=args.no_open)
-    run_startup_plan(plan)
+    if args.command == "search-set" and args.search_set_command == "create":
+        run_search_set_create(name=args.name, terms=args.terms)
+        return
+    if args.command == "search-set" and args.search_set_command == "deactivate-term":
+        run_search_set_deactivate_term(slug=args.slug, term=args.term)
+        return
+
+    run_startup_plan(build_startup_plan(no_open=args.no_open))
+
+
+if __name__ == "__main__":
+    main()

@@ -31,7 +31,7 @@ The MVP will not try to become the future visual atlas. It will provide the oper
 13. As a collection builder, I want adding new terms to an existing Search Set to append terms, so that previous terms are not lost.
 14. As a collection builder, I want to deactivate terms for future Runs, so that I can refine a Search Set without deleting historical data.
 15. As a collection builder, I want to paste multiple terms at once, so that I can create Search Sets quickly.
-16. As a collection builder, I want each input line to be treated as one term even if it contains spaces, so that terms like `garden snake` work without quotes.
+16. As a collection builder, I want each input line or comma-separated segment to be treated as one term even if it contains spaces, so that terms like `garden snake` work without quotes.
 17. As a collection builder, I want duplicate terms to be deduplicated case-insensitively, so that repeated terms do not create duplicate provider queries.
 18. As a collection builder, I want terms to run as separate provider searches, so that Anacronia can record which terms matched which records.
 19. As a collection builder, I want provider candidates from multiple terms to be merged and deduplicated before offset and limit are applied, so that `limit` means candidate objects, not candidates per term.
@@ -158,7 +158,7 @@ The MVP will not try to become the future visual atlas. It will provide the oper
 - Treat matching Search Set slugs as continuation rather than duplicate creation unless a user explicitly creates a distinct name.
 - Add new terms to an existing Search Set rather than replacing prior terms.
 - Allow terms to be deactivated for future Runs without deleting existing material or historical matches.
-- Parse multiline term input as one term per line, including terms with spaces.
+- Parse multiline and comma-separated term input as one term per line or comma-separated segment, including terms with spaces.
 - Trim and deduplicate terms case-insensitively.
 - Query each term separately against the provider.
 - Merge and deduplicate candidate object IDs across term queries before applying candidate offset and candidate limit.

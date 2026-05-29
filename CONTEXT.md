@@ -33,7 +33,7 @@ If an existing Search Set is continued with new terms, the new terms are added t
 
 Search Set terms can be deactivated for future Runs. Deactivating a term does not delete already imported Image Assets or historical match records.
 
-The interface should support adding multiple Search Set terms at once. Each line is one term, even when the term contains spaces. Quotes are not required for multi-word terms.
+The interface should support adding multiple Search Set terms at once. Each line or comma-separated segment is one term, even when the term contains spaces. Quotes are not required for multi-word terms.
 
 Search Set terms should be trimmed and deduplicated case-insensitively.
 
