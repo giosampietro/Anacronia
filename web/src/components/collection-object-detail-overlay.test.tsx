@@ -74,6 +74,9 @@ describe("CollectionObjectDetailOverlay", () => {
     expect(html).toContain("snake");
     expect(html).toContain("verified");
     expect(html).toContain("tags, title");
+    expect(html).toContain("Previous image");
+    expect(html).toContain("Next image");
+    expect(html).not.toContain("disabled=\"\"");
     expect(html).toContain("1 related image skipped");
     expect(html).toContain("Open Met object");
   });

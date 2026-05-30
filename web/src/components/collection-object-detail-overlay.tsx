@@ -13,6 +13,7 @@ import {
 
 import type { CollectionObjectDetail } from "@/lib/collection-objects";
 import { imageUrl } from "@/lib/collection-objects";
+import { nextCarouselIndex, previousCarouselIndex } from "@/lib/carousel";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -58,11 +59,11 @@ export function CollectionObjectDetailOverlay({
       }
 
       if (event.key === "ArrowLeft") {
-        setActiveImageIndex((current) => Math.max(current - 1, 0));
+        setActiveImageIndex((current) => previousCarouselIndex(current, images.length));
       }
 
       if (event.key === "ArrowRight") {
-        setActiveImageIndex((current) => Math.min(current + 1, images.length - 1));
+        setActiveImageIndex((current) => nextCarouselIndex(current, images.length));
       }
     }
 
@@ -170,8 +171,11 @@ export function CollectionObjectDetailOverlay({
                 <Button
                   aria-label="Previous image"
                   className="absolute left-3 top-1/2 -translate-y-1/2"
-                  disabled={activeImageIndex === 0}
-                  onClick={() => setActiveImageIndex((current) => Math.max(current - 1, 0))}
+                  onClick={() =>
+                    setActiveImageIndex((current) =>
+                      previousCarouselIndex(current, images.length),
+                    )
+                  }
                   size="icon"
                   type="button"
                   variant="outline"
@@ -181,9 +185,10 @@ export function CollectionObjectDetailOverlay({
                 <Button
                   aria-label="Next image"
                   className="absolute right-3 top-1/2 -translate-y-1/2"
-                  disabled={activeImageIndex === images.length - 1}
                   onClick={() =>
-                    setActiveImageIndex((current) => Math.min(current + 1, images.length - 1))
+                    setActiveImageIndex((current) =>
+                      nextCarouselIndex(current, images.length),
+                    )
                   }
                   size="icon"
                   type="button"
