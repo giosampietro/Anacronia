@@ -1,7 +1,9 @@
+from urllib.error import HTTPError
+
 import pytest
 
 from anacronia.collection_runs import discover_met_candidates, get_candidate_run
-from anacronia.met_ingest import get_met_image_assets
+from anacronia.met_ingest import get_met_image_assets, get_met_skipped_candidates
 from anacronia.storage import initialize_storage
 from anacronia.worker import (
     CollectLockError,
@@ -367,6 +369,83 @@ def test_worker_processes_running_collect_job_through_met_ingest(tmp_path):
         download_image_bytes=lambda _url: ppm_image_bytes(width=1600, height=800),
     ) is None
     assert get_worker_status(database_path=storage.database_path).active_collect_job_id is None
+
+
+def test_worker_skips_missing_met_object_records_without_pausing_search(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    from anacronia.search_sets import create_or_continue_search_set
+
+    class TwoCandidateClient:
+        def search_object_ids(self, term: str) -> list[int]:
+            assert term == "car"
+            return [10, 20]
+
+    class MissingThenPublicRecordClient(FakeMetRecordClient):
+        def fetch_object_record(self, object_id: int) -> dict[str, object]:
+            if object_id == 10:
+                raise HTTPError(
+                    url="https://collectionapi.metmuseum.org/public/collection/v1/objects/10",
+                    code=404,
+                    msg="Not Found",
+                    hdrs=None,
+                    fp=None,
+                )
+
+            record = super().fetch_object_record(object_id)
+            return {
+                **record,
+                "objectID": object_id,
+                "primaryImage": f"https://images.metmuseum.org/{object_id}.jpg",
+            }
+
+    create_or_continue_search_set(
+        database_path=storage.database_path,
+        display_name="Cars",
+        terms_text="car",
+    )
+    run = discover_met_candidates(
+        database_path=storage.database_path,
+        search_set_slug="cars",
+        candidate_offset=0,
+        candidate_limit=2,
+        batch_target=1,
+        met_client=TwoCandidateClient(),
+    )
+    job = start_collect_job(
+        database_path=storage.database_path,
+        run_id=run.run_id,
+        candidate_offset=run.candidate_offset,
+        candidate_limit=run.candidate_limit,
+        candidate_progress_total=run.candidate_progress_total,
+        batch_target=run.batch_target,
+        max_images_per_object=1,
+        available_disk_bytes=10_000_000,
+    )
+
+    summary = process_running_collect_job(
+        database_path=storage.database_path,
+        data_root=storage.data_root,
+        met_client=MissingThenPublicRecordClient(),
+        download_image_bytes=lambda _url: ppm_image_bytes(width=1600, height=800),
+    )
+
+    assert summary is not None
+    assert [(skipped.object_id, skipped.reason) for skipped in summary.skipped_candidates] == [
+        (10, "provider_record_not_found"),
+    ]
+    assert summary.imported_object_ids == [20]
+    assert [asset.object_id for asset in get_met_image_assets(database_path=storage.database_path)] == [20]
+    assert [
+        (skipped.object_id, skipped.reason)
+        for skipped in get_met_skipped_candidates(
+            database_path=storage.database_path,
+            run_id=run.run_id,
+        )
+    ] == [(10, "provider_record_not_found")]
+    completed_job = get_collect_job(database_path=storage.database_path, job_id=job.job_id)
+    assert completed_job.status == "completed"
+    assert completed_job.provider_failure_count == 0
+    assert completed_job.last_processed_run_position == 1
 
 
 def test_worker_stops_met_ingest_after_batch_target_reaches_usable_images(tmp_path):

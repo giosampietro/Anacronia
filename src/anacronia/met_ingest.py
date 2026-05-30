@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import sqlite3
 from typing import Callable, Protocol
+from urllib.error import HTTPError
 
 from anacronia.collection_runs import ensure_collection_run_schema
 from anacronia.image_pipeline import ProcessedMetImageAsset, process_met_image_asset
@@ -204,12 +205,38 @@ def ingest_met_run(
     for candidate in run_candidates:
         object_id = candidate["object_id"]
         run_position = int(candidate["run_position"])
-        record = met_client.fetch_object_record(object_id)
+        try:
+            record = met_client.fetch_object_record(object_id)
+        except HTTPError as error:
+            if error.code != 404:
+                raise
+            skipped_candidate = SkippedMetCandidate(
+                object_id=object_id,
+                reason="provider_record_not_found",
+            )
+            skipped_candidates.append(skipped_candidate)
+            record_met_skipped_candidate(
+                database_path=database_path,
+                run_id=run_id,
+                candidate=skipped_candidate,
+            )
+            if on_candidate_processed is not None:
+                on_candidate_processed(run_position)
+            if should_stop is not None and should_stop():
+                break
+            continue
         fetched_object_ids.append(object_id)
 
         if record.get("isPublicDomain") is not True:
-            skipped_candidates.append(
-                SkippedMetCandidate(object_id=object_id, reason="not_public_domain")
+            skipped_candidate = SkippedMetCandidate(
+                object_id=object_id,
+                reason="not_public_domain",
+            )
+            skipped_candidates.append(skipped_candidate)
+            record_met_skipped_candidate(
+                database_path=database_path,
+                run_id=run_id,
+                candidate=skipped_candidate,
             )
             if on_candidate_processed is not None:
                 on_candidate_processed(run_position)
@@ -262,8 +289,15 @@ def ingest_met_run(
             processed_image_assets.append(image_asset)
 
         if not processed_image_assets:
-            skipped_candidates.append(
-                SkippedMetCandidate(object_id=object_id, reason="no_imported_image_assets")
+            skipped_candidate = SkippedMetCandidate(
+                object_id=object_id,
+                reason="no_imported_image_assets",
+            )
+            skipped_candidates.append(skipped_candidate)
+            record_met_skipped_candidate(
+                database_path=database_path,
+                run_id=run_id,
+                candidate=skipped_candidate,
             )
             record_skipped_met_image_references(
                 database_path=database_path,
@@ -332,6 +366,33 @@ def record_skipped_met_image_references(
         ensure_met_ingest_schema(connection)
         for reference in references:
             record_met_skipped_image_reference(connection=connection, reference=reference)
+
+
+def record_met_skipped_candidate(
+    *,
+    database_path: Path,
+    run_id: int,
+    candidate: SkippedMetCandidate,
+) -> None:
+    with sqlite3.connect(database_path) as connection:
+        ensure_met_ingest_schema(connection)
+        connection.execute(
+            """
+            INSERT OR IGNORE INTO skipped_candidates (
+              run_id,
+              provider,
+              object_id,
+              reason
+            )
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                run_id,
+                MET_PROVIDER,
+                candidate.object_id,
+                candidate.reason,
+            ),
+        )
 
 
 def get_met_museum_objects(*, database_path: Path) -> list[MetMuseumObject]:
@@ -432,6 +493,29 @@ def get_met_skipped_image_references(
             image_index=row[3],
             reason=row[4],
         )
+        for row in rows
+    ]
+
+
+def get_met_skipped_candidates(
+    *,
+    database_path: Path,
+    run_id: int,
+) -> list[SkippedMetCandidate]:
+    with sqlite3.connect(database_path) as connection:
+        ensure_met_ingest_schema(connection)
+        rows = connection.execute(
+            """
+            SELECT object_id, reason
+            FROM skipped_candidates
+            WHERE provider = ? AND run_id = ?
+            ORDER BY object_id, reason
+            """,
+            (MET_PROVIDER, run_id),
+        ).fetchall()
+
+    return [
+        SkippedMetCandidate(object_id=row[0], reason=row[1])
         for row in rows
     ]
 
@@ -818,6 +902,19 @@ def ensure_met_ingest_schema(connection: sqlite3.Connection) -> None:
           matched_fields_json TEXT NOT NULL,
           FOREIGN KEY (run_id) REFERENCES collection_runs(id),
           UNIQUE (run_id, provider, object_id, search_term)
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS skipped_candidates (
+          id INTEGER PRIMARY KEY,
+          run_id INTEGER NOT NULL,
+          provider TEXT NOT NULL,
+          object_id INTEGER NOT NULL,
+          reason TEXT NOT NULL,
+          FOREIGN KEY (run_id) REFERENCES collection_runs(id),
+          UNIQUE (run_id, provider, object_id, reason)
         )
         """
     )
