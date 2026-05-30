@@ -1,9 +1,11 @@
 from dataclasses import dataclass
 from pathlib import Path
+import shutil
 import sqlite3
 import time
 from typing import Callable
 
+from anacronia.collection_runs import ensure_collection_run_schema
 from anacronia.met_ingest import (
     DEFAULT_MAX_IMAGES_PER_OBJECT,
     MetIngestSummary,
@@ -15,7 +17,7 @@ from anacronia.met_provider import HttpMetCandidateClient, fetch_bytes_url
 from anacronia.storage import initialize_storage
 
 
-ACTIVE_COLLECT_JOB_STATUSES = ("running", "paused")
+ACTIVE_COLLECT_JOB_STATUSES = ("running", "stopping", "paused")
 DEFAULT_REQUIRED_DISK_BYTES = 1_000_000
 DEFAULT_PROVIDER_FAILURE_PAUSE_THRESHOLD = 3
 PROVIDER_FAILURE_BACKOFF_SECONDS = (5, 15, 45)
@@ -139,13 +141,39 @@ def process_running_collect_job(
     data_root: Path,
     met_client: MetRecordClient,
     download_image_bytes: Callable[[str], bytes] | None = None,
+    available_disk_bytes: Callable[[], int] | None = None,
 ) -> MetIngestSummary | None:
     with sqlite3.connect(database_path) as connection:
         ensure_worker_schema(connection)
-        job = get_running_collect_job(connection=connection)
+        job = get_processable_collect_job(connection=connection)
 
     if job is None:
         return None
+
+    if job.status == "stopping":
+        stop_collect_job(database_path=database_path, job_id=job.job_id)
+        return None
+
+    read_available_disk_bytes = available_disk_bytes or (lambda: shutil.disk_usage(data_root).free)
+    job = check_collect_job_disk_availability(
+        database_path=database_path,
+        job_id=job.job_id,
+        available_disk_bytes=read_available_disk_bytes(),
+    )
+    if job.status == "paused":
+        return None
+
+    def mark_candidate_processed_and_check_disk(run_position: int) -> None:
+        mark_collect_candidate_processed(
+            database_path=database_path,
+            job_id=job.job_id,
+            run_position=run_position,
+        )
+        check_collect_job_disk_availability(
+            database_path=database_path,
+            job_id=job.job_id,
+            available_disk_bytes=read_available_disk_bytes(),
+        )
 
     try:
         summary = ingest_met_run(
@@ -156,11 +184,12 @@ def process_running_collect_job(
             download_image_bytes=download_image_bytes,
             max_images_per_object=job.max_images_per_object,
             batch_target=job.batch_target,
-            on_candidate_processed=lambda run_position: mark_collect_candidate_processed(
+            on_candidate_processed=mark_candidate_processed_and_check_disk,
+            should_stop=lambda: get_collect_job(
                 database_path=database_path,
                 job_id=job.job_id,
-                run_position=run_position,
-            ),
+            ).status
+            != "running",
         )
     except Exception:
         record_collect_provider_failure(
@@ -168,6 +197,13 @@ def process_running_collect_job(
             job_id=job.job_id,
         )
         return None
+
+    current_job = get_collect_job(database_path=database_path, job_id=job.job_id)
+    if current_job.status == "stopping":
+        stop_collect_job(database_path=database_path, job_id=job.job_id)
+        return summary
+    if current_job.status == "paused":
+        return summary
 
     if (
         summary.imported_image_count < job.batch_target
@@ -204,16 +240,48 @@ def pause_collect_job(
     return get_collect_job(database_path=database_path, job_id=job_id)
 
 
-def resume_collect_job(*, database_path: Path, job_id: int) -> CollectJob:
+def request_stop_collect_job(*, database_path: Path, job_id: int) -> CollectJob:
     with sqlite3.connect(database_path) as connection:
         ensure_worker_schema(connection)
+        job = get_collect_job_for_update(connection=connection, job_id=job_id)
+        if job.status == "running":
+            connection.execute(
+                """
+                UPDATE collect_jobs
+                SET status = 'stopping'
+                WHERE id = ?
+                """,
+                (job_id,),
+            )
+            mark_collection_run_status(connection=connection, run_id=job.run_id, status="stopping")
+
+    return get_collect_job(database_path=database_path, job_id=job_id)
+
+
+def stop_collect_job(*, database_path: Path, job_id: int) -> CollectJob:
+    return finish_collect_job(
+        database_path=database_path,
+        job_id=job_id,
+        status="stopped",
+    )
+
+
+def resume_collect_job(
+    *,
+    database_path: Path,
+    job_id: int,
+    batch_target: int | None = None,
+) -> CollectJob:
+    with sqlite3.connect(database_path) as connection:
+        ensure_worker_schema(connection)
+        job = get_collect_job_for_update(connection=connection, job_id=job_id)
         connection.execute(
             """
             UPDATE collect_jobs
-            SET status = 'running', pause_reason = ''
+            SET status = 'running', pause_reason = '', batch_target = ?
             WHERE id = ?
             """,
-            (job_id,),
+            (job.batch_target if batch_target is None else batch_target, job_id),
         )
 
     return get_collect_job(database_path=database_path, job_id=job_id)
@@ -362,6 +430,7 @@ def provider_failure_backoff_seconds(failure_count: int) -> int:
 
 def get_collect_job(*, database_path: Path, job_id: int) -> CollectJob:
     with sqlite3.connect(database_path) as connection:
+        ensure_collection_run_schema(connection)
         ensure_worker_schema(connection)
         row = connection.execute(
             """
@@ -390,6 +459,109 @@ def get_collect_job(*, database_path: Path, job_id: int) -> CollectJob:
         raise LookupError(f"Collect job not found: {job_id}")
 
     return collect_job_from_row(row)
+
+
+def get_active_collect_job_for_search_set_provider(
+    *,
+    database_path: Path,
+    search_set_slug: str,
+    provider: str,
+) -> CollectJob | None:
+    with sqlite3.connect(database_path) as connection:
+        ensure_worker_schema(connection)
+        row = connection.execute(
+            """
+            SELECT
+              collect_jobs.id,
+              collect_jobs.run_id,
+              collect_jobs.status,
+              collect_jobs.candidate_offset,
+              collect_jobs.candidate_limit,
+              collect_jobs.candidate_progress_total,
+              collect_jobs.batch_target,
+              collect_jobs.last_processed_run_position,
+              collect_jobs.provider_failure_count,
+              collect_jobs.backoff_seconds,
+              collect_jobs.pause_reason,
+              collect_jobs.required_disk_bytes,
+              collect_jobs.last_disk_available_bytes,
+              collect_jobs.max_images_per_object
+            FROM collect_jobs
+            JOIN collection_runs
+              ON collection_runs.id = collect_jobs.run_id
+            JOIN provider_collections
+              ON provider_collections.id = collection_runs.provider_collection_id
+            JOIN search_sets
+              ON search_sets.id = provider_collections.search_set_id
+            WHERE
+              search_sets.slug = ?
+              AND provider_collections.provider = ?
+              AND collect_jobs.status IN ('running', 'stopping', 'paused')
+            ORDER BY collect_jobs.id DESC
+            LIMIT 1
+            """,
+            (search_set_slug, provider),
+        ).fetchone()
+
+    if row is None:
+        return None
+
+    return collect_job_from_row(row)
+
+
+def get_next_collect_candidate_offset_for_search_set_provider(
+    *,
+    database_path: Path,
+    search_set_slug: str,
+    provider: str,
+) -> int | None:
+    with sqlite3.connect(database_path) as connection:
+        ensure_collection_run_schema(connection)
+        ensure_worker_schema(connection)
+        row = connection.execute(
+            """
+            SELECT
+              collection_runs.status,
+              collection_runs.candidate_offset,
+              collection_runs.candidate_limit,
+              collect_jobs.status,
+              collect_jobs.candidate_offset,
+              collect_jobs.last_processed_run_position
+            FROM collection_runs
+            JOIN provider_collections
+              ON provider_collections.id = collection_runs.provider_collection_id
+            JOIN search_sets
+              ON search_sets.id = provider_collections.search_set_id
+            LEFT JOIN collect_jobs
+              ON collect_jobs.run_id = collection_runs.id
+            WHERE
+              search_sets.slug = ?
+              AND provider_collections.provider = ?
+            ORDER BY collection_runs.id DESC, collect_jobs.id DESC
+            LIMIT 1
+            """,
+            (search_set_slug, provider),
+        ).fetchone()
+
+    if row is None:
+        return 0
+
+    run_status = str(row[0])
+    if run_status == "no_more_results":
+        return None
+
+    collect_status = None if row[3] is None else str(row[3])
+    if collect_status in {"completed", "stopped", "canceled"}:
+        collect_candidate_offset = int(row[4])
+        last_processed_run_position = row[5]
+        if last_processed_run_position is None:
+            return collect_candidate_offset
+        return collect_candidate_offset + int(last_processed_run_position) + 1
+
+    if collect_status is None and run_status == "completed":
+        return int(row[1]) + int(row[2])
+
+    return 0
 
 
 def get_collect_job_for_update(
@@ -471,7 +643,7 @@ def get_active_collect_job(*, connection: sqlite3.Connection) -> CollectJob | No
           last_disk_available_bytes,
           max_images_per_object
         FROM collect_jobs
-        WHERE status IN ('running', 'paused')
+        WHERE status IN ('running', 'stopping', 'paused')
         ORDER BY id DESC
         LIMIT 1
         """
@@ -483,7 +655,7 @@ def get_active_collect_job(*, connection: sqlite3.Connection) -> CollectJob | No
     return collect_job_from_row(row)
 
 
-def get_running_collect_job(*, connection: sqlite3.Connection) -> CollectJob | None:
+def get_processable_collect_job(*, connection: sqlite3.Connection) -> CollectJob | None:
     row = connection.execute(
         """
         SELECT
@@ -502,7 +674,7 @@ def get_running_collect_job(*, connection: sqlite3.Connection) -> CollectJob | N
           last_disk_available_bytes,
           max_images_per_object
         FROM collect_jobs
-        WHERE status = 'running'
+        WHERE status IN ('running', 'stopping')
         ORDER BY id
         LIMIT 1
         """

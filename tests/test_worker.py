@@ -17,6 +17,7 @@ from anacronia.worker import (
     process_running_collect_job,
     propose_continue_after_cancel,
     record_collect_provider_failure,
+    request_stop_collect_job,
     resume_collect_job,
     start_collect_job,
 )
@@ -218,6 +219,68 @@ def test_disk_availability_is_checked_before_and_during_collect_jobs(tmp_path):
         )
 
 
+def test_worker_pauses_after_current_museum_object_when_disk_space_drops(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    from anacronia.search_sets import create_or_continue_search_set
+
+    class TwoCandidateClient:
+        def search_object_ids(self, term: str) -> list[int]:
+            assert term == "snake"
+            return [10, 20]
+
+    class TrackingRecordClient(FakeMetRecordClient):
+        def fetch_object_record(self, object_id: int) -> dict[str, object]:
+            record = super().fetch_object_record(object_id)
+            return {
+                **record,
+                "objectID": object_id,
+                "primaryImage": f"https://images.metmuseum.org/{object_id}.jpg",
+            }
+
+    create_or_continue_search_set(
+        database_path=storage.database_path,
+        display_name="Snake Studies",
+        terms_text="snake",
+    )
+    run = discover_met_candidates(
+        database_path=storage.database_path,
+        search_set_slug="snake-studies",
+        candidate_offset=0,
+        candidate_limit=2,
+        batch_target=2,
+        met_client=TwoCandidateClient(),
+    )
+    job = start_collect_job(
+        database_path=storage.database_path,
+        run_id=run.run_id,
+        candidate_offset=run.candidate_offset,
+        candidate_limit=run.candidate_limit,
+        candidate_progress_total=run.candidate_progress_total,
+        batch_target=run.batch_target,
+        max_images_per_object=1,
+        available_disk_bytes=2_000,
+        required_disk_bytes=1_000,
+    )
+    available_disk_readings = iter([2_000, 500])
+
+    summary = process_running_collect_job(
+        database_path=storage.database_path,
+        data_root=storage.data_root,
+        met_client=TrackingRecordClient(),
+        download_image_bytes=lambda _url: ppm_image_bytes(width=1600, height=800),
+        available_disk_bytes=lambda: next(available_disk_readings),
+    )
+
+    assert summary is not None
+    assert summary.imported_object_ids == [10]
+    assert [asset.object_id for asset in get_met_image_assets(database_path=storage.database_path)] == [10]
+    paused_job = get_collect_job(database_path=storage.database_path, job_id=job.job_id)
+    assert paused_job.status == "paused"
+    assert paused_job.pause_reason == "insufficient_disk"
+    assert paused_job.last_disk_available_bytes == 500
+    assert paused_job.last_processed_run_position == 0
+
+
 def test_repeated_provider_failures_trigger_backoff_then_automatic_pause(tmp_path):
     database_path = tmp_path / "anacronia.sqlite"
     job = start_collect_job(
@@ -369,6 +432,73 @@ def test_worker_stops_met_ingest_after_batch_target_reaches_usable_images(tmp_pa
         20,
     ]
     assert get_collect_job(database_path=storage.database_path, job_id=job.job_id).status == "completed"
+
+
+def test_worker_stops_after_current_museum_object_when_stop_is_requested(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    from anacronia.search_sets import create_or_continue_search_set
+
+    class ThreeCandidateClient:
+        def search_object_ids(self, term: str) -> list[int]:
+            assert term == "snake"
+            return [10, 20, 30]
+
+    class TrackingRecordClient(FakeMetRecordClient):
+        def fetch_object_record(self, object_id: int) -> dict[str, object]:
+            record = super().fetch_object_record(object_id)
+            return {
+                **record,
+                "objectID": object_id,
+                "primaryImage": f"https://images.metmuseum.org/{object_id}.jpg",
+            }
+
+    create_or_continue_search_set(
+        database_path=storage.database_path,
+        display_name="Snake Studies",
+        terms_text="snake",
+    )
+    run = discover_met_candidates(
+        database_path=storage.database_path,
+        search_set_slug="snake-studies",
+        candidate_offset=0,
+        candidate_limit=3,
+        batch_target=3,
+        met_client=ThreeCandidateClient(),
+    )
+    job = start_collect_job(
+        database_path=storage.database_path,
+        run_id=run.run_id,
+        candidate_offset=run.candidate_offset,
+        candidate_limit=run.candidate_limit,
+        candidate_progress_total=run.candidate_progress_total,
+        batch_target=run.batch_target,
+        max_images_per_object=1,
+        available_disk_bytes=10_000_000,
+    )
+
+    downloaded_urls: list[str] = []
+
+    def download_image_bytes(url: str) -> bytes:
+        downloaded_urls.append(url)
+        request_stop_collect_job(database_path=storage.database_path, job_id=job.job_id)
+        return ppm_image_bytes(width=1600, height=800)
+
+    summary = process_running_collect_job(
+        database_path=storage.database_path,
+        data_root=storage.data_root,
+        met_client=TrackingRecordClient(),
+        download_image_bytes=download_image_bytes,
+    )
+
+    assert summary is not None
+    assert summary.imported_object_ids == [10]
+    assert downloaded_urls == ["https://images.metmuseum.org/10.jpg"]
+    assert [asset.object_id for asset in get_met_image_assets(database_path=storage.database_path)] == [10]
+    stopped_job = get_collect_job(database_path=storage.database_path, job_id=job.job_id)
+    assert stopped_job.status == "stopped"
+    assert stopped_job.last_processed_run_position == 0
+    assert get_candidate_run(database_path=storage.database_path, run_id=run.run_id).status == "stopped"
+    assert get_worker_status(database_path=storage.database_path).status == "idle"
 
 
 def test_worker_marks_provider_exhausted_when_batch_target_cannot_be_met(tmp_path):

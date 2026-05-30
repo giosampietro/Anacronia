@@ -4,6 +4,7 @@ export type DashboardProviderCollection = {
   provider: string;
   latest_run_id: number | null;
   collect_status: string;
+  pause_reason: string;
   candidate_offset: number;
   candidate_limit: number;
   candidate_progress_processed: number;
@@ -27,7 +28,16 @@ export type DashboardProviderFocus = {
 
 export type DashboardWorkerStatus = {
   service: "worker";
-  status: "idle" | "running" | "paused" | "canceled" | "completed" | "error";
+  status:
+    | "idle"
+    | "running"
+    | "stopping"
+    | "paused"
+    | "stopped"
+    | "canceled"
+    | "completed"
+    | "no_more_results"
+    | "error";
   active_collect_job_id: number | null;
 };
 
@@ -41,6 +51,7 @@ export type DashboardProviderCollectionView = {
   provider: string;
   providerLabel: string;
   status: string;
+  pauseReason: string;
   candidateOffset: number;
   candidateLimit: number;
   nextCandidateOffset: number;
@@ -94,6 +105,7 @@ export function createOperationalDashboardView(
       provider: providerCollection.provider,
       providerLabel: providerLabel(providerCollection.provider),
       status: providerCollection.collect_status,
+      pauseReason: providerCollection.pause_reason,
       candidateOffset: providerCollection.candidate_offset,
       candidateLimit: providerCollection.candidate_limit,
       nextCandidateOffset:

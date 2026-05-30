@@ -2,7 +2,13 @@ from fastapi.testclient import TestClient
 
 from anacronia.api import DEFAULT_CANDIDATE_LIMIT, DEFAULT_MAX_IMAGES_PER_OBJECT, create_app
 from anacronia.collection_runs import get_candidate_run
-from anacronia.worker import get_collect_job, start_collect_job
+from anacronia.worker import (
+    complete_collect_job,
+    get_collect_job,
+    mark_collect_candidate_processed,
+    pause_collect_job,
+    start_collect_job,
+)
 from anacronia.met_ingest import get_met_matches, get_met_museum_objects
 from anacronia.storage import initialize_storage
 
@@ -93,6 +99,7 @@ def test_api_starts_locked_collection_with_initial_met_provider_source(tmp_path)
             "provider": "met",
             "latest_run_id": None,
             "collect_status": "idle",
+            "pause_reason": "",
             "candidate_offset": 0,
             "candidate_limit": 0,
             "candidate_progress_processed": 0,
@@ -332,6 +339,139 @@ def test_api_rejects_unsupported_met_batch_targets(tmp_path):
     assert response.status_code == 422
 
 
+def test_api_requests_running_met_search_to_stop(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            met_candidate_client=FakeMetCandidateClient(),
+        )
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda"},
+    )
+    client.post(
+        "/search-sets/snake-studies/provider-collections/met/collects",
+        json={"batch_target": 100},
+    )
+
+    response = client.post(
+        "/search-sets/snake-studies/provider-collections/met/collects/stop",
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "collect_job_id": 1,
+        "status": "stopping",
+    }
+    assert get_collect_job(database_path=storage.database_path, job_id=1).status == "stopping"
+    dashboard = client.get("/dashboard").json()
+    assert dashboard["worker_status"] == {
+        "service": "worker",
+        "status": "stopping",
+        "active_collect_job_id": 1,
+    }
+    assert dashboard["search_sets"][0]["provider_collections"][0]["collect_status"] == "stopping"
+
+
+def test_api_keeps_met_searching_from_next_safe_candidate_after_completed_batch(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    met_client = FakeMetCandidateClient()
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            met_candidate_client=met_client,
+        )
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda"},
+    )
+    first_response = client.post(
+        "/search-sets/snake-studies/provider-collections/met/collects",
+        json={"batch_target": 100},
+    )
+    mark_collect_candidate_processed(
+        database_path=storage.database_path,
+        job_id=first_response.json()["collect_job_id"],
+        run_position=0,
+    )
+    complete_collect_job(
+        database_path=storage.database_path,
+        job_id=first_response.json()["collect_job_id"],
+    )
+
+    second_response = client.post(
+        "/search-sets/snake-studies/provider-collections/met/collects",
+        json={"batch_target": 100},
+    )
+
+    assert second_response.status_code == 200
+    second_run = get_candidate_run(
+        database_path=storage.database_path,
+        run_id=second_response.json()["run_id"],
+    )
+    assert second_run.candidate_offset == 1
+    assert [candidate.object_id for candidate in second_run.candidates] == [20, 30]
+    assert second_response.json()["status"] == "running"
+
+
+def test_api_resumes_paused_met_search_and_exposes_pause_reason(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            met_candidate_client=FakeMetCandidateClient(),
+        )
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda"},
+    )
+    start_response = client.post(
+        "/search-sets/snake-studies/provider-collections/met/collects",
+        json={"batch_target": 100},
+    )
+    pause_collect_job(
+        database_path=storage.database_path,
+        job_id=start_response.json()["collect_job_id"],
+        reason="insufficient_disk",
+    )
+
+    dashboard = client.get("/dashboard").json()
+    assert dashboard["worker_status"]["status"] == "paused"
+    assert dashboard["search_sets"][0]["provider_collections"][0]["pause_reason"] == "insufficient_disk"
+    blocked_response = client.post(
+        "/search-sets/snake-studies/provider-collections/met/collects",
+        json={"batch_target": 100},
+    )
+    assert blocked_response.status_code == 409
+
+    resume_response = client.post(
+        "/search-sets/snake-studies/provider-collections/met/collects/resume",
+        json={"batch_target": 500},
+    )
+
+    assert resume_response.status_code == 200
+    assert resume_response.json() == {
+        "collect_job_id": start_response.json()["collect_job_id"],
+        "status": "running",
+        "batch_target": 500,
+    }
+    assert get_collect_job(
+        database_path=storage.database_path,
+        job_id=start_response.json()["collect_job_id"],
+    ).status == "running"
+    assert get_collect_job(
+        database_path=storage.database_path,
+        job_id=start_response.json()["collect_job_id"],
+    ).batch_target == 500
+
+
 def test_api_caps_met_collect_to_three_images_per_object(tmp_path):
     storage = initialize_storage(project_root=tmp_path)
     client = TestClient(
@@ -515,6 +655,7 @@ def test_api_returns_operational_dashboard(tmp_path):
         "provider": "met",
         "latest_run_id": 1,
         "collect_status": "running",
+        "pause_reason": "",
         "candidate_offset": 1,
         "candidate_limit": 2,
         "candidate_progress_processed": 0,

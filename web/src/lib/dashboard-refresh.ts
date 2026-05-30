@@ -1,3 +1,3 @@
 export function shouldAutoRefreshDashboard(workerStatus: string): boolean {
-  return workerStatus === "running";
+  return workerStatus === "running" || workerStatus === "stopping";
 }

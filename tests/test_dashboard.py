@@ -4,6 +4,7 @@ from anacronia.met_ingest import ingest_met_run
 from anacronia.search_sets import create_or_continue_search_set
 from anacronia.worker import (
     cancel_collect_job,
+    complete_collect_job,
     mark_collect_candidate_processed,
     start_collect_job,
 )
@@ -118,3 +119,39 @@ def test_operational_dashboard_groups_provider_collections_under_search_sets(tmp
         (provider.provider, provider.search_set_count, provider.imported_image_count)
         for provider in dashboard.provider_focus
     ] == [("met", 1, 2)]
+
+
+def test_operational_dashboard_reports_next_offset_after_completed_search(tmp_path):
+    database_path = tmp_path / "anacronia.sqlite"
+    create_or_continue_search_set(
+        database_path=database_path,
+        display_name="Snake Studies",
+        terms_text="snake",
+    )
+    run = discover_met_candidates(
+        database_path=database_path,
+        search_set_slug="snake-studies",
+        candidate_offset=0,
+        candidate_limit=3,
+        met_client=FakeMetCandidateClient(),
+    )
+    job = start_collect_job(
+        database_path=database_path,
+        run_id=run.run_id,
+        candidate_offset=run.candidate_offset,
+        candidate_limit=run.candidate_limit,
+        candidate_progress_total=run.candidate_progress_total,
+        available_disk_bytes=10_000_000,
+    )
+    mark_collect_candidate_processed(
+        database_path=database_path,
+        job_id=job.job_id,
+        run_position=0,
+    )
+    complete_collect_job(database_path=database_path, job_id=job.job_id)
+
+    dashboard = get_operational_dashboard(database_path=database_path)
+
+    provider_collection = dashboard.search_sets[0].provider_collections[0]
+    assert provider_collection.collect_status == "completed"
+    assert provider_collection.continue_candidate_offset == 1

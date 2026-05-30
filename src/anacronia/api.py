@@ -27,7 +27,11 @@ from anacronia.search_sets import (
 from anacronia.storage import initialize_storage
 from anacronia.worker import (
     CollectLockError,
+    get_active_collect_job_for_search_set_provider,
+    get_next_collect_candidate_offset_for_search_set_provider,
     get_worker_status,
+    request_stop_collect_job,
+    resume_collect_job,
     start_collect_job,
 )
 
@@ -127,6 +131,7 @@ def serialize_operational_dashboard(dashboard: OperationalDashboard) -> dict[str
                         "provider": provider_collection.provider,
                         "latest_run_id": provider_collection.latest_run_id,
                         "collect_status": provider_collection.collect_status,
+                        "pause_reason": provider_collection.pause_reason,
                         "candidate_offset": provider_collection.candidate_offset,
                         "candidate_limit": provider_collection.candidate_limit,
                         "candidate_progress_processed": provider_collection.candidate_progress_processed,
@@ -228,10 +233,18 @@ def create_app(
         if get_worker_status(database_path=resolved_database_path).active_collect_job_id is not None:
             raise HTTPException(status_code=409, detail="Another search is already active.")
 
+        candidate_offset = get_next_collect_candidate_offset_for_search_set_provider(
+            database_path=resolved_database_path,
+            search_set_slug=slug,
+            provider="met",
+        )
+        if candidate_offset is None:
+            raise HTTPException(status_code=409, detail="Met has no more results for this Collection.")
+
         run = discover_met_candidates(
             database_path=resolved_database_path,
             search_set_slug=slug,
-            candidate_offset=0,
+            candidate_offset=candidate_offset,
             candidate_limit=INTERNAL_CANDIDATE_LIMIT,
             met_client=resolved_met_candidate_client,
             batch_target=request.batch_target,
@@ -255,6 +268,49 @@ def create_app(
             "collect_job_id": collect_job.job_id,
             "status": collect_job.status,
             "batch_target": collect_job.batch_target,
+        }
+
+    @app.post("/search-sets/{slug}/provider-collections/met/collects/stop")
+    def stop_met_collect(slug: str) -> dict[str, object]:
+        collect_job = get_active_collect_job_for_search_set_provider(
+            database_path=resolved_database_path,
+            search_set_slug=slug,
+            provider="met",
+        )
+        if collect_job is None or collect_job.status != "running":
+            raise HTTPException(status_code=409, detail="No running Met search can be stopped.")
+
+        stopped_job = request_stop_collect_job(
+            database_path=resolved_database_path,
+            job_id=collect_job.job_id,
+        )
+        return {
+            "collect_job_id": stopped_job.job_id,
+            "status": stopped_job.status,
+        }
+
+    @app.post("/search-sets/{slug}/provider-collections/met/collects/resume")
+    def resume_met_collect(
+        slug: str,
+        request: StartMetCollectRequest,
+    ) -> dict[str, object]:
+        collect_job = get_active_collect_job_for_search_set_provider(
+            database_path=resolved_database_path,
+            search_set_slug=slug,
+            provider="met",
+        )
+        if collect_job is None or collect_job.status != "paused":
+            raise HTTPException(status_code=409, detail="No paused Met search can be resumed.")
+
+        resumed_job = resume_collect_job(
+            database_path=resolved_database_path,
+            job_id=collect_job.job_id,
+            batch_target=request.batch_target,
+        )
+        return {
+            "collect_job_id": resumed_job.job_id,
+            "status": resumed_job.status,
+            "batch_target": resumed_job.batch_target,
         }
 
     @app.post("/provider-collections/met/runs/{run_id}/ingest")

@@ -4,6 +4,7 @@ import {
   COLLECT_BUSY_NOTICE,
   canStartCollect,
   collectNoticeFromCode,
+  providerSearchAction,
 } from "./collect-workflow";
 
 describe("collect workflow", () => {
@@ -11,6 +12,7 @@ describe("collect workflow", () => {
     expect(canStartCollect("idle")).toBe(true);
     expect(canStartCollect("completed")).toBe(true);
     expect(canStartCollect("running")).toBe(false);
+    expect(canStartCollect("stopping")).toBe(false);
     expect(canStartCollect("paused")).toBe(false);
   });
 
@@ -20,5 +22,50 @@ describe("collect workflow", () => {
     );
     expect(collectNoticeFromCode("unknown")).toBeNull();
     expect(collectNoticeFromCode(null)).toBeNull();
+  });
+
+  it("chooses the Provider Search action from lifecycle state", () => {
+    expect(providerSearchAction("idle")).toEqual({
+      kind: "start",
+      label: "Start search",
+      showBatchTarget: true,
+      disabled: false,
+    });
+    expect(providerSearchAction("running")).toEqual({
+      kind: "stop",
+      label: "Stop search",
+      showBatchTarget: false,
+      disabled: false,
+    });
+    expect(providerSearchAction("stopping")).toEqual({
+      kind: "none",
+      label: "Stopping",
+      showBatchTarget: false,
+      disabled: true,
+    });
+    expect(providerSearchAction("paused")).toEqual({
+      kind: "resume",
+      label: "Resume search",
+      showBatchTarget: true,
+      disabled: false,
+    });
+    expect(providerSearchAction("stopped")).toEqual({
+      kind: "start",
+      label: "Resume search",
+      showBatchTarget: true,
+      disabled: false,
+    });
+    expect(providerSearchAction("completed")).toEqual({
+      kind: "start",
+      label: "Keep searching",
+      showBatchTarget: true,
+      disabled: false,
+    });
+    expect(providerSearchAction("no_more_results")).toEqual({
+      kind: "none",
+      label: "No more results",
+      showBatchTarget: false,
+      disabled: true,
+    });
   });
 });

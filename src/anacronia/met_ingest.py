@@ -189,6 +189,7 @@ def ingest_met_run(
     max_images_per_object: int = DEFAULT_MAX_IMAGES_PER_OBJECT,
     batch_target: int | None = None,
     on_candidate_processed: Callable[[int], None] | None = None,
+    should_stop: Callable[[], bool] | None = None,
 ) -> MetIngestSummary:
     fetched_object_ids: list[int] = []
     imported_object_ids: list[int] = []
@@ -212,6 +213,8 @@ def ingest_met_run(
             )
             if on_candidate_processed is not None:
                 on_candidate_processed(run_position)
+            if should_stop is not None and should_stop():
+                break
             continue
 
         raw_record_path = write_met_raw_record(data_root=data_root, record=record)
@@ -268,6 +271,8 @@ def ingest_met_run(
             )
             if on_candidate_processed is not None:
                 on_candidate_processed(run_position)
+            if should_stop is not None and should_stop():
+                break
             continue
 
         with sqlite3.connect(database_path) as connection:
@@ -301,6 +306,8 @@ def ingest_met_run(
         imported_image_count += len(processed_image_assets)
         if on_candidate_processed is not None:
             on_candidate_processed(run_position)
+        if should_stop is not None and should_stop():
+            break
         if batch_target is not None and imported_image_count >= batch_target:
             break
 

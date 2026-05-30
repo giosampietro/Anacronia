@@ -1,6 +1,6 @@
 export type WorkerHealth = {
   service: "worker";
-  status: "idle" | "running" | "paused" | "error";
+  status: "idle" | "running" | "stopping" | "paused" | "stopped" | "error";
   active_collect_job_id?: number | null;
 };
 

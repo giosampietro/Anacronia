@@ -41,6 +41,7 @@ import {
   Plus,
   RotateCcw,
   Search,
+  Square,
 } from "lucide-react";
 
 import {
@@ -61,6 +62,7 @@ import {
   COLLECT_BUSY_NOTICE,
   canStartCollect,
   collectNoticeFromCode,
+  providerSearchAction,
 } from "@/lib/collect-workflow";
 import { createStatusRows } from "@/lib/status";
 import type { ApiHealth } from "@/lib/status";
@@ -202,8 +204,49 @@ async function startMetCollect(formData: FormData) {
   redirect(`/?search_set=${slug}`);
 }
 
+async function resumeMetCollect(formData: FormData) {
+  "use server";
+
+  const apiPort = getPort("ANACRONIA_API_PORT", DEFAULT_API_PORT);
+  const slug = getActionFormDataString(formData, "slug");
+  const batchTarget = normalizeBatchTarget(
+    getActionFormDataValue(formData, "batch_target"),
+  );
+
+  const response = await fetch(`http://127.0.0.1:${apiPort}/search-sets/${slug}/provider-collections/met/collects/resume`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      batch_target: batchTarget,
+    }),
+  });
+
+  revalidatePath("/");
+  if (!response.ok) {
+    redirect(`/?search_set=${slug}&collect_notice=${COLLECT_BUSY_NOTICE}`);
+  }
+  redirect(`/?search_set=${slug}`);
+}
+
+async function stopMetCollect(formData: FormData) {
+  "use server";
+
+  const apiPort = getPort("ANACRONIA_API_PORT", DEFAULT_API_PORT);
+  const slug = getActionFormDataString(formData, "slug");
+
+  const response = await fetch(`http://127.0.0.1:${apiPort}/search-sets/${slug}/provider-collections/met/collects/stop`, {
+    method: "POST",
+  });
+
+  revalidatePath("/");
+  if (!response.ok) {
+    redirect(`/?search_set=${slug}&collect_notice=${COLLECT_BUSY_NOTICE}`);
+  }
+  redirect(`/?search_set=${slug}`);
+}
+
 function statusVariant(state: string): "default" | "destructive" | "secondary" | "outline" {
-  if (state === "ok" || state === "running" || state === "completed") {
+  if (state === "ok" || state === "running" || state === "stopping" || state === "completed") {
     return "default";
   }
   if (state === "error") {
@@ -235,11 +278,25 @@ function statusLabel(state: string): string {
   if (state === "completed") {
     return "ready";
   }
-  if (state === "canceled") {
+  if (state === "stopped" || state === "canceled") {
     return "stopped";
   }
 
   return state;
+}
+
+function pauseReasonLabel(reason: string): string {
+  if (reason === "insufficient_disk") {
+    return "Paused: not enough disk space.";
+  }
+  if (reason === "repeated_provider_failures") {
+    return "Paused: repeated provider or download failures.";
+  }
+  if (reason.trim() !== "") {
+    return `Paused: ${reason.replaceAll("_", " ")}.`;
+  }
+
+  return "Paused.";
 }
 
 function BatchTargetControl({
@@ -664,50 +721,88 @@ export default async function Home({ searchParams }: HomeProps) {
                     </form>
                   </Card>
                 ) : (
-                  activeProviderCollections.map((providerCollection) => (
-                    <Card key={`${activeSearchSet.slug}-${providerCollection.provider}`}>
-                      <CardHeader>
-                        <div className="min-w-0">
-                          <CardTitle>{providerCollection.providerLabel}</CardTitle>
-                          <CardDescription>Provider Source</CardDescription>
-                        </div>
-                        <CardAction>
-                          <Badge variant={statusVariant(providerCollection.status)}>
-                            {statusIcon(providerCollection.status)}
-                            {statusLabel(providerCollection.status)}
-                          </Badge>
-                        </CardAction>
-                      </CardHeader>
-                      <CardContent>
-                        <ProviderCollectionProgress
-                          importedImageCount={providerCollection.importedImageCount}
-                        />
-                      </CardContent>
-                      {providerCollection.status !== "no_more_results" &&
-                      providerCollection.status !== "running" &&
-                      collectAvailable ? (
-                        <form action={startMetCollect}>
-                          <CardFooter className="flex-col items-stretch gap-4 border-t bg-muted/50">
-                            <input name="slug" type="hidden" value={activeSearchSet.slug} />
-                            <BatchTargetControl
-                              idPrefix={`${activeSearchSet.slug}_${providerCollection.provider}`}
-                            />
-                            <div className="flex justify-end gap-2">
-                              <Button
-                                disabled={!collectAvailable}
-                                size="sm"
-                                type="submit"
-                                variant="outline"
-                              >
-                                <RotateCcw data-icon="inline-start" />
-                                Keep searching
+                  activeProviderCollections.map((providerCollection) => {
+                    const action = providerSearchAction(providerCollection.status);
+                    const actionAvailable =
+                      action.kind === "stop" ||
+                      action.kind === "resume" ||
+                      (action.kind === "start" && collectAvailable);
+                    const formAction =
+                      action.kind === "resume"
+                        ? resumeMetCollect
+                        : action.kind === "stop"
+                          ? stopMetCollect
+                          : startMetCollect;
+
+                    return (
+                      <Card key={`${activeSearchSet.slug}-${providerCollection.provider}`}>
+                        <CardHeader>
+                          <div className="min-w-0">
+                            <CardTitle>{providerCollection.providerLabel}</CardTitle>
+                            <CardDescription>Provider Source</CardDescription>
+                          </div>
+                          <CardAction>
+                            <Badge variant={statusVariant(providerCollection.status)}>
+                              {statusIcon(providerCollection.status)}
+                              {statusLabel(providerCollection.status)}
+                            </Badge>
+                          </CardAction>
+                        </CardHeader>
+                        <CardContent className="grid gap-3">
+                          <ProviderCollectionProgress
+                            importedImageCount={providerCollection.importedImageCount}
+                          />
+                          {providerCollection.status === "paused" ? (
+                            <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                              <CircleAlert className="size-4" />
+                              {pauseReasonLabel(providerCollection.pauseReason)}
+                            </p>
+                          ) : null}
+                          {action.kind !== "none" && !actionAvailable ? (
+                            <CollectBusyNote collectAvailable={false} />
+                          ) : null}
+                        </CardContent>
+                        {action.kind === "none" ? (
+                          action.label === "Stopping" ? (
+                            <CardFooter className="justify-end border-t bg-muted/50">
+                              <Button disabled size="sm" type="button" variant="outline">
+                                <Activity data-icon="inline-start" />
+                                {action.label}
                               </Button>
-                            </div>
-                          </CardFooter>
-                        </form>
-                      ) : null}
-                    </Card>
-                  ))
+                            </CardFooter>
+                          ) : null
+                        ) : (
+                          <form action={formAction}>
+                            <CardFooter className="flex-col items-stretch gap-4 border-t bg-muted/50">
+                              <input name="slug" type="hidden" value={activeSearchSet.slug} />
+                              {action.showBatchTarget ? (
+                                <BatchTargetControl
+                                  idPrefix={`${activeSearchSet.slug}_${providerCollection.provider}`}
+                                />
+                              ) : null}
+                              <div className="flex justify-end gap-2">
+                                <Button
+                                  disabled={!actionAvailable}
+                                  size="sm"
+                                  type="submit"
+                                  variant={action.kind === "stop" ? "outline" : "default"}
+                                >
+                                  {action.kind === "stop" ? (
+                                    <Square data-icon="inline-start" />
+                                  ) : action.kind === "resume" || action.label === "Keep searching" ? (
+                                    <RotateCcw data-icon="inline-start" />
+                                  ) : (
+                                    <Play data-icon="inline-start" />
+                                  )}
+                                  {action.label}
+                                </Button>
+                              </div>
+                            </CardFooter>
+                          </form>
+                        )}
+                      </Card>
+                    );
+                  })
                 )}
               </section>
             </section>

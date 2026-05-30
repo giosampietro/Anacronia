@@ -18,6 +18,7 @@ class DashboardProviderCollection:
     provider: str
     latest_run_id: int | None
     collect_status: str
+    pause_reason: str
     candidate_offset: int
     candidate_limit: int
     candidate_progress_processed: int
@@ -165,6 +166,7 @@ def get_dashboard_provider_collection(
             provider=provider,
             latest_run_id=None,
             collect_status="idle",
+            pause_reason="",
             candidate_offset=0,
             candidate_limit=0,
             candidate_progress_processed=0,
@@ -176,10 +178,12 @@ def get_dashboard_provider_collection(
     collect_job = get_latest_collect_job_for_run(connection=connection, run_id=latest_run[0])
     if collect_job is None:
         collect_status = latest_run[5]
+        pause_reason = ""
         progress_processed = latest_run[4]
         continue_candidate_offset = None
     else:
         collect_status = collect_job.status
+        pause_reason = collect_job.pause_reason
         progress_processed = (
             0
             if collect_job.last_processed_run_position is None
@@ -187,7 +191,7 @@ def get_dashboard_provider_collection(
         )
         continue_candidate_offset = (
             collect_job.candidate_offset + progress_processed
-            if collect_job.status == "canceled"
+            if collect_job.status in {"canceled", "completed", "stopped"}
             else None
         )
 
@@ -195,6 +199,7 @@ def get_dashboard_provider_collection(
         provider=provider,
         latest_run_id=latest_run[0],
         collect_status=collect_status,
+        pause_reason=pause_reason,
         candidate_offset=latest_run[1],
         candidate_limit=latest_run[2],
         candidate_progress_processed=progress_processed,
