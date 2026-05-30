@@ -50,6 +50,7 @@ import {
 } from "@/lib/collection-objects";
 import { shouldAutoRefreshDashboard } from "@/lib/dashboard-refresh";
 import { normalizeBatchTarget } from "@/lib/candidate-limits";
+import { providerSourceFooterClassName } from "@/lib/provider-source-card";
 import {
   getActionFormDataString,
   getActionFormDataValue,
@@ -690,7 +691,7 @@ export default async function Home({ searchParams }: HomeProps) {
                         <BatchTargetControl idPrefix={`${activeSearchSet.slug}_met`} />
                         <CollectBusyNote collectAvailable={collectAvailable} />
                       </CardContent>
-                      <CardFooter className="justify-end border-t bg-muted/50">
+                      <CardFooter className={providerSourceFooterClassName("inline")}>
                         <ProviderSearchActionButton
                           actionKind="start"
                           disabled={!collectAvailable}
@@ -748,7 +749,7 @@ export default async function Home({ searchParams }: HomeProps) {
                         </CardContent>
                         {action.kind === "none" ? (
                           action.label === "Stopping" ? (
-                            <CardFooter className="justify-end border-t bg-muted/50">
+                            <CardFooter className={providerSourceFooterClassName("inline")}>
                               <Button disabled size="sm" type="button" variant="outline">
                                 <Activity data-icon="inline-start" />
                                 {action.label}
@@ -757,7 +758,7 @@ export default async function Home({ searchParams }: HomeProps) {
                           ) : null
                         ) : (
                           <form action={formAction}>
-                            <CardFooter className="flex-col items-stretch gap-4 border-t bg-muted/50">
+                            <CardFooter className={providerSourceFooterClassName("stacked")}>
                               <input name="slug" type="hidden" value={activeSearchSet.slug} />
                               {action.showBatchTarget ? (
                                 <BatchTargetControl
