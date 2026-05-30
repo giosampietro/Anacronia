@@ -4,7 +4,23 @@ export function canStartCollect(workerStatus: string): boolean {
   return workerStatus !== "running" && workerStatus !== "stopping";
 }
 
-export function collectNoticeFromCode(code: string | null | undefined): string | null {
+type ProviderSearchStatus = {
+  status: string;
+};
+
+export function collectNoticeFromCode(
+  code: string | null | undefined,
+  activeProviderCollections: ProviderSearchStatus[] = [],
+): string | null {
+  const activeCollectionOwnsBusySearch = activeProviderCollections.some(
+    (providerCollection) =>
+      providerCollection.status === "running" || providerCollection.status === "stopping",
+  );
+
+  if (code === COLLECT_BUSY_NOTICE && activeCollectionOwnsBusySearch) {
+    return null;
+  }
+
   if (code === COLLECT_BUSY_NOTICE) {
     return "Another search is active. Wait for it to stop before starting or resuming another search.";
   }

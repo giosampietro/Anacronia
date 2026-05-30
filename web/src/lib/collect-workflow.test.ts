@@ -20,6 +20,18 @@ describe("collect workflow", () => {
     expect(collectNoticeFromCode(COLLECT_BUSY_NOTICE)).toBe(
       "Another search is active. Wait for it to stop before starting or resuming another search.",
     );
+    expect(
+      collectNoticeFromCode(COLLECT_BUSY_NOTICE, [
+        { status: "running" },
+      ]),
+    ).toBeNull();
+    expect(
+      collectNoticeFromCode(COLLECT_BUSY_NOTICE, [
+        { status: "paused" },
+      ]),
+    ).toBe(
+      "Another search is active. Wait for it to stop before starting or resuming another search.",
+    );
     expect(collectNoticeFromCode("unknown")).toBeNull();
     expect(collectNoticeFromCode(null)).toBeNull();
   });

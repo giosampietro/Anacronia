@@ -458,9 +458,9 @@ export default async function Home({ searchParams }: HomeProps) {
   const filteredSearchSets = filterSearchSets(dashboardView.searchSets, filterText);
   const activeSearchSet = dashboardView.activeSearchSet;
   const collectAvailable = canStartCollect(dashboardView.workerStatus);
-  const collectNotice = collectNoticeFromCode(collectNoticeCode);
   const workspaceMode = createWorkspaceMode(requestedWorkspaceMode, activeSearchSet);
   const activeProviderCollections = activeSearchSet?.providerCollections ?? [];
+  const collectNotice = collectNoticeFromCode(collectNoticeCode, activeProviderCollections);
   const collectionObjects =
     activeSearchSet === null || workspaceMode !== "search-set"
       ? []
