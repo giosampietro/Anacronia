@@ -98,6 +98,7 @@ def test_operational_dashboard_groups_provider_collections_under_search_sets(tmp
             search_set.provider_collections[0].collect_status,
             search_set.provider_collections[0].candidate_progress_processed,
             search_set.provider_collections[0].candidate_progress_total,
+            search_set.provider_collections[0].imported_object_count,
             search_set.provider_collections[0].imported_image_count,
             search_set.provider_collections[0].continue_candidate_offset,
         )
@@ -111,6 +112,7 @@ def test_operational_dashboard_groups_provider_collections_under_search_sets(tmp
             "canceled",
             2,
             3,
+            2,
             2,
             2,
         )

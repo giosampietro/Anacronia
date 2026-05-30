@@ -23,6 +23,7 @@ class DashboardProviderCollection:
     candidate_limit: int
     candidate_progress_processed: int
     candidate_progress_total: int
+    imported_object_count: int
     imported_image_count: int
     continue_candidate_offset: int | None
 
@@ -160,6 +161,11 @@ def get_dashboard_provider_collection(
         provider_collection_id=provider_collection_id,
         provider=provider,
     )
+    imported_object_count = count_imported_objects_for_provider_collection(
+        connection=connection,
+        provider_collection_id=provider_collection_id,
+        provider=provider,
+    )
 
     if latest_run is None:
         return DashboardProviderCollection(
@@ -171,6 +177,7 @@ def get_dashboard_provider_collection(
             candidate_limit=0,
             candidate_progress_processed=0,
             candidate_progress_total=0,
+            imported_object_count=imported_object_count,
             imported_image_count=imported_image_count,
             continue_candidate_offset=None,
         )
@@ -204,6 +211,7 @@ def get_dashboard_provider_collection(
         candidate_limit=latest_run[2],
         candidate_progress_processed=progress_processed,
         candidate_progress_total=latest_run[3],
+        imported_object_count=imported_object_count,
         imported_image_count=imported_image_count,
         continue_candidate_offset=continue_candidate_offset,
     )
@@ -256,6 +264,34 @@ def count_imported_images_for_provider_collection(
         SELECT COUNT(*)
         FROM (
           SELECT DISTINCT image_assets.object_id, image_assets.source_image_url
+          FROM image_assets
+          JOIN run_candidates
+            ON run_candidates.object_id = image_assets.object_id
+          JOIN collection_runs
+            ON collection_runs.id = run_candidates.run_id
+          WHERE
+            collection_runs.provider_collection_id = ?
+            AND image_assets.provider = ?
+            AND image_assets.imported = 1
+        )
+        """,
+        (provider_collection_id, provider),
+    ).fetchone()
+
+    return int(row[0])
+
+
+def count_imported_objects_for_provider_collection(
+    *,
+    connection: sqlite3.Connection,
+    provider_collection_id: int,
+    provider: str,
+) -> int:
+    row = connection.execute(
+        """
+        SELECT COUNT(*)
+        FROM (
+          SELECT DISTINCT image_assets.object_id
           FROM image_assets
           JOIN run_candidates
             ON run_candidates.object_id = image_assets.object_id

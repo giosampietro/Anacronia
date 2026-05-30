@@ -107,19 +107,21 @@ Counters:
 | New form | Unsaved form before first search. | `Start search` + batch dropdown |
 | Searching | Search is running for the selected Provider Source. | `Stop search` |
 | Stopping | User requested stop; current object is finishing safely. | disabled `Stopping` with spinner |
-| Stopped | User stopped the search after a safe object checkpoint. | `Resume search` + batch dropdown |
-| Paused/error | System paused because of provider/network/disk/repeated failure. | `Resume search` + batch dropdown + warning icon |
+| Stopped | User stopped the search after a safe object checkpoint; the search is parked and does not block other work. | `Resume search` + batch dropdown |
+| Paused/error | System paused because of provider/network/disk/repeated failure; the search is parked and does not block other work. | `Resume search` + batch dropdown + warning icon |
 | Completed with more possible | Selected batch target was reached and provider may still have more. | `Keep searching` + batch dropdown |
 | Provider exhausted | Provider has no more records to scan for this locked Collection. | plain status text `No more results` |
-| Blocked by active search | Another Collection search is active or paused. | no launch action |
+| Blocked by active search | Another Collection search is currently searching or stopping. | no launch action |
 
 Rules:
 
-- `New Collection` is disabled while another Collection is actively searching or paused.
+- `New Collection` is disabled only while another Collection is searching or stopping.
+- A stopped or paused/error search is a parked resumable job and does not hold the global search lock.
+- A parked search can be resumed only when no other Collection is searching or stopping.
 - Batch dropdown is visible only beside launch actions: `Start search`, `Resume search`, `Keep searching`.
 - Batch dropdown is hidden while searching, stopping, exhausted, or blocked.
 - Batch dropdown retains the last selected value.
-- `Stop search` is a normal state transition, not an error.
+- `Stop search` is a normal state transition, not an error or terminal cancellation.
 - `Stop search` finishes the current Museum Object safely before stopping.
 - Partial/corrupt images never appear as found.
 - If one image fails but another image for the same object succeeds, the object appears.

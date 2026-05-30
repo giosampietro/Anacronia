@@ -10,7 +10,7 @@ Anacronia should solve the first stage of this workflow: collect museum records 
 
 Anacronia will be a local-first collection builder. It will let the user define a Collection made of explicit terms, start searching Met for usable public-domain image material, download source images temporarily, generate local `standard-1024` and `thumb-256` derivatives, store raw provider records, extract Descriptors from provider-specific metadata, and expose the resulting Museum Objects and Image Assets in a dense operational web interface.
 
-The user will run Anacronia locally from the terminal. A single command will start the Next.js interface, FastAPI backend, and Python worker. The browser UI will open on `localhost:18660` when available. The worker will process one Provider Search at a time, prioritizing correctness, resumability, provider tolerance, and data integrity over raw speed.
+The user will run Anacronia locally from the terminal. A single command will start the Next.js interface, FastAPI backend, and Python worker. The browser UI will open on `localhost:18660` when available. The worker will process one actively running Provider Search at a time, prioritizing correctness, resumability, provider tolerance, and data integrity over raw speed. Stopped or paused/error searches are parked resumable jobs and do not block other work until the user chooses to resume them.
 
 The MVP will not try to become the future visual atlas. It will provide the operational foundation: start locked Collections, search Met in resumable batches, stop and resume safely, monitor Object/Image counters, inspect downloaded Museum Objects, view details and source metadata, and export imported Image Assets as JSONL/CSV or complete packages.
 
@@ -84,10 +84,10 @@ The MVP will not try to become the future visual atlas. It will provide the oper
 66. As a collection builder, I want Met Descriptors extracted from a broader curated field set than verified matching, so that later local search is richer.
 67. As a future collection browser, I want local post-import search across canonical fields and Descriptors, so that I can find material after collection.
 68. As a collection builder, I do not need local result search in the Start New Collection workflow, so that the first workflow stays focused on starting and monitoring search.
-69. As a collection builder, I want one active Provider Search at a time, so that the MVP remains stable and provider-friendly.
+69. As a collection builder, I want only one Provider Search actively searching or stopping at a time, so that the MVP remains stable and provider-friendly.
 70. As a collection builder, I want no search queue in the MVP, so that system behavior stays simple.
-71. As a collection builder, I want a paused/error search to keep the search lock, so that I must resolve it before starting another search.
-72. As a collection builder, I want to stop and resume a Provider Search, so that long-running work can be controlled.
+71. As a collection builder, I want stopped and paused/error searches to be parked without blocking other work, so that I can move to another Collection when a search is not actively running.
+72. As a collection builder, I want parked searches to resume only when no other Provider Search is searching or stopping, so that resuming remains safe without introducing a queue.
 73. As a collection builder, I want `Stop search` to finish the current Museum Object safely before stopping, so that local data is not left corrupt.
 74. As a collection builder, I want stopping a search to preserve completed Objects and Images, so that already downloaded material is not lost.
 75. As a collection builder, I want resuming or keeping a search going to continue from the next safe internal cursor, so that I do not repeat processed provider records by default.
@@ -149,9 +149,11 @@ The MVP will not try to become the future visual atlas. It will provide the oper
 - Expose CLI commands such as `anacronia`, `anacronia collect`, `anacronia status`, `anacronia pause`, `anacronia resume`, and `anacronia rebuild-descriptors`.
 - Start Next.js, FastAPI, and the worker through a single `anacronia` command.
 - Keep the worker running while Anacronia is open, idle when no search exists.
-- Support one active Provider Search at a time in the MVP.
+- Support one actively running Provider Search at a time in the MVP.
 - Do not implement a job queue in the MVP.
-- Prevent starting a new search while a Provider Search is searching or paused/error.
+- Hold the global search lock only while a Provider Search is searching or stopping at a safe checkpoint.
+- Treat stopped and paused/error Provider Searches as parked resumable jobs that do not block other work.
+- Prevent starting or resuming a Provider Search while another Provider Search is searching or stopping.
 - Support `Stop search`; stopping finishes the current Museum Object safely, preserves completed Objects and Images, and can be resumed.
 - Resuming or keeping a search going should continue from the next safe internal cursor after the last processed candidate.
 - Define the domain model around Collection, Provider Source, Run, Candidate, Museum Object, Image Asset, Descriptor, Match, Verified Match, Unverified Match, Standard-1024, Thumb-256, Export, and Analysis Result.
@@ -237,7 +239,7 @@ The MVP will not try to become the future visual atlas. It will provide the oper
 - **Collection Engine**: Owns Collection term handling, candidate merge/deduplication/order, internal cursor/limits, batch target fulfillment, stop/resume semantics, and membership between Provider Sources, Museum Objects, and Image Assets.
 - **Image Pipeline**: Downloads source images temporarily, captures original metadata, creates derivatives, validates outputs, and deletes originals.
 - **Storage Layer**: Owns SQLite schema access, filesystem layout, raw JSON persistence, derivative paths, state persistence, and idempotent checks.
-- **Worker**: Owns the single active Provider Search lifecycle, stop/resume, provider backoff, disk checks, and search state.
+- **Worker**: Owns the single actively running Provider Search lifecycle, parked search resume rules, provider backoff, disk checks, and search state.
 - **FastAPI Backend**: Exposes backend operations to the UI gateway and CLI.
 - **Next.js UI/Gateway**: Provides the operational interface, route-handler proxying, Start New Collection form, search state header, object grid, detail overlay, and export interactions.
 - **CLI**: Provides local commands for startup and operational workflows.
@@ -252,11 +254,11 @@ The MVP will not try to become the future visual atlas. It will provide the oper
 - Provider adapters should be tested against representative recorded responses.
 - The Met Provider should be tested for candidate search parsing, object fetch parsing, strict `isPublicDomain` filtering, image URL extraction, `primaryImageSmall` metadata behavior, additional image handling, and verified/unverified match classification.
 - Descriptor Mapping should be tested with provider fixtures to prove correct value extraction, descriptor type assignment, source field retention, duplicate handling, and rebuild behavior.
-- Collection Engine should be tested for term normalization, multiline/comma parsing, term deduplication, locked definitions, candidate merge/deduplication, ordering, internal cursor handling, batch target fulfillment, stop/resume continuation, and single-active-search lock rules.
+- Collection Engine should be tested for term normalization, multiline/comma parsing, term deduplication, locked definitions, candidate merge/deduplication, ordering, internal cursor handling, batch target fulfillment, stop/resume continuation, parked-search behavior, and single-running-search lock rules.
 - Image Pipeline should be tested with local image fixtures to prove derivative sizing, JPEG settings, validation behavior, original metadata capture, temporary file cleanup, and independent image failure handling.
 - Storage should be tested for Met range folder generation, per-object image folder paths, raw JSON path generation, standardized derivative filenames, idempotent validation, and persistence of skipped image references.
 - Worker should be tested as a state machine for idle, searching, stopping, stopped, paused/error, completed with more possible, provider exhausted, failed, backoff, and auto-pause conditions.
-- Worker tests should verify that paused/error searches retain the search lock and stopped searches can resume from the next safe cursor.
+- Worker tests should verify that searching/stopping states hold the search lock, stopped and paused/error states release the lock as parked resumable jobs, parked searches cannot resume while another search is searching/stopping, and stopped searches can resume from the next safe cursor.
 - Exporter should be tested for one row/object per Image Asset, JSONL structure, CSV simplification, clean exclusion of failed/skipped candidates, and package generation.
 - FastAPI should have API contract tests for Collection creation, search start, status, stop, resume, keep searching, grid query, detail query, descriptor rebuild, and export initiation.
 - Next.js UI should have smoke/interaction tests for starting a Collection search, seeing Object/Image counters, stopping safely, resuming, keeping search going, viewing the object grid, opening the detail overlay, and exporting.
@@ -278,7 +280,7 @@ The MVP will not try to become the future visual atlas. It will provide the oper
 - Multi-user profiles, authentication, permissions, or shared server deployment.
 - Online/cloud deployment.
 - Postgres, object storage, external worker queues, or multi-worker infrastructure.
-- Multiple concurrent Provider Searches or a job queue.
+- Multiple concurrently running Provider Searches or a job queue.
 - Destructive deletion from the MVP UI.
 - macOS notifications.
 - Database backup/restore from the UI.

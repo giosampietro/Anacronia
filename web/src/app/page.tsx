@@ -2,9 +2,10 @@ import { revalidatePath } from "next/cache";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
-import { TermsField } from "@/components/terms-field";
 import { ThemeSwitch } from "@/components/theme-switch";
 import { DashboardAutoRefresh } from "@/components/dashboard-auto-refresh";
+import { BatchTargetControl } from "@/components/batch-target-control";
+import { NewCollectionForm } from "@/components/new-collection-form";
 import { ProviderCollectionProgress } from "@/components/provider-collection-progress";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -24,11 +25,6 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import {
-  Field,
-  FieldGroup,
-  FieldLabel,
-} from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -49,11 +45,7 @@ import {
   type OperationalDashboard,
 } from "@/lib/dashboard";
 import { shouldAutoRefreshDashboard } from "@/lib/dashboard-refresh";
-import {
-  BATCH_TARGET_OPTIONS,
-  DEFAULT_BATCH_TARGET,
-  normalizeBatchTarget,
-} from "@/lib/candidate-limits";
+import { normalizeBatchTarget } from "@/lib/candidate-limits";
 import {
   getActionFormDataString,
   getActionFormDataValue,
@@ -299,34 +291,6 @@ function pauseReasonLabel(reason: string): string {
   return "Paused.";
 }
 
-function BatchTargetControl({
-  idPrefix,
-  defaultBatchTarget = DEFAULT_BATCH_TARGET,
-}: {
-  idPrefix: string;
-  defaultBatchTarget?: number;
-}) {
-  return (
-    <FieldGroup>
-      <Field>
-        <FieldLabel htmlFor={`${idPrefix}_batch_target`}>Batch target</FieldLabel>
-        <select
-          className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
-          defaultValue={defaultBatchTarget}
-          id={`${idPrefix}_batch_target`}
-          name="batch_target"
-        >
-          {BATCH_TARGET_OPTIONS.map((option) => (
-            <option key={option} value={option}>
-              {option}
-            </option>
-          ))}
-        </select>
-      </Field>
-    </FieldGroup>
-  );
-}
-
 function CollectBusyNote({ collectAvailable }: { collectAvailable: boolean }) {
   if (collectAvailable) {
     return null;
@@ -349,57 +313,10 @@ function NewSearchSetWorkspace({ collectAvailable }: { collectAvailable: boolean
         </h1>
       </header>
 
-      <form className="flex flex-col gap-4">
-        <Card>
-          <CardHeader>
-            <CardTitle>Collection</CardTitle>
-            <CardDescription>
-              Give this workspace a name and paste the terms to search with.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <FieldGroup>
-              <Field>
-                <FieldLabel htmlFor="display_name">Display name</FieldLabel>
-                <Input id="display_name" name="display_name" required />
-              </Field>
-              <TermsField
-                id="terms_text"
-                name="terms_text"
-                placeholder="snake, anaconda, serpent"
-                required
-              />
-            </FieldGroup>
-          </CardContent>
-        </Card>
-
-        {collectAvailable ? (
-          <Card>
-            <CardHeader>
-              <CardTitle>Met</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <BatchTargetControl idPrefix="new_search_set" />
-            </CardContent>
-            <CardFooter className="justify-end gap-2 border-t bg-muted/50">
-              <Button formAction={createSearchSetAndCollectFromMet} type="submit">
-                <Play data-icon="inline-start" />
-                Start search
-              </Button>
-            </CardFooter>
-          </Card>
-        ) : (
-          <Card>
-            <CardHeader>
-              <CardTitle>Search unavailable</CardTitle>
-              <CardDescription>
-                Another search is already active. New Collections can start after the current
-                search finishes.
-              </CardDescription>
-            </CardHeader>
-          </Card>
-        )}
-      </form>
+      <NewCollectionForm
+        action={createSearchSetAndCollectFromMet}
+        collectAvailable={collectAvailable}
+      />
     </div>
   );
 }
@@ -457,7 +374,7 @@ export default async function Home({ searchParams }: HomeProps) {
   const collectNotice = collectNoticeFromCode(collectNoticeCode);
   const workspaceMode = createWorkspaceMode(requestedWorkspaceMode, activeSearchSet);
   const activeProviderCollections = activeSearchSet?.providerCollections ?? [];
-  const resultSlotCount = Math.min(activeSearchSet?.importedImageCount ?? 0, 28);
+  const resultSlotCount = Math.min(activeSearchSet?.importedObjectCount ?? 0, 28);
 
   return (
     <div className="grid min-h-svh bg-background text-foreground lg:grid-cols-[340px_minmax(0,1fr)]">
@@ -548,24 +465,14 @@ export default async function Home({ searchParams }: HomeProps) {
                     <span className="truncate text-sm font-medium">
                       {searchSet.displayName}
                     </span>
-                    <Badge variant="secondary">{searchSet.activeTerms.length}</Badge>
+                    <Badge variant="secondary">
+                      {searchSet.importedImageCount} Image
+                      {searchSet.importedImageCount === 1 ? "" : "s"}
+                    </Badge>
                   </div>
                   <p className="truncate text-sm text-muted-foreground">
                     {searchSet.termSummary || "No active terms"}
                   </p>
-                  {searchSet.providerCollections.length === 0 ? null : (
-                    <div className="flex flex-wrap gap-1">
-                      {searchSet.providerCollections.map((providerCollection) => (
-                        <Badge
-                          key={`${searchSet.slug}-${providerCollection.provider}`}
-                          variant="outline"
-                        >
-                          {providerCollection.providerLabel} (
-                          {providerCollection.importedImageCount})
-                        </Badge>
-                      ))}
-                    </div>
-                  )}
                 </Link>
               ))
             )}
@@ -631,11 +538,16 @@ export default async function Home({ searchParams }: HomeProps) {
                       key={`${activeSearchSet.slug}-${providerCollection.provider}`}
                       variant="outline"
                     >
-                      {providerCollection.providerLabel} (
-                      {providerCollection.importedImageCount})
+                      {providerCollection.providerLabel}
                     </Badge>
                   ))
                 )}
+                <Badge variant="secondary">
+                  Objects {activeSearchSet.importedObjectCount}
+                </Badge>
+                <Badge variant="secondary">
+                  Images {activeSearchSet.importedImageCount}
+                </Badge>
               </div>
 
               {collectNotice ? (
@@ -651,13 +563,15 @@ export default async function Home({ searchParams }: HomeProps) {
                   <div className="min-w-0">
                     <CardTitle>Results</CardTitle>
                     <CardDescription>
-                      {activeSearchSet.importedImageCount} Image Asset
+                      {activeSearchSet.importedObjectCount} Object
+                      {activeSearchSet.importedObjectCount === 1 ? "" : "s"} /{" "}
+                      {activeSearchSet.importedImageCount} Image
                       {activeSearchSet.importedImageCount === 1 ? "" : "s"} in this Collection
                     </CardDescription>
                   </div>
                   <CardAction>
                     <Badge variant="secondary">
-                      {activeSearchSet.importedImageCount} shown
+                      {activeSearchSet.importedObjectCount} shown
                     </Badge>
                   </CardAction>
                 </CardHeader>
@@ -668,9 +582,9 @@ export default async function Home({ searchParams }: HomeProps) {
                         <EmptyMedia variant="icon">
                           <Database />
                         </EmptyMedia>
-                        <EmptyTitle>No Image Assets yet</EmptyTitle>
+                        <EmptyTitle>No Objects yet</EmptyTitle>
                         <EmptyDescription>
-                          Start search to add local Image Assets to this Collection.
+                          Start search to add local Museum Objects to this Collection.
                         </EmptyDescription>
                       </EmptyHeader>
                     </Empty>
@@ -750,6 +664,7 @@ export default async function Home({ searchParams }: HomeProps) {
                         </CardHeader>
                         <CardContent className="grid gap-3">
                           <ProviderCollectionProgress
+                            importedObjectCount={providerCollection.importedObjectCount}
                             importedImageCount={providerCollection.importedImageCount}
                           />
                           {providerCollection.status === "paused" ? (

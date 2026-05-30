@@ -9,6 +9,7 @@ export type DashboardProviderCollection = {
   candidate_limit: number;
   candidate_progress_processed: number;
   candidate_progress_total: number;
+  imported_object_count: number;
   imported_image_count: number;
   continue_candidate_offset: number | null;
 };
@@ -57,6 +58,7 @@ export type DashboardProviderCollectionView = {
   nextCandidateOffset: number;
   progressLabel: string;
   progressPercent: number;
+  importedObjectCount: number;
   importedImageCount: number;
   continueCandidateOffset: number | null;
   latestRunLabel: string;
@@ -70,6 +72,7 @@ export type DashboardSearchSetView = {
   termSummary: string;
   isActive: boolean;
   providerCollections: DashboardProviderCollectionView[];
+  importedObjectCount: number;
   importedImageCount: number;
 };
 
@@ -116,6 +119,7 @@ export function createOperationalDashboardView(
         providerCollection.candidate_progress_processed,
         providerCollection.candidate_progress_total,
       ),
+      importedObjectCount: providerCollection.imported_object_count,
       importedImageCount: providerCollection.imported_image_count,
       continueCandidateOffset: providerCollection.continue_candidate_offset,
       latestRunLabel:
@@ -132,6 +136,10 @@ export function createOperationalDashboardView(
       termSummary: activeTerms.join(", "),
       isActive: searchSet.slug === selectedSlug,
       providerCollections,
+      importedObjectCount: providerCollections.reduce(
+        (total, providerCollection) => total + providerCollection.importedObjectCount,
+        0,
+      ),
       importedImageCount: providerCollections.reduce(
         (total, providerCollection) => total + providerCollection.importedImageCount,
         0,

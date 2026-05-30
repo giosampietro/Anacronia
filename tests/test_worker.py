@@ -51,7 +51,7 @@ def test_worker_starts_idle():
     assert create_idle_worker_status() == {"service": "worker", "status": "idle"}
 
 
-def test_collect_job_lock_blocks_second_job_until_canceled(tmp_path):
+def test_collect_job_lock_blocks_second_job_until_paused(tmp_path):
     database_path = tmp_path / "anacronia.sqlite"
 
     assert get_worker_status(database_path=database_path).status == "idle"
@@ -80,19 +80,7 @@ def test_collect_job_lock_blocks_second_job_until_canceled(tmp_path):
     paused_job = pause_collect_job(database_path=database_path, job_id=first_job.job_id)
 
     assert paused_job.status == "paused"
-    with pytest.raises(CollectLockError):
-        start_collect_job(
-            database_path=database_path,
-            run_id=2,
-            candidate_offset=0,
-            candidate_limit=5,
-            candidate_progress_total=5,
-            available_disk_bytes=10_000_000,
-        )
-
-    canceled_job = cancel_collect_job(database_path=database_path, job_id=first_job.job_id)
-
-    assert canceled_job.status == "canceled"
+    assert get_worker_status(database_path=database_path).status == "idle"
     second_job = start_collect_job(
         database_path=database_path,
         run_id=2,
@@ -102,6 +90,15 @@ def test_collect_job_lock_blocks_second_job_until_canceled(tmp_path):
         available_disk_bytes=10_000_000,
     )
     assert second_job.run_id == 2
+
+    with pytest.raises(CollectLockError):
+        resume_collect_job(database_path=database_path, job_id=first_job.job_id)
+
+    canceled_job = cancel_collect_job(database_path=database_path, job_id=second_job.job_id)
+
+    assert canceled_job.status == "canceled"
+    resumed_job = resume_collect_job(database_path=database_path, job_id=first_job.job_id)
+    assert resumed_job.status == "running"
 
 
 def test_completed_collect_job_releases_lock_and_worker_returns_idle(tmp_path):
@@ -208,15 +205,15 @@ def test_disk_availability_is_checked_before_and_during_collect_jobs(tmp_path):
     assert paused_job.status == "paused"
     assert paused_job.pause_reason == "insufficient_disk"
     assert paused_job.last_disk_available_bytes == 500
-    with pytest.raises(CollectLockError):
-        start_collect_job(
-            database_path=database_path,
-            run_id=2,
-            candidate_offset=0,
-            candidate_limit=5,
-            candidate_progress_total=5,
-            available_disk_bytes=10_000_000,
-        )
+    next_job = start_collect_job(
+        database_path=database_path,
+        run_id=2,
+        candidate_offset=0,
+        candidate_limit=5,
+        candidate_progress_total=5,
+        available_disk_bytes=10_000_000,
+    )
+    assert next_job.run_id == 2
 
 
 def test_worker_pauses_after_current_museum_object_when_disk_space_drops(tmp_path):
@@ -315,15 +312,15 @@ def test_repeated_provider_failures_trigger_backoff_then_automatic_pause(tmp_pat
     assert third_failure.provider_failure_count == 3
     assert third_failure.backoff_seconds > second_failure.backoff_seconds
     assert third_failure.pause_reason == "repeated_provider_failures"
-    with pytest.raises(CollectLockError):
-        start_collect_job(
-            database_path=database_path,
-            run_id=2,
-            candidate_offset=0,
-            candidate_limit=5,
-            candidate_progress_total=5,
-            available_disk_bytes=10_000_000,
-        )
+    next_job = start_collect_job(
+        database_path=database_path,
+        run_id=2,
+        candidate_offset=0,
+        candidate_limit=5,
+        candidate_progress_total=5,
+        available_disk_bytes=10_000_000,
+    )
+    assert next_job.run_id == 2
 
 
 def test_worker_processes_running_collect_job_through_met_ingest(tmp_path):

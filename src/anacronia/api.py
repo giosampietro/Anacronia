@@ -136,6 +136,7 @@ def serialize_operational_dashboard(dashboard: OperationalDashboard) -> dict[str
                         "candidate_limit": provider_collection.candidate_limit,
                         "candidate_progress_processed": provider_collection.candidate_progress_processed,
                         "candidate_progress_total": provider_collection.candidate_progress_total,
+                        "imported_object_count": provider_collection.imported_object_count,
                         "imported_image_count": provider_collection.imported_image_count,
                         "continue_candidate_offset": provider_collection.continue_candidate_offset,
                     }
@@ -232,6 +233,13 @@ def create_app(
     ) -> dict[str, object]:
         if get_worker_status(database_path=resolved_database_path).active_collect_job_id is not None:
             raise HTTPException(status_code=409, detail="Another search is already active.")
+        existing_collect_job = get_active_collect_job_for_search_set_provider(
+            database_path=resolved_database_path,
+            search_set_slug=slug,
+            provider="met",
+        )
+        if existing_collect_job is not None and existing_collect_job.status == "paused":
+            raise HTTPException(status_code=409, detail="Paused Met search can be resumed.")
 
         candidate_offset = get_next_collect_candidate_offset_for_search_set_provider(
             database_path=resolved_database_path,
@@ -302,11 +310,14 @@ def create_app(
         if collect_job is None or collect_job.status != "paused":
             raise HTTPException(status_code=409, detail="No paused Met search can be resumed.")
 
-        resumed_job = resume_collect_job(
-            database_path=resolved_database_path,
-            job_id=collect_job.job_id,
-            batch_target=request.batch_target,
-        )
+        try:
+            resumed_job = resume_collect_job(
+                database_path=resolved_database_path,
+                job_id=collect_job.job_id,
+                batch_target=request.batch_target,
+            )
+        except CollectLockError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
         return {
             "collect_job_id": resumed_job.job_id,
             "status": resumed_job.status,

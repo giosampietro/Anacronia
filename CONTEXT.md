@@ -196,8 +196,10 @@ The primary export unit is the Image Asset: one exported row or JSONL object per
 - Next.js should act as a lightweight UI/API gateway where useful, proxying application calls to FastAPI instead of requiring the browser UI to know every FastAPI endpoint directly.
 - The user-facing local URL should use one public UI port, defaulting to `localhost:18660`. FastAPI can run on an internal local port, defaulting to `18670`. Both should use incremental fallback if occupied.
 - The worker should run while Anacronia is open and remain idle when there are no jobs, rather than being launched only for individual collect actions.
-- The MVP supports one active Provider Search at a time and does not need a job queue. Starting another search while one is searching or paused should be prevented.
-- A paused/error search still owns the search lock. The user must resume or otherwise resolve it before starting another search.
+- The MVP supports one actively running Provider Search at a time and does not need a job queue.
+- The search lock is held only while a Provider Search is searching or stopping at a safe checkpoint.
+- A stopped or paused/error Provider Search is a parked resumable job and does not block other work.
+- A parked Provider Search can be resumed only when no other Provider Search is searching or stopping.
 - The MVP should support `Stop search` as a normal user action. Stopping finishes the current Museum Object safely, preserves completed material, and can later be resumed.
 - Resuming or keeping a search going should continue from the next safe internal candidate cursor rather than restarting already processed provider records by default.
 - Provider record timestamps or versions should be stored when available.

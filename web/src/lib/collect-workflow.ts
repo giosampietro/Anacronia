@@ -1,12 +1,12 @@
 export const COLLECT_BUSY_NOTICE = "collect-busy";
 
 export function canStartCollect(workerStatus: string): boolean {
-  return workerStatus !== "running" && workerStatus !== "stopping" && workerStatus !== "paused";
+  return workerStatus !== "running" && workerStatus !== "stopping";
 }
 
 export function collectNoticeFromCode(code: string | null | undefined): string | null {
   if (code === COLLECT_BUSY_NOTICE) {
-    return "Another search is active. Resume or wait before starting a new search.";
+    return "Another search is active. Wait for it to stop before starting or resuming another search.";
   }
 
   return null;

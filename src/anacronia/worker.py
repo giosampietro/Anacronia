@@ -17,7 +17,7 @@ from anacronia.met_provider import HttpMetCandidateClient, fetch_bytes_url
 from anacronia.storage import initialize_storage
 
 
-ACTIVE_COLLECT_JOB_STATUSES = ("running", "stopping", "paused")
+ACTIVE_COLLECT_JOB_STATUSES = ("running", "stopping")
 DEFAULT_REQUIRED_DISK_BYTES = 1_000_000
 DEFAULT_PROVIDER_FAILURE_PAUSE_THRESHOLD = 3
 PROVIDER_FAILURE_BACKOFF_SECONDS = (5, 15, 45)
@@ -275,6 +275,11 @@ def resume_collect_job(
     with sqlite3.connect(database_path) as connection:
         ensure_worker_schema(connection)
         job = get_collect_job_for_update(connection=connection, job_id=job_id)
+        active_job = get_active_collect_job(connection=connection)
+        if active_job is not None and active_job.job_id != job_id:
+            raise CollectLockError("Another collect job is already active.")
+        if job.status != "paused":
+            raise CollectLockError("Only paused collect jobs can be resumed.")
         connection.execute(
             """
             UPDATE collect_jobs
@@ -468,6 +473,7 @@ def get_active_collect_job_for_search_set_provider(
     provider: str,
 ) -> CollectJob | None:
     with sqlite3.connect(database_path) as connection:
+        ensure_collection_run_schema(connection)
         ensure_worker_schema(connection)
         row = connection.execute(
             """
@@ -643,7 +649,7 @@ def get_active_collect_job(*, connection: sqlite3.Connection) -> CollectJob | No
           last_disk_available_bytes,
           max_images_per_object
         FROM collect_jobs
-        WHERE status IN ('running', 'stopping', 'paused')
+        WHERE status IN ('running', 'stopping')
         ORDER BY id DESC
         LIMIT 1
         """

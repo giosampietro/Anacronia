@@ -17,6 +17,7 @@ const snakeStudy: DashboardSearchSetView = {
   termSummary: "snake, anaconda",
   isActive: true,
   providerCollections: [],
+  importedObjectCount: 0,
   importedImageCount: 0,
 };
 
@@ -28,6 +29,7 @@ const masks: DashboardSearchSetView = {
   termSummary: "mask, face",
   isActive: false,
   providerCollections: [],
+  importedObjectCount: 0,
   importedImageCount: 0,
 };
 

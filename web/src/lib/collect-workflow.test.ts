@@ -13,12 +13,12 @@ describe("collect workflow", () => {
     expect(canStartCollect("completed")).toBe(true);
     expect(canStartCollect("running")).toBe(false);
     expect(canStartCollect("stopping")).toBe(false);
-    expect(canStartCollect("paused")).toBe(false);
+    expect(canStartCollect("paused")).toBe(true);
   });
 
   it("explains a rejected collect request", () => {
     expect(collectNoticeFromCode(COLLECT_BUSY_NOTICE)).toBe(
-      "Another search is active. Resume or wait before starting a new search.",
+      "Another search is active. Wait for it to stop before starting or resuming another search.",
     );
     expect(collectNoticeFromCode("unknown")).toBeNull();
     expect(collectNoticeFromCode(null)).toBeNull();

@@ -7,10 +7,13 @@ describe("ProviderCollectionProgress", () => {
   it("renders Provider Source counters without candidate mechanics", () => {
     const html = renderToString(
       <ProviderCollectionProgress
+        importedObjectCount={3}
         importedImageCount={5}
       />,
     );
 
+    expect(html).toContain("Objects");
+    expect(html).toContain("3");
     expect(html).toContain("Images");
     expect(html).toContain("5");
     expect(html).not.toContain("Candidate");

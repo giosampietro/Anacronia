@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 from anacronia.api import DEFAULT_CANDIDATE_LIMIT, DEFAULT_MAX_IMAGES_PER_OBJECT, create_app
 from anacronia.collection_runs import get_candidate_run
 from anacronia.worker import (
+    cancel_collect_job,
     complete_collect_job,
     get_collect_job,
     mark_collect_candidate_processed,
@@ -104,6 +105,7 @@ def test_api_starts_locked_collection_with_initial_met_provider_source(tmp_path)
             "candidate_limit": 0,
             "candidate_progress_processed": 0,
             "candidate_progress_total": 0,
+            "imported_object_count": 0,
             "imported_image_count": 0,
             "continue_candidate_offset": None,
         }
@@ -443,13 +445,36 @@ def test_api_resumes_paused_met_search_and_exposes_pause_reason(tmp_path):
     )
 
     dashboard = client.get("/dashboard").json()
-    assert dashboard["worker_status"]["status"] == "paused"
+    assert dashboard["worker_status"] == {
+        "service": "worker",
+        "status": "idle",
+        "active_collect_job_id": None,
+    }
     assert dashboard["search_sets"][0]["provider_collections"][0]["pause_reason"] == "insufficient_disk"
     blocked_response = client.post(
         "/search-sets/snake-studies/provider-collections/met/collects",
         json={"batch_target": 100},
     )
     assert blocked_response.status_code == 409
+
+    client.post(
+        "/search-sets",
+        json={"display_name": "Other Study", "terms_text": "snake"},
+    )
+    other_response = client.post(
+        "/search-sets/other-study/provider-collections/met/collects",
+        json={"batch_target": 100},
+    )
+    assert other_response.status_code == 200
+    blocked_resume_response = client.post(
+        "/search-sets/snake-studies/provider-collections/met/collects/resume",
+        json={"batch_target": 500},
+    )
+    assert blocked_resume_response.status_code == 409
+    cancel_collect_job(
+        database_path=storage.database_path,
+        job_id=other_response.json()["collect_job_id"],
+    )
 
     resume_response = client.post(
         "/search-sets/snake-studies/provider-collections/met/collects/resume",
@@ -660,6 +685,7 @@ def test_api_returns_operational_dashboard(tmp_path):
         "candidate_limit": 2,
         "candidate_progress_processed": 0,
         "candidate_progress_total": 2,
+        "imported_object_count": 1,
         "imported_image_count": 1,
         "continue_candidate_offset": None,
     }
