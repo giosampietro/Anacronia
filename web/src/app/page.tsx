@@ -8,6 +8,7 @@ import { BatchTargetControl } from "@/components/batch-target-control";
 import { CollectionObjectDetailOverlay } from "@/components/collection-object-detail-overlay";
 import { NewCollectionForm } from "@/components/new-collection-form";
 import { ProviderCollectionProgress } from "@/components/provider-collection-progress";
+import { ProviderSearchActionButton } from "@/components/provider-search-action-button";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
@@ -35,11 +36,8 @@ import {
   Database,
   HardDrive,
   Images,
-  Play,
   Plus,
-  RotateCcw,
   Search,
-  Square,
 } from "lucide-react";
 
 import {
@@ -746,10 +744,11 @@ export default async function Home({ searchParams }: HomeProps) {
                         <CollectBusyNote collectAvailable={collectAvailable} />
                       </CardContent>
                       <CardFooter className="justify-end border-t bg-muted/50">
-                        <Button disabled={!collectAvailable} size="sm" type="submit">
-                          <Play data-icon="inline-start" />
-                          Start search
-                        </Button>
+                        <ProviderSearchActionButton
+                          actionKind="start"
+                          disabled={!collectAvailable}
+                          label="Start search"
+                        />
                       </CardFooter>
                     </form>
                   </Card>
@@ -815,21 +814,12 @@ export default async function Home({ searchParams }: HomeProps) {
                                 />
                               ) : null}
                               <div className="flex justify-end gap-2">
-                                <Button
+                                <ProviderSearchActionButton
+                                  actionKind={action.kind}
                                   disabled={!actionAvailable}
-                                  size="sm"
-                                  type="submit"
+                                  label={action.label}
                                   variant={action.kind === "stop" ? "outline" : "default"}
-                                >
-                                  {action.kind === "stop" ? (
-                                    <Square data-icon="inline-start" />
-                                  ) : action.kind === "resume" || action.label === "Keep searching" ? (
-                                    <RotateCcw data-icon="inline-start" />
-                                  ) : (
-                                    <Play data-icon="inline-start" />
-                                  )}
-                                  {action.label}
-                                </Button>
+                                />
                               </div>
                             </CardFooter>
                           </form>
