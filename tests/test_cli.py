@@ -1,6 +1,10 @@
 import pytest
 
-from anacronia.cli import build_startup_plan, validate_supported_runtime
+from anacronia.cli import (
+    acquire_data_root_runtime_lock,
+    build_startup_plan,
+    validate_supported_runtime,
+)
 
 
 def test_no_open_prints_url_without_opening_browser(tmp_path):
@@ -85,6 +89,19 @@ def test_startup_plan_initializes_configured_storage_and_shares_data_root(tmp_pa
         str(data_root),
     ]
     assert plan.services[2].environment["NEXT_SWC_PATH"] == str(data_root / "temp" / "next-swc")
+
+
+def test_runtime_lock_blocks_duplicate_local_stack_for_same_data_root(tmp_path):
+    first_lock = acquire_data_root_runtime_lock(tmp_path)
+
+    try:
+        with pytest.raises(RuntimeError, match="already running"):
+            acquire_data_root_runtime_lock(tmp_path)
+    finally:
+        first_lock.close()
+
+    second_lock = acquire_data_root_runtime_lock(tmp_path)
+    second_lock.close()
 
 
 def test_runtime_requires_apple_silicon_mac():

@@ -1,5 +1,6 @@
 import argparse
 from dataclasses import dataclass
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -7,7 +8,7 @@ import platform
 import subprocess
 import sys
 import time
-from typing import Optional
+from typing import Optional, TextIO
 import webbrowser
 
 from anacronia.ports import choose_port, is_port_available as socket_port_available
@@ -50,6 +51,36 @@ class StartupPlan:
     ui_url: str
     message: str
     services: list[ServicePlan]
+
+
+@dataclass
+class DataRootRuntimeLock:
+    path: Path
+    handle: TextIO
+
+    def close(self) -> None:
+        fcntl.flock(self.handle.fileno(), fcntl.LOCK_UN)
+        self.handle.close()
+
+
+def acquire_data_root_runtime_lock(data_root: Path) -> DataRootRuntimeLock:
+    data_root.mkdir(parents=True, exist_ok=True)
+    lock_path = data_root / ".anacronia-runtime.lock"
+    lock_handle = lock_path.open("a+")
+    try:
+        fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError as error:
+        lock_handle.close()
+        raise RuntimeError(
+            "Anacronia is already running for this data folder. "
+            "Use the existing browser window or close Anacronia before starting it again."
+        ) from error
+
+    lock_handle.seek(0)
+    lock_handle.truncate()
+    lock_handle.write(str(os.getpid()))
+    lock_handle.flush()
+    return DataRootRuntimeLock(path=lock_path, handle=lock_handle)
 
 
 def build_startup_plan(
@@ -144,7 +175,9 @@ def build_startup_plan(
 
 def run_startup_plan(plan: StartupPlan) -> None:
     processes: list[subprocess.Popen[bytes]] = []
+    runtime_lock: DataRootRuntimeLock | None = None
     try:
+        runtime_lock = acquire_data_root_runtime_lock(plan.data_root)
         for service in plan.services:
             env = os.environ.copy()
             env.update(service.environment)
@@ -171,6 +204,8 @@ def run_startup_plan(plan: StartupPlan) -> None:
                 process.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 process.kill()
+        if runtime_lock is not None:
+            runtime_lock.close()
 
 
 def serialize_search_set(search_set: SearchSet) -> dict[str, object]:
