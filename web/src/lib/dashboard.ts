@@ -7,6 +7,7 @@ export type DashboardProviderCollection = {
   pause_reason: string;
   candidate_offset: number;
   candidate_limit: number;
+  batch_target: number;
   candidate_progress_processed: number;
   candidate_progress_total: number;
   imported_object_count: number;
@@ -55,6 +56,7 @@ export type DashboardProviderCollectionView = {
   pauseReason: string;
   candidateOffset: number;
   candidateLimit: number;
+  batchTarget: number;
   nextCandidateOffset: number;
   progressLabel: string;
   progressPercent: number;
@@ -111,6 +113,7 @@ export function createOperationalDashboardView(
       pauseReason: providerCollection.pause_reason,
       candidateOffset: providerCollection.candidate_offset,
       candidateLimit: providerCollection.candidate_limit,
+      batchTarget: providerCollection.batch_target,
       nextCandidateOffset:
         providerCollection.continue_candidate_offset ??
         providerCollection.candidate_offset + providerCollection.candidate_limit,

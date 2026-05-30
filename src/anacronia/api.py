@@ -146,6 +146,7 @@ def serialize_operational_dashboard(dashboard: OperationalDashboard) -> dict[str
                         "pause_reason": provider_collection.pause_reason,
                         "candidate_offset": provider_collection.candidate_offset,
                         "candidate_limit": provider_collection.candidate_limit,
+                        "batch_target": provider_collection.batch_target,
                         "candidate_progress_processed": provider_collection.candidate_progress_processed,
                         "candidate_progress_total": provider_collection.candidate_progress_total,
                         "imported_object_count": provider_collection.imported_object_count,

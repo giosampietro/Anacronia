@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import sqlite3
 
-from anacronia.collection_runs import ensure_collection_run_schema
+from anacronia.collection_runs import DEFAULT_BATCH_TARGET, ensure_collection_run_schema
 from anacronia.met_ingest import ensure_met_ingest_schema
 from anacronia.search_sets import SearchSetTerm
 from anacronia.worker import (
@@ -21,6 +21,7 @@ class DashboardProviderCollection:
     pause_reason: str
     candidate_offset: int
     candidate_limit: int
+    batch_target: int
     candidate_progress_processed: int
     candidate_progress_total: int
     imported_object_count: int
@@ -146,6 +147,7 @@ def get_dashboard_provider_collection(
           id,
           candidate_offset,
           candidate_limit,
+          batch_target,
           candidate_progress_total,
           processed_candidates,
           status
@@ -175,6 +177,7 @@ def get_dashboard_provider_collection(
             pause_reason="",
             candidate_offset=0,
             candidate_limit=0,
+            batch_target=DEFAULT_BATCH_TARGET,
             candidate_progress_processed=0,
             candidate_progress_total=0,
             imported_object_count=imported_object_count,
@@ -184,13 +187,15 @@ def get_dashboard_provider_collection(
 
     collect_job = get_latest_collect_job_for_run(connection=connection, run_id=latest_run[0])
     if collect_job is None:
-        collect_status = latest_run[5]
+        collect_status = latest_run[6]
         pause_reason = ""
-        progress_processed = latest_run[4]
+        batch_target = latest_run[3]
+        progress_processed = latest_run[5]
         continue_candidate_offset = None
     else:
         collect_status = collect_job.status
         pause_reason = collect_job.pause_reason
+        batch_target = collect_job.batch_target
         progress_processed = (
             0
             if collect_job.last_processed_run_position is None
@@ -209,8 +214,9 @@ def get_dashboard_provider_collection(
         pause_reason=pause_reason,
         candidate_offset=latest_run[1],
         candidate_limit=latest_run[2],
+        batch_target=batch_target,
         candidate_progress_processed=progress_processed,
-        candidate_progress_total=latest_run[3],
+        candidate_progress_total=latest_run[4],
         imported_object_count=imported_object_count,
         imported_image_count=imported_image_count,
         continue_candidate_offset=continue_candidate_offset,

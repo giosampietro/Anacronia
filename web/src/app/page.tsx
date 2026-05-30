@@ -732,6 +732,7 @@ export default async function Home({ searchParams }: HomeProps) {
                         </CardHeader>
                         <CardContent className="grid gap-3">
                           <ProviderCollectionProgress
+                            batchTarget={providerCollection.batchTarget}
                             importedObjectCount={providerCollection.importedObjectCount}
                             importedImageCount={providerCollection.importedImageCount}
                           />
@@ -760,6 +761,7 @@ export default async function Home({ searchParams }: HomeProps) {
                               <input name="slug" type="hidden" value={activeSearchSet.slug} />
                               {action.showBatchTarget ? (
                                 <BatchTargetControl
+                                  defaultBatchTarget={providerCollection.batchTarget}
                                   idPrefix={`${activeSearchSet.slug}_${providerCollection.provider}`}
                                 />
                               ) : null}

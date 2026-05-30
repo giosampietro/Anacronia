@@ -145,6 +145,7 @@ def test_api_starts_locked_collection_with_initial_met_provider_source(tmp_path)
             "pause_reason": "",
             "candidate_offset": 0,
             "candidate_limit": 0,
+            "batch_target": 100,
             "candidate_progress_processed": 0,
             "candidate_progress_total": 0,
             "imported_object_count": 0,
@@ -361,6 +362,11 @@ def test_api_starts_met_search_from_batch_target(tmp_path, batch_target):
     assert run.candidate_limit == 3
     assert (
         get_collect_job(database_path=storage.database_path, job_id=1).batch_target
+        == batch_target
+    )
+    dashboard = client.get("/dashboard").json()
+    assert (
+        dashboard["search_sets"][0]["provider_collections"][0]["batch_target"]
         == batch_target
     )
 
@@ -729,6 +735,7 @@ def test_api_returns_operational_dashboard(tmp_path):
         "pause_reason": "",
         "candidate_offset": 1,
         "candidate_limit": 2,
+        "batch_target": 100,
         "candidate_progress_processed": 0,
         "candidate_progress_total": 2,
         "imported_object_count": 1,

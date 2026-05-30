@@ -1,9 +1,11 @@
 type ProviderCollectionProgressProps = {
+  batchTarget: number;
   importedObjectCount: number;
   importedImageCount: number;
 };
 
 export function ProviderCollectionProgress({
+  batchTarget,
   importedObjectCount,
   importedImageCount,
 }: ProviderCollectionProgressProps) {
@@ -16,6 +18,10 @@ export function ProviderCollectionProgress({
       <div className="flex items-center justify-between gap-3">
         <span className="text-sm text-muted-foreground">Images</span>
         <span className="text-sm font-medium">{importedImageCount}</span>
+      </div>
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-sm text-muted-foreground">Batch target</span>
+        <span className="text-sm font-medium">{batchTarget}</span>
       </div>
     </div>
   );

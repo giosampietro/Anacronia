@@ -98,6 +98,7 @@ def test_operational_dashboard_groups_provider_collections_under_search_sets(tmp
             search_set.provider_collections[0].collect_status,
             search_set.provider_collections[0].candidate_progress_processed,
             search_set.provider_collections[0].candidate_progress_total,
+            search_set.provider_collections[0].batch_target,
             search_set.provider_collections[0].imported_object_count,
             search_set.provider_collections[0].imported_image_count,
             search_set.provider_collections[0].continue_candidate_offset,
@@ -112,6 +113,7 @@ def test_operational_dashboard_groups_provider_collections_under_search_sets(tmp
             "canceled",
             2,
             3,
+            100,
             2,
             2,
             2,
@@ -156,4 +158,5 @@ def test_operational_dashboard_reports_next_offset_after_completed_search(tmp_pa
 
     provider_collection = dashboard.search_sets[0].provider_collections[0]
     assert provider_collection.collect_status == "completed"
+    assert provider_collection.batch_target == 100
     assert provider_collection.continue_candidate_offset == 1
