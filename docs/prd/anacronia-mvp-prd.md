@@ -36,7 +36,7 @@ The MVP will not try to become the future visual atlas. It will provide the oper
 18. As a collection builder, I want terms to run as separate provider searches, so that Anacronia can record which terms matched which records.
 19. As a collection builder, I want provider candidates from multiple terms to be merged and deduplicated before internal cursor and processing limits are applied, so that search continuation stays reproducible.
 20. As a collection builder, I want candidate order to follow term insertion order and provider order, so that early terms define priority.
-21. As a collection builder, I want a batch dropdown with `100`, `500`, and `1000`, defaulting to `100`, so that I can choose the target amount of usable local material to search for next.
+21. As a collection builder, I want a batch dropdown with `5`, `10`, `20`, `30`, `100`, `500`, and `1000`, defaulting to `100`, so that I can choose the target amount of usable local material to search for next.
 22. As a collection builder, I want batch size to mean target usable downloaded results, not provider candidates processed, so that the control matches what I receive locally.
 23. As a developer, I want internal candidate cursors and limits to remain auditable, so that provider search is reproducible without exposing candidate mechanics in the primary UI.
 24. As a collection builder, I want the UI to hide technical Run complexity by default, so that I see one continuing Collection rather than many internal executions.
@@ -166,7 +166,7 @@ The MVP will not try to become the future visual atlas. It will provide the oper
 - Query each term separately against the provider.
 - Merge and deduplicate candidate object IDs across term queries before applying internal candidate cursor and processing limits.
 - Preserve candidate ordering by term insertion order, then provider ordering within each term, skipping duplicates.
-- Use the primary UI batch dropdown as target usable downloaded results with values `100`, `500`, and `1000`, defaulting to `100`.
+- Use the primary UI batch dropdown as target usable downloaded results with values `5`, `10`, `20`, `30`, `100`, `500`, and `1000`, defaulting to `100`.
 - Keep candidate cursor and processing limits internal; do not expose `Candidate offset` or `Candidate limit` in the primary MVP UI.
 - Hide Run complexity from the primary UI while retaining Run data for state, progress, and auditing.
 - Treat provider drift across days or weeks as non-blocking; continuation should use the current provider response without interrupting the user.

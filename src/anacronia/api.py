@@ -38,7 +38,7 @@ from anacronia.worker import (
 
 DEFAULT_CANDIDATE_LIMIT = 1000
 INTERNAL_CANDIDATE_LIMIT = 1_000_000_000
-BatchTarget = Literal[100, 500, 1000]
+BatchTarget = Literal[5, 10, 20, 30, 100, 500, 1000]
 
 
 class SearchSetRequest(BaseModel):

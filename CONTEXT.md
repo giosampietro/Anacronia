@@ -173,7 +173,7 @@ The primary export unit is the Image Asset: one exported row or JSONL object per
 - The user should see one locked Collection and Provider Source rather than separate visible searches for each Run.
 - Anacronia should avoid duplicate visible Collections for the same slug; matching slugs must not silently mutate an existing locked Collection definition.
 - Starting the first search creates the Collection and locks its title, terms, and initial Provider Source for the MVP.
-- User-facing batch size means target usable downloaded results, not provider candidates processed. The MVP batch dropdown values are `100`, `500`, and `1000`, defaulting to `100`.
+- User-facing batch size means target usable downloaded results, not provider candidates processed. The MVP batch dropdown values are `5`, `10`, `20`, `30`, `100`, `500`, and `1000`, defaulting to `100`.
 - Candidate offset and candidate limit remain internal Run mechanics and apply after term queries are merged, deduplicated, and ordered.
 - Candidate order follows term insertion order, preserving provider order within each term and skipping duplicates already seen.
 - Search feedback should show the search state plus stable `Objects` and `Images` counters. The MVP should not show percentage progress or candidate counts in the primary UI.

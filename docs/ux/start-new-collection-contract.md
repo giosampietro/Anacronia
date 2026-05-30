@@ -46,7 +46,7 @@ Fields and controls:
 | Collection title | Required, user-entered, no auto-generated title. |
 | Terms textarea | Required; at least one valid term after parsing. |
 | Provider | MVP shows `Met` as selected. It is not switchable because no alternative provider exists. |
-| Batch dropdown | Values `100`, `500`, `1000`; default `100`. |
+| Batch dropdown | Values `5`, `10`, `20`, `30`, `100`, `500`, `1000`; default `100`. |
 | Primary action | `Start search`. |
 
 Validation:

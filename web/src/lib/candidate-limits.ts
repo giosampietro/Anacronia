@@ -1,4 +1,4 @@
-export const BATCH_TARGET_OPTIONS = [100, 500, 1000] as const;
+export const BATCH_TARGET_OPTIONS = [5, 10, 20, 30, 100, 500, 1000] as const;
 export type BatchTarget = (typeof BATCH_TARGET_OPTIONS)[number];
 export const DEFAULT_BATCH_TARGET: BatchTarget = 100;
 export const DEFAULT_MAX_IMAGES_PER_OBJECT = 3;

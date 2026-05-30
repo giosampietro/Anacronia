@@ -1,3 +1,4 @@
+import pytest
 from fastapi.testclient import TestClient
 
 from anacronia.api import DEFAULT_CANDIDATE_LIMIT, DEFAULT_MAX_IMAGES_PER_OBJECT, create_app
@@ -285,7 +286,8 @@ def test_api_starts_met_collect_job_from_search_set(tmp_path):
     assert get_collect_job(database_path=storage.database_path, job_id=1).max_images_per_object == DEFAULT_MAX_IMAGES_PER_OBJECT
 
 
-def test_api_starts_met_search_from_batch_target(tmp_path):
+@pytest.mark.parametrize("batch_target", [5, 10, 20, 30, 100, 500, 1000])
+def test_api_starts_met_search_from_batch_target(tmp_path, batch_target):
     storage = initialize_storage(project_root=tmp_path)
     met_client = FakeMetCandidateClient()
     client = TestClient(
@@ -302,7 +304,7 @@ def test_api_starts_met_search_from_batch_target(tmp_path):
 
     response = client.post(
         "/search-sets/snake-studies/provider-collections/met/collects",
-        json={"batch_target": 100},
+        json={"batch_target": batch_target},
     )
 
     assert response.status_code == 200
@@ -310,13 +312,16 @@ def test_api_starts_met_search_from_batch_target(tmp_path):
         "run_id": 1,
         "collect_job_id": 1,
         "status": "running",
-        "batch_target": 100,
+        "batch_target": batch_target,
     }
     run = get_candidate_run(database_path=storage.database_path, run_id=1)
-    assert run.batch_target == 100
+    assert run.batch_target == batch_target
     assert run.candidate_offset == 0
     assert run.candidate_limit == 3
-    assert get_collect_job(database_path=storage.database_path, job_id=1).batch_target == 100
+    assert (
+        get_collect_job(database_path=storage.database_path, job_id=1).batch_target
+        == batch_target
+    )
 
 
 def test_api_rejects_unsupported_met_batch_targets(tmp_path):
