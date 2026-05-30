@@ -9,6 +9,7 @@ import { CollectionObjectDetailOverlay } from "@/components/collection-object-de
 import { NewCollectionForm } from "@/components/new-collection-form";
 import { ProviderCollectionProgress } from "@/components/provider-collection-progress";
 import { ProviderSearchActionButton } from "@/components/provider-search-action-button";
+import { SidebarCollectionFilter } from "@/components/sidebar-collection-filter";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
@@ -27,7 +28,6 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import {
   Activity,
@@ -37,7 +37,6 @@ import {
   HardDrive,
   Images,
   Plus,
-  Search,
 } from "lucide-react";
 
 import {
@@ -66,10 +65,8 @@ import type { ApiHealth } from "@/lib/status";
 import { cn } from "@/lib/utils";
 import {
   createNewSearchSetHref,
-  createSearchSetHref,
   createUserLibraryHref,
   createWorkspaceMode,
-  filterSearchSets,
   getFirstParam,
 } from "@/lib/workspace";
 
@@ -453,7 +450,6 @@ export default async function Home({ searchParams }: HomeProps) {
   const dashboard = dashboardResponse ?? emptyDashboard(apiHealth.worker.status);
   const dashboardView = createOperationalDashboardView(dashboard, activeSearchSetSlug);
   const rows = createStatusRows({ uiPort, apiPort, apiHealth });
-  const filteredSearchSets = filterSearchSets(dashboardView.searchSets, filterText);
   const activeSearchSet = dashboardView.activeSearchSet;
   const collectAvailable = canStartCollect(dashboardView.workerStatus);
   const workspaceMode = createWorkspaceMode(requestedWorkspaceMode, activeSearchSet);
@@ -521,62 +517,12 @@ export default async function Home({ searchParams }: HomeProps) {
             <Badge variant="secondary">{dashboardView.searchSets.length}</Badge>
           </div>
 
-          <form className="flex gap-2">
-            {workspaceMode === "search-set" && activeSearchSet ? (
-              <input name="search_set" type="hidden" value={activeSearchSet.slug} />
-            ) : null}
-            {workspaceMode === "new-search-set" || workspaceMode === "user-library" ? (
-              <input name="mode" type="hidden" value={workspaceMode} />
-            ) : null}
-            <Input
-              aria-label="Filter Collections"
-              defaultValue={filterText}
-              name="filter"
-              placeholder="Filter by title or term"
-            />
-            <Button size="icon" type="submit" variant="outline">
-              <Search data-icon="inline-start" />
-            </Button>
-          </form>
-
-          <div className="flex flex-col gap-2">
-            {filteredSearchSets.length === 0 ? (
-              <Empty className="border">
-                <EmptyHeader>
-                  <EmptyMedia variant="icon">
-                    <Search />
-                  </EmptyMedia>
-                  <EmptyTitle>No matching Collections</EmptyTitle>
-                </EmptyHeader>
-              </Empty>
-            ) : (
-              filteredSearchSets.map((searchSet) => (
-                <Link
-                  className={cn(
-                    "flex flex-col gap-2 rounded-2xl border bg-card p-4 transition-colors hover:bg-muted/50",
-                    workspaceMode === "search-set" &&
-                      searchSet.isActive &&
-                      "border-ring bg-muted shadow-xs",
-                  )}
-                  href={createSearchSetHref(searchSet.slug, filterText)}
-                  key={searchSet.slug}
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="truncate text-sm font-medium">
-                      {searchSet.displayName}
-                    </span>
-                    <Badge variant="secondary">
-                      {searchSet.importedImageCount} Image
-                      {searchSet.importedImageCount === 1 ? "" : "s"}
-                    </Badge>
-                  </div>
-                  <p className="truncate text-sm text-muted-foreground">
-                    {searchSet.termSummary || "No active terms"}
-                  </p>
-                </Link>
-              ))
-            )}
-          </div>
+          <SidebarCollectionFilter
+            activeSearchSetSlug={activeSearchSet?.slug ?? null}
+            initialFilterText={filterText}
+            searchSets={dashboardView.searchSets}
+            workspaceMode={workspaceMode}
+          />
         </section>
 
         <Separator />
