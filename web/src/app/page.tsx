@@ -58,6 +58,7 @@ import {
   COLLECT_BUSY_NOTICE,
   canStartCollect,
   collectNoticeFromCode,
+  providerSearchStatusClassName,
   providerSearchAction,
 } from "@/lib/collect-workflow";
 import { createStatusRows } from "@/lib/status";
@@ -720,7 +721,10 @@ export default async function Home({ searchParams }: HomeProps) {
                             <CardDescription>Provider Source</CardDescription>
                           </div>
                           <CardAction>
-                            <Badge variant={statusVariant(providerCollection.status)}>
+                            <Badge
+                              className={providerSearchStatusClassName(providerCollection.status)}
+                              variant={statusVariant(providerCollection.status)}
+                            >
                               {statusIcon(providerCollection.status)}
                               {statusLabel(providerCollection.status)}
                             </Badge>

@@ -4,6 +4,7 @@ import {
   COLLECT_BUSY_NOTICE,
   canStartCollect,
   collectNoticeFromCode,
+  providerSearchStatusClassName,
   providerSearchAction,
 } from "./collect-workflow";
 
@@ -79,5 +80,13 @@ describe("collect workflow", () => {
       showBatchTarget: false,
       disabled: true,
     });
+  });
+});
+
+describe("providerSearchStatusClassName", () => {
+  it("marks only active searching Provider Sources as animated", () => {
+    expect(providerSearchStatusClassName("running")).toContain("animate-pulse");
+    expect(providerSearchStatusClassName("completed")).toBeUndefined();
+    expect(providerSearchStatusClassName("stopped")).toBeUndefined();
   });
 });

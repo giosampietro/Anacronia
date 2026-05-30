@@ -28,6 +28,14 @@ export function collectNoticeFromCode(
   return null;
 }
 
+export function providerSearchStatusClassName(status: string): string | undefined {
+  if (status === "running") {
+    return "motion-safe:animate-pulse ring-1 ring-primary/40";
+  }
+
+  return undefined;
+}
+
 export type ProviderSearchAction = {
   kind: "start" | "stop" | "resume" | "none";
   label: string;
