@@ -5,11 +5,13 @@ import { redirect } from "next/navigation";
 import { ThemeSwitch } from "@/components/theme-switch";
 import { DashboardAutoRefresh } from "@/components/dashboard-auto-refresh";
 import { BatchTargetControl } from "@/components/batch-target-control";
+import { CollectionExportForm } from "@/components/collection-export-form";
 import { CollectionObjectDetailOverlay } from "@/components/collection-object-detail-overlay";
 import { NewCollectionForm } from "@/components/new-collection-form";
 import { ProviderCollectionProgress } from "@/components/provider-collection-progress";
 import { ProviderSearchActionButton } from "@/components/provider-search-action-button";
 import { SidebarCollectionFilter } from "@/components/sidebar-collection-filter";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
@@ -51,7 +53,12 @@ import {
 } from "@/lib/collection-objects";
 import { shouldAutoRefreshDashboard } from "@/lib/dashboard-refresh";
 import { normalizeBatchTarget } from "@/lib/candidate-limits";
-import { collectionExportAvailability } from "@/lib/export-workflow";
+import {
+  collectionExportAvailability,
+  exportArtifactSummary,
+  exportSuccessLabel,
+  type CollectionExportFormat,
+} from "@/lib/export-workflow";
 import { providerSourceFooterClassName } from "@/lib/provider-source-card";
 import { readAppVersionStamp } from "@/lib/app-version";
 import {
@@ -82,7 +89,9 @@ type HomeProps = {
   searchParams?: Promise<{
     collect_notice?: string | string[];
     export_error?: string | string[];
+    export_format?: string | string[];
     export_path?: string | string[];
+    export_rows?: string | string[];
     export_skipped?: string | string[];
     filter?: string | string[];
     mode?: string | string[];
@@ -322,9 +331,19 @@ async function stopMetCollect(formData: FormData) {
 }
 
 type CollectionExportResponse = {
+  format: CollectionExportFormat;
   export_path: string;
+  row_count: number;
   skipped_image_asset_count: number;
 };
+
+function collectionExportFormatFromParam(value: string): CollectionExportFormat | undefined {
+  if (value === "jsonl" || value === "csv" || value === "package") {
+    return value;
+  }
+
+  return undefined;
+}
 
 function exportErrorMessage(payload: unknown): string {
   if (
@@ -371,7 +390,9 @@ async function exportSearchSet(formData: FormData) {
   }
 
   const exportResponse = payload as CollectionExportResponse;
+  params.set("export_format", exportResponse.format);
   params.set("export_path", exportResponse.export_path);
+  params.set("export_rows", String(exportResponse.row_count));
   if (exportResponse.skipped_image_asset_count > 0) {
     params.set("export_skipped", String(exportResponse.skipped_image_asset_count));
   }
@@ -497,14 +518,18 @@ function UserLibraryWorkspace({ imageCount }: { imageCount: number }) {
 function CollectionExportControls({
   available,
   error,
+  exportFormat,
   exportPath,
+  rowCount,
   reason,
   searchSetSlug,
   skippedCount,
 }: {
   available: boolean;
   error: string;
+  exportFormat?: CollectionExportFormat;
   exportPath: string;
+  rowCount: string;
   reason: string;
   searchSetSlug: string;
   skippedCount: string;
@@ -523,36 +548,40 @@ function CollectionExportControls({
       <CardContent className="grid gap-3">
         {reason ? <p className="text-sm text-muted-foreground">{reason}</p> : null}
         {exportPath ? (
-          <div className="rounded-xl border bg-muted/40 px-3 py-2 text-sm">
-            <p className="font-medium">Export complete</p>
-            <p className="mt-1 break-all font-mono text-xs text-muted-foreground">{exportPath}</p>
-            {skippedCount ? (
-              <p className="mt-2 text-xs text-muted-foreground">
-                {skippedCount} Image Asset{skippedCount === "1" ? "" : "s"} skipped. See
-                export-warnings.json in the export folder.
-              </p>
-            ) : null}
-          </div>
+          <Alert>
+            <CircleCheck />
+            <AlertTitle>
+              {exportFormat ? exportSuccessLabel(exportFormat) : "Export ready"}
+            </AlertTitle>
+            <AlertDescription>
+              {exportFormat && rowCount ? (
+                <p>{exportArtifactSummary({ format: exportFormat, rowCount })}</p>
+              ) : null}
+              <p className="mt-1 break-all font-mono text-xs">{exportPath}</p>
+              {skippedCount ? (
+                <p className="mt-2 text-xs">
+                  {skippedCount} Image Asset{skippedCount === "1" ? "" : "s"} skipped. See
+                  export-warnings.json in the export folder.
+                </p>
+              ) : null}
+            </AlertDescription>
+          </Alert>
         ) : null}
         {error ? (
-          <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-            {error}
-          </div>
+          <Alert variant="destructive">
+            <CircleAlert />
+            <AlertTitle>Export failed</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
         ) : null}
       </CardContent>
       <CardFooter>
-        <form action={exportSearchSet} className="flex w-full flex-wrap justify-end gap-2">
-          <input name="slug" type="hidden" value={searchSetSlug} />
-          <Button disabled={!available} name="export_format" size="sm" type="submit" value="jsonl">
-            JSONL
-          </Button>
-          <Button disabled={!available} name="export_format" size="sm" type="submit" value="csv" variant="outline">
-            CSV
-          </Button>
-          <Button disabled={!available} name="export_format" size="sm" type="submit" value="package" variant="outline">
-            Package
-          </Button>
-        </form>
+        <CollectionExportForm
+          action={exportSearchSet}
+          available={available}
+          initialOpen={Boolean(error)}
+          searchSetSlug={searchSetSlug}
+        />
       </CardFooter>
     </Card>
   );
@@ -563,7 +592,11 @@ export default async function Home({ searchParams }: HomeProps) {
   const filterText = getFirstParam(resolvedSearchParams?.filter) ?? "";
   const collectNoticeCode = getFirstParam(resolvedSearchParams?.collect_notice);
   const exportError = getFirstParam(resolvedSearchParams?.export_error) ?? "";
+  const exportFormat = collectionExportFormatFromParam(
+    getFirstParam(resolvedSearchParams?.export_format) ?? ""
+  );
   const exportPath = getFirstParam(resolvedSearchParams?.export_path) ?? "";
+  const exportRows = getFirstParam(resolvedSearchParams?.export_rows) ?? "";
   const exportSkipped = getFirstParam(resolvedSearchParams?.export_skipped) ?? "";
   const requestedWorkspaceMode = getFirstParam(resolvedSearchParams?.mode);
   const activeSearchSetSlug = getFirstParam(resolvedSearchParams?.search_set);
@@ -756,7 +789,9 @@ export default async function Home({ searchParams }: HomeProps) {
               <CollectionExportControls
                 available={exportAvailability.available}
                 error={exportError}
+                exportFormat={exportFormat}
                 exportPath={exportPath}
+                rowCount={exportRows}
                 reason={exportAvailability.reason}
                 searchSetSlug={activeSearchSet.slug}
                 skippedCount={exportSkipped}

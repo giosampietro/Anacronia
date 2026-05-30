@@ -123,11 +123,11 @@ def export_collection(
     if not rows:
         raise NoExportableAssetsError(skipped_image_assets=skipped_image_assets)
 
-    export_path = (
-        data_root
-        / "exports"
-        / search_set_slug
-        / (timestamp or datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ"))
+    export_path = unique_export_path(
+        data_root=data_root,
+        search_set_slug=search_set_slug,
+        export_format=export_format,
+        timestamp=timestamp,
     )
     export_path.mkdir(parents=True, exist_ok=False)
 
@@ -149,6 +149,28 @@ def export_collection(
         row_count=len(rows),
         skipped_image_assets=skipped_image_assets,
     )
+
+
+def unique_export_path(
+    *,
+    data_root: Path,
+    search_set_slug: str,
+    export_format: ExportFormat,
+    timestamp: str | None,
+) -> Path:
+    export_root = data_root / "exports" / search_set_slug
+    short_timestamp = timestamp or datetime.now(UTC).strftime("%y%m%d-%H%MZ")
+    folder_name = f"{export_format}-{short_timestamp}"
+    export_path = export_root / folder_name
+    if not export_path.exists():
+        return export_path
+
+    sequence = 2
+    while True:
+        candidate_path = export_root / f"{folder_name}-{sequence:02d}"
+        if not candidate_path.exists():
+            return candidate_path
+        sequence += 1
 
 
 def get_export_collection(

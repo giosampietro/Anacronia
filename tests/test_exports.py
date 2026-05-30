@@ -74,12 +74,12 @@ def test_exports_collection_jsonl_rows_with_descriptors_and_semantic_text(tmp_pa
         data_root=storage.data_root,
         search_set_slug="snake-study",
         export_format="jsonl",
-        timestamp="20260530T123456Z",
+        timestamp="260530-1234Z",
     )
 
     assert result.row_count == 2
     assert result.skipped_image_asset_count == 0
-    assert result.export_path == storage.data_root / "exports" / "snake-study" / "20260530T123456Z"
+    assert result.export_path == storage.data_root / "exports" / "snake-study" / "jsonl-260530-1234Z"
 
     rows = [
         json.loads(line)
@@ -134,7 +134,7 @@ def test_exports_collection_csv_with_flat_stable_columns(tmp_path):
         data_root=storage.data_root,
         search_set_slug="snake-study",
         export_format="csv",
-        timestamp="20260530T123456Z",
+        timestamp="260530-1234Z",
     )
 
     assert result.row_count == 2
@@ -169,7 +169,7 @@ def test_exports_complete_package_with_relative_manifest_paths_and_copied_images
         data_root=storage.data_root,
         search_set_slug="snake-study",
         export_format="package",
-        timestamp="20260530T123456Z",
+        timestamp="260530-1234Z",
     )
 
     assert result.row_count == 2
@@ -190,6 +190,23 @@ def test_exports_complete_package_with_relative_manifest_paths_and_copied_images
     assert not (result.export_path / "raw-api").exists()
 
 
+def test_exports_use_short_format_prefixed_unique_folder_names(tmp_path):
+    storage = build_exportable_collection(tmp_path)
+    existing_export_path = storage.data_root / "exports" / "snake-study" / "jsonl-260530-1234Z"
+    existing_export_path.mkdir(parents=True)
+
+    result = export_collection(
+        database_path=storage.database_path,
+        data_root=storage.data_root,
+        search_set_slug="snake-study",
+        export_format="jsonl",
+        timestamp="260530-1234Z",
+    )
+
+    assert result.export_path == storage.data_root / "exports" / "snake-study" / "jsonl-260530-1234Z-02"
+    assert (result.export_path / "manifest.jsonl").is_file()
+
+
 def test_export_skips_assets_with_missing_derivatives_and_writes_warnings(tmp_path):
     storage = build_exportable_collection(tmp_path)
     missing_thumb = next(storage.data_root.glob("met/images/*/40/primary-thumb-256.jpg"))
@@ -200,7 +217,7 @@ def test_export_skips_assets_with_missing_derivatives_and_writes_warnings(tmp_pa
         data_root=storage.data_root,
         search_set_slug="snake-study",
         export_format="jsonl",
-        timestamp="20260530T123456Z",
+        timestamp="260530-1234Z",
     )
 
     assert result.row_count == 1
@@ -226,7 +243,7 @@ def test_export_raises_without_creating_empty_files_when_all_derivatives_are_mis
             data_root=storage.data_root,
             search_set_slug="snake-study",
             export_format="jsonl",
-            timestamp="20260530T123456Z",
+            timestamp="260530-1234Z",
         )
 
     assert len(error.value.skipped_image_assets) == 2
