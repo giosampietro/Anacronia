@@ -189,6 +189,7 @@ def ingest_met_run(
     download_image_bytes: Callable[[str], bytes] | None = None,
     max_images_per_object: int = DEFAULT_MAX_IMAGES_PER_OBJECT,
     batch_target: int | None = None,
+    start_run_position: int = 0,
     on_candidate_processed: Callable[[int], None] | None = None,
     should_stop: Callable[[], bool] | None = None,
 ) -> MetIngestSummary:
@@ -200,7 +201,11 @@ def ingest_met_run(
 
     with sqlite3.connect(database_path) as connection:
         ensure_met_ingest_schema(connection)
-        run_candidates = get_run_candidates_for_ingest(connection=connection, run_id=run_id)
+        run_candidates = get_run_candidates_for_ingest(
+            connection=connection,
+            run_id=run_id,
+            start_run_position=start_run_position,
+        )
 
     for candidate in run_candidates:
         object_id = candidate["object_id"]
@@ -572,15 +577,16 @@ def get_run_candidates_for_ingest(
     *,
     connection: sqlite3.Connection,
     run_id: int,
+    start_run_position: int = 0,
 ) -> list[dict[str, object]]:
     rows = connection.execute(
         """
         SELECT object_id, source_term, run_position
         FROM run_candidates
-        WHERE run_id = ?
+        WHERE run_id = ? AND run_position >= ?
         ORDER BY run_position
         """,
-        (run_id,),
+        (run_id, start_run_position),
     ).fetchall()
 
     return [

@@ -448,6 +448,89 @@ def test_worker_skips_missing_met_object_records_without_pausing_search(tmp_path
     assert completed_job.last_processed_run_position == 1
 
 
+def test_worker_retries_provider_search_after_last_processed_candidate(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    from anacronia.search_sets import create_or_continue_search_set
+
+    class ThreeCandidateClient:
+        def search_object_ids(self, term: str) -> list[int]:
+            assert term == "snake"
+            return [10, 20, 30]
+
+    class OneFailureRecordClient(FakeMetRecordClient):
+        def __init__(self) -> None:
+            self.fetched_object_ids: list[int] = []
+            self.failed_once = False
+
+        def fetch_object_record(self, object_id: int) -> dict[str, object]:
+            self.fetched_object_ids.append(object_id)
+            if object_id == 20 and not self.failed_once:
+                self.failed_once = True
+                raise RuntimeError("temporary provider failure")
+
+            record = super().fetch_object_record(object_id)
+            return {
+                **record,
+                "objectID": object_id,
+                "primaryImage": f"https://images.metmuseum.org/{object_id}.jpg",
+            }
+
+    create_or_continue_search_set(
+        database_path=storage.database_path,
+        display_name="Snake Studies",
+        terms_text="snake",
+    )
+    run = discover_met_candidates(
+        database_path=storage.database_path,
+        search_set_slug="snake-studies",
+        candidate_offset=0,
+        candidate_limit=3,
+        batch_target=2,
+        met_client=ThreeCandidateClient(),
+    )
+    job = start_collect_job(
+        database_path=storage.database_path,
+        run_id=run.run_id,
+        candidate_offset=run.candidate_offset,
+        candidate_limit=run.candidate_limit,
+        candidate_progress_total=run.candidate_progress_total,
+        batch_target=run.batch_target,
+        max_images_per_object=1,
+        available_disk_bytes=10_000_000,
+    )
+    record_client = OneFailureRecordClient()
+
+    assert process_running_collect_job(
+        database_path=storage.database_path,
+        data_root=storage.data_root,
+        met_client=record_client,
+        download_image_bytes=lambda _url: ppm_image_bytes(width=1600, height=800),
+    ) is None
+    failed_job = get_collect_job(database_path=storage.database_path, job_id=job.job_id)
+    assert failed_job.status == "running"
+    assert failed_job.provider_failure_count == 1
+    assert failed_job.last_processed_run_position == 0
+
+    summary = process_running_collect_job(
+        database_path=storage.database_path,
+        data_root=storage.data_root,
+        met_client=record_client,
+        download_image_bytes=lambda _url: ppm_image_bytes(width=1600, height=800),
+    )
+
+    assert summary is not None
+    assert record_client.fetched_object_ids == [10, 20, 20, 30]
+    assert summary.imported_object_ids == [20, 30]
+    assert [asset.object_id for asset in get_met_image_assets(database_path=storage.database_path)] == [
+        10,
+        20,
+        30,
+    ]
+    completed_job = get_collect_job(database_path=storage.database_path, job_id=job.job_id)
+    assert completed_job.status == "completed"
+    assert completed_job.last_processed_run_position == 2
+
+
 def test_worker_stops_met_ingest_after_batch_target_reaches_usable_images(tmp_path):
     storage = initialize_storage(project_root=tmp_path)
     from anacronia.search_sets import create_or_continue_search_set

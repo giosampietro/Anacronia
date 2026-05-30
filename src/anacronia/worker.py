@@ -184,6 +184,7 @@ def process_running_collect_job(
             download_image_bytes=download_image_bytes,
             max_images_per_object=job.max_images_per_object,
             batch_target=job.batch_target,
+            start_run_position=next_run_position(job),
             on_candidate_processed=mark_candidate_processed_and_check_disk,
             should_stop=lambda: get_collect_job(
                 database_path=database_path,
@@ -205,10 +206,11 @@ def process_running_collect_job(
     if current_job.status == "paused":
         return summary
 
-    if (
-        summary.imported_image_count < job.batch_target
-        and len(summary.fetched_object_ids) >= job.candidate_progress_total
-    ):
+    processed_all_selected_candidates = (
+        current_job.last_processed_run_position is not None
+        and current_job.last_processed_run_position + 1 >= job.candidate_progress_total
+    )
+    if summary.imported_image_count < job.batch_target and processed_all_selected_candidates:
         finish_collect_job(
             database_path=database_path,
             job_id=job.job_id,
@@ -218,6 +220,13 @@ def process_running_collect_job(
         complete_collect_job(database_path=database_path, job_id=job.job_id)
 
     return summary
+
+
+def next_run_position(job: CollectJob) -> int:
+    if job.last_processed_run_position is None:
+        return 0
+
+    return job.last_processed_run_position + 1
 
 
 def pause_collect_job(
