@@ -1,4 +1,5 @@
 import json
+import sqlite3
 
 from anacronia.collection_runs import discover_met_candidates
 from anacronia.met_ingest import (
@@ -8,6 +9,7 @@ from anacronia.met_ingest import (
     get_met_museum_objects,
     get_met_skipped_image_references,
     ingest_met_run,
+    rebuild_met_descriptors,
     select_met_image_references,
 )
 from anacronia.search_sets import create_or_continue_search_set, get_search_set
@@ -416,6 +418,71 @@ def test_ingests_public_domain_met_records_with_raw_json_matches_and_descriptors
         ("tag", "Animals", "tags.term"),
         ("tag", "Snakes", "tags.term"),
         ("title", "Coiled Snake Vessel", "title"),
+    ]
+
+
+def test_rebuilds_met_descriptors_from_retained_raw_records_without_drift(tmp_path):
+    database_path = tmp_path / "anacronia.sqlite"
+    data_root = tmp_path / "data"
+    create_or_continue_search_set(
+        database_path=database_path,
+        display_name="Snake Studies",
+        terms_text="snake, anaconda",
+    )
+    run = discover_met_candidates(
+        database_path=database_path,
+        search_set_slug="snake-studies",
+        candidate_offset=0,
+        candidate_limit=3,
+        met_client=FakeMetCandidateClient(),
+    )
+    ingest_met_run(
+        database_path=database_path,
+        data_root=data_root,
+        run_id=run.run_id,
+        met_client=FakeMetRecordClient(),
+        download_image_bytes=lambda _url: ppm_image_bytes(width=1600, height=800),
+    )
+    raw_object_path = met_raw_object_path(data_root=data_root, object_id=10)
+    raw_record = json.loads(raw_object_path.read_text())
+    raw_record["department"] = "Greek and Roman Art"
+    raw_record["objectDate"] = "3rd century BCE"
+    raw_record["country"] = "Italy"
+    raw_object_path.write_text(json.dumps(raw_record, indent=2, sort_keys=True), encoding="utf-8")
+    raw_record_before_rebuild = raw_object_path.read_text(encoding="utf-8")
+
+    with sqlite3.connect(database_path) as connection:
+        connection.execute("DELETE FROM descriptors")
+
+    first_summary = rebuild_met_descriptors(database_path=database_path)
+    second_summary = rebuild_met_descriptors(database_path=database_path)
+
+    assert first_summary.rebuilt_object_count == 2
+    assert first_summary.descriptor_count == 12
+    assert first_summary.missing_raw_record_count == 0
+    assert second_summary == first_summary
+    assert raw_object_path.read_text(encoding="utf-8") == raw_record_before_rebuild
+
+    descriptors = get_met_descriptors(database_path=database_path, object_id=10)
+    assert [
+        (
+            descriptor.provider,
+            descriptor.descriptor_type,
+            descriptor.value,
+            descriptor.normalized_value,
+            descriptor.source_field,
+        )
+        for descriptor in descriptors
+    ] == [
+        ("met", "classification", "Ceramics", "ceramics", "classification"),
+        ("met", "date", "3rd century BCE", "3rd century bce", "objectDate"),
+        ("met", "department", "Greek and Roman Art", "greek and roman art", "department"),
+        ("met", "medium", "Terracotta", "terracotta", "medium"),
+        ("met", "object_name", "Vessel", "vessel", "objectName"),
+        ("met", "place", "Italy", "italy", "country"),
+        ("met", "tag", "Animals", "animals", "tags.term"),
+        ("met", "tag", "Snakes", "snakes", "tags.term"),
+        ("met", "title", "Coiled Snake Vessel", "coiled snake vessel", "title"),
     ]
 
 

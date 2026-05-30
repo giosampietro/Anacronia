@@ -116,7 +116,17 @@ class MetDescriptor:
     object_id: int
     descriptor_type: str
     value: str
+    normalized_value: str
     source_field: str
+    provider: str = MET_PROVIDER
+
+
+@dataclass(frozen=True)
+class DescriptorRebuildSummary:
+    provider: str
+    rebuilt_object_count: int
+    descriptor_count: int
+    missing_raw_record_count: int
 
 
 def select_met_image_references(
@@ -554,7 +564,7 @@ def get_met_descriptors(*, database_path: Path, object_id: int) -> list[MetDescr
         ensure_met_ingest_schema(connection)
         rows = connection.execute(
             """
-            SELECT descriptor_type, value, source_field
+            SELECT provider, descriptor_type, value, normalized_value, source_field
             FROM descriptors
             WHERE provider = ? AND object_id = ?
             ORDER BY descriptor_type, value, source_field
@@ -565,12 +575,56 @@ def get_met_descriptors(*, database_path: Path, object_id: int) -> list[MetDescr
     return [
         MetDescriptor(
             object_id=object_id,
-            descriptor_type=row[0],
-            value=row[1],
-            source_field=row[2],
+            provider=row[0],
+            descriptor_type=row[1],
+            value=row[2],
+            normalized_value=row[3],
+            source_field=row[4],
         )
         for row in rows
     ]
+
+
+def rebuild_met_descriptors(*, database_path: Path) -> DescriptorRebuildSummary:
+    rebuilt_object_count = 0
+    descriptor_count = 0
+    missing_raw_record_count = 0
+
+    with sqlite3.connect(database_path) as connection:
+        ensure_met_ingest_schema(connection)
+        rows = connection.execute(
+            """
+            SELECT object_id, raw_record_path
+            FROM museum_objects
+            WHERE provider = ?
+            ORDER BY object_id
+            """,
+            (MET_PROVIDER,),
+        ).fetchall()
+
+        for object_id, raw_record_path_text in rows:
+            raw_record_path = Path(raw_record_path_text)
+            try:
+                record = json.loads(raw_record_path.read_text(encoding="utf-8"))
+            except (FileNotFoundError, json.JSONDecodeError):
+                missing_raw_record_count += 1
+                continue
+
+            descriptors = extract_met_descriptors(record)
+            replace_met_descriptors(
+                connection=connection,
+                object_id=int(object_id),
+                descriptors=descriptors,
+            )
+            rebuilt_object_count += 1
+            descriptor_count += len(descriptors)
+
+    return DescriptorRebuildSummary(
+        provider=MET_PROVIDER,
+        rebuilt_object_count=rebuilt_object_count,
+        descriptor_count=descriptor_count,
+        missing_raw_record_count=missing_raw_record_count,
+    )
 
 
 def get_run_candidates_for_ingest(
@@ -785,7 +839,7 @@ def replace_met_descriptors(
                 object_id,
                 descriptor.descriptor_type,
                 descriptor.value,
-                normalize_search_term(descriptor.value),
+                descriptor.normalized_value,
                 descriptor.source_field,
             ),
         )
@@ -825,6 +879,7 @@ def extract_met_descriptors(record: dict[str, object]) -> list[MetDescriptor]:
                     object_id=object_id,
                     descriptor_type=descriptor_type,
                     value=value,
+                    normalized_value=normalized_value,
                     source_field=source_field,
                 )
             )
