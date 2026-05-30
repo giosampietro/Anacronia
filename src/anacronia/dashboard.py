@@ -265,10 +265,11 @@ def count_imported_images_for_provider_collection(
         FROM (
           SELECT DISTINCT image_assets.object_id, image_assets.source_image_url
           FROM image_assets
-          JOIN run_candidates
-            ON run_candidates.object_id = image_assets.object_id
+          JOIN object_matches
+            ON object_matches.provider = image_assets.provider
+            AND object_matches.object_id = image_assets.object_id
           JOIN collection_runs
-            ON collection_runs.id = run_candidates.run_id
+            ON collection_runs.id = object_matches.run_id
           WHERE
             collection_runs.provider_collection_id = ?
             AND image_assets.provider = ?
@@ -293,10 +294,11 @@ def count_imported_objects_for_provider_collection(
         FROM (
           SELECT DISTINCT image_assets.object_id
           FROM image_assets
-          JOIN run_candidates
-            ON run_candidates.object_id = image_assets.object_id
+          JOIN object_matches
+            ON object_matches.provider = image_assets.provider
+            AND object_matches.object_id = image_assets.object_id
           JOIN collection_runs
-            ON collection_runs.id = run_candidates.run_id
+            ON collection_runs.id = object_matches.run_id
           WHERE
             collection_runs.provider_collection_id = ?
             AND image_assets.provider = ?

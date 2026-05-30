@@ -81,10 +81,11 @@ def list_collection_objects(
                 image_assets.image_role,
                 image_assets.image_index
               FROM image_assets
-              JOIN run_candidates
-                ON run_candidates.object_id = image_assets.object_id
+              JOIN object_matches
+                ON object_matches.provider = image_assets.provider
+                AND object_matches.object_id = image_assets.object_id
               JOIN collection_runs
-                ON collection_runs.id = run_candidates.run_id
+                ON collection_runs.id = object_matches.run_id
               JOIN provider_collections
                 ON provider_collections.id = collection_runs.provider_collection_id
               JOIN search_sets
@@ -168,10 +169,11 @@ def get_collection_object_detail(
             JOIN image_assets
               ON image_assets.provider = museum_objects.provider
               AND image_assets.object_id = museum_objects.object_id
-            JOIN run_candidates
-              ON run_candidates.object_id = museum_objects.object_id
+            JOIN object_matches
+              ON object_matches.provider = museum_objects.provider
+              AND object_matches.object_id = museum_objects.object_id
             JOIN collection_runs
-              ON collection_runs.id = run_candidates.run_id
+              ON collection_runs.id = object_matches.run_id
             JOIN provider_collections
               ON provider_collections.id = collection_runs.provider_collection_id
             JOIN search_sets
@@ -198,10 +200,11 @@ def get_collection_object_detail(
               image_assets.original_width,
               image_assets.original_height
             FROM image_assets
-            JOIN run_candidates
-              ON run_candidates.object_id = image_assets.object_id
+            JOIN object_matches
+              ON object_matches.provider = image_assets.provider
+              AND object_matches.object_id = image_assets.object_id
             JOIN collection_runs
-              ON collection_runs.id = run_candidates.run_id
+              ON collection_runs.id = object_matches.run_id
             JOIN provider_collections
               ON provider_collections.id = collection_runs.provider_collection_id
             JOIN search_sets

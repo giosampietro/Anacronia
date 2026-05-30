@@ -781,6 +781,57 @@ def test_api_returns_collection_objects_newest_first(tmp_path):
     assert objects[1]["has_sibling_images"] is False
 
 
+def test_api_counts_only_processed_collection_matches_not_future_candidates(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+
+    class SharedCandidateClient:
+        def search_object_ids(self, term: str) -> list[int]:
+            return {
+                "snake": [20],
+                "hand": [20, 40],
+            }[term]
+
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            met_candidate_client=SharedCandidateClient(),
+            met_record_client=FakeMetGridRecordClient(),
+            download_image_bytes=lambda _url: ppm_image_bytes(width=1600, height=800),
+        )
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Snake Study", "terms_text": "snake"},
+    )
+    first_run_response = client.post(
+        "/search-sets/snake-study/provider-collections/met/runs",
+        json={"candidate_offset": 0, "candidate_limit": 1},
+    )
+    client.post(f"/provider-collections/met/runs/{first_run_response.json()['run_id']}/ingest")
+    client.post(
+        "/search-sets",
+        json={"display_name": "Hands", "terms_text": "hand"},
+    )
+    client.post(
+        "/search-sets/hands/provider-collections/met/runs",
+        json={"candidate_offset": 0, "candidate_limit": 2},
+    )
+
+    dashboard = client.get("/dashboard").json()
+    hands_provider = next(
+        search_set["provider_collections"][0]
+        for search_set in dashboard["search_sets"]
+        if search_set["slug"] == "hands"
+    )
+    objects_response = client.get("/search-sets/hands/objects")
+
+    assert hands_provider["imported_object_count"] == 0
+    assert hands_provider["imported_image_count"] == 0
+    assert objects_response.status_code == 200
+    assert objects_response.json()["objects"] == []
+
+
 def test_api_returns_collection_object_detail_for_overlay(tmp_path):
     storage = initialize_storage(project_root=tmp_path)
     client = TestClient(
