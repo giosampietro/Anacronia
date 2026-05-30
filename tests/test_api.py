@@ -929,3 +929,89 @@ def test_api_serves_local_image_derivatives(tmp_path):
     assert thumb_response.headers["content-type"] == "image/jpeg"
     assert standard_response.status_code == 200
     assert standard_response.headers["content-type"] == "image/jpeg"
+
+
+def test_api_exports_collection_jsonl_with_absolute_path(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            met_candidate_client=FakeMetGridCandidateClient(),
+            met_record_client=FakeMetGridRecordClient(),
+            download_image_bytes=lambda _url: ppm_image_bytes(width=1600, height=800),
+        )
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Snake Study", "terms_text": "snake"},
+    )
+    run_response = client.post(
+        "/search-sets/snake-study/provider-collections/met/runs",
+        json={"candidate_offset": 0, "candidate_limit": 1},
+    )
+    client.post(f"/provider-collections/met/runs/{run_response.json()['run_id']}/ingest")
+
+    response = client.post("/search-sets/snake-study/exports", json={"format": "jsonl"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["format"] == "jsonl"
+    assert payload["row_count"] == 1
+    assert payload["skipped_image_asset_count"] == 0
+    assert payload["skipped_image_assets"] == []
+    assert payload["export_path"].startswith(str(storage.data_root / "exports" / "snake-study"))
+    assert (storage.data_root / "exports" / "snake-study").is_dir()
+
+
+def test_api_rejects_export_for_zero_image_collection(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    client = TestClient(create_app(database_path=storage.database_path, data_root=storage.data_root))
+    client.post(
+        "/search-sets",
+        json={"display_name": "Snake Study", "terms_text": "snake"},
+    )
+
+    response = client.post("/search-sets/snake-study/exports", json={"format": "jsonl"})
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Collection has no Image Assets to export."
+
+
+def test_api_rejects_export_while_collection_search_is_running(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            met_candidate_client=FakeMetGridCandidateClient(),
+            met_record_client=FakeMetGridRecordClient(),
+            download_image_bytes=lambda _url: ppm_image_bytes(width=1600, height=800),
+        )
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Snake Study", "terms_text": "snake"},
+    )
+    run_response = client.post(
+        "/search-sets/snake-study/provider-collections/met/runs",
+        json={"candidate_offset": 0, "candidate_limit": 1},
+    )
+    client.post(f"/provider-collections/met/runs/{run_response.json()['run_id']}/ingest")
+    start_collect_job(
+        database_path=storage.database_path,
+        run_id=run_response.json()["run_id"],
+        candidate_offset=0,
+        candidate_limit=1,
+        candidate_progress_total=1,
+        batch_target=100,
+        max_images_per_object=DEFAULT_MAX_IMAGES_PER_OBJECT,
+        available_disk_bytes=10_000_000,
+    )
+
+    response = client.post("/search-sets/snake-study/exports", json={"format": "jsonl"})
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == (
+        "Collection export is unavailable while a Provider Search is active."
+    )

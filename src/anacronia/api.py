@@ -24,6 +24,12 @@ from anacronia.collection_objects import (
     list_collection_objects,
 )
 from anacronia.dashboard import OperationalDashboard, get_operational_dashboard
+from anacronia.exports import (
+    ExportFormat,
+    CollectionExportResult,
+    NoExportableAssetsError,
+    export_collection,
+)
 from anacronia.met_ingest import (
     DEFAULT_MAX_IMAGES_PER_OBJECT,
     MetIngestSummary,
@@ -65,6 +71,10 @@ class DiscoverMetCandidatesRequest(BaseModel):
 
 class StartMetCollectRequest(BaseModel):
     batch_target: BatchTarget = DEFAULT_BATCH_TARGET
+
+
+class CollectionExportRequest(BaseModel):
+    format: ExportFormat
 
 
 def serialize_search_set(search_set: SearchSet) -> dict[str, object]:
@@ -252,6 +262,52 @@ def serialize_collection_object_detail(
     }
 
 
+def serialize_collection_export_result(result: CollectionExportResult) -> dict[str, object]:
+    return {
+        "format": result.export_format,
+        "export_path": str(result.export_path.resolve()),
+        "row_count": result.row_count,
+        "skipped_image_asset_count": result.skipped_image_asset_count,
+        "skipped_image_assets": [
+            {
+                "image_asset_id": skipped.image_asset_id,
+                "provider": skipped.provider,
+                "object_id": skipped.object_id,
+                "source_image_url": skipped.source_image_url,
+                "reason": skipped.reason,
+            }
+            for skipped in result.skipped_image_assets
+        ],
+    }
+
+
+def ensure_collection_can_export(dashboard: OperationalDashboard, slug: str) -> None:
+    search_set = next(
+        (search_set for search_set in dashboard.search_sets if search_set.slug == slug),
+        None,
+    )
+    if search_set is None:
+        raise HTTPException(status_code=404, detail="Collection not found.")
+
+    if any(
+        provider_collection.collect_status in {"running", "stopping"}
+        for provider_collection in search_set.provider_collections
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="Collection export is unavailable while a Provider Search is active.",
+        )
+
+    if sum(
+        provider_collection.imported_image_count
+        for provider_collection in search_set.provider_collections
+    ) == 0:
+        raise HTTPException(
+            status_code=409,
+            detail="Collection has no Image Assets to export.",
+        )
+
+
 def create_app(
     *,
     database_path: Path | None = None,
@@ -331,6 +387,39 @@ def create_app(
         if detail is None:
             raise HTTPException(status_code=404, detail="Collection object not found.")
         return serialize_collection_object_detail(detail)
+
+    @app.post("/search-sets/{slug}/exports")
+    def export_search_set(slug: str, request: CollectionExportRequest) -> dict[str, object]:
+        ensure_collection_can_export(
+            dashboard=get_operational_dashboard(database_path=resolved_database_path),
+            slug=slug,
+        )
+        try:
+            result = export_collection(
+                database_path=resolved_database_path,
+                data_root=resolved_data_root,
+                search_set_slug=slug,
+                export_format=request.format,
+            )
+        except NoExportableAssetsError as error:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": "Collection has no exportable Image Assets.",
+                    "skipped_image_asset_count": len(error.skipped_image_assets),
+                    "skipped_image_assets": [
+                        {
+                            "image_asset_id": skipped.image_asset_id,
+                            "provider": skipped.provider,
+                            "object_id": skipped.object_id,
+                            "source_image_url": skipped.source_image_url,
+                            "reason": skipped.reason,
+                        }
+                        for skipped in error.skipped_image_assets
+                    ],
+                },
+            ) from error
+        return serialize_collection_export_result(result)
 
     @app.get("/image-assets/{image_asset_id}/{derivative}")
     def get_image_asset_derivative(image_asset_id: int, derivative: str) -> FileResponse:
