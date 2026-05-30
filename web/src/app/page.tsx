@@ -51,6 +51,7 @@ import {
 import { shouldAutoRefreshDashboard } from "@/lib/dashboard-refresh";
 import { normalizeBatchTarget } from "@/lib/candidate-limits";
 import { providerSourceFooterClassName } from "@/lib/provider-source-card";
+import { readAppVersionStamp } from "@/lib/app-version";
 import {
   getActionFormDataString,
   getActionFormDataValue,
@@ -445,6 +446,7 @@ export default async function Home({ searchParams }: HomeProps) {
   const uiPort = getPort("ANACRONIA_UI_PORT", DEFAULT_UI_PORT);
   const apiPort = getPort("ANACRONIA_API_PORT", DEFAULT_API_PORT);
   const apiBaseUrl = `http://127.0.0.1:${apiPort}`;
+  const appVersionStamp = readAppVersionStamp();
   const [apiHealth, dashboardResponse] = await Promise.all([
     getApiHealth(apiPort),
     getDashboard(apiPort),
@@ -483,7 +485,16 @@ export default async function Home({ searchParams }: HomeProps) {
             A
           </div>
           <div className="min-w-0 flex-1">
-            <h1 className="truncate text-lg font-semibold">Anacronia</h1>
+            <div className="flex min-w-0 items-center gap-2">
+              <h1 className="truncate text-lg font-semibold">Anacronia</h1>
+              <Badge
+                className="h-5 shrink-0 px-1.5 font-mono text-[10px] text-muted-foreground"
+                title={`App version ${appVersionStamp}`}
+                variant="outline"
+              >
+                {appVersionStamp}
+              </Badge>
+            </div>
           </div>
           <ThemeSwitch />
         </div>
