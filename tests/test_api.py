@@ -47,6 +47,47 @@ class FakeMetRecordClient:
         }[object_id]
 
 
+class FakeMetGridCandidateClient:
+    def search_object_ids(self, term: str) -> list[int]:
+        assert term == "snake"
+        return [20, 40]
+
+
+class FakeMetGridRecordClient:
+    def fetch_object_record(self, object_id: int) -> dict[str, object]:
+        return {
+            20: {
+                "objectID": 20,
+                "isPublicDomain": True,
+                "title": "Snake Vessel",
+                "objectName": "Vessel",
+                "artistDisplayName": "Met Workshop",
+                "tags": [{"term": "Snakes"}],
+                "primaryImage": "https://images.metmuseum.org/20-primary.jpg",
+                "objectURL": "https://www.metmuseum.org/art/collection/search/20",
+                "rightsAndReproduction": "Public domain",
+                "metadataDate": "2026-01-01",
+            },
+            40: {
+                "objectID": 40,
+                "isPublicDomain": True,
+                "title": "Coiled Snake Bowl",
+                "objectName": "Bowl",
+                "artistDisplayName": "Unknown maker",
+                "tags": [{"term": "Snake"}],
+                "primaryImage": "https://images.metmuseum.org/40-primary.jpg",
+                "additionalImages": [
+                    "https://images.metmuseum.org/40-detail-a.jpg",
+                    "https://images.metmuseum.org/40-detail-b.jpg",
+                    "https://images.metmuseum.org/40-skipped.jpg",
+                ],
+                "objectURL": "https://www.metmuseum.org/art/collection/search/40",
+                "rightsAndReproduction": "Public domain",
+                "metadataDate": "2026-01-02",
+            },
+        }[object_id]
+
+
 def ppm_image_bytes(*, width: int, height: int) -> bytes:
     header = f"P6\n{width} {height}\n255\n".encode("ascii")
     row = bytes([180, 40, 120]) * width
@@ -697,3 +738,136 @@ def test_api_returns_operational_dashboard(tmp_path):
     assert response.json()["provider_focus"] == [
         {"provider": "met", "search_set_count": 1, "imported_image_count": 1}
     ]
+
+
+def test_api_returns_collection_objects_newest_first(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            met_candidate_client=FakeMetGridCandidateClient(),
+            met_record_client=FakeMetGridRecordClient(),
+            download_image_bytes=lambda _url: ppm_image_bytes(width=1600, height=800),
+        )
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Snake Study", "terms_text": "snake"},
+    )
+    run_response = client.post(
+        "/search-sets/snake-study/provider-collections/met/runs",
+        json={"candidate_offset": 0, "candidate_limit": 2},
+    )
+    client.post(f"/provider-collections/met/runs/{run_response.json()['run_id']}/ingest")
+
+    response = client.get("/search-sets/snake-study/objects")
+
+    assert response.status_code == 200
+    objects = response.json()["objects"]
+    assert [museum_object["object_id"] for museum_object in objects] == [40, 20]
+    assert objects[0] == {
+        "provider": "met",
+        "object_id": 40,
+        "title": "Coiled Snake Bowl",
+        "object_name": "Bowl",
+        "artist_display_name": "Unknown maker",
+        "image_count": 3,
+        "cover_image_asset_id": objects[0]["cover_image_asset_id"],
+        "cover_thumb_url": f"/image-assets/{objects[0]['cover_image_asset_id']}/thumb",
+        "has_sibling_images": True,
+    }
+    assert objects[1]["image_count"] == 1
+    assert objects[1]["has_sibling_images"] is False
+
+
+def test_api_returns_collection_object_detail_for_overlay(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            met_candidate_client=FakeMetGridCandidateClient(),
+            met_record_client=FakeMetGridRecordClient(),
+            download_image_bytes=lambda _url: ppm_image_bytes(width=1600, height=800),
+        )
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Snake Study", "terms_text": "snake"},
+    )
+    run_response = client.post(
+        "/search-sets/snake-study/provider-collections/met/runs",
+        json={"candidate_offset": 0, "candidate_limit": 2},
+    )
+    client.post(f"/provider-collections/met/runs/{run_response.json()['run_id']}/ingest")
+
+    response = client.get("/search-sets/snake-study/objects/met/40")
+
+    assert response.status_code == 200
+    detail = response.json()
+    assert detail["object"] == {
+        "provider": "met",
+        "object_id": 40,
+        "title": "Coiled Snake Bowl",
+        "object_name": "Bowl",
+        "artist_display_name": "Unknown maker",
+        "object_url": "https://www.metmuseum.org/art/collection/search/40",
+        "rights_and_reproduction": "Public domain",
+        "metadata_date": "2026-01-02",
+    }
+    assert [image["image_role"] for image in detail["images"]] == [
+        "primary",
+        "additional",
+        "additional",
+    ]
+    assert detail["images"][0]["thumb_url"] == f"/image-assets/{detail['images'][0]['image_asset_id']}/thumb"
+    assert detail["images"][0]["standard_url"] == f"/image-assets/{detail['images'][0]['image_asset_id']}/standard"
+    assert detail["matches"] == [
+        {
+            "search_term": "snake",
+            "verified": True,
+            "matched_fields": ["tags", "title"],
+        }
+    ]
+    assert detail["skipped_image_references"] == [
+        {
+            "source_image_url": "https://images.metmuseum.org/40-skipped.jpg",
+            "image_role": "additional",
+            "image_index": 3,
+            "reason": "beyond_max_images_per_object",
+        }
+    ]
+
+
+def test_api_serves_local_image_derivatives(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            met_candidate_client=FakeMetGridCandidateClient(),
+            met_record_client=FakeMetGridRecordClient(),
+            download_image_bytes=lambda _url: ppm_image_bytes(width=1600, height=800),
+        )
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Snake Study", "terms_text": "snake"},
+    )
+    run_response = client.post(
+        "/search-sets/snake-study/provider-collections/met/runs",
+        json={"candidate_offset": 0, "candidate_limit": 1},
+    )
+    client.post(f"/provider-collections/met/runs/{run_response.json()['run_id']}/ingest")
+    image_asset_id = client.get("/search-sets/snake-study/objects").json()["objects"][0][
+        "cover_image_asset_id"
+    ]
+
+    thumb_response = client.get(f"/image-assets/{image_asset_id}/thumb")
+    standard_response = client.get(f"/image-assets/{image_asset_id}/standard")
+
+    assert thumb_response.status_code == 200
+    assert thumb_response.headers["content-type"] == "image/jpeg"
+    assert standard_response.status_code == 200
+    assert standard_response.headers["content-type"] == "image/jpeg"

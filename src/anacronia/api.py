@@ -3,6 +3,7 @@ import shutil
 from typing import Callable, Literal
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from anacronia.collection_runs import (
@@ -10,6 +11,17 @@ from anacronia.collection_runs import (
     DEFAULT_BATCH_TARGET,
     MetCandidateClient,
     discover_met_candidates,
+)
+from anacronia.collection_objects import (
+    CollectionObjectDetail,
+    CollectionObjectImage,
+    CollectionObjectMatch,
+    CollectionObjectMetadata,
+    CollectionObjectSkippedImageReference,
+    CollectionObjectSummary,
+    get_collection_object_detail,
+    get_image_asset_derivative_path,
+    list_collection_objects,
 )
 from anacronia.dashboard import OperationalDashboard, get_operational_dashboard
 from anacronia.met_ingest import (
@@ -156,6 +168,89 @@ def serialize_operational_dashboard(dashboard: OperationalDashboard) -> dict[str
     }
 
 
+def serialize_collection_object_summary(
+    collection_object: CollectionObjectSummary,
+) -> dict[str, object]:
+    return {
+        "provider": collection_object.provider,
+        "object_id": collection_object.object_id,
+        "title": collection_object.title,
+        "object_name": collection_object.object_name,
+        "artist_display_name": collection_object.artist_display_name,
+        "image_count": collection_object.image_count,
+        "cover_image_asset_id": collection_object.cover_image_asset_id,
+        "cover_thumb_url": f"/image-assets/{collection_object.cover_image_asset_id}/thumb",
+        "has_sibling_images": collection_object.image_count > 1,
+    }
+
+
+def serialize_collection_object_metadata(
+    collection_object: CollectionObjectMetadata,
+) -> dict[str, object]:
+    return {
+        "provider": collection_object.provider,
+        "object_id": collection_object.object_id,
+        "title": collection_object.title,
+        "object_name": collection_object.object_name,
+        "artist_display_name": collection_object.artist_display_name,
+        "object_url": collection_object.object_url,
+        "rights_and_reproduction": collection_object.rights_and_reproduction,
+        "metadata_date": collection_object.metadata_date,
+    }
+
+
+def serialize_collection_object_image(image: CollectionObjectImage) -> dict[str, object]:
+    return {
+        "image_asset_id": image.image_asset_id,
+        "source_image_url": image.source_image_url,
+        "image_role": image.image_role,
+        "image_index": image.image_index,
+        "original_width": image.original_width,
+        "original_height": image.original_height,
+        "thumb_url": f"/image-assets/{image.image_asset_id}/thumb",
+        "standard_url": f"/image-assets/{image.image_asset_id}/standard",
+    }
+
+
+def serialize_collection_object_match(match: CollectionObjectMatch) -> dict[str, object]:
+    return {
+        "search_term": match.search_term,
+        "verified": match.verified,
+        "matched_fields": match.matched_fields,
+    }
+
+
+def serialize_collection_object_skipped_image_reference(
+    reference: CollectionObjectSkippedImageReference,
+) -> dict[str, object]:
+    return {
+        "source_image_url": reference.source_image_url,
+        "image_role": reference.image_role,
+        "image_index": reference.image_index,
+        "reason": reference.reason,
+    }
+
+
+def serialize_collection_object_detail(
+    detail: CollectionObjectDetail,
+) -> dict[str, object]:
+    return {
+        "object": serialize_collection_object_metadata(detail.object),
+        "images": [
+            serialize_collection_object_image(image)
+            for image in detail.images
+        ],
+        "matches": [
+            serialize_collection_object_match(match)
+            for match in detail.matches
+        ],
+        "skipped_image_references": [
+            serialize_collection_object_skipped_image_reference(reference)
+            for reference in detail.skipped_image_references
+        ],
+    }
+
+
 def create_app(
     *,
     database_path: Path | None = None,
@@ -211,6 +306,47 @@ def create_app(
     def get_dashboard() -> dict[str, object]:
         dashboard = get_operational_dashboard(database_path=resolved_database_path)
         return serialize_operational_dashboard(dashboard)
+
+    @app.get("/search-sets/{slug}/objects")
+    def get_collection_objects(slug: str) -> dict[str, object]:
+        return {
+            "objects": [
+                serialize_collection_object_summary(collection_object)
+                for collection_object in list_collection_objects(
+                    database_path=resolved_database_path,
+                    search_set_slug=slug,
+                )
+            ]
+        }
+
+    @app.get("/search-sets/{slug}/objects/{provider}/{object_id}")
+    def get_collection_object(slug: str, provider: str, object_id: int) -> dict[str, object]:
+        detail = get_collection_object_detail(
+            database_path=resolved_database_path,
+            search_set_slug=slug,
+            provider=provider,
+            object_id=object_id,
+        )
+        if detail is None:
+            raise HTTPException(status_code=404, detail="Collection object not found.")
+        return serialize_collection_object_detail(detail)
+
+    @app.get("/image-assets/{image_asset_id}/{derivative}")
+    def get_image_asset_derivative(image_asset_id: int, derivative: str) -> FileResponse:
+        path = get_image_asset_derivative_path(
+            database_path=resolved_database_path,
+            image_asset_id=image_asset_id,
+            derivative=derivative,
+        )
+        if path is None:
+            raise HTTPException(status_code=404, detail="Image Asset derivative not found.")
+
+        resolved_path = path.resolve()
+        resolved_root = resolved_data_root.resolve()
+        if not resolved_path.is_relative_to(resolved_root) or not resolved_path.is_file():
+            raise HTTPException(status_code=404, detail="Image Asset derivative not found.")
+
+        return FileResponse(resolved_path, media_type="image/jpeg")
 
     @app.post("/search-sets/{slug}/provider-collections/met/runs")
     def discover_met_candidate_run(

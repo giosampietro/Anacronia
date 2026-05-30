@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { ThemeSwitch } from "@/components/theme-switch";
 import { DashboardAutoRefresh } from "@/components/dashboard-auto-refresh";
 import { BatchTargetControl } from "@/components/batch-target-control";
+import { CollectionObjectDetailOverlay } from "@/components/collection-object-detail-overlay";
 import { NewCollectionForm } from "@/components/new-collection-form";
 import { ProviderCollectionProgress } from "@/components/provider-collection-progress";
 import { Badge } from "@/components/ui/badge";
@@ -33,6 +34,7 @@ import {
   CircleCheck,
   Database,
   HardDrive,
+  Images,
   Play,
   Plus,
   RotateCcw,
@@ -44,6 +46,11 @@ import {
   createOperationalDashboardView,
   type OperationalDashboard,
 } from "@/lib/dashboard";
+import {
+  imageUrl,
+  type CollectionObjectDetail,
+  type CollectionObjectSummary,
+} from "@/lib/collection-objects";
 import { shouldAutoRefreshDashboard } from "@/lib/dashboard-refresh";
 import { normalizeBatchTarget } from "@/lib/candidate-limits";
 import {
@@ -76,6 +83,8 @@ type HomeProps = {
     collect_notice?: string | string[];
     filter?: string | string[];
     mode?: string | string[];
+    object_id?: string | string[];
+    object_provider?: string | string[];
     search_set?: string | string[];
   }>;
 };
@@ -131,6 +140,78 @@ async function getDashboard(apiPort: number): Promise<OperationalDashboard | nul
   } catch {
     return null;
   }
+}
+
+async function getCollectionObjects(
+  apiPort: number,
+  slug: string,
+): Promise<CollectionObjectSummary[]> {
+  try {
+    const response = await fetch(`http://127.0.0.1:${apiPort}/search-sets/${slug}/objects`, {
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      return [];
+    }
+
+    const payload = (await response.json()) as { objects: CollectionObjectSummary[] };
+    return payload.objects;
+  } catch {
+    return [];
+  }
+}
+
+async function getCollectionObjectDetail(
+  apiPort: number,
+  slug: string,
+  provider: string,
+  objectId: number,
+): Promise<CollectionObjectDetail | null> {
+  try {
+    const response = await fetch(
+      `http://127.0.0.1:${apiPort}/search-sets/${slug}/objects/${provider}/${objectId}`,
+      { cache: "no-store" },
+    );
+
+    if (!response.ok) {
+      return null;
+    }
+
+    return (await response.json()) as CollectionObjectDetail;
+  } catch {
+    return null;
+  }
+}
+
+function createCollectionObjectHref(
+  slug: string,
+  collectionObject: CollectionObjectSummary,
+  filterText: string,
+): string {
+  const params = new URLSearchParams({
+    search_set: slug,
+    object_provider: collectionObject.provider,
+    object_id: String(collectionObject.object_id),
+  });
+  if (filterText) {
+    params.set("filter", filterText);
+  }
+
+  return `/?${params.toString()}`;
+}
+
+function createCloseObjectHref(slug: string, filterText: string): string {
+  const params = new URLSearchParams({ search_set: slug });
+  if (filterText) {
+    params.set("filter", filterText);
+  }
+
+  return `/?${params.toString()}`;
+}
+
+function createCollectionObjectTileId(provider: string, objectId: number): string {
+  return `collection-object-${provider}-${objectId}`;
 }
 
 async function createSearchSetAndCollectFromMet(formData: FormData) {
@@ -359,8 +440,14 @@ export default async function Home({ searchParams }: HomeProps) {
   const collectNoticeCode = getFirstParam(resolvedSearchParams?.collect_notice);
   const requestedWorkspaceMode = getFirstParam(resolvedSearchParams?.mode);
   const activeSearchSetSlug = getFirstParam(resolvedSearchParams?.search_set);
+  const selectedObjectProvider = getFirstParam(resolvedSearchParams?.object_provider);
+  const selectedObjectId = Number.parseInt(
+    getFirstParam(resolvedSearchParams?.object_id) ?? "",
+    10,
+  );
   const uiPort = getPort("ANACRONIA_UI_PORT", DEFAULT_UI_PORT);
   const apiPort = getPort("ANACRONIA_API_PORT", DEFAULT_API_PORT);
+  const apiBaseUrl = `http://127.0.0.1:${apiPort}`;
   const [apiHealth, dashboardResponse] = await Promise.all([
     getApiHealth(apiPort),
     getDashboard(apiPort),
@@ -374,7 +461,22 @@ export default async function Home({ searchParams }: HomeProps) {
   const collectNotice = collectNoticeFromCode(collectNoticeCode);
   const workspaceMode = createWorkspaceMode(requestedWorkspaceMode, activeSearchSet);
   const activeProviderCollections = activeSearchSet?.providerCollections ?? [];
-  const resultSlotCount = Math.min(activeSearchSet?.importedObjectCount ?? 0, 28);
+  const collectionObjects =
+    activeSearchSet === null || workspaceMode !== "search-set"
+      ? []
+      : await getCollectionObjects(apiPort, activeSearchSet.slug);
+  const selectedObjectDetail =
+    activeSearchSet !== null &&
+    workspaceMode === "search-set" &&
+    selectedObjectProvider &&
+    Number.isFinite(selectedObjectId)
+      ? await getCollectionObjectDetail(
+          apiPort,
+          activeSearchSet.slug,
+          selectedObjectProvider,
+          selectedObjectId,
+        )
+      : null;
 
   return (
     <div className="grid min-h-svh bg-background text-foreground lg:grid-cols-[340px_minmax(0,1fr)]">
@@ -571,12 +673,12 @@ export default async function Home({ searchParams }: HomeProps) {
                   </div>
                   <CardAction>
                     <Badge variant="secondary">
-                      {activeSearchSet.importedObjectCount} shown
+                      {collectionObjects.length} shown
                     </Badge>
                   </CardAction>
                 </CardHeader>
                 <CardContent>
-                  {resultSlotCount === 0 ? (
+                  {collectionObjects.length === 0 ? (
                     <Empty className="border">
                       <EmptyHeader>
                         <EmptyMedia variant="icon">
@@ -590,24 +692,41 @@ export default async function Home({ searchParams }: HomeProps) {
                     </Empty>
                   ) : (
                     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
-                      {Array.from({ length: resultSlotCount }).map((_, index) => {
-                        const providerCollection =
-                          activeProviderCollections[index % activeProviderCollections.length];
-
-                        return (
-                          <div
-                            className="relative aspect-[4/5] overflow-hidden rounded-2xl border bg-muted"
-                            key={`${activeSearchSet.slug}-asset-${index}`}
-                          >
-                            <div className="absolute inset-0 bg-gradient-to-br from-muted via-background/20 to-muted" />
-                            {providerCollection ? (
-                              <Badge className="absolute bottom-2 left-2" variant="secondary">
-                                {providerCollection.providerLabel}
-                              </Badge>
-                            ) : null}
+                      {collectionObjects.map((collectionObject) => (
+                        <Link
+                          className="group relative aspect-[4/5] overflow-hidden rounded-2xl border bg-muted outline-none transition-colors hover:border-ring focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30"
+                          href={createCollectionObjectHref(
+                            activeSearchSet.slug,
+                            collectionObject,
+                            filterText,
+                          )}
+                          id={createCollectionObjectTileId(
+                            collectionObject.provider,
+                            collectionObject.object_id,
+                          )}
+                          key={`${collectionObject.provider}-${collectionObject.object_id}`}
+                        >
+                          {/* Anacronia serves already-sized local derivatives from FastAPI. */}
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            alt={collectionObject.title || `Met object ${collectionObject.object_id}`}
+                            className="size-full object-cover transition-transform duration-300 group-hover:scale-105"
+                            src={imageUrl(apiBaseUrl, collectionObject.cover_thumb_url)}
+                          />
+                          {collectionObject.has_sibling_images ? (
+                            <Badge className="absolute right-2 top-2" variant="secondary">
+                              <Images data-icon="inline-start" />
+                              {collectionObject.image_count}
+                            </Badge>
+                          ) : null}
+                          <div className="absolute inset-x-0 bottom-0 translate-y-2 bg-gradient-to-t from-background via-background/85 to-transparent p-3 opacity-0 transition-all group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100">
+                            <Badge variant="secondary">Met</Badge>
+                            <p className="mt-2 line-clamp-2 text-sm font-medium">
+                              {collectionObject.title || "Untitled object"}
+                            </p>
                           </div>
-                        );
-                      })}
+                        </Link>
+                      ))}
                     </div>
                   )}
                 </CardContent>
@@ -723,6 +842,17 @@ export default async function Home({ searchParams }: HomeProps) {
             </section>
           </div>
         )}
+        {activeSearchSet !== null && selectedObjectDetail ? (
+          <CollectionObjectDetailOverlay
+            apiBaseUrl={apiBaseUrl}
+            closeHref={createCloseObjectHref(activeSearchSet.slug, filterText)}
+            detail={selectedObjectDetail}
+            returnFocusId={createCollectionObjectTileId(
+              selectedObjectDetail.object.provider,
+              selectedObjectDetail.object.object_id,
+            )}
+          />
+        ) : null}
       </main>
     </div>
   );
