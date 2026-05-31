@@ -12,7 +12,7 @@ import { ProviderSearchActionButton } from "@/components/provider-search-action-
 import { SidebarCollectionFilter } from "@/components/sidebar-collection-filter";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import {
   Card,
   CardAction,
@@ -760,16 +760,7 @@ function ProviderSourceControls({
                 <CollectBusyNote collectAvailable={false} />
               ) : null}
             </CardContent>
-            {submittableAction === null ? (
-              action.label === "Stopping" ? (
-                <div className="flex justify-end border-t px-5 pt-5">
-                  <Button disabled size="sm" type="button" variant="outline">
-                    <Spinner data-icon="inline-start" />
-                    {action.label}
-                  </Button>
-                </div>
-              ) : null
-            ) : (
+            {submittableAction === null ? null : (
               <ProviderSourceActionRow
                 action={submittableAction}
                 actionAvailable={actionAvailable}

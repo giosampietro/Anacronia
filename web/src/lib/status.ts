@@ -17,6 +17,14 @@ export type StatusRow = {
   detail: string;
 };
 
+function workerDisplayState(status: WorkerHealth["status"]): string {
+  if (status === "running" || status === "stopping") {
+    return "active";
+  }
+
+  return status;
+}
+
 type CreateStatusRowsInput = {
   uiPort: number;
   apiPort: number;
@@ -44,7 +52,7 @@ export function createStatusRows({
     {
       name: "Python worker",
       state: apiHealth.worker.status,
-      displayState: apiHealth.worker.status === "running" ? "active" : apiHealth.worker.status,
+      displayState: workerDisplayState(apiHealth.worker.status),
       detail: apiHealth.worker.status === "idle" ? "Ready for searches" : "Processing",
     },
   ];

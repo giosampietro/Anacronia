@@ -54,4 +54,23 @@ describe("createStatusRows", () => {
       detail: "Processing",
     });
   });
+
+  it("keeps the worker label active while a search is stopping", () => {
+    const rows = createStatusRows({
+      uiPort: 18660,
+      apiPort: 18670,
+      apiHealth: {
+        service: "api",
+        status: "ok",
+        worker: { service: "worker", status: "stopping", active_collect_job_id: 1 },
+      },
+    });
+
+    expect(rows[2]).toEqual({
+      name: "Python worker",
+      state: "stopping",
+      displayState: "active",
+      detail: "Processing",
+    });
+  });
 });
