@@ -2,13 +2,11 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Search } from "lucide-react";
+import { Database, MoreHorizontal, Search } from "lucide-react";
 
 import type { DashboardSearchSetView } from "@/lib/dashboard";
 import type { WorkspaceMode } from "@/lib/workspace";
 import { createSearchSetHref, filterSearchSets } from "@/lib/workspace";
-import { cn } from "@/lib/utils";
-import { Badge } from "@/components/ui/badge";
 import {
   Empty,
   EmptyHeader,
@@ -16,10 +14,13 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupInput,
-} from "@/components/ui/input-group";
+  SidebarInput,
+  SidebarMenu,
+  SidebarMenuAction,
+  SidebarMenuBadge,
+  SidebarMenuButton,
+  SidebarMenuItem,
+} from "@/components/ui/sidebar";
 
 type SidebarCollectionFilterProps = {
   activeSearchSetSlug: string | null;
@@ -42,21 +43,20 @@ export function SidebarCollectionFilter({
 
   return (
     <>
-      <InputGroup>
-        <InputGroupInput
+      <div className="relative group-data-[collapsible=icon]:hidden">
+        <Search className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 opacity-50" />
+        <SidebarInput
           aria-label="Filter Collections"
+          className="pl-8"
           onChange={(event) => setFilterText(event.currentTarget.value)}
           placeholder="Filter by title or term"
           value={filterText}
         />
-        <InputGroupAddon align="inline-start">
-          <Search />
-        </InputGroupAddon>
-      </InputGroup>
+      </div>
 
-      <div className="flex flex-col gap-2">
+      <SidebarMenu className="mt-3">
         {filteredSearchSets.length === 0 ? (
-          <Empty className="border">
+          <Empty className="border group-data-[collapsible=icon]:hidden">
             <EmptyHeader>
               <EmptyMedia variant="icon">
                 <Search />
@@ -66,32 +66,39 @@ export function SidebarCollectionFilter({
           </Empty>
         ) : (
           filteredSearchSets.map((searchSet) => (
-            <Link
-              className={cn(
-                "flex flex-col gap-2 rounded-2xl border bg-card p-4 transition-colors hover:bg-muted/50",
-                workspaceMode === "search-set" &&
-                  searchSet.slug === activeSearchSetSlug &&
-                  "border-ring bg-muted shadow-xs",
-              )}
-              href={createSearchSetHref(searchSet.slug, filterText)}
+            <SidebarMenuItem
               key={searchSet.slug}
             >
-              <div className="flex items-center justify-between gap-3">
-                <span className="truncate text-sm font-medium">
-                  {searchSet.displayName}
+              <SidebarMenuButton
+                isActive={
+                  workspaceMode === "search-set" &&
+                  searchSet.slug === activeSearchSetSlug
+                }
+                render={<Link href={createSearchSetHref(searchSet.slug, filterText)} />}
+                size="lg"
+                tooltip={searchSet.displayName}
+              >
+                <Database />
+                <span className="flex min-w-0 flex-col gap-0.5 group-data-[collapsible=icon]:hidden">
+                  <span className="truncate">
+                    {searchSet.displayName}
+                  </span>
+                  <span className="truncate text-xs font-normal text-muted-foreground">
+                    {searchSet.termSummary || "No active terms"}
+                  </span>
                 </span>
-                <Badge variant="secondary">
-                  {searchSet.importedImageCount} Image
-                  {searchSet.importedImageCount === 1 ? "" : "s"}
-                </Badge>
-              </div>
-              <p className="truncate text-sm text-muted-foreground">
-                {searchSet.termSummary || "No active terms"}
-              </p>
-            </Link>
+              </SidebarMenuButton>
+              <SidebarMenuBadge>{searchSet.importedImageCount}</SidebarMenuBadge>
+              <SidebarMenuAction
+                aria-label={`More actions for ${searchSet.displayName}`}
+                showOnHover
+              >
+                <MoreHorizontal />
+              </SidebarMenuAction>
+            </SidebarMenuItem>
           ))
         )}
-      </div>
+      </SidebarMenu>
     </>
   );
 }

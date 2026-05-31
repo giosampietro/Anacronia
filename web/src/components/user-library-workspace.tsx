@@ -1,7 +1,14 @@
-import Link from "next/link";
 import { Database, Images, Search } from "lucide-react";
 
+import { ObjectDetailPendingLink } from "@/components/object-detail-pending-link";
 import { imageUrl, type LibraryImageAssetSummary } from "@/lib/collection-objects";
+import {
+  IMAGE_GRID_BADGE_CLASS_NAME,
+  IMAGE_GRID_CLASS_NAME,
+  IMAGE_GRID_IMAGE_CLASS_NAME,
+  IMAGE_GRID_OVERLAY_CLASS_NAME,
+  IMAGE_GRID_TILE_CLASS_NAME,
+} from "@/lib/image-grid-style";
 import { AspectRatio } from "@/components/ui/aspect-ratio";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -11,19 +18,22 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
+import { createUserLibraryHref } from "@/lib/workspace";
+import { cn } from "@/lib/utils";
 
 type UserLibraryWorkspaceProps = {
   apiBaseUrl: string;
   filterText: string;
   imageAssets: LibraryImageAssetSummary[];
   imageCount: number;
+  resolvedImageAssetId?: number | null;
 };
 
 export function createLibraryImageAssetTileId(imageAssetId: number): string {
   return `library-image-asset-${imageAssetId}`;
 }
 
-function createLibraryImageAssetHref(
+export function createLibraryImageAssetHref(
   imageAsset: LibraryImageAssetSummary,
   filterText: string,
 ): string {
@@ -97,6 +107,7 @@ export function UserLibraryWorkspace({
   filterText,
   imageAssets,
   imageCount,
+  resolvedImageAssetId = null,
 }: UserLibraryWorkspaceProps) {
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-7">
@@ -113,45 +124,72 @@ export function UserLibraryWorkspace({
       {imageAssets.length === 0 ? (
         <EmptyLibraryState filterText={filterText} imageCount={imageCount} />
       ) : (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7">
-          {imageAssets.map((imageAsset) => (
-            <Link
-              aria-label={`Open ${providerLabel(imageAsset.provider)} Image Asset ${imageAsset.image_asset_id}`}
-              className="group relative block overflow-hidden rounded-2xl border bg-muted outline-none transition-colors hover:border-ring focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30"
-              href={createLibraryImageAssetHref(imageAsset, filterText)}
-              id={createLibraryImageAssetTileId(imageAsset.image_asset_id)}
-              key={imageAsset.image_asset_id}
-            >
-              <AspectRatio ratio={4 / 5}>
-                {/* Anacronia serves already-sized local derivatives from FastAPI. */}
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  alt={`${providerLabel(imageAsset.provider)} Image Asset ${imageAsset.image_asset_id}`}
-                  className="absolute inset-0 size-full object-cover transition-transform duration-300 group-hover:scale-105"
-                  src={imageUrl(apiBaseUrl, imageAsset.thumb_url)}
-                />
-                <div className="absolute inset-x-2 top-2 flex translate-y-1 items-start justify-between gap-2 opacity-0 transition-all duration-200 group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100">
-                  <Badge className="min-w-0 max-w-[70%] truncate" variant="secondary">
-                    {collectionLabel(imageAsset)}
-                  </Badge>
-                  {imageAsset.has_sibling_images ? (
-                    <Badge className="shrink-0" variant="secondary">
-                      <Images data-icon="inline-start" />
-                      {imageAsset.image_count}
+        <div className={IMAGE_GRID_CLASS_NAME}>
+          {imageAssets.map((imageAsset) => {
+            const imageAssetProviderLabel = providerLabel(imageAsset.provider);
+            const thumbSrc = imageUrl(apiBaseUrl, imageAsset.thumb_url);
+            const imageAssetAlt = `${imageAssetProviderLabel} Image Asset ${imageAsset.image_asset_id}`;
+            const tileStateKey =
+              resolvedImageAssetId === imageAsset.image_asset_id ? "resolved" : "grid";
+
+            return (
+              <ObjectDetailPendingLink
+                ariaLabel={`Open ${imageAssetAlt}`}
+                className={IMAGE_GRID_TILE_CLASS_NAME}
+                closeHref={createUserLibraryHref(filterText)}
+                href={createLibraryImageAssetHref(imageAsset, filterText)}
+                id={createLibraryImageAssetTileId(imageAsset.image_asset_id)}
+                key={`${imageAsset.image_asset_id}-${tileStateKey}`}
+                preview={{
+                  alt: imageAssetAlt,
+                  collectionLabel: collectionLabel(imageAsset),
+                  imageCount: imageAsset.image_count,
+                  providerLabel: imageAssetProviderLabel,
+                  src: thumbSrc,
+                }}
+              >
+                <AspectRatio ratio={4 / 5}>
+                  {/* Anacronia serves already-sized local derivatives from FastAPI. */}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    alt={imageAssetAlt}
+                    className={IMAGE_GRID_IMAGE_CLASS_NAME}
+                    src={thumbSrc}
+                  />
+                  <div className="absolute inset-x-2 top-2 flex translate-y-1 items-start justify-between gap-2 opacity-0 transition-all duration-200 group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100">
+                    <Badge
+                      className={cn(
+                        "min-w-0 max-w-[70%] truncate",
+                        IMAGE_GRID_BADGE_CLASS_NAME,
+                      )}
+                      variant="secondary"
+                    >
+                      {collectionLabel(imageAsset)}
                     </Badge>
-                  ) : null}
-                </div>
-                <div className="absolute inset-x-0 bottom-0 translate-y-2 p-3 opacity-0 transition-all duration-200 group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100">
-                  <Badge variant="secondary">{providerLabel(imageAsset.provider)}</Badge>
-                  <p className="sr-only">
-                    {imageAsset.collections
-                      .map((collection) => collection.display_name)
-                      .join(", ")}
-                  </p>
-                </div>
-              </AspectRatio>
-            </Link>
-          ))}
+                    {imageAsset.has_sibling_images ? (
+                      <Badge
+                        className={cn("shrink-0", IMAGE_GRID_BADGE_CLASS_NAME)}
+                        variant="secondary"
+                      >
+                        <Images data-icon="inline-start" />
+                        {imageAsset.image_count}
+                      </Badge>
+                    ) : null}
+                  </div>
+                  <div className={IMAGE_GRID_OVERLAY_CLASS_NAME}>
+                    <Badge className={IMAGE_GRID_BADGE_CLASS_NAME} variant="secondary">
+                      {imageAssetProviderLabel}
+                    </Badge>
+                    <p className="sr-only">
+                      {imageAsset.collections
+                        .map((collection) => collection.display_name)
+                        .join(", ")}
+                    </p>
+                  </div>
+                </AspectRatio>
+              </ObjectDetailPendingLink>
+            );
+          })}
         </div>
       )}
     </div>

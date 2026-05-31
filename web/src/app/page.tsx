@@ -1,23 +1,25 @@
 import { revalidatePath } from "next/cache";
-import Link from "next/link";
 import { redirect } from "next/navigation";
 
-import { ThemeSwitch } from "@/components/theme-switch";
+import { AppShell } from "@/components/app-shell";
 import { DashboardAutoRefresh } from "@/components/dashboard-auto-refresh";
 import { BatchTargetControl } from "@/components/batch-target-control";
 import { CollectionExportForm } from "@/components/collection-export-form";
 import { CollectionObjectDetailOverlay } from "@/components/collection-object-detail-overlay";
 import { NewCollectionForm } from "@/components/new-collection-form";
-import { ProviderSearchActionButton } from "@/components/provider-search-action-button";
-import { SidebarCollectionFilter } from "@/components/sidebar-collection-filter";
 import {
+  ObjectDetailErrorOverlay,
+  ObjectDetailPendingLink,
+} from "@/components/object-detail-pending-link";
+import { ProviderSearchActionButton } from "@/components/provider-search-action-button";
+import {
+  createLibraryImageAssetHref,
   createLibraryImageAssetTileId,
   UserLibraryWorkspace,
 } from "@/components/user-library-workspace";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AspectRatio } from "@/components/ui/aspect-ratio";
 import { Badge } from "@/components/ui/badge";
-import { buttonVariants } from "@/components/ui/button";
 import {
   Card,
   CardAction,
@@ -40,7 +42,6 @@ import {
   ItemGroup,
   ItemTitle,
 } from "@/components/ui/item";
-import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
 import {
   Activity,
@@ -48,9 +49,7 @@ import {
   CircleCheck,
   Database,
   Download,
-  HardDrive,
   Images,
-  Plus,
 } from "lucide-react";
 
 import {
@@ -65,6 +64,14 @@ import {
   type CollectionObjectSummary,
   type LibraryImageAssetSummary,
 } from "@/lib/collection-objects";
+import {
+  IMAGE_GRID_CAROUSEL_INDICATOR_CLASS_NAME,
+  IMAGE_GRID_CLASS_NAME,
+  IMAGE_GRID_IMAGE_CLASS_NAME,
+  IMAGE_GRID_OVERLAY_CLASS_NAME,
+  IMAGE_GRID_PROVIDER_BADGE_CLASS_NAME,
+  IMAGE_GRID_TILE_CLASS_NAME,
+} from "@/lib/image-grid-style";
 import { shouldAutoRefreshDashboard } from "@/lib/dashboard-refresh";
 import { DEFAULT_BATCH_TARGET, normalizeBatchTarget } from "@/lib/candidate-limits";
 import {
@@ -90,11 +97,11 @@ import { createStatusRows } from "@/lib/status";
 import type { ApiHealth } from "@/lib/status";
 import { cn } from "@/lib/utils";
 import {
-  createNewSearchSetHref,
   createUserLibraryHref,
   createWorkspaceMode,
   getFirstParam,
 } from "@/lib/workspace";
+import { createAdjacentObjectHrefs } from "@/lib/object-navigation";
 
 const DEFAULT_UI_PORT = 18660;
 const DEFAULT_API_PORT = 18670;
@@ -266,6 +273,14 @@ function createCloseObjectHref(slug: string, filterText: string): string {
 
 function createCollectionObjectTileId(provider: string, objectId: number): string {
   return `collection-object-${provider}-${objectId}`;
+}
+
+function objectProviderDisplayLabel(provider: string): string {
+  if (provider === "met") {
+    return "Met";
+  }
+
+  return provider.trim() || "Unknown";
 }
 
 async function createSearchSetAndCollectFromMet(formData: FormData) {
@@ -870,10 +885,12 @@ export default async function Home({ searchParams }: HomeProps) {
           activeSearchSet?.slug === activeSearchSetSlug
         ? activeSearchSet.slug
         : null;
-  const selectedObjectDetail =
+  const shouldLoadSelectedObjectDetail =
     selectedObjectDetailSearchSetSlug !== null &&
-    selectedObjectProvider &&
-    Number.isFinite(selectedObjectId)
+    selectedObjectProvider !== undefined &&
+    Number.isFinite(selectedObjectId);
+  const selectedObjectDetail =
+    shouldLoadSelectedObjectDetail
       ? await getCollectionObjectDetail(
           apiPort,
           selectedObjectDetailSearchSetSlug,
@@ -881,6 +898,53 @@ export default async function Home({ searchParams }: HomeProps) {
           selectedObjectId,
         )
       : null;
+  const selectedObjectCloseHref =
+    workspaceMode === "user-library"
+      ? createUserLibraryHref(filterText)
+      : selectedObjectDetailSearchSetSlug !== null
+        ? createCloseObjectHref(selectedObjectDetailSearchSetSlug, filterText)
+        : "/";
+  const selectedObjectReturnFocusId =
+    workspaceMode === "user-library" && Number.isFinite(selectedImageAssetId)
+      ? createLibraryImageAssetTileId(selectedImageAssetId)
+      : selectedObjectProvider !== undefined && Number.isFinite(selectedObjectId)
+        ? createCollectionObjectTileId(selectedObjectProvider, selectedObjectId)
+        : "";
+  const selectedObjectLabel =
+    selectedObjectProvider !== undefined && Number.isFinite(selectedObjectId)
+      ? `${objectProviderDisplayLabel(selectedObjectProvider)} object ${selectedObjectId}`
+      : "Selected object";
+  const selectedObjectDetailLoadFailed =
+    shouldLoadSelectedObjectDetail && selectedObjectDetail === null;
+  const selectedObjectDetailResolved =
+    selectedObjectDetail !== null || selectedObjectDetailLoadFailed;
+  const selectedObjectNavigationHrefs =
+    workspaceMode === "search-set" &&
+    selectedObjectDetailSearchSetSlug !== null &&
+    selectedObjectProvider !== undefined &&
+    Number.isFinite(selectedObjectId)
+      ? createAdjacentObjectHrefs({
+          currentObjectId: selectedObjectId,
+          currentProvider: selectedObjectProvider,
+          items: collectionObjects,
+          createHref: (collectionObject) =>
+            createCollectionObjectHref(
+              selectedObjectDetailSearchSetSlug,
+              collectionObject,
+              filterText,
+            ),
+        })
+      : workspaceMode === "user-library" && selectedLibraryImageAsset !== null
+        ? createAdjacentObjectHrefs({
+            currentObjectId: selectedLibraryImageAsset.object_id,
+            currentProvider: selectedLibraryImageAsset.provider,
+            items: libraryImageAssets,
+            createHref: (imageAsset) =>
+              createLibraryImageAssetHref(imageAsset, filterText),
+            isCurrentItem: (imageAsset) =>
+              imageAsset.image_asset_id === selectedLibraryImageAsset.image_asset_id,
+          })
+        : { nextObjectHref: null, previousObjectHref: null };
   const selectedObjectCollectionLabels =
     workspaceMode === "user-library"
       ? selectedLibraryImageAsset?.collections.map(
@@ -891,95 +955,16 @@ export default async function Home({ searchParams }: HomeProps) {
         : [];
 
   return (
-    <div className="grid min-h-svh bg-background text-foreground lg:grid-cols-[340px_minmax(0,1fr)]">
+    <AppShell
+      activeSearchSetSlug={activeSearchSet?.slug ?? null}
+      appVersionStamp={appVersionStamp}
+      dashboardView={dashboardView}
+      filterText={filterText}
+      rows={rows}
+      workspaceMode={workspaceMode}
+    >
       <DashboardAutoRefresh enabled={shouldAutoRefreshDashboard(dashboardView.workerStatus)} />
-      <aside className="flex min-h-svh flex-col gap-5 border-r bg-card/20 p-5 lg:sticky lg:top-0 lg:h-svh lg:overflow-y-auto">
-        <div className="flex items-center gap-3">
-          <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl border bg-background font-heading text-lg font-semibold">
-            A
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="flex min-w-0 items-center gap-2">
-              <h1 className="truncate text-lg font-semibold">Anacronia</h1>
-              <Badge
-                className="h-5 shrink-0 px-1.5 font-mono text-[10px] text-muted-foreground"
-                title={appVersionStamp.title}
-                variant="outline"
-              >
-                {appVersionStamp.display}
-              </Badge>
-            </div>
-          </div>
-          <ThemeSwitch />
-        </div>
-
-        <Link
-          className={cn(
-            buttonVariants({ variant: workspaceMode === "new-search-set" ? "default" : "outline" }),
-            "h-11 w-full",
-          )}
-          href={createNewSearchSetHref(filterText)}
-        >
-          <Plus data-icon="inline-start" />
-          New Collection
-        </Link>
-
-        <Link
-          className={cn(
-            "flex flex-col gap-1 rounded-2xl border bg-card p-4 transition-colors hover:bg-muted/50",
-            workspaceMode === "user-library" && "border-ring bg-muted shadow-xs",
-          )}
-          href={createUserLibraryHref(filterText)}
-        >
-          <span className="text-sm font-medium">User Library</span>
-          <span className="text-sm text-muted-foreground">
-            {dashboardView.libraryImageCount} collected Image Asset
-            {dashboardView.libraryImageCount === 1 ? "" : "s"}
-          </span>
-        </Link>
-
-        <section className="flex flex-1 flex-col gap-3">
-          <div className="flex items-center justify-between gap-3 px-1">
-            <h2 className="text-sm font-medium text-muted-foreground">Collections</h2>
-            <Badge variant="secondary">{dashboardView.searchSets.length}</Badge>
-          </div>
-
-          <SidebarCollectionFilter
-            activeSearchSetSlug={activeSearchSet?.slug ?? null}
-            initialFilterText={filterText}
-            searchSets={dashboardView.searchSets}
-            workspaceMode={workspaceMode}
-          />
-        </section>
-
-        <Separator />
-
-        <section className="flex flex-col gap-3">
-          <div className="flex items-center gap-2 px-1">
-            <HardDrive className="size-4 text-muted-foreground" />
-            <h2 className="text-sm font-medium text-muted-foreground">Local runtime</h2>
-          </div>
-          <ItemGroup className="gap-2">
-            {rows.map((row) => (
-              <Item className="px-0 py-0" key={row.name} size="xs">
-                <ItemContent>
-                  <ItemTitle className="truncate font-normal text-muted-foreground">
-                    {row.name}
-                  </ItemTitle>
-                </ItemContent>
-                <ItemContent className="flex-none items-end">
-                  <Badge variant={statusVariant(row.state)}>
-                    {statusIcon(row.state)}
-                    {row.displayState}
-                  </Badge>
-                </ItemContent>
-              </Item>
-            ))}
-          </ItemGroup>
-        </section>
-      </aside>
-
-      <main className="min-w-0 px-5 py-6 md:px-8 lg:px-10 lg:py-9">
+      <div className="min-w-0 px-5 py-6 md:px-8 lg:px-10 lg:py-9">
         {workspaceMode === "new-search-set" ? (
           <NewSearchSetWorkspace collectAvailable={collectAvailable} />
         ) : workspaceMode === "user-library" ? (
@@ -988,6 +973,13 @@ export default async function Home({ searchParams }: HomeProps) {
             filterText={filterText}
             imageAssets={libraryImageAssets}
             imageCount={dashboardView.libraryImageCount}
+            resolvedImageAssetId={
+              workspaceMode === "user-library" &&
+              selectedObjectDetailResolved &&
+              Number.isFinite(selectedImageAssetId)
+                ? selectedImageAssetId
+                : null
+            }
           />
         ) : activeSearchSet === null ? (
           <NewSearchSetWorkspace collectAvailable={collectAvailable} />
@@ -1072,44 +1064,83 @@ export default async function Home({ searchParams }: HomeProps) {
                       </EmptyHeader>
                     </Empty>
                   ) : (
-                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7">
-                      {collectionObjects.map((collectionObject) => (
-                        <Link
-                          className="group relative block overflow-hidden rounded-2xl border bg-muted outline-none transition-colors hover:border-ring focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30"
-                          href={createCollectionObjectHref(
-                            activeSearchSet.slug,
-                            collectionObject,
-                            filterText,
-                          )}
-                          id={createCollectionObjectTileId(
-                            collectionObject.provider,
-                            collectionObject.object_id,
-                          )}
-                          key={`${collectionObject.provider}-${collectionObject.object_id}`}
-                        >
-                          <AspectRatio ratio={4 / 5}>
-                            {/* Anacronia serves already-sized local derivatives from FastAPI. */}
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img
-                              alt={collectionObject.title || `Met object ${collectionObject.object_id}`}
-                              className="absolute inset-0 size-full object-cover transition-transform duration-300 group-hover:scale-105"
-                              src={imageUrl(apiBaseUrl, collectionObject.cover_thumb_url)}
-                            />
-                            {collectionObject.has_sibling_images ? (
-                              <Badge className="absolute right-2 top-2" variant="secondary">
-                                <Images data-icon="inline-start" />
-                                {collectionObject.image_count}
+                    <div className={IMAGE_GRID_CLASS_NAME}>
+                      {collectionObjects.map((collectionObject) => {
+                        const collectionObjectProviderLabel =
+                          objectProviderDisplayLabel(collectionObject.provider);
+                        const tileId = createCollectionObjectTileId(
+                          collectionObject.provider,
+                          collectionObject.object_id,
+                        );
+                        const thumbSrc = imageUrl(
+                          apiBaseUrl,
+                          collectionObject.cover_thumb_url,
+                        );
+                        const objectAlt =
+                          collectionObject.title ||
+                          `${collectionObjectProviderLabel} object ${collectionObject.object_id}`;
+                        const tileStateKey =
+                          selectedObjectDetailResolved &&
+                          selectedObjectProvider === collectionObject.provider &&
+                          selectedObjectId === collectionObject.object_id
+                            ? "resolved"
+                            : "grid";
+
+                        return (
+                          <ObjectDetailPendingLink
+                            ariaLabel={`Open ${collectionObjectProviderLabel} object ${collectionObject.object_id}`}
+                            className={IMAGE_GRID_TILE_CLASS_NAME}
+                            closeHref={createCloseObjectHref(
+                              activeSearchSet.slug,
+                              filterText,
+                            )}
+                            href={createCollectionObjectHref(
+                              activeSearchSet.slug,
+                              collectionObject,
+                              filterText,
+                            )}
+                            id={tileId}
+                            key={`${collectionObject.provider}-${collectionObject.object_id}-${tileStateKey}`}
+                            preview={{
+                              alt: objectAlt,
+                              collectionLabel: activeSearchSet.displayName,
+                              imageCount: collectionObject.image_count,
+                              providerLabel: collectionObjectProviderLabel,
+                              src: thumbSrc,
+                            }}
+                          >
+                            <AspectRatio ratio={4 / 5}>
+                              {/* Anacronia serves already-sized local derivatives from FastAPI. */}
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                alt={objectAlt}
+                                className={IMAGE_GRID_IMAGE_CLASS_NAME}
+                                src={thumbSrc}
+                              />
+                              {collectionObject.has_sibling_images ? (
+                                <span
+                                  aria-label={`${collectionObject.image_count} images`}
+                                  className={IMAGE_GRID_CAROUSEL_INDICATOR_CLASS_NAME}
+                                >
+                                  <Images data-icon="inline-start" />
+                                  {collectionObject.image_count}
+                                </span>
+                              ) : null}
+                              <Badge
+                                className={IMAGE_GRID_PROVIDER_BADGE_CLASS_NAME}
+                                variant="secondary"
+                              >
+                                {collectionObjectProviderLabel}
                               </Badge>
-                            ) : null}
-                            <div className="absolute inset-x-0 bottom-0 translate-y-2 bg-gradient-to-t from-background via-background/85 to-transparent p-3 opacity-0 transition-all group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100">
-                              <Badge variant="secondary">Met</Badge>
-                              <p className="mt-2 line-clamp-2 text-sm font-medium">
-                                {collectionObject.title || "Untitled object"}
-                              </p>
-                            </div>
-                          </AspectRatio>
-                        </Link>
-                      ))}
+                              <div className={IMAGE_GRID_OVERLAY_CLASS_NAME}>
+                                <p className="mt-1 line-clamp-2 text-xs font-medium leading-tight">
+                                  {collectionObject.title || "Untitled object"}
+                                </p>
+                              </div>
+                            </AspectRatio>
+                          </ObjectDetailPendingLink>
+                        );
+                      })}
                     </div>
                   )}
                 </CardContent>
@@ -1120,24 +1151,22 @@ export default async function Home({ searchParams }: HomeProps) {
         {selectedObjectDetail ? (
           <CollectionObjectDetailOverlay
             apiBaseUrl={apiBaseUrl}
-            closeHref={
-              workspaceMode === "user-library"
-                ? createUserLibraryHref(filterText)
-                : createCloseObjectHref(selectedObjectDetailSearchSetSlug ?? "", filterText)
-            }
+            closeHref={selectedObjectCloseHref}
             collectionLabels={selectedObjectCollectionLabels}
             detail={selectedObjectDetail}
-            returnFocusId={
-              workspaceMode === "user-library" && Number.isFinite(selectedImageAssetId)
-                ? createLibraryImageAssetTileId(selectedImageAssetId)
-                : createCollectionObjectTileId(
-                    selectedObjectDetail.object.provider,
-                    selectedObjectDetail.object.object_id,
-                  )
-            }
+            key={`${selectedObjectDetail.object.provider}-${selectedObjectDetail.object.object_id}`}
+            nextObjectHref={selectedObjectNavigationHrefs.nextObjectHref}
+            previousObjectHref={selectedObjectNavigationHrefs.previousObjectHref}
+            returnFocusId={selectedObjectReturnFocusId}
+          />
+        ) : selectedObjectDetailLoadFailed ? (
+          <ObjectDetailErrorOverlay
+            closeHref={selectedObjectCloseHref}
+            objectLabel={selectedObjectLabel}
+            returnFocusId={selectedObjectReturnFocusId}
           />
         ) : null}
-      </main>
-    </div>
+      </div>
+    </AppShell>
   );
 }

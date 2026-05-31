@@ -2,6 +2,7 @@ import { renderToString } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { SidebarCollectionFilter } from "./sidebar-collection-filter";
+import { SidebarProvider } from "./ui/sidebar";
 import type { DashboardSearchSetView } from "@/lib/dashboard";
 
 const snakeStudy: DashboardSearchSetView = {
@@ -31,12 +32,14 @@ const masks: DashboardSearchSetView = {
 describe("SidebarCollectionFilter", () => {
   it("renders the filtered Collection list without a submit button", () => {
     const html = renderToString(
-      <SidebarCollectionFilter
-        activeSearchSetSlug="masks"
-        initialFilterText="snake"
-        searchSets={[snakeStudy, masks]}
-        workspaceMode="search-set"
-      />,
+      <SidebarProvider>
+        <SidebarCollectionFilter
+          activeSearchSetSlug="masks"
+          initialFilterText="snake"
+          searchSets={[snakeStudy, masks]}
+          workspaceMode="search-set"
+        />
+      </SidebarProvider>,
     );
 
     expect(html).toContain("Snake Study");

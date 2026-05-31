@@ -22,6 +22,7 @@ import type {
 } from "@/lib/collection-objects";
 import { imageUrl } from "@/lib/collection-objects";
 import { nextCarouselIndex, previousCarouselIndex } from "@/lib/carousel";
+import { getObjectDetailOverlayKeyAction } from "@/lib/detail-overlay-keyboard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -33,6 +34,8 @@ type CollectionObjectDetailOverlayProps = {
   closeHref: string;
   collectionLabels?: string[];
   detail: CollectionObjectDetail;
+  nextObjectHref?: string | null;
+  previousObjectHref?: string | null;
   returnFocusId: string;
 };
 
@@ -436,6 +439,10 @@ function ImageStage({
   onNextImage: () => void;
   onPreviousImage: () => void;
 }) {
+  const [loadedStandardImageSrc, setLoadedStandardImageSrc] = useState<string | null>(
+    null,
+  );
+
   if (!activeImage) {
     return (
       <figure className="grid min-h-[320px] place-items-center border-y bg-background text-sm text-muted-foreground">
@@ -444,13 +451,33 @@ function ImageStage({
     );
   }
 
+  const standardImageSrc = imageUrl(apiBaseUrl, activeImage.standard_url);
+  const thumbImageSrc = imageUrl(apiBaseUrl, activeImage.thumb_url);
+  const standardImageLoaded = loadedStandardImageSrc === standardImageSrc;
   const image = (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      alt={detail.object.title || `${providerLabel(detail.object.provider)} object ${detail.object.object_id}`}
-      className="block h-auto w-full"
-      src={imageUrl(apiBaseUrl, activeImage.standard_url)}
-    />
+    <span className="relative block min-h-[320px] w-full overflow-hidden bg-muted md:min-h-[520px]">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        alt=""
+        aria-hidden="true"
+        className={cn(
+          "absolute inset-0 size-full object-contain opacity-80 blur-[1px] transition-opacity duration-300",
+          standardImageLoaded && "opacity-0",
+        )}
+        src={thumbImageSrc}
+      />
+      <span aria-hidden="true" className="absolute inset-0 bg-background/15" />
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        alt={detail.object.title || `${providerLabel(detail.object.provider)} object ${detail.object.object_id}`}
+        className={cn(
+          "relative block h-auto w-full transition-opacity duration-300",
+          standardImageLoaded ? "opacity-100" : "opacity-0",
+        )}
+        onLoad={() => setLoadedStandardImageSrc(standardImageSrc)}
+        src={standardImageSrc}
+      />
+    </span>
   );
 
   return (
@@ -521,6 +548,8 @@ export function CollectionObjectDetailOverlay({
   closeHref,
   collectionLabels = [],
   detail,
+  nextObjectHref = null,
+  previousObjectHref = null,
   returnFocusId,
 }: CollectionObjectDetailOverlayProps) {
   const router = useRouter();
@@ -553,33 +582,74 @@ export function CollectionObjectDetailOverlay({
     setActiveImageIndex((current) => previousCarouselIndex(current, images.length));
   }, [hasMultipleImages, images.length]);
 
+  const navigateToObject = useCallback(
+    (href: string) => {
+      router.push(href);
+    },
+    [router],
+  );
+
   useEffect(() => {
     closeRef.current?.focus();
   }, []);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
+      const panel = panelRef.current;
+      const activeElement = document.activeElement;
+      if (
+        panel !== null &&
+        activeElement instanceof Node &&
+        !panel.contains(activeElement)
+      ) {
+        return;
+      }
+
+      const action = getObjectDetailOverlayKeyAction(event.key, {
+        hasMultipleImages,
+        nextObjectHref,
+        previousObjectHref,
+      });
+
+      if (action === null) {
+        return;
+      }
+
+      if (action.preventDefault) {
+        event.preventDefault();
+      }
+
+      if (action.kind === "close") {
         closeOverlay();
         return;
       }
 
-      if (!hasMultipleImages) {
+      if (action.kind === "previous-image") {
+        showPreviousImage();
         return;
       }
 
-      if (event.key === "ArrowLeft") {
-        showPreviousImage();
+      if (action.kind === "next-image") {
+        showNextImage();
+        return;
       }
 
-      if (event.key === "ArrowRight") {
-        showNextImage();
+      if (action.kind === "next-object" || action.kind === "previous-object") {
+        navigateToObject(action.href);
       }
     }
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [closeOverlay, hasMultipleImages, showNextImage, showPreviousImage]);
+  }, [
+    closeOverlay,
+    hasMultipleImages,
+    navigateToObject,
+    nextObjectHref,
+    previousObjectHref,
+    showNextImage,
+    showPreviousImage,
+  ]);
 
   function handlePanelKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
     if (event.key !== "Tab") {

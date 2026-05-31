@@ -1,8 +1,14 @@
 import { renderToString } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { UserLibraryWorkspace } from "./user-library-workspace";
 import type { LibraryImageAssetSummary } from "@/lib/collection-objects";
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({
+    push: vi.fn(),
+  }),
+}));
 
 const imageAssets: LibraryImageAssetSummary[] = [
   {

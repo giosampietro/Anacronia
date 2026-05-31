@@ -83,6 +83,8 @@ describe("CollectionObjectDetailOverlay", () => {
     const normalizedHtml = html.replace(/<!-- -->/g, "");
 
     expect(normalizedHtml).toContain("Coiled Snake Bowl");
+    expect(normalizedHtml).toContain("http://127.0.0.1:18670/image-assets/7/thumb");
+    expect(normalizedHtml).toContain("http://127.0.0.1:18670/image-assets/7/standard");
     expect(normalizedHtml).toContain("1 / 2");
     expect(normalizedHtml).toContain("Show next image");
     expect(normalizedHtml).toContain("Object facts");
