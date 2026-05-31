@@ -2,7 +2,10 @@ import { renderToString } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
 import { UserLibraryWorkspace } from "./user-library-workspace";
-import type { LibraryImageAssetSummary } from "@/lib/collection-objects";
+import type {
+  LibraryImageAssetSummary,
+  LibraryObjectSummary,
+} from "@/lib/collection-objects";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
@@ -50,21 +53,59 @@ const imageAssets: LibraryImageAssetSummary[] = [
   },
 ];
 
+const objects: LibraryObjectSummary[] = [
+  {
+    provider: "met",
+    object_id: 40,
+    title: "Coiled Snake Bowl",
+    object_name: "Bowl",
+    artist_display_name: "Unknown maker",
+    image_count: 3,
+    cover_image_asset_id: 9,
+    cover_original_width: 1600,
+    cover_original_height: 800,
+    cover_thumb_url: "/image-assets/9/thumb",
+    has_sibling_images: true,
+    collections: [
+      { slug: "snake-study", display_name: "Snake Study" },
+      { slug: "serpent-study", display_name: "Serpent Study" },
+    ],
+  },
+  {
+    provider: "met",
+    object_id: 20,
+    title: "Snake Vessel",
+    object_name: "Vessel",
+    artist_display_name: "Met Workshop",
+    image_count: 1,
+    cover_image_asset_id: 4,
+    cover_original_width: 1200,
+    cover_original_height: 1600,
+    cover_thumb_url: "/image-assets/4/thumb",
+    has_sibling_images: false,
+    collections: [{ slug: "snake-study", display_name: "Snake Study" }],
+  },
+];
+
 describe("UserLibraryWorkspace", () => {
-  it("renders a populated image grid when the library has Image Assets", () => {
+  it("renders image mode as one tile per Image Asset without sibling carousel badges", () => {
     const html = renderToString(
       <UserLibraryWorkspace
         apiBaseUrl="http://127.0.0.1:18670"
         filterText=""
+        gridViewMode="images"
         imageAssets={imageAssets}
         imageCount={2}
+        objects={objects}
       />,
     );
 
     expect(html).toContain("Snake Study");
     expect(html).toContain("Serpent Study");
-    expect(html).toContain(">3</");
+    expect(html).not.toContain(">3</");
     expect(html).toContain("Met");
+    expect(html).toContain("/?mode=user-library&amp;image=9");
+    expect(html).toContain("/?mode=user-library&amp;image=4");
     expect(html).toContain("http://127.0.0.1:18670/image-assets/9/thumb");
     expect(html).toContain('loading="lazy"');
     expect(html).toContain('decoding="async"');
@@ -76,13 +117,33 @@ describe("UserLibraryWorkspace", () => {
     expect(html).not.toContain("No library grid yet");
   });
 
+  it("renders object mode as unique Museum Object tiles with carousel indicators", () => {
+    const html = renderToString(
+      <UserLibraryWorkspace
+        apiBaseUrl="http://127.0.0.1:18670"
+        filterText=""
+        gridViewMode="objects"
+        imageAssets={imageAssets}
+        imageCount={2}
+        objects={objects}
+      />,
+    );
+
+    expect(html).toContain("/?mode=user-library&amp;search_set=snake-study&amp;view=objects&amp;object=met%3A40");
+    expect(html).toContain("/?mode=user-library&amp;search_set=snake-study&amp;view=objects&amp;object=met%3A20");
+    expect(html).toContain("3 images");
+    expect(html).toContain("Coiled Snake Bowl");
+  });
+
   it("renders the true empty library state only when no Image Assets exist", () => {
     const html = renderToString(
       <UserLibraryWorkspace
         apiBaseUrl="http://127.0.0.1:18670"
         filterText=""
+        gridViewMode="images"
         imageAssets={[]}
         imageCount={0}
+        objects={[]}
       />,
     );
 
@@ -95,8 +156,10 @@ describe("UserLibraryWorkspace", () => {
       <UserLibraryWorkspace
         apiBaseUrl="http://127.0.0.1:18670"
         filterText="cobra"
+        gridViewMode="images"
         imageAssets={[]}
         imageCount={2}
+        objects={[]}
       />,
     );
 

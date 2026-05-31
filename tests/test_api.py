@@ -835,6 +835,59 @@ def test_api_paginates_collection_objects_with_total_count(tmp_path):
     }
 
 
+def test_api_returns_collection_image_assets_newest_first(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            met_candidate_client=FakeMetGridCandidateClient(),
+            met_record_client=FakeMetGridRecordClient(),
+            download_image_bytes=lambda _url: ppm_image_bytes(width=1600, height=800),
+        )
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Snake Study", "terms_text": "snake"},
+    )
+    run_response = client.post(
+        "/search-sets/snake-study/provider-collections/met/runs",
+        json={"candidate_offset": 0, "candidate_limit": 2},
+    )
+    client.post(f"/provider-collections/met/runs/{run_response.json()['run_id']}/ingest")
+
+    response = client.get("/search-sets/snake-study/image-assets")
+
+    assert response.status_code == 200
+    image_assets = response.json()["image_assets"]
+    assert [asset["object_id"] for asset in image_assets] == [40, 40, 40, 20]
+    assert len({asset["image_asset_id"] for asset in image_assets}) == 4
+    assert image_assets[0] == {
+        "image_asset_id": image_assets[0]["image_asset_id"],
+        "provider": "met",
+        "object_id": 40,
+        "title": "Coiled Snake Bowl",
+        "object_name": "Bowl",
+        "artist_display_name": "Unknown maker",
+        "image_role": "additional",
+        "image_index": 2,
+        "original_width": 1600,
+        "original_height": 800,
+        "image_count": 3,
+        "has_sibling_images": True,
+        "thumb_url": f"/image-assets/{image_assets[0]['image_asset_id']}/thumb",
+        "standard_url": f"/image-assets/{image_assets[0]['image_asset_id']}/standard",
+        "collections": [{"slug": "snake-study", "display_name": "Snake Study"}],
+    }
+    assert response.json()["pagination"] == {
+        "total": 4,
+        "count": 4,
+        "limit": None,
+        "offset": 0,
+        "has_more": False,
+    }
+
+
 def test_api_returns_user_library_image_assets_once_with_collection_membership(tmp_path):
     storage = initialize_storage(project_root=tmp_path)
 
@@ -911,6 +964,74 @@ def test_api_returns_user_library_image_assets_once_with_collection_membership(t
         40,
         40,
     ]
+
+
+def test_api_returns_user_library_objects_once_with_collection_membership(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+
+    class SharedLibraryCandidateClient:
+        def search_object_ids(self, term: str) -> list[int]:
+            return {
+                "snake": [20, 40],
+                "bowl": [40],
+            }[term]
+
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            met_candidate_client=SharedLibraryCandidateClient(),
+            met_record_client=FakeMetGridRecordClient(),
+            download_image_bytes=lambda _url: ppm_image_bytes(width=1600, height=800),
+        )
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Snake Study", "terms_text": "snake"},
+    )
+    snake_run_response = client.post(
+        "/search-sets/snake-study/provider-collections/met/runs",
+        json={"candidate_offset": 0, "candidate_limit": 2},
+    )
+    client.post(f"/provider-collections/met/runs/{snake_run_response.json()['run_id']}/ingest")
+    client.post(
+        "/search-sets",
+        json={"display_name": "Bowl Study", "terms_text": "bowl"},
+    )
+    bowl_run_response = client.post(
+        "/search-sets/bowl-study/provider-collections/met/runs",
+        json={"candidate_offset": 0, "candidate_limit": 1},
+    )
+    client.post(f"/provider-collections/met/runs/{bowl_run_response.json()['run_id']}/ingest")
+
+    response = client.get("/library/objects")
+
+    assert response.status_code == 200
+    objects = response.json()["objects"]
+    assert [museum_object["object_id"] for museum_object in objects] == [40, 20]
+    assert objects[0] == {
+        "provider": "met",
+        "object_id": 40,
+        "title": "Coiled Snake Bowl",
+        "object_name": "Bowl",
+        "artist_display_name": "Unknown maker",
+        "image_count": 3,
+        "cover_image_asset_id": objects[0]["cover_image_asset_id"],
+        "cover_original_width": 1600,
+        "cover_original_height": 800,
+        "cover_thumb_url": f"/image-assets/{objects[0]['cover_image_asset_id']}/thumb",
+        "has_sibling_images": True,
+        "collections": [
+            {"slug": "bowl-study", "display_name": "Bowl Study"},
+            {"slug": "snake-study", "display_name": "Snake Study"},
+        ],
+    }
+    assert len({(museum_object["provider"], museum_object["object_id"]) for museum_object in objects}) == 2
+
+    filtered_response = client.get("/library/objects?filter=Bowl%20Study")
+
+    assert filtered_response.status_code == 200
+    assert [museum_object["object_id"] for museum_object in filtered_response.json()["objects"]] == [40]
 
 
 def test_api_paginates_filtered_user_library_after_searching_all_assets(tmp_path):

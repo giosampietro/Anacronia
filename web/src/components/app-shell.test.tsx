@@ -46,6 +46,9 @@ describe("AppShell", () => {
         contentHeaderObjectCount={12}
         dashboardView={dashboardView}
         filterText=""
+        gridViewImageHref="/?search_set=intaglio&view=images"
+        gridViewMode="objects"
+        gridViewObjectHref="/?search_set=intaglio"
         rows={rows}
         workspaceMode="search-set"
       >
@@ -54,6 +57,9 @@ describe("AppShell", () => {
     ));
 
     expect(html).toContain("INTAGLIO");
+    expect(html).toContain("Show Objects");
+    expect(html).toContain("Show Images");
+    expect(html).toContain("/?search_set=intaglio&amp;view=images");
     expect(html).toContain("12 objects");
     expect(html).toContain("38 images");
   });

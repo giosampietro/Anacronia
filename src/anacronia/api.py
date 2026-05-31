@@ -21,9 +21,12 @@ from anacronia.collection_objects import (
     CollectionObjectSummary,
     LibraryImageAssetCollection,
     LibraryImageAssetSummary,
+    LibraryObjectSummary,
     get_collection_object_detail,
     get_image_asset_derivative_path,
+    list_collection_image_assets,
     list_library_image_assets,
+    list_library_objects,
     list_collection_objects,
 )
 from anacronia.dashboard import OperationalDashboard, get_operational_dashboard
@@ -296,6 +299,28 @@ def serialize_library_image_asset_collection(
     }
 
 
+def serialize_library_object_summary(
+    library_object: LibraryObjectSummary,
+) -> dict[str, object]:
+    return {
+        "provider": library_object.provider,
+        "object_id": library_object.object_id,
+        "title": library_object.title,
+        "object_name": library_object.object_name,
+        "artist_display_name": library_object.artist_display_name,
+        "image_count": library_object.image_count,
+        "cover_image_asset_id": library_object.cover_image_asset_id,
+        "cover_original_width": library_object.cover_original_width,
+        "cover_original_height": library_object.cover_original_height,
+        "cover_thumb_url": f"/image-assets/{library_object.cover_image_asset_id}/thumb",
+        "has_sibling_images": library_object.image_count > 1,
+        "collections": [
+            serialize_library_image_asset_collection(collection)
+            for collection in library_object.collections
+        ],
+    }
+
+
 def serialize_library_image_asset_summary(
     image_asset: LibraryImageAssetSummary,
 ) -> dict[str, object]:
@@ -465,6 +490,28 @@ def create_app(
             "pagination": pagination,
         }
 
+    @app.get("/library/objects")
+    def get_library_objects(
+        filter: str = "",
+        limit: GridPageLimit = None,
+        offset: GridPageOffset = 0,
+    ) -> dict[str, object]:
+        library_objects, pagination = paginate_grid_items(
+            list_library_objects(
+                database_path=resolved_database_path,
+                filter_text=filter,
+            ),
+            limit=limit,
+            offset=offset,
+        )
+        return {
+            "objects": [
+                serialize_library_object_summary(library_object)
+                for library_object in library_objects
+            ],
+            "pagination": pagination,
+        }
+
     @app.get("/search-sets/{slug}/objects")
     def get_collection_objects(
         slug: str,
@@ -483,6 +530,28 @@ def create_app(
             "objects": [
                 serialize_collection_object_summary(collection_object)
                 for collection_object in collection_objects
+            ],
+            "pagination": pagination,
+        }
+
+    @app.get("/search-sets/{slug}/image-assets")
+    def get_collection_image_assets(
+        slug: str,
+        limit: GridPageLimit = None,
+        offset: GridPageOffset = 0,
+    ) -> dict[str, object]:
+        image_assets, pagination = paginate_grid_items(
+            list_collection_image_assets(
+                database_path=resolved_database_path,
+                search_set_slug=slug,
+            ),
+            limit=limit,
+            offset=offset,
+        )
+        return {
+            "image_assets": [
+                serialize_library_image_asset_summary(image_asset)
+                for image_asset in image_assets
             ],
             "pagination": pagination,
         }

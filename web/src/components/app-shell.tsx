@@ -16,6 +16,10 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
 import {
+  ToggleGroup,
+  ToggleGroupItem,
+} from "@/components/ui/toggle-group";
+import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
@@ -35,6 +39,7 @@ import {
 } from "@/components/ui/sidebar";
 import type { AppVersionStamp } from "@/lib/app-version";
 import type { OperationalDashboardView } from "@/lib/dashboard";
+import type { GridViewMode } from "@/lib/grid-view";
 import type { StatusRow } from "@/lib/status";
 import type { WorkspaceMode } from "@/lib/workspace";
 import {
@@ -50,6 +55,9 @@ type AppShellProps = {
   contentHeaderObjectCount?: number;
   dashboardView: OperationalDashboardView;
   filterText: string;
+  gridViewImageHref?: string;
+  gridViewMode?: GridViewMode;
+  gridViewObjectHref?: string;
   rows: StatusRow[];
   workspaceMode: WorkspaceMode;
 };
@@ -86,6 +94,42 @@ function workspaceLabel({
 
 function shouldShowContentCounts(workspaceMode: WorkspaceMode): boolean {
   return workspaceMode === "search-set" || workspaceMode === "user-library";
+}
+
+function GridViewSwitch({
+  imageHref,
+  objectHref,
+  viewMode,
+}: {
+  imageHref: string;
+  objectHref: string;
+  viewMode: GridViewMode;
+}) {
+  return (
+    <ToggleGroup
+      aria-label="Grid view"
+      className="shrink-0"
+      size="sm"
+      spacing={0}
+      value={[viewMode]}
+      variant="outline"
+    >
+      <ToggleGroupItem
+        aria-label="Show Objects"
+        render={<Link href={objectHref} scroll={false} />}
+        value="objects"
+      >
+        Objects
+      </ToggleGroupItem>
+      <ToggleGroupItem
+        aria-label="Show Images"
+        render={<Link href={imageHref} scroll={false} />}
+        value="images"
+      >
+        Images
+      </ToggleGroupItem>
+    </ToggleGroup>
+  );
 }
 
 function BrandHeader() {
@@ -198,6 +242,9 @@ export function AppShell({
   contentHeaderObjectCount = 0,
   dashboardView,
   filterText,
+  gridViewImageHref,
+  gridViewMode,
+  gridViewObjectHref,
   rows,
   workspaceMode,
 }: AppShellProps) {
@@ -230,6 +277,13 @@ export function AppShell({
           </div>
           {shouldShowContentCounts(workspaceMode) ? (
             <div className="flex shrink-0 flex-wrap items-center gap-2">
+              {gridViewMode && gridViewObjectHref && gridViewImageHref ? (
+                <GridViewSwitch
+                  imageHref={gridViewImageHref}
+                  objectHref={gridViewObjectHref}
+                  viewMode={gridViewMode}
+                />
+              ) : null}
               <Badge className="shrink-0 tabular-nums" variant="outline">
                 {contentHeaderObjectCount} objects
               </Badge>

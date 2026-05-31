@@ -76,6 +76,20 @@ class LibraryImageAssetCollection:
 
 
 @dataclass(frozen=True)
+class LibraryObjectSummary:
+    provider: str
+    object_id: int
+    title: str
+    object_name: str
+    artist_display_name: str
+    image_count: int
+    cover_image_asset_id: int
+    cover_original_width: int
+    cover_original_height: int
+    collections: list[LibraryImageAssetCollection]
+
+
+@dataclass(frozen=True)
 class LibraryImageAssetSummary:
     image_asset_id: int
     provider: str
@@ -335,6 +349,224 @@ def list_library_image_assets(
     ]
 
 
+def list_collection_image_assets(
+    *,
+    database_path: Path,
+    search_set_slug: str,
+) -> list[LibraryImageAssetSummary]:
+    with sqlite3.connect(database_path) as connection:
+        ensure_collection_run_schema(connection)
+        ensure_met_ingest_schema(connection)
+        rows = connection.execute(
+            """
+            SELECT DISTINCT
+              image_assets.id,
+              image_assets.provider,
+              image_assets.object_id,
+              museum_objects.title,
+              museum_objects.object_name,
+              museum_objects.artist_display_name,
+              image_assets.image_role,
+              image_assets.image_index,
+              image_assets.original_width,
+              image_assets.original_height,
+              (
+                SELECT COUNT(*)
+                FROM image_assets AS sibling_image_assets
+                WHERE
+                  sibling_image_assets.provider = image_assets.provider
+                  AND sibling_image_assets.object_id = image_assets.object_id
+                  AND sibling_image_assets.imported = 1
+              ) AS image_count,
+              search_sets.slug,
+              search_sets.display_name
+            FROM image_assets
+            JOIN museum_objects
+              ON museum_objects.provider = image_assets.provider
+              AND museum_objects.object_id = image_assets.object_id
+            JOIN object_matches
+              ON object_matches.provider = image_assets.provider
+              AND object_matches.object_id = image_assets.object_id
+            JOIN collection_runs
+              ON collection_runs.id = object_matches.run_id
+            JOIN provider_collections
+              ON provider_collections.id = collection_runs.provider_collection_id
+              AND provider_collections.provider = image_assets.provider
+            JOIN search_sets
+              ON search_sets.id = provider_collections.search_set_id
+            WHERE
+              search_sets.slug = ?
+              AND image_assets.imported = 1
+            ORDER BY image_assets.id DESC
+            """,
+            (search_set_slug,),
+        ).fetchall()
+
+    return [
+        LibraryImageAssetSummary(
+            image_asset_id=int(row[0]),
+            provider=row[1],
+            object_id=int(row[2]),
+            title=row[3],
+            object_name=row[4],
+            artist_display_name=row[5],
+            image_role=row[6],
+            image_index=row[7],
+            original_width=int(row[8]),
+            original_height=int(row[9]),
+            image_count=int(row[10]),
+            collections=[
+                LibraryImageAssetCollection(
+                    slug=row[11],
+                    display_name=row[12],
+                )
+            ],
+        )
+        for row in rows
+    ]
+
+
+def list_library_objects(
+    *,
+    database_path: Path,
+    filter_text: str = "",
+) -> list[LibraryObjectSummary]:
+    with sqlite3.connect(database_path) as connection:
+        ensure_collection_run_schema(connection)
+        ensure_met_ingest_schema(connection)
+        object_rows = connection.execute(
+            """
+            WITH imported_image_assets AS (
+              SELECT
+                id,
+                provider,
+                object_id,
+                image_role,
+                image_index,
+                original_width,
+                original_height
+              FROM image_assets
+              WHERE imported = 1
+            )
+            SELECT
+              imported_image_assets.provider,
+              imported_image_assets.object_id,
+              museum_objects.title,
+              museum_objects.object_name,
+              museum_objects.artist_display_name,
+              COUNT(imported_image_assets.id) AS image_count,
+              (
+                SELECT cover.id
+                FROM imported_image_assets AS cover
+                WHERE
+                  cover.provider = imported_image_assets.provider
+                  AND cover.object_id = imported_image_assets.object_id
+                ORDER BY
+                  CASE WHEN cover.image_role = 'primary' THEN 0 ELSE 1 END,
+                  COALESCE(cover.image_index, 0),
+                  cover.id
+                LIMIT 1
+              ) AS cover_image_asset_id,
+              (
+                SELECT cover.original_width
+                FROM imported_image_assets AS cover
+                WHERE
+                  cover.provider = imported_image_assets.provider
+                  AND cover.object_id = imported_image_assets.object_id
+                ORDER BY
+                  CASE WHEN cover.image_role = 'primary' THEN 0 ELSE 1 END,
+                  COALESCE(cover.image_index, 0),
+                  cover.id
+                LIMIT 1
+              ) AS cover_original_width,
+              (
+                SELECT cover.original_height
+                FROM imported_image_assets AS cover
+                WHERE
+                  cover.provider = imported_image_assets.provider
+                  AND cover.object_id = imported_image_assets.object_id
+                ORDER BY
+                  CASE WHEN cover.image_role = 'primary' THEN 0 ELSE 1 END,
+                  COALESCE(cover.image_index, 0),
+                  cover.id
+                LIMIT 1
+              ) AS cover_original_height,
+              MAX(imported_image_assets.id) AS latest_image_asset_id
+            FROM imported_image_assets
+            JOIN museum_objects
+              ON museum_objects.provider = imported_image_assets.provider
+              AND museum_objects.object_id = imported_image_assets.object_id
+            GROUP BY
+              imported_image_assets.provider,
+              imported_image_assets.object_id,
+              museum_objects.title,
+              museum_objects.object_name,
+              museum_objects.artist_display_name
+            ORDER BY latest_image_asset_id DESC
+            """
+        ).fetchall()
+        collection_rows = connection.execute(
+            """
+            SELECT DISTINCT
+              image_assets.provider,
+              image_assets.object_id,
+              search_sets.slug,
+              search_sets.display_name
+            FROM image_assets
+            JOIN object_matches
+              ON object_matches.provider = image_assets.provider
+              AND object_matches.object_id = image_assets.object_id
+            JOIN collection_runs
+              ON collection_runs.id = object_matches.run_id
+            JOIN provider_collections
+              ON provider_collections.id = collection_runs.provider_collection_id
+              AND provider_collections.provider = image_assets.provider
+            JOIN search_sets
+              ON search_sets.id = provider_collections.search_set_id
+            WHERE image_assets.imported = 1
+            ORDER BY
+              image_assets.provider,
+              image_assets.object_id,
+              search_sets.display_name
+            """
+        ).fetchall()
+
+    collections_by_object: dict[tuple[str, int], list[LibraryImageAssetCollection]] = {}
+    for row in collection_rows:
+        key = (row[0], int(row[1]))
+        collections_by_object.setdefault(key, []).append(
+            LibraryImageAssetCollection(
+                slug=row[2],
+                display_name=row[3],
+            )
+        )
+
+    library_objects = [
+        LibraryObjectSummary(
+            provider=row[0],
+            object_id=int(row[1]),
+            title=row[2],
+            object_name=row[3],
+            artist_display_name=row[4],
+            image_count=int(row[5]),
+            cover_image_asset_id=int(row[6]),
+            cover_original_width=int(row[7]),
+            cover_original_height=int(row[8]),
+            collections=collections_by_object.get((row[0], int(row[1])), []),
+        )
+        for row in object_rows
+    ]
+
+    return [
+        library_object
+        for library_object in library_objects
+        if library_object_matches_filter(
+            library_object=library_object,
+            filter_text=filter_text,
+        )
+    ]
+
+
 def library_image_asset_matches_filter(
     *,
     image_asset: LibraryImageAssetSummary,
@@ -355,6 +587,31 @@ def library_image_asset_matches_filter(
             *(
                 f"{collection.display_name} {collection.slug}"
                 for collection in image_asset.collections
+            ),
+        ]
+    ).lower()
+    return normalized_filter in haystack
+
+
+def library_object_matches_filter(
+    *,
+    library_object: LibraryObjectSummary,
+    filter_text: str,
+) -> bool:
+    normalized_filter = filter_text.strip().lower()
+    if normalized_filter == "":
+        return True
+
+    haystack = " ".join(
+        [
+            library_object.provider,
+            str(library_object.object_id),
+            library_object.title,
+            library_object.object_name,
+            library_object.artist_display_name,
+            *(
+                f"{collection.display_name} {collection.slug}"
+                for collection in library_object.collections
             ),
         ]
     ).lower()

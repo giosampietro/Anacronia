@@ -11,6 +11,12 @@ type CreateAdjacentObjectHrefsOptions<TItem extends ObjectNavigationItem> = {
   items: TItem[];
 };
 
+type CreateAdjacentItemHrefsOptions<TItem> = {
+  createHref: (item: TItem) => string;
+  isCurrentItem: (item: TItem) => boolean;
+  items: TItem[];
+};
+
 export function createAdjacentObjectHrefs<TItem extends ObjectNavigationItem>(
   options: CreateAdjacentObjectHrefsOptions<TItem>,
 ) {
@@ -29,6 +35,27 @@ export function createAdjacentObjectHrefs<TItem extends ObjectNavigationItem>(
 
   const nextItem = findAdjacentObjectItem(options.items, currentIndex, 1);
   const previousItem = findAdjacentObjectItem(options.items, currentIndex, -1);
+
+  return {
+    nextObjectHref: nextItem ? options.createHref(nextItem) : null,
+    previousObjectHref: previousItem ? options.createHref(previousItem) : null,
+  };
+}
+
+export function createAdjacentItemHrefs<TItem>(
+  options: CreateAdjacentItemHrefsOptions<TItem>,
+) {
+  const currentIndex = options.items.findIndex(options.isCurrentItem);
+
+  if (currentIndex === -1) {
+    return {
+      nextObjectHref: null,
+      previousObjectHref: null,
+    };
+  }
+
+  const previousItem = options.items[currentIndex - 1];
+  const nextItem = options.items[currentIndex + 1];
 
   return {
     nextObjectHref: nextItem ? options.createHref(nextItem) : null,

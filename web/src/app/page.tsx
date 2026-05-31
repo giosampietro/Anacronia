@@ -6,20 +6,25 @@ import { DashboardAutoRefresh } from "@/components/dashboard-auto-refresh";
 import { BatchTargetControl } from "@/components/batch-target-control";
 import { CollectionExportForm } from "@/components/collection-export-form";
 import { CollectionObjectDetailOverlay } from "@/components/collection-object-detail-overlay";
-import { ImageGridThumbnail } from "@/components/image-grid-thumbnail";
+import {
+  CollectionResultsGrid,
+  createCollectionImageAssetTileId,
+  createCollectionObjectTileId,
+} from "@/components/collection-results-grid";
+import { ImageAssetDetailOverlay } from "@/components/image-asset-detail-overlay";
 import { NewCollectionForm } from "@/components/new-collection-form";
 import {
   ObjectDetailErrorOverlay,
-  ObjectDetailPendingLink,
 } from "@/components/object-detail-pending-link";
 import { ProviderSearchActionButton } from "@/components/provider-search-action-button";
 import {
   createLibraryImageAssetHref,
   createLibraryImageAssetTileId,
+  createLibraryObjectHref,
+  createLibraryObjectTileId,
   UserLibraryWorkspace,
 } from "@/components/user-library-workspace";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { AspectRatio } from "@/components/ui/aspect-ratio";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -31,13 +36,6 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty";
-import {
   Item,
   ItemContent,
   ItemGroup,
@@ -48,9 +46,7 @@ import {
   Activity,
   CircleAlert,
   CircleCheck,
-  Database,
   Download,
-  Images,
 } from "lucide-react";
 
 import {
@@ -60,18 +56,11 @@ import {
   type OperationalDashboard,
 } from "@/lib/dashboard";
 import {
-  imageUrl,
   type CollectionObjectDetail,
   type CollectionObjectSummary,
   type LibraryImageAssetSummary,
+  type LibraryObjectSummary,
 } from "@/lib/collection-objects";
-import {
-  IMAGE_GRID_CAROUSEL_INDICATOR_CLASS_NAME,
-  IMAGE_GRID_CLASS_NAME,
-  IMAGE_GRID_OVERLAY_CLASS_NAME,
-  IMAGE_GRID_PROVIDER_BADGE_CLASS_NAME,
-  IMAGE_GRID_TILE_CLASS_NAME,
-} from "@/lib/image-grid-style";
 import { shouldAutoRefreshDashboard } from "@/lib/dashboard-refresh";
 import { DEFAULT_BATCH_TARGET, normalizeBatchTarget } from "@/lib/candidate-limits";
 import {
@@ -97,11 +86,19 @@ import { createStatusRows } from "@/lib/status";
 import type { ApiHealth } from "@/lib/status";
 import { cn } from "@/lib/utils";
 import {
-  createUserLibraryHref,
+  createGridStateHref,
+  createGridViewMode,
+  parseObjectRouteKey,
+  type GridViewMode,
+} from "@/lib/grid-view";
+import {
   createWorkspaceMode,
   getFirstParam,
 } from "@/lib/workspace";
-import { createAdjacentObjectHrefs } from "@/lib/object-navigation";
+import {
+  createAdjacentItemHrefs,
+  createAdjacentObjectHrefs,
+} from "@/lib/object-navigation";
 
 const DEFAULT_UI_PORT = 18660;
 const DEFAULT_API_PORT = 18670;
@@ -115,11 +112,14 @@ type HomeProps = {
     export_rows?: string | string[];
     export_skipped?: string | string[];
     filter?: string | string[];
+    image?: string | string[];
     image_asset_id?: string | string[];
     mode?: string | string[];
+    object?: string | string[];
     object_id?: string | string[];
     object_provider?: string | string[];
     search_set?: string | string[];
+    view?: string | string[];
   }>;
 };
 
@@ -196,6 +196,53 @@ async function getCollectionObjects(
   }
 }
 
+async function getCollectionImageAssets(
+  apiPort: number,
+  slug: string,
+): Promise<LibraryImageAssetSummary[]> {
+  try {
+    const response = await fetch(`http://127.0.0.1:${apiPort}/search-sets/${slug}/image-assets`, {
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      return [];
+    }
+
+    const payload = (await response.json()) as { image_assets: LibraryImageAssetSummary[] };
+    return payload.image_assets;
+  } catch {
+    return [];
+  }
+}
+
+async function getLibraryObjects(
+  apiPort: number,
+  filterText: string,
+): Promise<LibraryObjectSummary[]> {
+  const params = new URLSearchParams();
+  if (filterText.trim() !== "") {
+    params.set("filter", filterText.trim());
+  }
+  const query = params.toString();
+  const path = query === "" ? "/library/objects" : `/library/objects?${query}`;
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${apiPort}${path}`, {
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      return [];
+    }
+
+    const payload = (await response.json()) as { objects: LibraryObjectSummary[] };
+    return payload.objects;
+  } catch {
+    return [];
+  }
+}
+
 async function getLibraryImageAssets(
   apiPort: number,
   filterText: string,
@@ -247,32 +294,34 @@ async function getCollectionObjectDetail(
 
 function createCollectionObjectHref(
   slug: string,
-  collectionObject: CollectionObjectSummary,
+  collectionObject: CollectionObjectSummary | LibraryImageAssetSummary,
+  filterText: string,
+  viewMode: GridViewMode,
+): string {
+  return createGridStateHref({
+    filterText,
+    object: {
+      objectId: collectionObject.object_id,
+      provider: collectionObject.provider,
+    },
+    searchSetSlug: slug,
+    viewMode,
+    workspaceMode: "search-set",
+  });
+}
+
+function createCollectionImageAssetHref(
+  slug: string,
+  imageAsset: LibraryImageAssetSummary,
   filterText: string,
 ): string {
-  const params = new URLSearchParams({
-    search_set: slug,
-    object_provider: collectionObject.provider,
-    object_id: String(collectionObject.object_id),
+  return createGridStateHref({
+    filterText,
+    imageAssetId: imageAsset.image_asset_id,
+    searchSetSlug: slug,
+    viewMode: "images",
+    workspaceMode: "search-set",
   });
-  if (filterText) {
-    params.set("filter", filterText);
-  }
-
-  return `/?${params.toString()}`;
-}
-
-function createCloseObjectHref(slug: string, filterText: string): string {
-  const params = new URLSearchParams({ search_set: slug });
-  if (filterText) {
-    params.set("filter", filterText);
-  }
-
-  return `/?${params.toString()}`;
-}
-
-function createCollectionObjectTileId(provider: string, objectId: number): string {
-  return `collection-object-${provider}-${objectId}`;
 }
 
 function objectProviderDisplayLabel(provider: string): string {
@@ -281,12 +330,6 @@ function objectProviderDisplayLabel(provider: string): string {
   }
 
   return provider.trim() || "Unknown";
-}
-
-function countLibraryObjects(imageAssets: LibraryImageAssetSummary[]): number {
-  return new Set(
-    imageAssets.map((imageAsset) => `${imageAsset.provider}:${imageAsset.object_id}`),
-  ).size;
 }
 
 async function createSearchSetAndCollectFromMet(formData: FormData) {
@@ -828,22 +871,36 @@ export default async function Home({ searchParams }: HomeProps) {
   const collectNoticeCode = getFirstParam(resolvedSearchParams?.collect_notice);
   const exportError = getFirstParam(resolvedSearchParams?.export_error) ?? "";
   const exportFormat = collectionExportFormatFromParam(
-    getFirstParam(resolvedSearchParams?.export_format) ?? ""
+    getFirstParam(resolvedSearchParams?.export_format) ?? "",
   );
   const exportPath = getFirstParam(resolvedSearchParams?.export_path) ?? "";
   const exportRows = getFirstParam(resolvedSearchParams?.export_rows) ?? "";
   const exportSkipped = getFirstParam(resolvedSearchParams?.export_skipped) ?? "";
   const requestedWorkspaceMode = getFirstParam(resolvedSearchParams?.mode);
+  const requestedGridViewMode = getFirstParam(resolvedSearchParams?.view);
   const activeSearchSetSlug = getFirstParam(resolvedSearchParams?.search_set);
-  const selectedObjectProvider = getFirstParam(resolvedSearchParams?.object_provider);
-  const selectedObjectId = Number.parseInt(
+  const legacyObjectProvider = getFirstParam(resolvedSearchParams?.object_provider);
+  const legacyObjectId = Number.parseInt(
     getFirstParam(resolvedSearchParams?.object_id) ?? "",
     10,
   );
+  const selectedObjectRoute =
+    parseObjectRouteKey(getFirstParam(resolvedSearchParams?.object)) ??
+    (legacyObjectProvider !== undefined && Number.isFinite(legacyObjectId)
+      ? { objectId: legacyObjectId, provider: legacyObjectProvider }
+      : null);
   const selectedImageAssetId = Number.parseInt(
-    getFirstParam(resolvedSearchParams?.image_asset_id) ?? "",
+    getFirstParam(resolvedSearchParams?.image) ??
+      getFirstParam(resolvedSearchParams?.image_asset_id) ??
+      "",
     10,
   );
+  const selectedDetailKind =
+    selectedObjectRoute !== null
+      ? "object"
+      : Number.isFinite(selectedImageAssetId)
+        ? "image"
+        : null;
   const uiPort = getPort("ANACRONIA_UI_PORT", DEFAULT_UI_PORT);
   const apiPort = getPort("ANACRONIA_API_PORT", DEFAULT_API_PORT);
   const apiBaseUrl = `http://127.0.0.1:${apiPort}`;
@@ -858,6 +915,7 @@ export default async function Home({ searchParams }: HomeProps) {
   const activeSearchSet = dashboardView.activeSearchSet;
   const collectAvailable = canStartCollect(dashboardView.workerStatus);
   const workspaceMode = createWorkspaceMode(requestedWorkspaceMode, activeSearchSet);
+  const gridViewMode = createGridViewMode(requestedGridViewMode, workspaceMode);
   const activeProviderCollections = activeSearchSet?.providerCollections ?? [];
   const exportAvailability =
     activeSearchSet === null
@@ -873,87 +931,192 @@ export default async function Home({ searchParams }: HomeProps) {
     activeSearchSet === null || workspaceMode !== "search-set"
       ? []
       : await getCollectionObjects(apiPort, activeSearchSet.slug);
+  const collectionImageAssets =
+    activeSearchSet === null || workspaceMode !== "search-set"
+      ? []
+      : await getCollectionImageAssets(apiPort, activeSearchSet.slug);
+  const libraryObjects =
+    workspaceMode === "user-library"
+      ? await getLibraryObjects(apiPort, filterText)
+      : [];
   const libraryImageAssets =
     workspaceMode === "user-library"
       ? await getLibraryImageAssets(apiPort, filterText)
       : [];
+  const activeImageAssets =
+    workspaceMode === "search-set"
+      ? collectionImageAssets
+      : workspaceMode === "user-library"
+        ? libraryImageAssets
+        : [];
+  const selectedCollectionImageAsset =
+    selectedDetailKind === "image" && gridViewMode === "images"
+      ? collectionImageAssets.find(
+          (imageAsset) => imageAsset.image_asset_id === selectedImageAssetId,
+        ) ?? null
+      : null;
   const selectedLibraryImageAsset =
-    workspaceMode === "user-library" && Number.isFinite(selectedImageAssetId)
+    selectedDetailKind === "image" && gridViewMode === "images"
       ? libraryImageAssets.find(
           (imageAsset) => imageAsset.image_asset_id === selectedImageAssetId,
+        ) ?? null
+      : null;
+  const selectedActiveImageAsset =
+    workspaceMode === "search-set"
+      ? selectedCollectionImageAsset
+      : selectedLibraryImageAsset;
+  const selectedLibraryObject =
+    workspaceMode === "user-library" && selectedObjectRoute !== null
+      ? libraryObjects.find(
+          (libraryObject) =>
+            libraryObject.provider === selectedObjectRoute.provider &&
+            libraryObject.object_id === selectedObjectRoute.objectId,
         ) ?? null
       : null;
   const selectedObjectDetailSearchSetSlug: string | null =
     workspaceMode === "search-set"
       ? activeSearchSet?.slug ?? null
-      : workspaceMode === "user-library" &&
-          activeSearchSetSlug !== undefined &&
+      : workspaceMode === "user-library"
+        ? activeSearchSetSlug !== undefined &&
           activeSearchSet?.slug === activeSearchSetSlug
-        ? activeSearchSet.slug
+          ? activeSearchSet.slug
+          : selectedLibraryObject?.collections[0]?.slug ?? null
         : null;
   const shouldLoadSelectedObjectDetail =
+    selectedDetailKind === "object" &&
     selectedObjectDetailSearchSetSlug !== null &&
-    selectedObjectProvider !== undefined &&
-    Number.isFinite(selectedObjectId);
+    selectedObjectRoute !== null;
   const selectedObjectDetail =
     shouldLoadSelectedObjectDetail
       ? await getCollectionObjectDetail(
           apiPort,
           selectedObjectDetailSearchSetSlug,
-          selectedObjectProvider,
-          selectedObjectId,
+          selectedObjectRoute.provider,
+          selectedObjectRoute.objectId,
         )
       : null;
+  const selectedImageDetailLoadFailed =
+    selectedDetailKind === "image" &&
+    Number.isFinite(selectedImageAssetId) &&
+    selectedActiveImageAsset === null;
   const selectedObjectCloseHref =
     workspaceMode === "user-library"
-      ? createUserLibraryHref(filterText)
+      ? createGridStateHref({
+          filterText,
+          viewMode: gridViewMode,
+          workspaceMode: "user-library",
+        })
       : selectedObjectDetailSearchSetSlug !== null
-        ? createCloseObjectHref(selectedObjectDetailSearchSetSlug, filterText)
+        ? createGridStateHref({
+            filterText,
+            searchSetSlug: selectedObjectDetailSearchSetSlug,
+            viewMode: gridViewMode,
+            workspaceMode: "search-set",
+          })
+        : "/";
+  const selectedImageCloseHref =
+    workspaceMode === "user-library"
+      ? createGridStateHref({
+          filterText,
+          viewMode: gridViewMode,
+          workspaceMode: "user-library",
+        })
+      : activeSearchSet !== null
+        ? createGridStateHref({
+            filterText,
+            searchSetSlug: activeSearchSet.slug,
+            viewMode: gridViewMode,
+            workspaceMode: "search-set",
+          })
         : "/";
   const selectedObjectReturnFocusId =
-    workspaceMode === "user-library" && Number.isFinite(selectedImageAssetId)
-      ? createLibraryImageAssetTileId(selectedImageAssetId)
-      : selectedObjectProvider !== undefined && Number.isFinite(selectedObjectId)
-        ? createCollectionObjectTileId(selectedObjectProvider, selectedObjectId)
-        : "";
+    selectedObjectRoute === null
+      ? ""
+      : workspaceMode === "user-library"
+        ? createLibraryObjectTileId(
+            selectedObjectRoute.provider,
+            selectedObjectRoute.objectId,
+          )
+        : createCollectionObjectTileId(
+            selectedObjectRoute.provider,
+            selectedObjectRoute.objectId,
+          );
+  const selectedImageReturnFocusId =
+    Number.isFinite(selectedImageAssetId)
+      ? workspaceMode === "user-library"
+        ? createLibraryImageAssetTileId(selectedImageAssetId)
+        : createCollectionImageAssetTileId(selectedImageAssetId)
+      : "";
   const selectedObjectLabel =
-    selectedObjectProvider !== undefined && Number.isFinite(selectedObjectId)
-      ? `${objectProviderDisplayLabel(selectedObjectProvider)} object ${selectedObjectId}`
+    selectedObjectRoute !== null
+      ? `${objectProviderDisplayLabel(selectedObjectRoute.provider)} object ${selectedObjectRoute.objectId}`
       : "Selected object";
+  const selectedImageLabel =
+    Number.isFinite(selectedImageAssetId)
+      ? `Image Asset ${selectedImageAssetId}`
+      : "Selected image";
   const selectedObjectDetailLoadFailed =
     shouldLoadSelectedObjectDetail && selectedObjectDetail === null;
   const selectedObjectDetailResolved =
     selectedObjectDetail !== null || selectedObjectDetailLoadFailed;
+  const selectedImageDetailResolved =
+    selectedActiveImageAsset !== null || selectedImageDetailLoadFailed;
   const selectedObjectNavigationHrefs =
     workspaceMode === "search-set" &&
     selectedObjectDetailSearchSetSlug !== null &&
-    selectedObjectProvider !== undefined &&
-    Number.isFinite(selectedObjectId)
+    selectedObjectRoute !== null
       ? createAdjacentObjectHrefs({
-          currentObjectId: selectedObjectId,
-          currentProvider: selectedObjectProvider,
+          currentObjectId: selectedObjectRoute.objectId,
+          currentProvider: selectedObjectRoute.provider,
           items: collectionObjects,
           createHref: (collectionObject) =>
             createCollectionObjectHref(
               selectedObjectDetailSearchSetSlug,
               collectionObject,
               filterText,
+              gridViewMode,
             ),
         })
-      : workspaceMode === "user-library" && selectedLibraryImageAsset !== null
+      : workspaceMode === "user-library" &&
+          selectedObjectRoute !== null
         ? createAdjacentObjectHrefs({
-            currentObjectId: selectedLibraryImageAsset.object_id,
-            currentProvider: selectedLibraryImageAsset.provider,
-            items: libraryImageAssets,
-            createHref: (imageAsset) =>
-              createLibraryImageAssetHref(imageAsset, filterText),
-            isCurrentItem: (imageAsset) =>
-              imageAsset.image_asset_id === selectedLibraryImageAsset.image_asset_id,
+            currentObjectId: selectedObjectRoute.objectId,
+            currentProvider: selectedObjectRoute.provider,
+            items: libraryObjects,
+            createHref: (libraryObject) =>
+              createLibraryObjectHref(libraryObject, filterText, gridViewMode),
           })
         : { nextObjectHref: null, previousObjectHref: null };
+  const selectedImageNavigationHrefs =
+    selectedActiveImageAsset !== null
+      ? createAdjacentItemHrefs({
+          items: activeImageAssets,
+          createHref: (imageAsset) =>
+            workspaceMode === "search-set" && activeSearchSet !== null
+              ? createCollectionImageAssetHref(
+                  activeSearchSet.slug,
+                  imageAsset,
+                  filterText,
+                )
+              : createLibraryImageAssetHref(imageAsset, filterText),
+          isCurrentItem: (imageAsset) =>
+            imageAsset.image_asset_id === selectedActiveImageAsset.image_asset_id,
+        })
+      : { nextObjectHref: null, previousObjectHref: null };
+  const selectedImageObjectHref =
+    selectedActiveImageAsset !== null
+      ? workspaceMode === "search-set" && activeSearchSet !== null
+        ? createCollectionObjectHref(
+            activeSearchSet.slug,
+            selectedActiveImageAsset,
+            filterText,
+            gridViewMode,
+          )
+        : createLibraryObjectHref(selectedActiveImageAsset, filterText, gridViewMode)
+      : "/";
   const selectedObjectCollectionLabels =
     workspaceMode === "user-library"
-      ? selectedLibraryImageAsset?.collections.map(
+      ? selectedLibraryObject?.collections.map(
           (collection) => collection.display_name,
         ) ?? []
       : activeSearchSet
@@ -961,12 +1124,42 @@ export default async function Home({ searchParams }: HomeProps) {
         : [];
   const contentHeaderObjectCount =
     workspaceMode === "user-library"
-      ? countLibraryObjects(libraryImageAssets)
+      ? libraryObjects.length
       : activeSearchSet?.importedObjectCount ?? 0;
   const contentHeaderImageCount =
     workspaceMode === "user-library"
       ? libraryImageAssets.length
       : activeSearchSet?.importedImageCount ?? 0;
+  const gridViewObjectHref =
+    workspaceMode === "search-set" && activeSearchSet !== null
+      ? createGridStateHref({
+          filterText,
+          searchSetSlug: activeSearchSet.slug,
+          viewMode: "objects",
+          workspaceMode: "search-set",
+        })
+      : workspaceMode === "user-library"
+        ? createGridStateHref({
+            filterText,
+            viewMode: "objects",
+            workspaceMode: "user-library",
+          })
+        : undefined;
+  const gridViewImageHref =
+    workspaceMode === "search-set" && activeSearchSet !== null
+      ? createGridStateHref({
+          filterText,
+          searchSetSlug: activeSearchSet.slug,
+          viewMode: "images",
+          workspaceMode: "search-set",
+        })
+      : workspaceMode === "user-library"
+        ? createGridStateHref({
+            filterText,
+            viewMode: "images",
+            workspaceMode: "user-library",
+          })
+        : undefined;
 
   return (
     <AppShell
@@ -976,6 +1169,13 @@ export default async function Home({ searchParams }: HomeProps) {
       contentHeaderObjectCount={contentHeaderObjectCount}
       dashboardView={dashboardView}
       filterText={filterText}
+      gridViewImageHref={gridViewImageHref}
+      gridViewMode={
+        workspaceMode === "search-set" || workspaceMode === "user-library"
+          ? gridViewMode
+          : undefined
+      }
+      gridViewObjectHref={gridViewObjectHref}
       rows={rows}
       workspaceMode={workspaceMode}
     >
@@ -987,15 +1187,16 @@ export default async function Home({ searchParams }: HomeProps) {
           <UserLibraryWorkspace
             apiBaseUrl={apiBaseUrl}
             filterText={filterText}
+            gridViewMode={gridViewMode}
             imageAssets={libraryImageAssets}
             imageCount={dashboardView.libraryImageCount}
+            objects={libraryObjects}
             resolvedImageAssetId={
-              workspaceMode === "user-library" &&
-              selectedObjectDetailResolved &&
-              Number.isFinite(selectedImageAssetId)
+              selectedImageDetailResolved && Number.isFinite(selectedImageAssetId)
                 ? selectedImageAssetId
                 : null
             }
+            resolvedObject={selectedObjectDetailResolved ? selectedObjectRoute : null}
           />
         ) : activeSearchSet === null ? (
           <NewSearchSetWorkspace collectAvailable={collectAvailable} />
@@ -1043,112 +1244,46 @@ export default async function Home({ searchParams }: HomeProps) {
             </section>
 
             <section>
-              <Card className="min-w-0">
-                <CardHeader>
-                  <div className="min-w-0">
-                    <CardTitle>Results</CardTitle>
-                    <CardDescription>
-                      Local Museum Objects in this Collection
-                    </CardDescription>
-                  </div>
-                  <CardAction>
-                    <Badge variant="secondary">
-                      {collectionObjects.length} shown
-                    </Badge>
-                  </CardAction>
-                </CardHeader>
-                <CardContent>
-                  {collectionObjects.length === 0 ? (
-                    <Empty className="border">
-                      <EmptyHeader>
-                        <EmptyMedia variant="icon">
-                          <Database />
-                        </EmptyMedia>
-                        <EmptyTitle>No Objects yet</EmptyTitle>
-                        <EmptyDescription>
-                          Start search to add local Museum Objects to this Collection.
-                        </EmptyDescription>
-                      </EmptyHeader>
-                    </Empty>
-                  ) : (
-                    <div className={IMAGE_GRID_CLASS_NAME}>
-                      {collectionObjects.map((collectionObject) => {
-                        const collectionObjectProviderLabel =
-                          objectProviderDisplayLabel(collectionObject.provider);
-                        const tileId = createCollectionObjectTileId(
-                          collectionObject.provider,
-                          collectionObject.object_id,
-                        );
-                        const thumbSrc = imageUrl(
-                          apiBaseUrl,
-                          collectionObject.cover_thumb_url,
-                        );
-                        const objectAlt =
-                          collectionObject.title ||
-                          `${collectionObjectProviderLabel} object ${collectionObject.object_id}`;
-                        const tileStateKey =
-                          selectedObjectDetailResolved &&
-                          selectedObjectProvider === collectionObject.provider &&
-                          selectedObjectId === collectionObject.object_id
-                            ? "resolved"
-                            : "grid";
-
-                        return (
-                          <ObjectDetailPendingLink
-                            ariaLabel={`Open ${collectionObjectProviderLabel} object ${collectionObject.object_id}`}
-                            className={IMAGE_GRID_TILE_CLASS_NAME}
-                            closeHref={createCloseObjectHref(
-                              activeSearchSet.slug,
-                              filterText,
-                            )}
-                            href={createCollectionObjectHref(
-                              activeSearchSet.slug,
-                              collectionObject,
-                              filterText,
-                            )}
-                            id={tileId}
-                            key={`${collectionObject.provider}-${collectionObject.object_id}-${tileStateKey}`}
-                            preview={{
-                              alt: objectAlt,
-                              collectionLabel: activeSearchSet.displayName,
-                              height: collectionObject.cover_original_height,
-                              imageCount: collectionObject.image_count,
-                              providerLabel: collectionObjectProviderLabel,
-                              src: thumbSrc,
-                              title: collectionObject.title || "Untitled object",
-                              width: collectionObject.cover_original_width,
-                            }}
-                          >
-                            <AspectRatio ratio={4 / 5}>
-                              <ImageGridThumbnail alt={objectAlt} src={thumbSrc} />
-                              {collectionObject.has_sibling_images ? (
-                                <span
-                                  aria-label={`${collectionObject.image_count} images`}
-                                  className={IMAGE_GRID_CAROUSEL_INDICATOR_CLASS_NAME}
-                                >
-                                  <Images data-icon="inline-start" />
-                                  {collectionObject.image_count}
-                                </span>
-                              ) : null}
-                              <Badge
-                                className={IMAGE_GRID_PROVIDER_BADGE_CLASS_NAME}
-                                variant="secondary"
-                              >
-                                {collectionObjectProviderLabel}
-                              </Badge>
-                              <div className={IMAGE_GRID_OVERLAY_CLASS_NAME}>
-                                <p className="mt-1 line-clamp-2 text-xs font-medium leading-tight">
-                                  {collectionObject.title || "Untitled object"}
-                                </p>
-                              </div>
-                            </AspectRatio>
-                          </ObjectDetailPendingLink>
-                        );
-                      })}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
+              <CollectionResultsGrid
+                apiBaseUrl={apiBaseUrl}
+                closeImageHref={createGridStateHref({
+                  filterText,
+                  searchSetSlug: activeSearchSet.slug,
+                  viewMode: "images",
+                  workspaceMode: "search-set",
+                })}
+                closeObjectHref={createGridStateHref({
+                  filterText,
+                  searchSetSlug: activeSearchSet.slug,
+                  viewMode: gridViewMode,
+                  workspaceMode: "search-set",
+                })}
+                collectionDisplayName={activeSearchSet.displayName}
+                createImageAssetHref={(imageAsset) =>
+                  createCollectionImageAssetHref(
+                    activeSearchSet.slug,
+                    imageAsset,
+                    filterText,
+                  )
+                }
+                createObjectHref={(collectionObject) =>
+                  createCollectionObjectHref(
+                    activeSearchSet.slug,
+                    collectionObject,
+                    filterText,
+                    gridViewMode,
+                  )
+                }
+                imageAssets={collectionImageAssets}
+                objects={collectionObjects}
+                resolvedImageAssetId={
+                  selectedImageDetailResolved && Number.isFinite(selectedImageAssetId)
+                    ? selectedImageAssetId
+                    : null
+                }
+                resolvedObject={selectedObjectDetailResolved ? selectedObjectRoute : null}
+                viewMode={gridViewMode}
+              />
             </section>
           </div>
         )}
@@ -1168,6 +1303,23 @@ export default async function Home({ searchParams }: HomeProps) {
             closeHref={selectedObjectCloseHref}
             objectLabel={selectedObjectLabel}
             returnFocusId={selectedObjectReturnFocusId}
+          />
+        ) : selectedActiveImageAsset ? (
+          <ImageAssetDetailOverlay
+            apiBaseUrl={apiBaseUrl}
+            closeHref={selectedImageCloseHref}
+            imageAsset={selectedActiveImageAsset}
+            key={selectedActiveImageAsset.image_asset_id}
+            nextImageHref={selectedImageNavigationHrefs.nextObjectHref}
+            objectHref={selectedImageObjectHref}
+            previousImageHref={selectedImageNavigationHrefs.previousObjectHref}
+            returnFocusId={selectedImageReturnFocusId}
+          />
+        ) : selectedImageDetailLoadFailed ? (
+          <ObjectDetailErrorOverlay
+            closeHref={selectedImageCloseHref}
+            objectLabel={selectedImageLabel}
+            returnFocusId={selectedImageReturnFocusId}
           />
         ) : null}
       </div>

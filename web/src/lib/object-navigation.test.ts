@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { createAdjacentObjectHrefs } from "./object-navigation";
+import {
+  createAdjacentItemHrefs,
+  createAdjacentObjectHrefs,
+} from "./object-navigation";
 
 describe("createAdjacentObjectHrefs", () => {
   it("uses the current grid order for neighboring Museum Objects", () => {
@@ -38,6 +41,23 @@ describe("createAdjacentObjectHrefs", () => {
     expect(hrefs).toEqual({
       nextObjectHref: "/?image_asset_id=4",
       previousObjectHref: "/?image_asset_id=1",
+    });
+  });
+
+  it("can follow the active Image Asset grid item-by-item", () => {
+    const hrefs = createAdjacentItemHrefs({
+      items: [
+        { image_asset_id: 9, object_id: 40, provider: "met" },
+        { image_asset_id: 8, object_id: 40, provider: "met" },
+        { image_asset_id: 4, object_id: 20, provider: "met" },
+      ],
+      createHref: (item) => `/?image=${item.image_asset_id}`,
+      isCurrentItem: (item) => item.image_asset_id === 8,
+    });
+
+    expect(hrefs).toEqual({
+      nextObjectHref: "/?image=4",
+      previousObjectHref: "/?image=9",
     });
   });
 });

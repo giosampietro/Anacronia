@@ -17,6 +17,10 @@ export type LibraryImageAssetCollection = {
   display_name: string;
 };
 
+export type LibraryObjectSummary = CollectionObjectSummary & {
+  collections: LibraryImageAssetCollection[];
+};
+
 export type LibraryImageAssetSummary = {
   image_asset_id: number;
   provider: string;
