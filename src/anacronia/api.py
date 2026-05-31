@@ -1,8 +1,8 @@
 from pathlib import Path
 import shutil
-from typing import Callable, Literal
+from typing import Annotated, Callable, Literal, TypeVar
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
@@ -58,6 +58,34 @@ from anacronia.worker import (
 
 
 DEFAULT_CANDIDATE_LIMIT = 1000
+MAX_GRID_PAGE_LIMIT = 500
+IMAGE_DERIVATIVE_CACHE_CONTROL = "public, max-age=31536000, immutable"
+
+GridPageLimit = Annotated[int | None, Query(ge=1, le=MAX_GRID_PAGE_LIMIT)]
+GridPageOffset = Annotated[int, Query(ge=0)]
+GridPagination = dict[str, int | bool | None]
+T = TypeVar("T")
+
+
+def paginate_grid_items(
+    items: list[T],
+    *,
+    limit: int | None,
+    offset: int,
+) -> tuple[list[T], GridPagination]:
+    total = len(items)
+    if limit is None:
+        visible_items = items[offset:]
+    else:
+        visible_items = items[offset : offset + limit]
+
+    return visible_items, {
+        "total": total,
+        "count": len(visible_items),
+        "limit": limit,
+        "offset": offset,
+        "has_more": offset + len(visible_items) < total,
+    }
 INTERNAL_CANDIDATE_LIMIT = 1_000_000_000
 BatchTarget = Literal[5, 10, 20, 30, 100, 500, 1000]
 
@@ -412,27 +440,47 @@ def create_app(
         return serialize_operational_dashboard(dashboard)
 
     @app.get("/library/image-assets")
-    def get_library_image_assets(filter: str = "") -> dict[str, object]:
+    def get_library_image_assets(
+        filter: str = "",
+        limit: GridPageLimit = None,
+        offset: GridPageOffset = 0,
+    ) -> dict[str, object]:
+        image_assets, pagination = paginate_grid_items(
+            list_library_image_assets(
+                database_path=resolved_database_path,
+                filter_text=filter,
+            ),
+            limit=limit,
+            offset=offset,
+        )
         return {
             "image_assets": [
                 serialize_library_image_asset_summary(image_asset)
-                for image_asset in list_library_image_assets(
-                    database_path=resolved_database_path,
-                    filter_text=filter,
-                )
-            ]
+                for image_asset in image_assets
+            ],
+            "pagination": pagination,
         }
 
     @app.get("/search-sets/{slug}/objects")
-    def get_collection_objects(slug: str) -> dict[str, object]:
+    def get_collection_objects(
+        slug: str,
+        limit: GridPageLimit = None,
+        offset: GridPageOffset = 0,
+    ) -> dict[str, object]:
+        collection_objects, pagination = paginate_grid_items(
+            list_collection_objects(
+                database_path=resolved_database_path,
+                search_set_slug=slug,
+            ),
+            limit=limit,
+            offset=offset,
+        )
         return {
             "objects": [
                 serialize_collection_object_summary(collection_object)
-                for collection_object in list_collection_objects(
-                    database_path=resolved_database_path,
-                    search_set_slug=slug,
-                )
-            ]
+                for collection_object in collection_objects
+            ],
+            "pagination": pagination,
         }
 
     @app.get("/search-sets/{slug}/objects/{provider}/{object_id}")
@@ -495,7 +543,11 @@ def create_app(
         if not resolved_path.is_relative_to(resolved_root) or not resolved_path.is_file():
             raise HTTPException(status_code=404, detail="Image Asset derivative not found.")
 
-        return FileResponse(resolved_path, media_type="image/jpeg")
+        return FileResponse(
+            resolved_path,
+            headers={"Cache-Control": IMAGE_DERIVATIVE_CACHE_CONTROL},
+            media_type="image/jpeg",
+        )
 
     @app.post("/search-sets/{slug}/provider-collections/met/runs")
     def discover_met_candidate_run(

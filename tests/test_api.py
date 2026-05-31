@@ -798,6 +798,41 @@ def test_api_returns_collection_objects_newest_first(tmp_path):
     assert objects[1]["has_sibling_images"] is False
 
 
+def test_api_paginates_collection_objects_with_total_count(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            met_candidate_client=FakeMetGridCandidateClient(),
+            met_record_client=FakeMetGridRecordClient(),
+            download_image_bytes=lambda _url: ppm_image_bytes(width=1600, height=800),
+        )
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Snake Study", "terms_text": "snake"},
+    )
+    run_response = client.post(
+        "/search-sets/snake-study/provider-collections/met/runs",
+        json={"candidate_offset": 0, "candidate_limit": 2},
+    )
+    client.post(f"/provider-collections/met/runs/{run_response.json()['run_id']}/ingest")
+
+    response = client.get("/search-sets/snake-study/objects?limit=1&offset=1")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert [museum_object["object_id"] for museum_object in payload["objects"]] == [20]
+    assert payload["pagination"] == {
+        "total": 2,
+        "count": 1,
+        "limit": 1,
+        "offset": 1,
+        "has_more": False,
+    }
+
+
 def test_api_returns_user_library_image_assets_once_with_collection_membership(tmp_path):
     storage = initialize_storage(project_root=tmp_path)
 
@@ -872,6 +907,58 @@ def test_api_returns_user_library_image_assets_once_with_collection_membership(t
         40,
         40,
     ]
+
+
+def test_api_paginates_filtered_user_library_after_searching_all_assets(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+
+    class SharedLibraryCandidateClient:
+        def search_object_ids(self, term: str) -> list[int]:
+            return {
+                "snake": [20, 40],
+                "bowl": [40],
+            }[term]
+
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            met_candidate_client=SharedLibraryCandidateClient(),
+            met_record_client=FakeMetGridRecordClient(),
+            download_image_bytes=lambda _url: ppm_image_bytes(width=1600, height=800),
+        )
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Snake Study", "terms_text": "snake"},
+    )
+    snake_run_response = client.post(
+        "/search-sets/snake-study/provider-collections/met/runs",
+        json={"candidate_offset": 0, "candidate_limit": 2},
+    )
+    client.post(f"/provider-collections/met/runs/{snake_run_response.json()['run_id']}/ingest")
+    client.post(
+        "/search-sets",
+        json={"display_name": "Bowl Study", "terms_text": "bowl"},
+    )
+    bowl_run_response = client.post(
+        "/search-sets/bowl-study/provider-collections/met/runs",
+        json={"candidate_offset": 0, "candidate_limit": 1},
+    )
+    client.post(f"/provider-collections/met/runs/{bowl_run_response.json()['run_id']}/ingest")
+
+    response = client.get("/library/image-assets?filter=Bowl%20Study&limit=2&offset=1")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert [asset["object_id"] for asset in payload["image_assets"]] == [40, 40]
+    assert payload["pagination"] == {
+        "total": 3,
+        "count": 2,
+        "limit": 2,
+        "offset": 1,
+        "has_more": False,
+    }
 
 
 def test_api_counts_only_processed_collection_matches_not_future_candidates(tmp_path):
@@ -1025,8 +1112,10 @@ def test_api_serves_local_image_derivatives(tmp_path):
 
     assert thumb_response.status_code == 200
     assert thumb_response.headers["content-type"] == "image/jpeg"
+    assert thumb_response.headers["cache-control"] == "public, max-age=31536000, immutable"
     assert standard_response.status_code == 200
     assert standard_response.headers["content-type"] == "image/jpeg"
+    assert standard_response.headers["cache-control"] == "public, max-age=31536000, immutable"
 
 
 def test_api_exports_collection_jsonl_with_absolute_path(tmp_path):

@@ -1,11 +1,11 @@
 import { Database, Images, Search } from "lucide-react";
 
+import { ImageGridThumbnail } from "@/components/image-grid-thumbnail";
 import { ObjectDetailPendingLink } from "@/components/object-detail-pending-link";
 import { imageUrl, type LibraryImageAssetSummary } from "@/lib/collection-objects";
 import {
   IMAGE_GRID_BADGE_CLASS_NAME,
   IMAGE_GRID_CLASS_NAME,
-  IMAGE_GRID_IMAGE_CLASS_NAME,
   IMAGE_GRID_OVERLAY_CLASS_NAME,
   IMAGE_GRID_TILE_CLASS_NAME,
 } from "@/lib/image-grid-style";
@@ -139,13 +139,7 @@ export function UserLibraryWorkspace({
                 }}
               >
                 <AspectRatio ratio={4 / 5}>
-                  {/* Anacronia serves already-sized local derivatives from FastAPI. */}
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    alt={imageAssetAlt}
-                    className={IMAGE_GRID_IMAGE_CLASS_NAME}
-                    src={thumbSrc}
-                  />
+                  <ImageGridThumbnail alt={imageAssetAlt} src={thumbSrc} />
                   <div className="absolute inset-x-2 top-2 flex translate-y-1 items-start justify-between gap-2 opacity-0 transition-all duration-200 group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100">
                     <Badge
                       className={cn(

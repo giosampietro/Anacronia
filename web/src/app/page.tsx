@@ -6,6 +6,7 @@ import { DashboardAutoRefresh } from "@/components/dashboard-auto-refresh";
 import { BatchTargetControl } from "@/components/batch-target-control";
 import { CollectionExportForm } from "@/components/collection-export-form";
 import { CollectionObjectDetailOverlay } from "@/components/collection-object-detail-overlay";
+import { ImageGridThumbnail } from "@/components/image-grid-thumbnail";
 import { NewCollectionForm } from "@/components/new-collection-form";
 import {
   ObjectDetailErrorOverlay,
@@ -67,7 +68,6 @@ import {
 import {
   IMAGE_GRID_CAROUSEL_INDICATOR_CLASS_NAME,
   IMAGE_GRID_CLASS_NAME,
-  IMAGE_GRID_IMAGE_CLASS_NAME,
   IMAGE_GRID_OVERLAY_CLASS_NAME,
   IMAGE_GRID_PROVIDER_BADGE_CLASS_NAME,
   IMAGE_GRID_TILE_CLASS_NAME,
@@ -1117,13 +1117,7 @@ export default async function Home({ searchParams }: HomeProps) {
                             }}
                           >
                             <AspectRatio ratio={4 / 5}>
-                              {/* Anacronia serves already-sized local derivatives from FastAPI. */}
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img
-                                alt={objectAlt}
-                                className={IMAGE_GRID_IMAGE_CLASS_NAME}
-                                src={thumbSrc}
-                              />
+                              <ImageGridThumbnail alt={objectAlt} src={thumbSrc} />
                               {collectionObject.has_sibling_images ? (
                                 <span
                                   aria-label={`${collectionObject.image_count} images`}
