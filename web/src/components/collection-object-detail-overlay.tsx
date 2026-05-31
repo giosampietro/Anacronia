@@ -1,7 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
+import type {
+  CSSProperties,
+  KeyboardEvent as ReactKeyboardEvent,
+  ReactNode,
+} from "react";
 import { useRouter } from "next/navigation";
 import {
   ChevronLeft,
@@ -82,6 +86,14 @@ function imageReferenceLabel(image: CollectionObjectImage, index: number): strin
   const providerIndex =
     image.image_index === null ? "" : `, provider index ${image.image_index}`;
   return `Image ${index + 1} (${role}${providerIndex})`;
+}
+
+function imageAspectRatioStyle(image: CollectionObjectImage): CSSProperties | undefined {
+  if (image.original_width <= 0 || image.original_height <= 0) {
+    return undefined;
+  }
+
+  return { aspectRatio: `${image.original_width} / ${image.original_height}` };
 }
 
 function DataPair({ label, value }: MetadataField) {
@@ -454,28 +466,41 @@ function ImageStage({
   const standardImageSrc = imageUrl(apiBaseUrl, activeImage.standard_url);
   const thumbImageSrc = imageUrl(apiBaseUrl, activeImage.thumb_url);
   const standardImageLoaded = loadedStandardImageSrc === standardImageSrc;
+  const aspectRatioStyle = imageAspectRatioStyle(activeImage);
   const image = (
-    <span className="relative block min-h-[320px] w-full overflow-hidden bg-muted md:min-h-[520px]">
+    <span
+      className={cn(
+        "relative block w-full overflow-hidden bg-muted",
+        !aspectRatioStyle && "min-h-[320px] md:min-h-[520px]",
+      )}
+      style={aspectRatioStyle}
+    >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         alt=""
         aria-hidden="true"
         className={cn(
-          "absolute inset-0 size-full object-contain opacity-80 blur-[1px] transition-opacity duration-300",
+          "absolute inset-0 size-full opacity-80 blur-[1px] transition-opacity duration-300",
+          aspectRatioStyle ? "object-cover" : "object-contain",
           standardImageLoaded && "opacity-0",
         )}
+        height={activeImage.original_height}
         src={thumbImageSrc}
+        width={activeImage.original_width}
       />
       <span aria-hidden="true" className="absolute inset-0 bg-background/15" />
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         alt={detail.object.title || `${providerLabel(detail.object.provider)} object ${detail.object.object_id}`}
         className={cn(
-          "relative block h-auto w-full transition-opacity duration-300",
+          "absolute inset-0 size-full transition-opacity duration-300",
+          aspectRatioStyle ? "object-cover" : "object-contain",
           standardImageLoaded ? "opacity-100" : "opacity-0",
         )}
+        height={activeImage.original_height}
         onLoad={() => setLoadedStandardImageSrc(standardImageSrc)}
         src={standardImageSrc}
+        width={activeImage.original_width}
       />
     </span>
   );

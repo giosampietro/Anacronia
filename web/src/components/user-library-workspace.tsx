@@ -133,9 +133,12 @@ export function UserLibraryWorkspace({
                 preview={{
                   alt: imageAssetAlt,
                   collectionLabel: collectionLabel(imageAsset),
+                  height: imageAsset.original_height,
                   imageCount: imageAsset.image_count,
                   providerLabel: imageAssetProviderLabel,
                   src: thumbSrc,
+                  title: imageAsset.title || "Untitled object",
+                  width: imageAsset.original_width,
                 }}
               >
                 <AspectRatio ratio={4 / 5}>

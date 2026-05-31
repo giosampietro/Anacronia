@@ -791,6 +791,8 @@ def test_api_returns_collection_objects_newest_first(tmp_path):
         "artist_display_name": "Unknown maker",
         "image_count": 3,
         "cover_image_asset_id": objects[0]["cover_image_asset_id"],
+        "cover_original_width": 1600,
+        "cover_original_height": 800,
         "cover_thumb_url": f"/image-assets/{objects[0]['cover_image_asset_id']}/thumb",
         "has_sibling_images": True,
     }
@@ -889,6 +891,8 @@ def test_api_returns_user_library_image_assets_once_with_collection_membership(t
         "artist_display_name": "Unknown maker",
         "image_role": "additional",
         "image_index": 2,
+        "original_width": 1600,
+        "original_height": 800,
         "image_count": 3,
         "has_sibling_images": True,
         "thumb_url": f"/image-assets/{image_assets[0]['image_asset_id']}/thumb",

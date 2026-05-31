@@ -1111,9 +1111,12 @@ export default async function Home({ searchParams }: HomeProps) {
                             preview={{
                               alt: objectAlt,
                               collectionLabel: activeSearchSet.displayName,
+                              height: collectionObject.cover_original_height,
                               imageCount: collectionObject.image_count,
                               providerLabel: collectionObjectProviderLabel,
                               src: thumbSrc,
+                              title: collectionObject.title || "Untitled object",
+                              width: collectionObject.cover_original_width,
                             }}
                           >
                             <AspectRatio ratio={4 / 5}>

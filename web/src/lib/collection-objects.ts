@@ -6,6 +6,8 @@ export type CollectionObjectSummary = {
   artist_display_name: string;
   image_count: number;
   cover_image_asset_id: number;
+  cover_original_width: number;
+  cover_original_height: number;
   cover_thumb_url: string;
   has_sibling_images: boolean;
 };
@@ -24,6 +26,8 @@ export type LibraryImageAssetSummary = {
   artist_display_name: string;
   image_role: string;
   image_index: number | null;
+  original_width: number;
+  original_height: number;
   image_count: number;
   has_sibling_images: boolean;
   thumb_url: string;

@@ -16,6 +16,8 @@ class CollectionObjectSummary:
     artist_display_name: str
     image_count: int
     cover_image_asset_id: int
+    cover_original_width: int
+    cover_original_height: int
 
 
 @dataclass(frozen=True)
@@ -83,6 +85,8 @@ class LibraryImageAssetSummary:
     artist_display_name: str
     image_role: str
     image_index: int | None
+    original_width: int
+    original_height: int
     image_count: int
     collections: list[LibraryImageAssetCollection]
 
@@ -144,7 +148,9 @@ def list_collection_objects(
                 image_assets.provider,
                 image_assets.object_id,
                 image_assets.image_role,
-                image_assets.image_index
+                image_assets.image_index,
+                image_assets.original_width,
+                image_assets.original_height
               FROM image_assets
               JOIN object_matches
                 ON object_matches.provider = image_assets.provider
@@ -179,6 +185,30 @@ def list_collection_objects(
                   cover.id
                 LIMIT 1
               ) AS cover_image_asset_id,
+              (
+                SELECT cover.original_width
+                FROM collection_image_assets AS cover
+                WHERE
+                  cover.provider = collection_image_assets.provider
+                  AND cover.object_id = collection_image_assets.object_id
+                ORDER BY
+                  CASE WHEN cover.image_role = 'primary' THEN 0 ELSE 1 END,
+                  COALESCE(cover.image_index, 0),
+                  cover.id
+                LIMIT 1
+              ) AS cover_original_width,
+              (
+                SELECT cover.original_height
+                FROM collection_image_assets AS cover
+                WHERE
+                  cover.provider = collection_image_assets.provider
+                  AND cover.object_id = collection_image_assets.object_id
+                ORDER BY
+                  CASE WHEN cover.image_role = 'primary' THEN 0 ELSE 1 END,
+                  COALESCE(cover.image_index, 0),
+                  cover.id
+                LIMIT 1
+              ) AS cover_original_height,
               MAX(collection_image_assets.id) AS latest_image_asset_id
             FROM collection_image_assets
             JOIN museum_objects
@@ -204,6 +234,8 @@ def list_collection_objects(
             artist_display_name=row[4],
             image_count=int(row[5]),
             cover_image_asset_id=int(row[6]),
+            cover_original_width=int(row[7]),
+            cover_original_height=int(row[8]),
         )
         for row in rows
     ]
@@ -228,6 +260,8 @@ def list_library_image_assets(
               museum_objects.artist_display_name,
               image_assets.image_role,
               image_assets.image_index,
+              image_assets.original_width,
+              image_assets.original_height,
               (
                 SELECT COUNT(*)
                 FROM image_assets AS sibling_image_assets
@@ -272,19 +306,21 @@ def list_library_image_assets(
                 artist_display_name=row[5],
                 image_role=row[6],
                 image_index=row[7],
-                image_count=int(row[8]),
+                original_width=int(row[8]),
+                original_height=int(row[9]),
+                image_count=int(row[10]),
                 collections=[],
             )
             seen_collections[image_asset_id] = set()
 
-        collection_slug = row[10]
+        collection_slug = row[12]
         if collection_slug is None or collection_slug in seen_collections[image_asset_id]:
             continue
 
         image_assets[image_asset_id].collections.append(
             LibraryImageAssetCollection(
                 slug=collection_slug,
-                display_name=row[11],
+                display_name=row[13],
             )
         )
         seen_collections[image_asset_id].add(collection_slug)

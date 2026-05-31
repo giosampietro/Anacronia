@@ -24,9 +24,12 @@ describe("ObjectDetailPendingLink", () => {
         preview={{
           alt: "Met Image Asset 9",
           collectionLabel: "snake",
+          height: 800,
           imageCount: 3,
           providerLabel: "Met",
           src: "http://127.0.0.1:18670/image-assets/9/thumb",
+          title: "Coiled Snake Bowl",
+          width: 1600,
         }}
       >
         <span>Tile contents</span>
@@ -34,8 +37,11 @@ describe("ObjectDetailPendingLink", () => {
     );
 
     expect(html).toContain("Tile contents");
-    expect(html).toContain("Loading object detail");
+    expect(html).toContain("Coiled Snake Bowl");
     expect(html).toContain("http://127.0.0.1:18670/image-assets/9/thumb");
+    expect(html).toContain("aspect-ratio:1600 / 800");
+    expect(html).toContain('width="1600"');
+    expect(html).toContain('height="800"');
     expect(html).toContain("Met");
     expect(html).toContain("snake");
     expect(html).toContain(">3</");

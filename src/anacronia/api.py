@@ -221,6 +221,8 @@ def serialize_collection_object_summary(
         "artist_display_name": collection_object.artist_display_name,
         "image_count": collection_object.image_count,
         "cover_image_asset_id": collection_object.cover_image_asset_id,
+        "cover_original_width": collection_object.cover_original_width,
+        "cover_original_height": collection_object.cover_original_height,
         "cover_thumb_url": f"/image-assets/{collection_object.cover_image_asset_id}/thumb",
         "has_sibling_images": collection_object.image_count > 1,
     }
@@ -306,6 +308,8 @@ def serialize_library_image_asset_summary(
         "artist_display_name": image_asset.artist_display_name,
         "image_role": image_asset.image_role,
         "image_index": image_asset.image_index,
+        "original_width": image_asset.original_width,
+        "original_height": image_asset.original_height,
         "image_count": image_asset.image_count,
         "has_sibling_images": image_asset.image_count > 1,
         "thumb_url": f"/image-assets/{image_asset.image_asset_id}/thumb",
