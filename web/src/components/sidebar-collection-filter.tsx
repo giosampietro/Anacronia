@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Database, MoreHorizontal, Search } from "lucide-react";
+import { Database, Search } from "lucide-react";
 
 import type { DashboardSearchSetView } from "@/lib/dashboard";
 import type { WorkspaceMode } from "@/lib/workspace";
@@ -16,7 +16,6 @@ import {
 import {
   SidebarInput,
   SidebarMenu,
-  SidebarMenuAction,
   SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
@@ -89,12 +88,6 @@ export function SidebarCollectionFilter({
                 </span>
               </SidebarMenuButton>
               <SidebarMenuBadge>{searchSet.importedImageCount}</SidebarMenuBadge>
-              <SidebarMenuAction
-                aria-label={`More actions for ${searchSet.displayName}`}
-                showOnHover
-              >
-                <MoreHorizontal />
-              </SidebarMenuAction>
             </SidebarMenuItem>
           ))
         )}

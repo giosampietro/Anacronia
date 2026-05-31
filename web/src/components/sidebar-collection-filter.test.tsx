@@ -47,4 +47,21 @@ describe("SidebarCollectionFilter", () => {
     expect(html).not.toContain("type=\"submit\"");
     expect(html).not.toContain("Search Collections");
   });
+
+  it("does not render unused hover actions beside Collection image counts", () => {
+    const html = renderToString(
+      <SidebarProvider>
+        <SidebarCollectionFilter
+          activeSearchSetSlug="masks"
+          initialFilterText=""
+          searchSets={[snakeStudy, masks]}
+          workspaceMode="search-set"
+        />
+      </SidebarProvider>,
+    );
+
+    expect(html).toContain("5");
+    expect(html).toContain("1");
+    expect(html).not.toContain("More actions for");
+  });
 });
