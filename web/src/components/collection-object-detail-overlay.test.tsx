@@ -15,6 +15,7 @@ describe("CollectionObjectDetailOverlay", () => {
       <CollectionObjectDetailOverlay
         apiBaseUrl="http://127.0.0.1:18670"
         closeHref="/?search_set=snake"
+        collectionLabels={["Snake Studies"]}
         returnFocusId="collection-object-met-40"
         detail={{
           object: {
@@ -79,25 +80,34 @@ describe("CollectionObjectDetailOverlay", () => {
         }}
       />,
     );
+    const normalizedHtml = html.replace(/<!-- -->/g, "");
 
-    expect(html).toContain("Coiled Snake Bowl");
-    expect(html).toContain("image 1 of 2");
-    expect(html).toContain("Show next image");
-    expect(html).toContain("Greek and Roman Art");
-    expect(html).toContain("Unknown");
-    expect(html).toContain("Terracotta");
-    expect(html).toContain("H. 4 in. (10.2 cm)");
-    expect(html).toContain("40.1");
-    expect(html).toContain("Gift of Anacronia");
-    expect(html).toContain("Metropolitan Museum of Art");
-    expect(html).toContain("Public domain");
-    expect(html).toContain("snake");
-    expect(html).toContain("verified");
-    expect(html).toContain("tags, title");
-    expect(html).toContain("Previous image");
-    expect(html).toContain("Next image");
-    expect(html).not.toContain("disabled=\"\"");
-    expect(html).toContain("1 related image skipped");
-    expect(html).toContain("Open Met object");
+    expect(normalizedHtml).toContain("Coiled Snake Bowl");
+    expect(normalizedHtml).toContain("1 / 2");
+    expect(normalizedHtml).toContain("Show next image");
+    expect(normalizedHtml).toContain("Object facts");
+    expect(normalizedHtml).toContain("Provider record");
+    expect(normalizedHtml).toContain("Collections");
+    expect(normalizedHtml).toContain("Snake Studies");
+    expect(normalizedHtml).toContain("Greek and Roman Art");
+    expect(normalizedHtml).toContain("Unknown");
+    expect(normalizedHtml).toContain("Terracotta");
+    expect(normalizedHtml).toContain("H. 4 in. (10.2 cm)");
+    expect(normalizedHtml).toContain("40.1");
+    expect(normalizedHtml).toContain("Gift of Anacronia");
+    expect(normalizedHtml).toContain("Metropolitan Museum of Art");
+    expect(normalizedHtml).toContain("Public domain");
+    expect(normalizedHtml).toContain("snake");
+    expect(normalizedHtml).toContain("Verified");
+    expect(normalizedHtml).toContain("tags, title");
+    expect(normalizedHtml).toContain("Previous image");
+    expect(normalizedHtml).toContain("Next image");
+    expect(normalizedHtml).toContain("Delete object");
+    expect(normalizedHtml).toContain("1 related provider image was not imported");
+    expect(normalizedHtml).toContain("Open provider record");
+    expect(normalizedHtml).toContain("Source image");
+    expect(normalizedHtml).toContain("Provider metadata");
+    expect(normalizedHtml).toContain("Provider image references");
+    expect(normalizedHtml).toContain("https://images.metmuseum.org/40-skipped.jpg");
   });
 });

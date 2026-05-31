@@ -124,12 +124,15 @@ The MVP will not try to become the future visual atlas. It will provide the oper
 106. As a developer, I want provider mapping files, so that Descriptor extraction can evolve without rewriting the pipeline.
 107. As a developer, I want Next.js as the frontend, so that the UI has a better path toward future online deployment.
 108. As a developer, I want shadcn/ui components, so that the interface uses consistent, maintainable UI primitives.
-109. As a developer, I want Next.js to proxy calls to FastAPI where useful, so that the browser UI does not need to know every backend endpoint directly.
-110. As a developer, I want FastAPI and Python workers, so that image processing and future OpenCV/ML work stay in the Python ecosystem.
-111. As a developer, I want `uv` for Python dependencies and `npm` for the frontend, so that setup remains modern and straightforward.
-112. As a developer, I want Homebrew support when available but not an unexplained hard dependency, so that Mac setup can handle different users.
-113. As a future project maintainer, I want a terminal-based MVP install with strong documentation, so that the GitHub project is usable before a packaged installer exists.
-114. As a future project maintainer, I want installer/desktop packaging left as future work, so that MVP development does not get blocked by packaging.
+109. As a developer, I want custom UI to be checked against the installed shadcn/ui component library before being built, so that Anacronia does not accumulate unnecessary local component variants.
+110. As a project maintainer, I want ChatGPT/Codex-assisted UX and UI work to stay grounded in the PRD, UX contracts, issues, and repo component system, so that AI-assisted iteration does not drift away from the product model.
+111. As a project maintainer, I want uncertain UX/UI changes explored through a small set of disposable visual prototypes before production implementation, so that interaction decisions are visible and reviewable before code is committed to the main app.
+112. As a developer, I want Next.js to proxy calls to FastAPI where useful, so that the browser UI does not need to know every backend endpoint directly.
+113. As a developer, I want FastAPI and Python workers, so that image processing and future OpenCV/ML work stay in the Python ecosystem.
+114. As a developer, I want `uv` for Python dependencies and `npm` for the frontend, so that setup remains modern and straightforward.
+115. As a developer, I want Homebrew support when available but not an unexplained hard dependency, so that Mac setup can handle different users.
+116. As a future project maintainer, I want a terminal-based MVP install with strong documentation, so that the GitHub project is usable before a packaged installer exists.
+117. As a future project maintainer, I want installer/desktop packaging left as future work, so that MVP development does not get blocked by packaging.
 
 ## Implementation Decisions
 
@@ -137,6 +140,9 @@ The MVP will not try to become the future visual atlas. It will provide the oper
 - Keep all project code and default data under one Anacronia project root, with `./data` as the default data directory and config override support for larger storage needs.
 - Use `localhost:18660` as the default user-facing UI port, with incremental fallback. Use an internal FastAPI port defaulting to `18670`, also with fallback.
 - Use Next.js for the frontend and shadcn/ui for interface components.
+- Treat shadcn/ui as the default source for UI primitives and interaction patterns. Do not build or keep a custom local component unless the equivalent shadcn/ui component and variants have been checked first.
+- For substantial UX/UI changes, produce an approved UX contract first, then explore two or three disposable visual prototypes using the project component library/theme before merging the selected direction into production UI.
+- Use ChatGPT/Codex as an implementation and UX exploration aid only when its output is reconciled against repo documentation, issue decisions, shadcn/ui components, and browser-visible verification.
 - Use Next.js route handlers as a lightweight UI/API gateway that proxies application calls to FastAPI where useful.
 - Use FastAPI for the local backend API.
 - Use a Python worker for Provider Searches, image processing, descriptor rebuilding, and future OpenCV/ML paths.

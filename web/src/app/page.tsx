@@ -856,6 +856,12 @@ export default async function Home({ searchParams }: HomeProps) {
     workspaceMode === "user-library"
       ? await getLibraryImageAssets(apiPort, filterText)
       : [];
+  const selectedLibraryImageAsset =
+    workspaceMode === "user-library" && Number.isFinite(selectedImageAssetId)
+      ? libraryImageAssets.find(
+          (imageAsset) => imageAsset.image_asset_id === selectedImageAssetId,
+        ) ?? null
+      : null;
   const selectedObjectDetailSearchSetSlug: string | null =
     workspaceMode === "search-set"
       ? activeSearchSet?.slug ?? null
@@ -875,6 +881,14 @@ export default async function Home({ searchParams }: HomeProps) {
           selectedObjectId,
         )
       : null;
+  const selectedObjectCollectionLabels =
+    workspaceMode === "user-library"
+      ? selectedLibraryImageAsset?.collections.map(
+          (collection) => collection.display_name,
+        ) ?? []
+      : activeSearchSet
+        ? [activeSearchSet.displayName]
+        : [];
 
   return (
     <div className="grid min-h-svh bg-background text-foreground lg:grid-cols-[340px_minmax(0,1fr)]">
@@ -1111,6 +1125,7 @@ export default async function Home({ searchParams }: HomeProps) {
                 ? createUserLibraryHref(filterText)
                 : createCloseObjectHref(selectedObjectDetailSearchSetSlug ?? "", filterText)
             }
+            collectionLabels={selectedObjectCollectionLabels}
             detail={selectedObjectDetail}
             returnFocusId={
               workspaceMode === "user-library" && Number.isFinite(selectedImageAssetId)
