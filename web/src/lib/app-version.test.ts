@@ -7,22 +7,41 @@ import {
 } from "./app-version";
 
 describe("app version stamp", () => {
-  it("formats a clean Git commit as a compact short hash", () => {
+  it("formats clean Git metadata as a human-readable development version", () => {
     expect(
-      formatAppVersionStamp({ shortCommit: "abc1234", isDirty: false })
-    ).toBe("abc1234");
+      formatAppVersionStamp({
+        commitCount: "58",
+        fallbackVersion: "0.1.0",
+        isDirty: false,
+        shortCommit: "abc1234",
+      })
+    ).toEqual({
+      display: "v0.1.58",
+      title: "App version v0.1.58; package v0.1.0; commit abc1234; clean",
+    });
   });
 
-  it("adds a dirty marker when tracked local edits are present", () => {
+  it("keeps the human-readable version visible when tracked local edits are present", () => {
     expect(
-      formatAppVersionStamp({ shortCommit: "abc1234", isDirty: true })
-    ).toBe("abc1234+dirty");
+      formatAppVersionStamp({
+        commitCount: "58",
+        fallbackVersion: "0.1.0",
+        isDirty: true,
+        shortCommit: "abc1234",
+      })
+    ).toEqual({
+      display: "v0.1.58",
+      title: "App version v0.1.58; package v0.1.0; commit abc1234; dirty",
+    });
   });
 
   it("falls back to the configured package version when Git is unavailable", () => {
     expect(
       formatAppVersionStamp({ fallbackVersion: "0.1.0" })
-    ).toBe("v0.1.0");
+    ).toEqual({
+      display: "v0.1.0",
+      title: "App version v0.1.0; package v0.1.0; Git metadata unavailable",
+    });
   });
 
   it("reads clean and dirty state from one Git root", () => {
@@ -30,6 +49,9 @@ describe("app version stamp", () => {
       expect(cwd).toBe("/repo");
       if (args[0] === "rev-parse") {
         return "abc1234\n";
+      }
+      if (args[0] === "rev-list") {
+        return "58\n";
       }
       if (args[0] === "status") {
         return " M web/src/app/page.tsx\n";
@@ -43,7 +65,10 @@ describe("app version stamp", () => {
         fallbackVersion: "0.1.0",
         gitRoot: "/repo",
       })
-    ).toBe("abc1234+dirty");
+    ).toEqual({
+      display: "v0.1.58",
+      title: "App version v0.1.58; package v0.1.0; commit abc1234; dirty",
+    });
   });
 
   it("does not fail rendering when Git metadata cannot be read", () => {
@@ -55,6 +80,9 @@ describe("app version stamp", () => {
         fallbackVersion: "0.1.0",
         gitRoot: "/repo",
       })
-    ).toBe("v0.1.0");
+    ).toEqual({
+      display: "v0.1.0",
+      title: "App version v0.1.0; package v0.1.0; Git metadata unavailable",
+    });
   });
 });

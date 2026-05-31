@@ -903,10 +903,10 @@ export default async function Home({ searchParams }: HomeProps) {
               <h1 className="truncate text-lg font-semibold">Anacronia</h1>
               <Badge
                 className="h-5 shrink-0 px-1.5 font-mono text-[10px] text-muted-foreground"
-                title={`App version ${appVersionStamp}`}
+                title={appVersionStamp.title}
                 variant="outline"
               >
-                {appVersionStamp}
+                {appVersionStamp.display}
               </Badge>
             </div>
           </div>

@@ -5,9 +5,15 @@ import { dirname, join, parse } from "node:path";
 export type ExecGitCommand = (args: string[], cwd: string) => string;
 
 type AppVersionStampInput = {
+  commitCount?: string | null;
   fallbackVersion?: string | null;
   isDirty?: boolean;
   shortCommit?: string | null;
+};
+
+export type AppVersionStamp = {
+  display: string;
+  title: string;
 };
 
 type AppVersionStampOptions = {
@@ -40,18 +46,47 @@ function formatFallbackVersion(version: string | null | undefined): string {
   return fallback;
 }
 
+function formatHumanVersion({
+  commitCount,
+  fallbackVersion,
+}: {
+  commitCount?: string | null;
+  fallbackVersion?: string | null;
+}): string {
+  const fallback = formatFallbackVersion(fallbackVersion);
+  const match = /^v?(\d+)\.(\d+)/.exec(fallback);
+  const normalizedCount = Number.parseInt(commitCount?.trim() ?? "", 10);
+
+  if (match && Number.isFinite(normalizedCount) && normalizedCount >= 0) {
+    return `v${match[1]}.${match[2]}.${normalizedCount}`;
+  }
+
+  return fallback;
+}
+
 export function formatAppVersionStamp({
+  commitCount,
   fallbackVersion,
   isDirty = false,
   shortCommit,
-}: AppVersionStampInput): string {
+}: AppVersionStampInput): AppVersionStamp {
   const commit = shortCommit?.trim();
+  const packageVersion = formatFallbackVersion(fallbackVersion);
+  const display = formatHumanVersion({ commitCount, fallbackVersion });
 
   if (commit) {
-    return isDirty ? `${commit}+dirty` : commit;
+    return {
+      display,
+      title: `App version ${display}; package ${packageVersion}; commit ${commit}; ${
+        isDirty ? "dirty" : "clean"
+      }`,
+    };
   }
 
-  return formatFallbackVersion(fallbackVersion);
+  return {
+    display,
+    title: `App version ${display}; package ${packageVersion}; Git metadata unavailable`,
+  };
 }
 
 function findFileUpward(startPath: string, fileName: string): string | null {
@@ -96,7 +131,7 @@ export function readAppVersionStamp({
   execGit = defaultExecGit,
   fallbackVersion,
   gitRoot = findGitRoot(cwd),
-}: AppVersionStampOptions = {}): string {
+}: AppVersionStampOptions = {}): AppVersionStamp {
   const fallback = fallbackVersion ?? readPackageVersion(cwd);
 
   if (gitRoot === null) {
@@ -105,12 +140,14 @@ export function readAppVersionStamp({
 
   try {
     const shortCommit = execGit(["rev-parse", "--short", "HEAD"], gitRoot);
+    const commitCount = execGit(["rev-list", "--count", "HEAD"], gitRoot);
     const status = execGit(
       ["status", "--porcelain", "--untracked-files=no"],
       gitRoot
     );
 
     return formatAppVersionStamp({
+      commitCount,
       fallbackVersion: fallback,
       isDirty: status.trim().length > 0,
       shortCommit,
