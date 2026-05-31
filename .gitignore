@@ -31,6 +31,9 @@ data/**
 *.sqlite-wal
 *.sqlite-shm
 
+# Local agent scratch
+.superpowers/
+
 # OS / editor
 .DS_Store
 .idea/

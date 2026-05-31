@@ -1,8 +1,30 @@
+import {
+  Item,
+  ItemContent,
+  ItemGroup,
+  ItemTitle,
+} from "@/components/ui/item";
+
 type ProviderCollectionProgressProps = {
   batchTarget: number;
   importedObjectCount: number;
   importedImageCount: number;
 };
+
+function ProgressRow({ label, value }: { label: string; value: number }) {
+  return (
+    <Item className="px-0 py-0" size="xs">
+      <ItemContent>
+        <ItemTitle className="font-normal text-muted-foreground">
+          {label}
+        </ItemTitle>
+      </ItemContent>
+      <ItemContent className="flex-none items-end">
+        <span className="text-sm font-medium tabular-nums">{value}</span>
+      </ItemContent>
+    </Item>
+  );
+}
 
 export function ProviderCollectionProgress({
   batchTarget,
@@ -10,19 +32,10 @@ export function ProviderCollectionProgress({
   importedImageCount,
 }: ProviderCollectionProgressProps) {
   return (
-    <div className="grid gap-3">
-      <div className="flex items-center justify-between gap-3">
-        <span className="text-sm text-muted-foreground">Objects</span>
-        <span className="text-sm font-medium">{importedObjectCount}</span>
-      </div>
-      <div className="flex items-center justify-between gap-3">
-        <span className="text-sm text-muted-foreground">Images</span>
-        <span className="text-sm font-medium">{importedImageCount}</span>
-      </div>
-      <div className="flex items-center justify-between gap-3">
-        <span className="text-sm text-muted-foreground">Batch target</span>
-        <span className="text-sm font-medium">{batchTarget}</span>
-      </div>
-    </div>
+    <ItemGroup className="gap-3">
+      <ProgressRow label="Objects" value={importedObjectCount} />
+      <ProgressRow label="Images" value={importedImageCount} />
+      <ProgressRow label="Batch target" value={batchTarget} />
+    </ItemGroup>
   );
 }

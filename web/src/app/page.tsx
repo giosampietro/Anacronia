@@ -10,7 +10,12 @@ import { CollectionObjectDetailOverlay } from "@/components/collection-object-de
 import { NewCollectionForm } from "@/components/new-collection-form";
 import { ProviderSearchActionButton } from "@/components/provider-search-action-button";
 import { SidebarCollectionFilter } from "@/components/sidebar-collection-filter";
+import {
+  createLibraryImageAssetTileId,
+  UserLibraryWorkspace,
+} from "@/components/user-library-workspace";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { AspectRatio } from "@/components/ui/aspect-ratio";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import {
@@ -29,6 +34,12 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
+import {
+  Item,
+  ItemContent,
+  ItemGroup,
+  ItemTitle,
+} from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
 import {
@@ -52,6 +63,7 @@ import {
   imageUrl,
   type CollectionObjectDetail,
   type CollectionObjectSummary,
+  type LibraryImageAssetSummary,
 } from "@/lib/collection-objects";
 import { shouldAutoRefreshDashboard } from "@/lib/dashboard-refresh";
 import { DEFAULT_BATCH_TARGET, normalizeBatchTarget } from "@/lib/candidate-limits";
@@ -96,6 +108,7 @@ type HomeProps = {
     export_rows?: string | string[];
     export_skipped?: string | string[];
     filter?: string | string[];
+    image_asset_id?: string | string[];
     mode?: string | string[];
     object_id?: string | string[];
     object_provider?: string | string[];
@@ -171,6 +184,33 @@ async function getCollectionObjects(
 
     const payload = (await response.json()) as { objects: CollectionObjectSummary[] };
     return payload.objects;
+  } catch {
+    return [];
+  }
+}
+
+async function getLibraryImageAssets(
+  apiPort: number,
+  filterText: string,
+): Promise<LibraryImageAssetSummary[]> {
+  const params = new URLSearchParams();
+  if (filterText.trim() !== "") {
+    params.set("filter", filterText.trim());
+  }
+  const query = params.toString();
+  const path = query === "" ? "/library/image-assets" : `/library/image-assets?${query}`;
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${apiPort}${path}`, {
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      return [];
+    }
+
+    const payload = (await response.json()) as { image_assets: LibraryImageAssetSummary[] };
+    return payload.image_assets;
   } catch {
     return [];
   }
@@ -488,38 +528,6 @@ function NewSearchSetWorkspace({ collectAvailable }: { collectAvailable: boolean
   );
 }
 
-function UserLibraryWorkspace({ imageCount }: { imageCount: number }) {
-  return (
-    <div className="mx-auto flex max-w-4xl flex-col gap-7">
-      <header className="flex flex-col gap-3">
-        <p className="text-sm font-medium text-muted-foreground">Library</p>
-        <h1 className="font-heading text-4xl leading-tight font-semibold tracking-normal md:text-5xl">
-          User Library
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          {imageCount} collected Image Asset{imageCount === 1 ? "" : "s"} across all Collections.
-        </p>
-      </header>
-
-      <Card>
-        <CardContent className="py-6">
-          <Empty className="border">
-            <EmptyHeader>
-              <EmptyMedia variant="icon">
-                <Database />
-              </EmptyMedia>
-              <EmptyTitle>No library grid yet</EmptyTitle>
-              <EmptyDescription>
-                Collected Image Assets from every Collection will appear here.
-              </EmptyDescription>
-            </EmptyHeader>
-          </Empty>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
 function CollectionExportControls({
   available,
   error,
@@ -600,16 +608,32 @@ function ProviderSourceMetrics({
   importedObjectCount: number;
 }) {
   return (
-    <div className="grid grid-cols-2 gap-2">
-      <div className="rounded-xl border bg-muted/30 px-3 py-2">
-        <p className="text-xs text-muted-foreground">Objects</p>
-        <p className="text-lg font-semibold tabular-nums">{importedObjectCount}</p>
-      </div>
-      <div className="rounded-xl border bg-muted/30 px-3 py-2">
-        <p className="text-xs text-muted-foreground">Images</p>
-        <p className="text-lg font-semibold tabular-nums">{importedImageCount}</p>
-      </div>
-    </div>
+    <ItemGroup className="gap-2">
+      <Item size="xs" variant="muted">
+        <ItemContent>
+          <ItemTitle className="font-normal text-muted-foreground">
+            Objects
+          </ItemTitle>
+        </ItemContent>
+        <ItemContent className="flex-none items-end">
+          <span className="text-sm font-semibold tabular-nums">
+            {importedObjectCount}
+          </span>
+        </ItemContent>
+      </Item>
+      <Item size="xs" variant="muted">
+        <ItemContent>
+          <ItemTitle className="font-normal text-muted-foreground">
+            Images
+          </ItemTitle>
+        </ItemContent>
+        <ItemContent className="flex-none items-end">
+          <span className="text-sm font-semibold tabular-nums">
+            {importedImageCount}
+          </span>
+        </ItemContent>
+      </Item>
+    </ItemGroup>
   );
 }
 
@@ -795,6 +819,10 @@ export default async function Home({ searchParams }: HomeProps) {
     getFirstParam(resolvedSearchParams?.object_id) ?? "",
     10,
   );
+  const selectedImageAssetId = Number.parseInt(
+    getFirstParam(resolvedSearchParams?.image_asset_id) ?? "",
+    10,
+  );
   const uiPort = getPort("ANACRONIA_UI_PORT", DEFAULT_UI_PORT);
   const apiPort = getPort("ANACRONIA_API_PORT", DEFAULT_API_PORT);
   const apiBaseUrl = `http://127.0.0.1:${apiPort}`;
@@ -824,14 +852,25 @@ export default async function Home({ searchParams }: HomeProps) {
     activeSearchSet === null || workspaceMode !== "search-set"
       ? []
       : await getCollectionObjects(apiPort, activeSearchSet.slug);
+  const libraryImageAssets =
+    workspaceMode === "user-library"
+      ? await getLibraryImageAssets(apiPort, filterText)
+      : [];
+  const selectedObjectDetailSearchSetSlug: string | null =
+    workspaceMode === "search-set"
+      ? activeSearchSet?.slug ?? null
+      : workspaceMode === "user-library" &&
+          activeSearchSetSlug !== undefined &&
+          activeSearchSet?.slug === activeSearchSetSlug
+        ? activeSearchSet.slug
+        : null;
   const selectedObjectDetail =
-    activeSearchSet !== null &&
-    workspaceMode === "search-set" &&
+    selectedObjectDetailSearchSetSlug !== null &&
     selectedObjectProvider &&
     Number.isFinite(selectedObjectId)
       ? await getCollectionObjectDetail(
           apiPort,
-          activeSearchSet.slug,
+          selectedObjectDetailSearchSetSlug,
           selectedObjectProvider,
           selectedObjectId,
         )
@@ -906,17 +945,23 @@ export default async function Home({ searchParams }: HomeProps) {
             <HardDrive className="size-4 text-muted-foreground" />
             <h2 className="text-sm font-medium text-muted-foreground">Local runtime</h2>
           </div>
-          <div className="flex flex-col gap-2">
+          <ItemGroup className="gap-2">
             {rows.map((row) => (
-              <div className="flex items-center justify-between gap-3 text-sm" key={row.name}>
-                <span className="truncate text-muted-foreground">{row.name}</span>
-                <Badge variant={statusVariant(row.state)}>
-                  {statusIcon(row.state)}
-                  {row.displayState}
-                </Badge>
-              </div>
+              <Item className="px-0 py-0" key={row.name} size="xs">
+                <ItemContent>
+                  <ItemTitle className="truncate font-normal text-muted-foreground">
+                    {row.name}
+                  </ItemTitle>
+                </ItemContent>
+                <ItemContent className="flex-none items-end">
+                  <Badge variant={statusVariant(row.state)}>
+                    {statusIcon(row.state)}
+                    {row.displayState}
+                  </Badge>
+                </ItemContent>
+              </Item>
             ))}
-          </div>
+          </ItemGroup>
         </section>
       </aside>
 
@@ -924,7 +969,12 @@ export default async function Home({ searchParams }: HomeProps) {
         {workspaceMode === "new-search-set" ? (
           <NewSearchSetWorkspace collectAvailable={collectAvailable} />
         ) : workspaceMode === "user-library" ? (
-          <UserLibraryWorkspace imageCount={dashboardView.libraryImageCount} />
+          <UserLibraryWorkspace
+            apiBaseUrl={apiBaseUrl}
+            filterText={filterText}
+            imageAssets={libraryImageAssets}
+            imageCount={dashboardView.libraryImageCount}
+          />
         ) : activeSearchSet === null ? (
           <NewSearchSetWorkspace collectAvailable={collectAvailable} />
         ) : (
@@ -949,9 +999,10 @@ export default async function Home({ searchParams }: HomeProps) {
                 </div>
 
                 {collectNotice ? (
-                  <div className="rounded-2xl border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
-                    {collectNotice}
-                  </div>
+                  <Alert>
+                    <CircleAlert />
+                    <AlertDescription>{collectNotice}</AlertDescription>
+                  </Alert>
                 ) : null}
               </div>
 
@@ -1010,7 +1061,7 @@ export default async function Home({ searchParams }: HomeProps) {
                     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7">
                       {collectionObjects.map((collectionObject) => (
                         <Link
-                          className="group relative aspect-[4/5] overflow-hidden rounded-2xl border bg-muted outline-none transition-colors hover:border-ring focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30"
+                          className="group relative block overflow-hidden rounded-2xl border bg-muted outline-none transition-colors hover:border-ring focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30"
                           href={createCollectionObjectHref(
                             activeSearchSet.slug,
                             collectionObject,
@@ -1022,25 +1073,27 @@ export default async function Home({ searchParams }: HomeProps) {
                           )}
                           key={`${collectionObject.provider}-${collectionObject.object_id}`}
                         >
-                          {/* Anacronia serves already-sized local derivatives from FastAPI. */}
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            alt={collectionObject.title || `Met object ${collectionObject.object_id}`}
-                            className="size-full object-cover transition-transform duration-300 group-hover:scale-105"
-                            src={imageUrl(apiBaseUrl, collectionObject.cover_thumb_url)}
-                          />
-                          {collectionObject.has_sibling_images ? (
-                            <Badge className="absolute right-2 top-2" variant="secondary">
-                              <Images data-icon="inline-start" />
-                              {collectionObject.image_count}
-                            </Badge>
-                          ) : null}
-                          <div className="absolute inset-x-0 bottom-0 translate-y-2 bg-gradient-to-t from-background via-background/85 to-transparent p-3 opacity-0 transition-all group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100">
-                            <Badge variant="secondary">Met</Badge>
-                            <p className="mt-2 line-clamp-2 text-sm font-medium">
-                              {collectionObject.title || "Untitled object"}
-                            </p>
-                          </div>
+                          <AspectRatio ratio={4 / 5}>
+                            {/* Anacronia serves already-sized local derivatives from FastAPI. */}
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              alt={collectionObject.title || `Met object ${collectionObject.object_id}`}
+                              className="absolute inset-0 size-full object-cover transition-transform duration-300 group-hover:scale-105"
+                              src={imageUrl(apiBaseUrl, collectionObject.cover_thumb_url)}
+                            />
+                            {collectionObject.has_sibling_images ? (
+                              <Badge className="absolute right-2 top-2" variant="secondary">
+                                <Images data-icon="inline-start" />
+                                {collectionObject.image_count}
+                              </Badge>
+                            ) : null}
+                            <div className="absolute inset-x-0 bottom-0 translate-y-2 bg-gradient-to-t from-background via-background/85 to-transparent p-3 opacity-0 transition-all group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100">
+                              <Badge variant="secondary">Met</Badge>
+                              <p className="mt-2 line-clamp-2 text-sm font-medium">
+                                {collectionObject.title || "Untitled object"}
+                              </p>
+                            </div>
+                          </AspectRatio>
                         </Link>
                       ))}
                     </div>
@@ -1050,15 +1103,23 @@ export default async function Home({ searchParams }: HomeProps) {
             </section>
           </div>
         )}
-        {activeSearchSet !== null && selectedObjectDetail ? (
+        {selectedObjectDetail ? (
           <CollectionObjectDetailOverlay
             apiBaseUrl={apiBaseUrl}
-            closeHref={createCloseObjectHref(activeSearchSet.slug, filterText)}
+            closeHref={
+              workspaceMode === "user-library"
+                ? createUserLibraryHref(filterText)
+                : createCloseObjectHref(selectedObjectDetailSearchSetSlug ?? "", filterText)
+            }
             detail={selectedObjectDetail}
-            returnFocusId={createCollectionObjectTileId(
-              selectedObjectDetail.object.provider,
-              selectedObjectDetail.object.object_id,
-            )}
+            returnFocusId={
+              workspaceMode === "user-library" && Number.isFinite(selectedImageAssetId)
+                ? createLibraryImageAssetTileId(selectedImageAssetId)
+                : createCollectionObjectTileId(
+                    selectedObjectDetail.object.provider,
+                    selectedObjectDetail.object.object_id,
+                  )
+            }
           />
         ) : null}
       </main>

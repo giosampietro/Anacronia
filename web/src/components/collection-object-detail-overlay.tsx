@@ -16,6 +16,7 @@ import { imageUrl } from "@/lib/collection-objects";
 import { nextCarouselIndex, previousCarouselIndex } from "@/lib/carousel";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 
 type CollectionObjectDetailOverlayProps = {
@@ -24,6 +25,51 @@ type CollectionObjectDetailOverlayProps = {
   detail: CollectionObjectDetail;
   returnFocusId: string;
 };
+
+type MetadataRow = {
+  label: string;
+  value: string;
+};
+
+function presentMetadataRows(rows: MetadataRow[]): MetadataRow[] {
+  return rows;
+}
+
+function hasMetadataRows(rows: MetadataRow[]): boolean {
+  return rows.length > 0;
+}
+
+function MetadataRows({ rows }: { rows: MetadataRow[] }) {
+  const presentRows = presentMetadataRows(rows);
+  if (presentRows.length === 0) {
+    return null;
+  }
+
+  return (
+    <dl className="grid gap-2 text-sm">
+      {presentRows.map((row) => (
+        <div className="grid gap-0.5" key={row.label}>
+          <dt className="text-xs font-medium uppercase tracking-normal text-muted-foreground">
+            {row.label}
+          </dt>
+          <dd className="text-foreground">{row.value.trim() || "Unknown"}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function rightsStatement(object: CollectionObjectDetail["object"]): string {
+  if (object.rights_and_reproduction.trim() !== "") {
+    return object.rights_and_reproduction;
+  }
+
+  if (object.is_public_domain) {
+    return "Public domain";
+  }
+
+  return "No rights statement provided.";
+}
 
 export function CollectionObjectDetailOverlay({
   apiBaseUrl,
@@ -38,11 +84,41 @@ export function CollectionObjectDetailOverlay({
   const images = detail.images;
   const activeImage = images[Math.min(activeImageIndex, Math.max(images.length - 1, 0))];
   const hasMultipleImages = images.length > 1;
+  const sourceRows = [
+    { label: "Department", value: detail.object.department },
+    { label: "Classification", value: detail.object.classification },
+    { label: "Object type", value: detail.object.object_name },
+    { label: "Object date", value: detail.object.object_date },
+  ];
+  const makerRows = [
+    { label: "Artist", value: detail.object.artist_display_name },
+    { label: "Artist bio", value: detail.object.artist_display_bio },
+    { label: "Nationality", value: detail.object.artist_nationality },
+  ];
+  const physicalRows = [
+    { label: "Medium", value: detail.object.medium },
+    { label: "Dimensions", value: detail.object.dimensions },
+  ];
+  const recordRows = [
+    { label: "Accession number", value: detail.object.accession_number },
+    { label: "Credit line", value: detail.object.credit_line },
+    { label: "Repository", value: detail.object.repository },
+    { label: "Met metadata date", value: detail.object.metadata_date },
+  ];
+  const displayRightsStatement = rightsStatement(detail.object);
 
   const closeOverlay = useCallback(() => {
     document.getElementById(returnFocusId)?.focus();
     router.push(closeHref);
   }, [closeHref, returnFocusId, router]);
+
+  const showNextImage = useCallback(() => {
+    if (!hasMultipleImages) {
+      return;
+    }
+
+    setActiveImageIndex((current) => nextCarouselIndex(current, images.length));
+  }, [hasMultipleImages, images.length]);
 
   useEffect(() => {
     closeRef.current?.focus();
@@ -153,12 +229,28 @@ export function CollectionObjectDetailOverlay({
             {activeImage ? (
               <>
               {/* Anacronia serves already-sized local derivatives from FastAPI. */}
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                alt={detail.object.title || `Met object ${detail.object.object_id}`}
-                className="block aspect-[4/3] w-full object-contain"
-                src={imageUrl(apiBaseUrl, activeImage.standard_url)}
-              />
+              {hasMultipleImages ? (
+                <button
+                  aria-label="Show next image"
+                  className="block w-full cursor-pointer appearance-none border-0 bg-transparent p-0 text-left focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
+                  onClick={showNextImage}
+                  type="button"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    alt={detail.object.title || `Met object ${detail.object.object_id}`}
+                    className="block aspect-[4/3] w-full object-contain"
+                    src={imageUrl(apiBaseUrl, activeImage.standard_url)}
+                  />
+                </button>
+              ) : (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  alt={detail.object.title || `Met object ${detail.object.object_id}`}
+                  className="block aspect-[4/3] w-full object-contain"
+                  src={imageUrl(apiBaseUrl, activeImage.standard_url)}
+                />
+              )}
               </>
             ) : (
               <div className="flex aspect-[4/3] items-center justify-center text-sm text-muted-foreground">
@@ -226,14 +318,29 @@ export function CollectionObjectDetailOverlay({
 
           <section className="grid gap-3">
             <h3 className="text-sm font-medium">Source</h3>
-            <div className="grid gap-2 text-sm text-muted-foreground">
-              {detail.object.object_name ? <p>{detail.object.object_name}</p> : null}
-              {detail.object.artist_display_name ? (
-                <p>{detail.object.artist_display_name}</p>
-              ) : null}
-              {detail.object.metadata_date ? (
-                <p>Metadata date {detail.object.metadata_date}</p>
-              ) : null}
+            <div className="grid gap-3">
+              <MetadataRows rows={sourceRows} />
+              {detail.object.tags.length > 0 ? (
+                <div className="grid gap-2">
+                  <p className="text-xs font-medium uppercase tracking-normal text-muted-foreground">
+                    Met tags
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {detail.object.tags.map((tag) => (
+                      <Badge key={tag} variant="outline">
+                        {tag}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="grid gap-0.5 text-sm">
+                  <p className="text-xs font-medium uppercase tracking-normal text-muted-foreground">
+                    Met tags
+                  </p>
+                  <p className="text-foreground">Unknown</p>
+                </div>
+              )}
               {detail.object.object_url ? (
                 <a
                   className="inline-flex w-fit items-center gap-1 text-foreground underline underline-offset-4"
@@ -248,15 +355,47 @@ export function CollectionObjectDetailOverlay({
             </div>
           </section>
 
+          {hasMetadataRows(makerRows) ? (
+            <>
+              <Separator />
+              <section className="grid gap-3">
+                <h3 className="text-sm font-medium">Maker</h3>
+                <MetadataRows rows={makerRows} />
+              </section>
+            </>
+          ) : null}
+
+          {hasMetadataRows(physicalRows) ? (
+            <>
+              <Separator />
+              <section className="grid gap-3">
+                <h3 className="text-sm font-medium">Physical details</h3>
+                <MetadataRows rows={physicalRows} />
+              </section>
+            </>
+          ) : null}
+
+          {hasMetadataRows(recordRows) ? (
+            <>
+              <Separator />
+              <section className="grid gap-3">
+                <h3 className="text-sm font-medium">Record</h3>
+                <MetadataRows rows={recordRows} />
+              </section>
+            </>
+          ) : null}
+
+          <Separator />
           <section className="grid gap-3">
             <h3 className="text-sm font-medium">Rights</h3>
             <p className="text-sm text-muted-foreground">
-              {detail.object.rights_and_reproduction || "No rights statement provided."}
+              {displayRightsStatement}
             </p>
           </section>
 
+          <Separator />
           <section className="grid gap-3">
-            <h3 className="text-sm font-medium">Matches</h3>
+            <h3 className="text-sm font-medium">Why included</h3>
             {detail.matches.length === 0 ? (
               <p className="text-sm text-muted-foreground">No match details stored.</p>
             ) : (
@@ -275,6 +414,7 @@ export function CollectionObjectDetailOverlay({
             )}
           </section>
 
+          <Separator />
           <section className="grid gap-3">
             <h3 className="text-sm font-medium">Related images</h3>
             {detail.skipped_image_references.length === 0 ? (

@@ -10,6 +10,27 @@ export type CollectionObjectSummary = {
   has_sibling_images: boolean;
 };
 
+export type LibraryImageAssetCollection = {
+  slug: string;
+  display_name: string;
+};
+
+export type LibraryImageAssetSummary = {
+  image_asset_id: number;
+  provider: string;
+  object_id: number;
+  title: string;
+  object_name: string;
+  artist_display_name: string;
+  image_role: string;
+  image_index: number | null;
+  image_count: number;
+  has_sibling_images: boolean;
+  thumb_url: string;
+  standard_url: string;
+  collections: LibraryImageAssetCollection[];
+};
+
 export type CollectionObjectImage = {
   image_asset_id: number;
   source_image_url: string;
@@ -41,7 +62,19 @@ export type CollectionObjectDetail = {
     title: string;
     object_name: string;
     artist_display_name: string;
+    artist_display_bio: string;
+    artist_nationality: string;
+    department: string;
+    object_date: string;
+    medium: string;
+    dimensions: string;
+    classification: string;
+    credit_line: string;
+    accession_number: string;
+    repository: string;
+    tags: string[];
     object_url: string;
+    is_public_domain: boolean;
     rights_and_reproduction: string;
     metadata_date: string;
   };

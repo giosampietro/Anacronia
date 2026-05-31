@@ -19,8 +19,11 @@ from anacronia.collection_objects import (
     CollectionObjectMetadata,
     CollectionObjectSkippedImageReference,
     CollectionObjectSummary,
+    LibraryImageAssetCollection,
+    LibraryImageAssetSummary,
     get_collection_object_detail,
     get_image_asset_derivative_path,
+    list_library_image_assets,
     list_collection_objects,
 )
 from anacronia.dashboard import OperationalDashboard, get_operational_dashboard
@@ -204,7 +207,19 @@ def serialize_collection_object_metadata(
         "title": collection_object.title,
         "object_name": collection_object.object_name,
         "artist_display_name": collection_object.artist_display_name,
+        "artist_display_bio": collection_object.artist_display_bio,
+        "artist_nationality": collection_object.artist_nationality,
+        "department": collection_object.department,
+        "object_date": collection_object.object_date,
+        "medium": collection_object.medium,
+        "dimensions": collection_object.dimensions,
+        "classification": collection_object.classification,
+        "credit_line": collection_object.credit_line,
+        "accession_number": collection_object.accession_number,
+        "repository": collection_object.repository,
+        "tags": collection_object.tags,
         "object_url": collection_object.object_url,
+        "is_public_domain": collection_object.is_public_domain,
         "rights_and_reproduction": collection_object.rights_and_reproduction,
         "metadata_date": collection_object.metadata_date,
     }
@@ -239,6 +254,38 @@ def serialize_collection_object_skipped_image_reference(
         "image_role": reference.image_role,
         "image_index": reference.image_index,
         "reason": reference.reason,
+    }
+
+
+def serialize_library_image_asset_collection(
+    collection: LibraryImageAssetCollection,
+) -> dict[str, object]:
+    return {
+        "slug": collection.slug,
+        "display_name": collection.display_name,
+    }
+
+
+def serialize_library_image_asset_summary(
+    image_asset: LibraryImageAssetSummary,
+) -> dict[str, object]:
+    return {
+        "image_asset_id": image_asset.image_asset_id,
+        "provider": image_asset.provider,
+        "object_id": image_asset.object_id,
+        "title": image_asset.title,
+        "object_name": image_asset.object_name,
+        "artist_display_name": image_asset.artist_display_name,
+        "image_role": image_asset.image_role,
+        "image_index": image_asset.image_index,
+        "image_count": image_asset.image_count,
+        "has_sibling_images": image_asset.image_count > 1,
+        "thumb_url": f"/image-assets/{image_asset.image_asset_id}/thumb",
+        "standard_url": f"/image-assets/{image_asset.image_asset_id}/standard",
+        "collections": [
+            serialize_library_image_asset_collection(collection)
+            for collection in image_asset.collections
+        ],
     }
 
 
@@ -363,6 +410,18 @@ def create_app(
     def get_dashboard() -> dict[str, object]:
         dashboard = get_operational_dashboard(database_path=resolved_database_path)
         return serialize_operational_dashboard(dashboard)
+
+    @app.get("/library/image-assets")
+    def get_library_image_assets(filter: str = "") -> dict[str, object]:
+        return {
+            "image_assets": [
+                serialize_library_image_asset_summary(image_asset)
+                for image_asset in list_library_image_assets(
+                    database_path=resolved_database_path,
+                    filter_text=filter,
+                )
+            ]
+        }
 
     @app.get("/search-sets/{slug}/objects")
     def get_collection_objects(slug: str) -> dict[str, object]:

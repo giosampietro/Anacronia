@@ -22,9 +22,21 @@ describe("CollectionObjectDetailOverlay", () => {
             object_id: 40,
             title: "Coiled Snake Bowl",
             object_name: "Bowl",
-            artist_display_name: "Unknown maker",
+            artist_display_name: "Known maker",
+            artist_display_bio: "American, 1900-1970",
+            artist_nationality: "",
+            department: "Greek and Roman Art",
+            object_date: "ca. 1890",
+            medium: "Terracotta",
+            dimensions: "H. 4 in. (10.2 cm)",
+            classification: "Ceramics",
+            credit_line: "Gift of Anacronia",
+            accession_number: "40.1",
+            repository: "Metropolitan Museum of Art, New York, NY",
+            tags: ["Snake"],
             object_url: "https://www.metmuseum.org/art/collection/search/40",
-            rights_and_reproduction: "Public domain",
+            is_public_domain: true,
+            rights_and_reproduction: "",
             metadata_date: "2026-01-02",
           },
           images: [
@@ -70,6 +82,14 @@ describe("CollectionObjectDetailOverlay", () => {
 
     expect(html).toContain("Coiled Snake Bowl");
     expect(html).toContain("image 1 of 2");
+    expect(html).toContain("Show next image");
+    expect(html).toContain("Greek and Roman Art");
+    expect(html).toContain("Unknown");
+    expect(html).toContain("Terracotta");
+    expect(html).toContain("H. 4 in. (10.2 cm)");
+    expect(html).toContain("40.1");
+    expect(html).toContain("Gift of Anacronia");
+    expect(html).toContain("Metropolitan Museum of Art");
     expect(html).toContain("Public domain");
     expect(html).toContain("snake");
     expect(html).toContain("verified");

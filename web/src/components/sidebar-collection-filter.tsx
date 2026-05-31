@@ -15,7 +15,11 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { Input } from "@/components/ui/input";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+} from "@/components/ui/input-group";
 
 type SidebarCollectionFilterProps = {
   activeSearchSetSlug: string | null;
@@ -38,16 +42,17 @@ export function SidebarCollectionFilter({
 
   return (
     <>
-      <div className="relative">
-        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
+      <InputGroup>
+        <InputGroupInput
           aria-label="Filter Collections"
-          className="pl-9"
           onChange={(event) => setFilterText(event.currentTarget.value)}
           placeholder="Filter by title or term"
           value={filterText}
         />
-      </div>
+        <InputGroupAddon align="inline-start">
+          <Search />
+        </InputGroupAddon>
+      </InputGroup>
 
       <div className="flex flex-col gap-2">
         {filteredSearchSets.length === 0 ? (

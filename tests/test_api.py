@@ -74,6 +74,16 @@ class FakeMetGridRecordClient:
                 "title": "Coiled Snake Bowl",
                 "objectName": "Bowl",
                 "artistDisplayName": "Unknown maker",
+                "artistDisplayBio": "American, 1900-1970",
+                "artistNationality": "American",
+                "department": "Greek and Roman Art",
+                "objectDate": "ca. 1890",
+                "medium": "Terracotta",
+                "dimensions": "H. 4 in. (10.2 cm)",
+                "classification": "Ceramics",
+                "creditLine": "Gift of Anacronia",
+                "accessionNumber": "40.1",
+                "repository": "Metropolitan Museum of Art, New York, NY",
                 "tags": [{"term": "Snake"}],
                 "primaryImage": "https://images.metmuseum.org/40-primary.jpg",
                 "additionalImages": [
@@ -788,6 +798,82 @@ def test_api_returns_collection_objects_newest_first(tmp_path):
     assert objects[1]["has_sibling_images"] is False
 
 
+def test_api_returns_user_library_image_assets_once_with_collection_membership(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+
+    class SharedLibraryCandidateClient:
+        def search_object_ids(self, term: str) -> list[int]:
+            return {
+                "snake": [20, 40],
+                "bowl": [40],
+            }[term]
+
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            met_candidate_client=SharedLibraryCandidateClient(),
+            met_record_client=FakeMetGridRecordClient(),
+            download_image_bytes=lambda _url: ppm_image_bytes(width=1600, height=800),
+        )
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Snake Study", "terms_text": "snake"},
+    )
+    snake_run_response = client.post(
+        "/search-sets/snake-study/provider-collections/met/runs",
+        json={"candidate_offset": 0, "candidate_limit": 2},
+    )
+    client.post(f"/provider-collections/met/runs/{snake_run_response.json()['run_id']}/ingest")
+    client.post(
+        "/search-sets",
+        json={"display_name": "Bowl Study", "terms_text": "bowl"},
+    )
+    bowl_run_response = client.post(
+        "/search-sets/bowl-study/provider-collections/met/runs",
+        json={"candidate_offset": 0, "candidate_limit": 1},
+    )
+    client.post(f"/provider-collections/met/runs/{bowl_run_response.json()['run_id']}/ingest")
+
+    response = client.get("/library/image-assets")
+
+    assert response.status_code == 200
+    image_assets = response.json()["image_assets"]
+    dashboard_provider = client.get("/dashboard").json()["provider_focus"][0]
+    assert dashboard_provider["imported_image_count"] == 4
+    assert len(image_assets) == dashboard_provider["imported_image_count"]
+    assert [asset["object_id"] for asset in image_assets] == [40, 40, 40, 20]
+    assert len({asset["image_asset_id"] for asset in image_assets}) == 4
+    assert image_assets[0] == {
+        "image_asset_id": image_assets[0]["image_asset_id"],
+        "provider": "met",
+        "object_id": 40,
+        "title": "Coiled Snake Bowl",
+        "object_name": "Bowl",
+        "artist_display_name": "Unknown maker",
+        "image_role": "additional",
+        "image_index": 2,
+        "image_count": 3,
+        "has_sibling_images": True,
+        "thumb_url": f"/image-assets/{image_assets[0]['image_asset_id']}/thumb",
+        "standard_url": f"/image-assets/{image_assets[0]['image_asset_id']}/standard",
+        "collections": [
+            {"slug": "snake-study", "display_name": "Snake Study"},
+            {"slug": "bowl-study", "display_name": "Bowl Study"},
+        ],
+    }
+
+    filtered_response = client.get("/library/image-assets?filter=Bowl%20Study")
+
+    assert filtered_response.status_code == 200
+    assert [asset["object_id"] for asset in filtered_response.json()["image_assets"]] == [
+        40,
+        40,
+        40,
+    ]
+
+
 def test_api_counts_only_processed_collection_matches_not_future_candidates(tmp_path):
     storage = initialize_storage(project_root=tmp_path)
 
@@ -870,7 +956,19 @@ def test_api_returns_collection_object_detail_for_overlay(tmp_path):
         "title": "Coiled Snake Bowl",
         "object_name": "Bowl",
         "artist_display_name": "Unknown maker",
+        "artist_display_bio": "American, 1900-1970",
+        "artist_nationality": "American",
+        "department": "Greek and Roman Art",
+        "object_date": "ca. 1890",
+        "medium": "Terracotta",
+        "dimensions": "H. 4 in. (10.2 cm)",
+        "classification": "Ceramics",
+        "credit_line": "Gift of Anacronia",
+        "accession_number": "40.1",
+        "repository": "Metropolitan Museum of Art, New York, NY",
+        "tags": ["Snake"],
         "object_url": "https://www.metmuseum.org/art/collection/search/40",
+        "is_public_domain": True,
         "rights_and_reproduction": "Public domain",
         "metadata_date": "2026-01-02",
     }

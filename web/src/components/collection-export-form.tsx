@@ -5,6 +5,13 @@ import { useFormStatus } from "react-dom";
 import { Download } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import {
+  Item,
+  ItemContent,
+  ItemDescription,
+  ItemMedia,
+  ItemTitle,
+} from "@/components/ui/item";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Spinner } from "@/components/ui/spinner";
 import {
@@ -102,21 +109,24 @@ export function CollectionExportForm({
           const selected = format === option.format;
 
           return (
-            <label
+            <Item
               className={cn(
-                "flex cursor-pointer items-start gap-3 rounded-2xl border bg-card p-3 text-sm transition-colors",
+                "cursor-pointer items-start",
                 "hover:bg-muted/50 has-disabled:cursor-not-allowed has-disabled:opacity-50",
-                selected && "border-ring bg-muted shadow-xs"
+                selected && "border-ring shadow-xs"
               )}
-              htmlFor={id}
               key={option.format}
+              render={<label htmlFor={id} />}
+              variant={selected ? "muted" : "outline"}
             >
-              <RadioGroupItem disabled={!available} id={id} value={option.format} />
-              <span className="flex min-w-0 flex-col gap-1">
-                <span className="font-medium">{option.title}</span>
-                <span className="text-muted-foreground">{option.description}</span>
-              </span>
-            </label>
+              <ItemMedia>
+                <RadioGroupItem disabled={!available} id={id} value={option.format} />
+              </ItemMedia>
+              <ItemContent>
+                <ItemTitle>{option.title}</ItemTitle>
+                <ItemDescription>{option.description}</ItemDescription>
+              </ItemContent>
+            </Item>
           );
         })}
       </RadioGroup>

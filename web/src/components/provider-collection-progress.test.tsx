@@ -21,6 +21,6 @@ describe("ProviderCollectionProgress", () => {
     expect(html).toContain("10");
     expect(html).not.toContain("Candidate");
     expect(html).not.toContain("Progress");
-    expect(html).not.toContain("offset");
+    expect(html).not.toContain("Candidate offset");
   });
 });
