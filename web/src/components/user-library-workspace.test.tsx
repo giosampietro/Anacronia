@@ -57,12 +57,14 @@ describe("UserLibraryWorkspace", () => {
       />,
     );
 
-    expect(html).toContain("2 collected Image Assets across all Collections");
     expect(html).toContain("Snake Study");
     expect(html).toContain("Serpent Study");
     expect(html).toContain(">3</");
     expect(html).toContain("Met");
     expect(html).toContain("http://127.0.0.1:18670/image-assets/9/thumb");
+    expect(html).not.toContain("collected Image Assets across all Collections");
+    expect(html).not.toContain(">Library<");
+    expect(html).not.toContain(">User Library<");
     expect(html).not.toContain("Coiled Snake Bowl");
     expect(html).not.toContain("Bowl");
     expect(html).not.toContain("No library grid yet");

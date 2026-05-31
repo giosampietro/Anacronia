@@ -111,16 +111,6 @@ export function UserLibraryWorkspace({
 }: UserLibraryWorkspaceProps) {
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-7">
-      <header className="flex flex-col gap-3">
-        <p className="text-sm font-medium text-muted-foreground">Library</p>
-        <h1 className="font-heading text-4xl leading-tight font-semibold tracking-normal md:text-5xl">
-          User Library
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          {`${imageCount} collected Image Asset${imageCount === 1 ? "" : "s"} across all Collections.`}
-        </p>
-      </header>
-
       {imageAssets.length === 0 ? (
         <EmptyLibraryState filterText={filterText} imageCount={imageCount} />
       ) : (

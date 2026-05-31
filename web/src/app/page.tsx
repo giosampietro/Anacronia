@@ -283,6 +283,12 @@ function objectProviderDisplayLabel(provider: string): string {
   return provider.trim() || "Unknown";
 }
 
+function countLibraryObjects(imageAssets: LibraryImageAssetSummary[]): number {
+  return new Set(
+    imageAssets.map((imageAsset) => `${imageAsset.provider}:${imageAsset.object_id}`),
+  ).size;
+}
+
 async function createSearchSetAndCollectFromMet(formData: FormData) {
   "use server";
 
@@ -953,11 +959,21 @@ export default async function Home({ searchParams }: HomeProps) {
       : activeSearchSet
         ? [activeSearchSet.displayName]
         : [];
+  const contentHeaderObjectCount =
+    workspaceMode === "user-library"
+      ? countLibraryObjects(libraryImageAssets)
+      : activeSearchSet?.importedObjectCount ?? 0;
+  const contentHeaderImageCount =
+    workspaceMode === "user-library"
+      ? libraryImageAssets.length
+      : activeSearchSet?.importedImageCount ?? 0;
 
   return (
     <AppShell
       activeSearchSetSlug={activeSearchSet?.slug ?? null}
       appVersionStamp={appVersionStamp}
+      contentHeaderImageCount={contentHeaderImageCount}
+      contentHeaderObjectCount={contentHeaderObjectCount}
       dashboardView={dashboardView}
       filterText={filterText}
       rows={rows}
@@ -985,14 +1001,8 @@ export default async function Home({ searchParams }: HomeProps) {
           <NewSearchSetWorkspace collectAvailable={collectAvailable} />
         ) : (
           <div className="mx-auto flex max-w-7xl flex-col gap-7">
-            <header className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(320px,420px)] xl:items-start">
+            <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(320px,420px)] xl:items-start">
               <div className="flex min-w-0 flex-col gap-5">
-                <div className="min-w-0">
-                  <h1 className="truncate font-heading text-4xl leading-tight font-semibold tracking-normal md:text-5xl">
-                    {activeSearchSet.displayName}
-                  </h1>
-                </div>
-
                 <div className="flex flex-wrap gap-2">
                   {activeSearchSet.activeTerms.map((term) => (
                     <Badge key={term}>{term}</Badge>
@@ -1030,7 +1040,7 @@ export default async function Home({ searchParams }: HomeProps) {
                   skippedCount={exportSkipped}
                 />
               </div>
-            </header>
+            </section>
 
             <section>
               <Card className="min-w-0">
@@ -1038,10 +1048,7 @@ export default async function Home({ searchParams }: HomeProps) {
                   <div className="min-w-0">
                     <CardTitle>Results</CardTitle>
                     <CardDescription>
-                      {activeSearchSet.importedObjectCount} Object
-                      {activeSearchSet.importedObjectCount === 1 ? "" : "s"} /{" "}
-                      {activeSearchSet.importedImageCount} Image
-                      {activeSearchSet.importedImageCount === 1 ? "" : "s"} in this Collection
+                      Local Museum Objects in this Collection
                     </CardDescription>
                   </div>
                   <CardAction>

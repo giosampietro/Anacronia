@@ -47,6 +47,8 @@ type AppShellProps = {
   activeSearchSetSlug: string | null;
   appVersionStamp: AppVersionStamp;
   children: ReactNode;
+  contentHeaderImageCount?: number;
+  contentHeaderObjectCount?: number;
   dashboardView: OperationalDashboardView;
   filterText: string;
   rows: StatusRow[];
@@ -74,13 +76,17 @@ function workspaceLabel({
   workspaceMode: WorkspaceMode;
 }) {
   if (workspaceMode === "new-search-set") {
-    return "New Collection";
+    return "NEW COLLECTION";
   }
   if (workspaceMode === "user-library") {
-    return "User Library";
+    return "MY LIBRARY";
   }
 
-  return dashboardView.activeSearchSet?.displayName ?? "Collection";
+  return (dashboardView.activeSearchSet?.displayName ?? "Collection").toUpperCase();
+}
+
+function shouldShowContentCounts(workspaceMode: WorkspaceMode): boolean {
+  return workspaceMode === "search-set" || workspaceMode === "user-library";
 }
 
 function BrandHeader() {
@@ -194,6 +200,8 @@ export function AppShell({
   activeSearchSetSlug,
   appVersionStamp,
   children,
+  contentHeaderImageCount = 0,
+  contentHeaderObjectCount = 0,
   dashboardView,
   filterText,
   rows,
@@ -215,22 +223,27 @@ export function AppShell({
         workspaceMode={workspaceMode}
       />
       <SidebarInset>
-        <header className="flex h-12 shrink-0 items-center gap-3 border-b px-4">
+        <header className="sticky top-0 z-20 flex min-h-12 shrink-0 flex-wrap items-center gap-3 border-b bg-background/95 px-4 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/80">
           <SidebarTrigger className="-ml-1" />
           <Separator
             className="data-vertical:h-4 data-vertical:self-auto"
             orientation="vertical"
           />
-          <div className="flex min-w-0 flex-1 items-center gap-2">
-            <span className="truncate text-sm font-medium">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <span className="truncate text-sm font-semibold uppercase tracking-wide">
               {workspaceLabel({ dashboardView, workspaceMode })}
             </span>
-            {workspaceMode === "search-set" && dashboardView.activeSearchSet ? (
-              <Badge className="shrink-0" variant="outline">
-                {dashboardView.activeSearchSet.importedImageCount} images
-              </Badge>
-            ) : null}
           </div>
+          {shouldShowContentCounts(workspaceMode) ? (
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
+              <Badge className="shrink-0 tabular-nums" variant="outline">
+                {contentHeaderObjectCount} objects
+              </Badge>
+              <Badge className="shrink-0 tabular-nums" variant="outline">
+                {contentHeaderImageCount} images
+              </Badge>
+            </div>
+          ) : null}
         </header>
         {children}
       </SidebarInset>
