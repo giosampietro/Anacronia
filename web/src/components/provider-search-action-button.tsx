@@ -1,9 +1,10 @@
 "use client";
 
 import { useFormStatus } from "react-dom";
-import { Activity, Play, RotateCcw, Square } from "lucide-react";
+import { Play, RotateCcw, Square } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 
 type ProviderSearchActionButtonProps = {
   actionKind: "start" | "stop" | "resume";
@@ -54,7 +55,7 @@ export function ProviderSearchActionButton({
       type="submit"
       variant={variant}
     >
-      {pending ? <Activity data-icon="inline-start" /> : idleIcon(actionKind, label)}
+      {pending ? <Spinner data-icon="inline-start" /> : idleIcon(actionKind, label)}
       {displayLabel}
     </Button>
   );
