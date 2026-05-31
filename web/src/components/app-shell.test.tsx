@@ -78,4 +78,25 @@ describe("AppShell", () => {
     expect(html).toContain("4 objects");
     expect(html).toContain("7 images");
   });
+
+  it("renders the runtime footer heading as a sidebar section label without an action icon", () => {
+    const html = renderToString(
+      <AppShell
+        activeSearchSetSlug="intaglio"
+        appVersionStamp={{ display: "v0.1.60", title: "App version v0.1.60" }}
+        contentHeaderImageCount={38}
+        contentHeaderObjectCount={12}
+        dashboardView={dashboardView}
+        filterText=""
+        rows={rows}
+        workspaceMode="search-set"
+      >
+        <div>Grid</div>
+      </AppShell>,
+    );
+
+    expect(html).toContain("Local runtime");
+    expect(html).toContain("data-slot=\"sidebar-group-label\"");
+    expect(html).not.toContain("lucide-hard-drive");
+  });
 });

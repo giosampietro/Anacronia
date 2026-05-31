@@ -6,7 +6,6 @@ import {
   Activity,
   CircleAlert,
   CircleCheck,
-  HardDrive,
   Library,
   Plus,
 } from "lucide-react";
@@ -159,21 +158,16 @@ function AppSidebar({
 
       <SidebarFooter>
         <SidebarGroup className="p-0">
-          <div className="flex h-8 items-center justify-between gap-3 px-2 text-xs font-medium text-sidebar-foreground/70 group-data-[collapsible=icon]:justify-center">
-            <div className="flex min-w-0 items-center gap-2">
-              <HardDrive />
-              <span className="truncate group-data-[collapsible=icon]:hidden">
-                Local runtime
-              </span>
-            </div>
+          <SidebarGroupLabel className="gap-3">
+            <span className="truncate">Local runtime</span>
             <Badge
-              className="h-5 shrink-0 px-1.5 font-mono text-[10px] text-sidebar-foreground/70 group-data-[collapsible=icon]:hidden"
+              className="ml-auto h-5 shrink-0 px-1.5 font-mono text-[10px] text-sidebar-foreground/70"
               title={appVersionStamp.title}
               variant="outline"
             >
               {appVersionStamp.display}
             </Badge>
-          </div>
+          </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {rows.map((row) => (
