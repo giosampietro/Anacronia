@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Database, MoreHorizontal, Search } from "lucide-react";
+import { Database, MoreHorizontal, Search, X } from "lucide-react";
 
 import type { DashboardSearchSetView } from "@/lib/dashboard";
 import type { WorkspaceMode } from "@/lib/workspace";
@@ -47,11 +47,21 @@ export function SidebarCollectionFilter({
         <Search className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 opacity-50" />
         <SidebarInput
           aria-label="Filter Collections"
-          className="pl-8"
+          className="pl-8 pr-8"
           onChange={(event) => setFilterText(event.currentTarget.value)}
           placeholder="Filter by title or term"
           value={filterText}
         />
+        {filterText !== "" ? (
+          <button
+            aria-label="Clear Collection filter"
+            className="absolute right-1.5 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-3 focus-visible:ring-sidebar-ring focus-visible:outline-hidden"
+            onClick={() => setFilterText("")}
+            type="button"
+          >
+            <X className="size-3.5" />
+          </button>
+        ) : null}
       </div>
 
       <SidebarMenu className="mt-3">
@@ -70,6 +80,7 @@ export function SidebarCollectionFilter({
               key={searchSet.slug}
             >
               <SidebarMenuButton
+                className="group-data-[collapsible=icon]:justify-center"
                 isActive={
                   workspaceMode === "search-set" &&
                   searchSet.slug === activeSearchSetSlug

@@ -47,4 +47,45 @@ describe("SidebarCollectionFilter", () => {
     expect(html).not.toContain("type=\"submit\"");
     expect(html).not.toContain("Search Collections");
   });
+
+  it("shows a clear control only when the Collection filter has text", () => {
+    const filteredHtml = renderToString(
+      <SidebarProvider>
+        <SidebarCollectionFilter
+          activeSearchSetSlug="masks"
+          initialFilterText="snake"
+          searchSets={[snakeStudy, masks]}
+          workspaceMode="search-set"
+        />
+      </SidebarProvider>,
+    );
+    const unfilteredHtml = renderToString(
+      <SidebarProvider>
+        <SidebarCollectionFilter
+          activeSearchSetSlug="masks"
+          initialFilterText=""
+          searchSets={[snakeStudy, masks]}
+          workspaceMode="search-set"
+        />
+      </SidebarProvider>,
+    );
+
+    expect(filteredHtml).toContain("Clear Collection filter");
+    expect(unfilteredHtml).not.toContain("Clear Collection filter");
+  });
+
+  it("centers Collection icons in the collapsed sidebar rail", () => {
+    const html = renderToString(
+      <SidebarProvider>
+        <SidebarCollectionFilter
+          activeSearchSetSlug="masks"
+          initialFilterText=""
+          searchSets={[snakeStudy, masks]}
+          workspaceMode="search-set"
+        />
+      </SidebarProvider>,
+    );
+
+    expect(html).toContain("group-data-[collapsible=icon]:justify-center");
+  });
 });
