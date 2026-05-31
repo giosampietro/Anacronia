@@ -22,7 +22,10 @@ import type {
 } from "@/lib/collection-objects";
 import { imageUrl } from "@/lib/collection-objects";
 import { nextCarouselIndex, previousCarouselIndex } from "@/lib/carousel";
-import { getObjectDetailOverlayKeyAction } from "@/lib/detail-overlay-keyboard";
+import {
+  getObjectDetailOverlayKeyAction,
+  shouldHandleObjectDetailOverlayKey,
+} from "@/lib/detail-overlay-keyboard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -597,10 +600,16 @@ export function CollectionObjectDetailOverlay({
     function onKeyDown(event: KeyboardEvent) {
       const panel = panelRef.current;
       const activeElement = document.activeElement;
-      if (
+      const focusIsInsidePanel =
         panel !== null &&
         activeElement instanceof Node &&
-        !panel.contains(activeElement)
+        panel.contains(activeElement);
+
+      if (
+        !shouldHandleObjectDetailOverlayKey({
+          focusIsInsidePanel,
+          key: event.key,
+        })
       ) {
         return;
       }

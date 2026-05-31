@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { getObjectDetailOverlayKeyAction } from "./detail-overlay-keyboard";
+import {
+  getObjectDetailOverlayKeyAction,
+  shouldHandleObjectDetailOverlayKey,
+} from "./detail-overlay-keyboard";
 
 describe("getObjectDetailOverlayKeyAction", () => {
   it("maps arrows to carousel and object navigation actions", () => {
@@ -64,5 +67,20 @@ describe("getObjectDetailOverlayKeyAction", () => {
         previousObjectHref: null,
       }),
     ).toBeNull();
+  });
+
+  it("allows Escape to close even when focus has left the overlay panel", () => {
+    expect(
+      shouldHandleObjectDetailOverlayKey({
+        focusIsInsidePanel: false,
+        key: "Escape",
+      }),
+    ).toBe(true);
+    expect(
+      shouldHandleObjectDetailOverlayKey({
+        focusIsInsidePanel: false,
+        key: "ArrowRight",
+      }),
+    ).toBe(false);
   });
 });

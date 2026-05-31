@@ -15,6 +15,20 @@ type ObjectDetailOverlayKeyContext = {
   previousObjectHref?: string | null;
 };
 
+export function shouldHandleObjectDetailOverlayKey({
+  focusIsInsidePanel,
+  key,
+}: {
+  focusIsInsidePanel: boolean;
+  key: string;
+}): boolean {
+  if (key === "Escape") {
+    return true;
+  }
+
+  return focusIsInsidePanel;
+}
+
 export function getObjectDetailOverlayKeyAction(
   key: string,
   context: ObjectDetailOverlayKeyContext,
