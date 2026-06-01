@@ -66,8 +66,8 @@ There are still clear drift points where custom markup duplicates available shad
 
 - production detail overlays are hand-built `role="dialog"` surfaces instead of shadcn `Dialog`, `Sheet`, or `Drawer`
 - future destructive confirmations should use `AlertDialog`, which is installed but unused
-- New Collection provider source selection is a manual `role="group"` of `Button`s instead of `ToggleGroup`
-- object-detail match disclosure uses native `details`/`summary`; this may be acceptable, but it duplicates `Collapsible` or `Accordion`
+- New Collection provider source selection has been aligned to `ToggleGroup`; keep future provider option sets on that primitive
+- object-detail match disclosure has been aligned to shadcn `Collapsible`
 - `page.tsx` contains too much inline UI composition for provider/source/export layout and should keep shrinking into named components
 
 ## Surface Inventory
@@ -77,15 +77,15 @@ There are still clear drift points where custom markup duplicates available shad
 | Root layout and providers | `web/src/app/layout.tsx` | `TooltipProvider` | global font/theme classes | Good. Thin shadcn provider usage with minimal custom layout. |
 | App shell, sidebar, header, runtime footer | `web/src/components/app-shell.tsx` | `Sidebar`, `Collapsible`, `Popover`, `Separator`, `Badge`, `Spinner`, `ToggleGroup` | custom brand header, runtime footer composition, URL-backed Object/Image links, sidebar width CSS vars | Strong shadcn usage. Custom pieces are mostly app composition, not competing controls. |
 | Sidebar Collection filter | `web/src/components/sidebar-collection-filter.tsx` | `SidebarInput`, `SidebarMenu`, `SidebarMenuButton`, `Empty` | local client filter state, open Collection row behavior, manual count text | Good. This is a domain navigation component built from shadcn sidebar primitives. |
-| Main server page/workspace coordinator | `web/src/app/page.tsx` | `Alert`, `Badge`, `Card`, `Item`, `Spinner` | large inline layout, server-action `form`/hidden `input`, provider controls, route-state orchestration | Functionally valid, but too much UI policy lives in the page. Keep moving provider/source/export sections into named components. |
-| New Collection form | `web/src/components/new-collection-form.tsx` | `Card`, `Field`, `Input`, `Textarea`, `Button`, `Spinner` | step cards, step numbers, manual provider source option group with `role="group"` | Mostly good. Main drift: source choice should become `ToggleGroup` if it remains an option set. |
+| Main server page/workspace coordinator | `web/src/app/page.tsx` | `Alert`, `Badge`, `Card` | large inline layout, server-action `form`/hidden `input`, route-state orchestration | Functionally valid, but too much UI policy still lives in the page. Provider Source controls now have a named component; export remains page-level while issue #99 is unresolved. |
+| New Collection form | `web/src/components/new-collection-form.tsx` | `Card`, `Field`, `Input`, `Textarea`, `Button`, `Spinner`, `ToggleGroup` | step cards, step numbers | Good. Provider source choice now uses `ToggleGroup`. |
 | Batch target select | `web/src/components/batch-target-control.tsx` | `Field`, `FieldGroup`, `NativeSelect` | none beyond app labels/options | Good shadcn-backed form control. |
 | Collection export card and form | `web/src/app/page.tsx`, `web/src/components/collection-export-form.tsx` | `Card`, `Alert`, `Button`, `RadioGroup`, `Item`, `Spinner` | server-action form with hidden fields, expandable export form state | Good. The export options are one of the cleaner shadcn compositions. |
-| Provider source panels/actions | `web/src/app/page.tsx`, `web/src/components/provider-search-action-button.tsx`, `web/src/components/provider-collection-progress.tsx` | `Card`, `Badge`, `Item`, `Button`, `Spinner` | status mapping, action availability rules, server-action forms | Good pattern, but currently split between page-level helpers and components. Worth consolidating. |
+| Provider source panels/actions | `web/src/components/provider-source-controls.tsx`, `web/src/components/provider-search-action-button.tsx`, `web/src/components/provider-collection-progress.tsx` | `Card`, `Badge`, `Item`, `Button`, `Spinner` | status mapping, action availability rules, server-action forms | Good pattern. Provider Source card composition is now centralized outside the main page. |
 | Production Collection results grid | `web/src/components/collection-results-grid.tsx` | `Card`, `Badge`, `Empty`, `AspectRatio` | `IMAGE_GRID_*` classes, `ImageGridThumbnail`, Object/Image detail pending links, provider badge/overlay/carousel indicator | Intentional domain UI. This should remain app-specific and be the source for future result grids. |
 | User Library workspace | `web/src/components/user-library-workspace.tsx` | `AspectRatio`, `Badge`, `Empty` | same domain grid classes, collection label overlays, URL detail links | Intentional domain UI. Keep aligned with `CollectionResultsGrid`; avoid separate visual rules. |
 | Shared image grid style | `web/src/lib/image-grid-style.ts`, `web/src/components/image-grid-thumbnail.tsx` | none directly | canonical grid/tile/image/overlay/badge class constants, raw `img` because FastAPI serves derivatives | Good. This is the right place for Anacronia's product-specific grid contract. |
-| Object detail overlay | `web/src/components/collection-object-detail-overlay.tsx` | `Badge`, `Button`, `Card`, `Separator` | custom fixed overlay with `role="dialog"`, manual focus trap, keyboard handling, carousel controls, native `details`/`summary` disclosure, metadata cards | High-value custom domain surface, but accessibility and consistency should be reviewed against shadcn `Dialog`/`Sheet` before production expansion. |
+| Object detail overlay | `web/src/components/collection-object-detail-overlay.tsx` | `Badge`, `Button`, `Card`, `Collapsible`, `Separator` | custom fixed overlay with `role="dialog"`, manual focus trap, keyboard handling, carousel controls, metadata cards | High-value custom domain surface, but accessibility and consistency should be reviewed against shadcn `Dialog`/`Sheet` before production expansion. |
 | Image Asset detail overlay | `web/src/components/image-asset-detail-overlay.tsx` | `Badge`, `Button`, `Skeleton` | custom fixed overlay with `role="dialog"`, manual focus trap, keyboard navigation, staged image loading | Same as object overlay: domain behavior is valid, shell could migrate to shadcn overlay primitive or be explicitly documented as custom. |
 | Pending detail overlays | `web/src/components/object-detail-pending-link.tsx`, `web/src/components/image-asset-detail-overlay.tsx` | `Badge`, `Button`, `Skeleton` | link-intercept pending overlays, custom `role="dialog"`, blurred preview image, manual Escape close | Intentional product pattern from issue #83. Shell is custom; keep only if pending-route behavior needs it. |
 | Theme switch | `web/src/components/theme-switch.tsx` | `Switch` | sun/moon wrapper and localStorage theme state | Good. Custom wrapper is minor and expected. |
@@ -122,8 +122,8 @@ These patterns duplicate or bypass shadcn primitives:
 - Production detail overlay shell uses manual `role="dialog"` and focus trapping. Candidate shadcn replacements: `Dialog`, `Sheet`, or `Drawer`.
 - Pending detail overlay shells also use manual `role="dialog"`. They may need a custom shell because they appear before route data resolves, but this should be an explicit decision.
 - Future delete confirmations should use `AlertDialog`, not a custom modal. `AlertDialog` is installed but unused.
-- New Collection provider source choice should use `ToggleGroup` instead of a manual `Button` group if it becomes interactive.
-- Object detail `MatchDisclosure` could use `Collapsible` or `Accordion` instead of native `details`/`summary`, unless native disclosure is intentionally preferred.
+- Future provider source option sets should keep using `ToggleGroup`.
+- Object detail `MatchDisclosure` now uses `Collapsible`; keep future standalone disclosures on the same primitive.
 - Prototype `AnchorButton` uses `buttonVariants` on anchors. That is acceptable in prototype routing, but production should prefer existing navigation primitives or named app components for link-as-control patterns.
 
 ## Findings
@@ -176,11 +176,11 @@ The project uses `Field`, `Textarea`, `Input`, `NativeSelect`, `RadioGroup`, `It
 - Provider action buttons
 - Terms field
 
-The main exception is `ImageSourceControl`, which is a custom Button option group. This should become `ToggleGroup` if the source selector becomes a real multi-provider UI.
+The previous `ImageSourceControl` exception has been addressed by moving the provider option set to `ToggleGroup`.
 
 ### 5. The Main Page Still Owns Too Much UI
 
-`web/src/app/page.tsx` is doing data loading, URL parsing, workspace selection, provider source UI, export card composition, selected detail routing, and layout. Some of that belongs in the server page, but provider/export/source surfaces are already reusable concepts.
+`web/src/app/page.tsx` is doing data loading, URL parsing, workspace selection, export card composition, selected detail routing, and layout. Some of that belongs in the server page, but export/source surfaces are already reusable concepts.
 
 This does not create immediate user-facing risk, but it makes future UI-system consistency harder because shadcn usage and domain rules are embedded as local helper functions.
 
@@ -207,8 +207,7 @@ That is the right balance for handoff:
 ### Consolidate Next
 
 - Create or name a production `ResultGrid` or `ImageResultGrid` abstraction that owns tile rendering, selection affordances, and detail link behavior.
-- Convert New Collection provider source selection to `ToggleGroup` when it becomes a real editable provider selector.
-- Extract provider source controls and export card composition out of `page.tsx`.
+- Keep Provider Source controls centralized outside `page.tsx`; revisit export card composition after issue #99 resolves.
 - Decide whether production detail overlays use shadcn `Dialog`/`Sheet` or an explicitly documented custom route-detail overlay shell.
 - Use `AlertDialog` for future destructive delete/remove/exclude confirmations.
 

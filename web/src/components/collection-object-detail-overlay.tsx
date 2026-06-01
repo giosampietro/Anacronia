@@ -31,6 +31,11 @@ import { getObjectDetailOverlayKeyAction } from "@/lib/detail-overlay-keyboard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 
@@ -371,8 +376,8 @@ function MatchDisclosure({
   displayRightsStatement: string;
 }) {
   return (
-    <details className="group rounded-lg border bg-card">
-      <summary className="flex cursor-pointer list-none items-center gap-3 p-4 text-base font-medium">
+    <Collapsible className="group rounded-lg border bg-card">
+      <CollapsibleTrigger className="flex w-full cursor-pointer items-center gap-3 p-4 text-left text-base font-medium">
         <SearchCheck className="size-4 shrink-0" />
         <span className="min-w-0 flex-1">
           Why this object appeared in the Collection
@@ -380,8 +385,8 @@ function MatchDisclosure({
         <Badge variant="outline">
           {detail.matches.length} term{detail.matches.length === 1 ? "" : "s"}
         </Badge>
-      </summary>
-      <div className="grid gap-5 border-t p-4">
+      </CollapsibleTrigger>
+      <CollapsibleContent className="grid gap-5 border-t p-4" keepMounted>
         <p className="text-sm text-muted-foreground">
           These terms were found in provider metadata stored locally by Anacronia.
         </p>
@@ -426,8 +431,8 @@ function MatchDisclosure({
           detail={detail}
           displayRightsStatement={displayRightsStatement}
         />
-      </div>
-    </details>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 
