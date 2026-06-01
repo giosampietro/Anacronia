@@ -5,6 +5,7 @@ import sqlite3
 
 from anacronia.collection_runs import ensure_collection_run_schema
 from anacronia.met_ingest import ensure_met_ingest_schema
+from anacronia.search_sets import normalize_search_term
 
 
 @dataclass(frozen=True)
@@ -113,6 +114,30 @@ class CollectionObjectDetail:
     skipped_image_references: list[CollectionObjectSkippedImageReference]
 
 
+@dataclass(frozen=True)
+class CollectionResultCounts:
+    objects: int
+    images: int
+
+
+@dataclass(frozen=True)
+class CollectionProviderFacet:
+    provider: str
+    object_count: int
+    image_count: int
+
+
+@dataclass(frozen=True)
+class CollectionLocalResultSet:
+    query: str
+    provider: str
+    view: str
+    counts: CollectionResultCounts
+    provider_facets: list[CollectionProviderFacet]
+    objects: list[CollectionObjectSummary]
+    image_assets: list[LibraryImageAssetSummary]
+
+
 def raw_string(record: dict[str, object], key: str) -> str:
     value = record.get(key)
     if isinstance(value, str):
@@ -146,11 +171,30 @@ def load_raw_record(raw_record_path: str) -> dict[str, object]:
     return data
 
 
+def normalized_local_query(query_text: str) -> str:
+    return normalize_search_term(query_text)
+
+
+def local_query_like_pattern(query_text: str) -> str:
+    return f"%{normalized_local_query(query_text)}%"
+
+
+def normalized_provider_filter(provider: str) -> str:
+    provider_filter = provider.strip()
+    return "" if provider_filter == "all" else provider_filter
+
+
 def list_collection_objects(
     *,
     database_path: Path,
     search_set_slug: str,
+    query_text: str = "",
+    provider: str = "",
 ) -> list[CollectionObjectSummary]:
+    normalized_query = normalized_local_query(query_text)
+    query_pattern = local_query_like_pattern(query_text)
+    provider_filter = normalized_provider_filter(provider)
+
     with sqlite3.connect(database_path) as connection:
         ensure_collection_run_schema(connection)
         ensure_met_ingest_schema(connection)
@@ -164,8 +208,14 @@ def list_collection_objects(
                 image_assets.image_role,
                 image_assets.image_index,
                 image_assets.original_width,
-                image_assets.original_height
+                image_assets.original_height,
+                museum_objects.title,
+                museum_objects.object_name,
+                museum_objects.artist_display_name
               FROM image_assets
+              JOIN museum_objects
+                ON museum_objects.provider = image_assets.provider
+                AND museum_objects.object_id = image_assets.object_id
               JOIN object_matches
                 ON object_matches.provider = image_assets.provider
                 AND object_matches.object_id = image_assets.object_id
@@ -179,13 +229,30 @@ def list_collection_objects(
                 search_sets.slug = ?
                 AND image_assets.provider = provider_collections.provider
                 AND image_assets.imported = 1
+                AND (? = '' OR image_assets.provider = ?)
+                AND (
+                  ? = ''
+                  OR LOWER(image_assets.provider) LIKE ?
+                  OR CAST(image_assets.object_id AS TEXT) LIKE ?
+                  OR LOWER(museum_objects.title) LIKE ?
+                  OR LOWER(museum_objects.object_name) LIKE ?
+                  OR LOWER(museum_objects.artist_display_name) LIKE ?
+                  OR EXISTS (
+                    SELECT 1
+                    FROM descriptors
+                    WHERE
+                      descriptors.provider = image_assets.provider
+                      AND descriptors.object_id = image_assets.object_id
+                      AND descriptors.normalized_value LIKE ?
+                  )
+                )
             )
             SELECT
               collection_image_assets.provider,
               collection_image_assets.object_id,
-              museum_objects.title,
-              museum_objects.object_name,
-              museum_objects.artist_display_name,
+              collection_image_assets.title,
+              collection_image_assets.object_name,
+              collection_image_assets.artist_display_name,
               COUNT(collection_image_assets.id) AS image_count,
               (
                 SELECT cover.id
@@ -225,18 +292,26 @@ def list_collection_objects(
               ) AS cover_original_height,
               MAX(collection_image_assets.id) AS latest_image_asset_id
             FROM collection_image_assets
-            JOIN museum_objects
-              ON museum_objects.provider = collection_image_assets.provider
-              AND museum_objects.object_id = collection_image_assets.object_id
             GROUP BY
               collection_image_assets.provider,
               collection_image_assets.object_id,
-              museum_objects.title,
-              museum_objects.object_name,
-              museum_objects.artist_display_name
+              collection_image_assets.title,
+              collection_image_assets.object_name,
+              collection_image_assets.artist_display_name
             ORDER BY latest_image_asset_id DESC
             """,
-            (search_set_slug,),
+            (
+                search_set_slug,
+                provider_filter,
+                provider_filter,
+                normalized_query,
+                query_pattern,
+                query_pattern,
+                query_pattern,
+                query_pattern,
+                query_pattern,
+                query_pattern,
+            ),
         ).fetchall()
 
     return [
@@ -353,7 +428,13 @@ def list_collection_image_assets(
     *,
     database_path: Path,
     search_set_slug: str,
+    query_text: str = "",
+    provider: str = "",
 ) -> list[LibraryImageAssetSummary]:
+    normalized_query = normalized_local_query(query_text)
+    query_pattern = local_query_like_pattern(query_text)
+    provider_filter = normalized_provider_filter(provider)
+
     with sqlite3.connect(database_path) as connection:
         ensure_collection_run_schema(connection)
         ensure_met_ingest_schema(connection)
@@ -397,9 +478,37 @@ def list_collection_image_assets(
             WHERE
               search_sets.slug = ?
               AND image_assets.imported = 1
+              AND (? = '' OR image_assets.provider = ?)
+              AND (
+                ? = ''
+                OR LOWER(image_assets.provider) LIKE ?
+                OR CAST(image_assets.object_id AS TEXT) LIKE ?
+                OR LOWER(museum_objects.title) LIKE ?
+                OR LOWER(museum_objects.object_name) LIKE ?
+                OR LOWER(museum_objects.artist_display_name) LIKE ?
+                OR EXISTS (
+                  SELECT 1
+                  FROM descriptors
+                  WHERE
+                    descriptors.provider = image_assets.provider
+                    AND descriptors.object_id = image_assets.object_id
+                    AND descriptors.normalized_value LIKE ?
+                )
+              )
             ORDER BY image_assets.id DESC
             """,
-            (search_set_slug,),
+            (
+                search_set_slug,
+                provider_filter,
+                provider_filter,
+                normalized_query,
+                query_pattern,
+                query_pattern,
+                query_pattern,
+                query_pattern,
+                query_pattern,
+                query_pattern,
+            ),
         ).fetchall()
 
     return [
@@ -424,6 +533,81 @@ def list_collection_image_assets(
         )
         for row in rows
     ]
+
+
+def create_collection_provider_facets(
+    image_assets: list[LibraryImageAssetSummary],
+) -> list[CollectionProviderFacet]:
+    image_counts_by_provider: dict[str, int] = {}
+    object_keys_by_provider: dict[str, set[tuple[str, int]]] = {}
+
+    for image_asset in image_assets:
+        image_counts_by_provider[image_asset.provider] = (
+            image_counts_by_provider.get(image_asset.provider, 0) + 1
+        )
+        object_keys_by_provider.setdefault(image_asset.provider, set()).add(
+            (image_asset.provider, image_asset.object_id)
+        )
+
+    return [
+        CollectionProviderFacet(
+            provider=provider,
+            object_count=len(object_keys_by_provider.get(provider, set())),
+            image_count=image_counts_by_provider[provider],
+        )
+        for provider in sorted(image_counts_by_provider)
+    ]
+
+
+def get_collection_local_result_set(
+    *,
+    database_path: Path,
+    search_set_slug: str,
+    query_text: str = "",
+    provider: str = "all",
+    view: str = "objects",
+) -> CollectionLocalResultSet:
+    query = normalized_local_query(query_text)
+    provider_filter = normalized_provider_filter(provider)
+    selected_provider = provider_filter or "all"
+    all_query_objects = list_collection_objects(
+        database_path=database_path,
+        search_set_slug=search_set_slug,
+        query_text=query,
+    )
+    all_query_image_assets = list_collection_image_assets(
+        database_path=database_path,
+        search_set_slug=search_set_slug,
+        query_text=query,
+    )
+
+    if provider_filter:
+        objects = [
+            collection_object
+            for collection_object in all_query_objects
+            if collection_object.provider == provider_filter
+        ]
+        image_assets = [
+            image_asset
+            for image_asset in all_query_image_assets
+            if image_asset.provider == provider_filter
+        ]
+    else:
+        objects = all_query_objects
+        image_assets = all_query_image_assets
+
+    return CollectionLocalResultSet(
+        query=query,
+        provider=selected_provider,
+        view=view,
+        counts=CollectionResultCounts(
+            objects=len(all_query_objects),
+            images=len(all_query_image_assets),
+        ),
+        provider_facets=create_collection_provider_facets(all_query_image_assets),
+        objects=objects,
+        image_assets=image_assets,
+    )
 
 
 def list_library_objects(

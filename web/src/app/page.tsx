@@ -60,6 +60,8 @@ import {
 } from "@/lib/dashboard";
 import {
   type CollectionObjectDetail,
+  type CollectionProviderFacet,
+  type CollectionResultCounts,
   type CollectionObjectSummary,
   type LibraryImageAssetSummary,
   type LibraryObjectSummary,
@@ -109,6 +111,7 @@ const DEFAULT_API_PORT = 18670;
 type HomeProps = {
   searchParams?: Promise<{
     collect_notice?: string | string[];
+    collection_filter?: string | string[];
     export_error?: string | string[];
     export_format?: string | string[];
     export_path?: string | string[];
@@ -121,10 +124,38 @@ type HomeProps = {
     object?: string | string[];
     object_id?: string | string[];
     object_provider?: string | string[];
+    provider?: string | string[];
+    q?: string | string[];
     collection_error?: string | string[];
     search_set?: string | string[];
     view?: string | string[];
   }>;
+};
+
+type CollectionProviderFacetPayload = {
+  provider: string;
+  object_count: number;
+  image_count: number;
+};
+
+type CollectionLocalResultSetPayload = {
+  query: string;
+  provider: string;
+  view: GridViewMode;
+  counts: CollectionResultCounts;
+  provider_facets: CollectionProviderFacetPayload[];
+  objects: CollectionObjectSummary[];
+  image_assets: LibraryImageAssetSummary[];
+};
+
+type CollectionLocalResultSetView = {
+  query: string;
+  provider: string;
+  view: GridViewMode;
+  counts: CollectionResultCounts;
+  providerFacets: CollectionProviderFacet[];
+  objects: CollectionObjectSummary[];
+  imageAssets: LibraryImageAssetSummary[];
 };
 
 function getPort(name: string, fallback: number): number {
@@ -180,43 +211,61 @@ async function getDashboard(apiPort: number): Promise<OperationalDashboard | nul
   }
 }
 
-async function getCollectionObjects(
-  apiPort: number,
-  slug: string,
-): Promise<CollectionObjectSummary[]> {
-  try {
-    const response = await fetch(`http://127.0.0.1:${apiPort}/search-sets/${slug}/objects`, {
-      cache: "no-store",
-    });
-
-    if (!response.ok) {
-      return [];
-    }
-
-    const payload = (await response.json()) as { objects: CollectionObjectSummary[] };
-    return payload.objects;
-  } catch {
-    return [];
-  }
+function emptyCollectionLocalResultSet(
+  viewMode: GridViewMode,
+): CollectionLocalResultSetView {
+  return {
+    query: "",
+    provider: "all",
+    view: viewMode,
+    counts: { objects: 0, images: 0 },
+    providerFacets: [],
+    objects: [],
+    imageAssets: [],
+  };
 }
 
-async function getCollectionImageAssets(
+async function getCollectionLocalResultSet(
   apiPort: number,
   slug: string,
-): Promise<LibraryImageAssetSummary[]> {
+  viewMode: GridViewMode,
+  queryText: string,
+  providerFilter: string,
+): Promise<CollectionLocalResultSetView> {
+  const params = new URLSearchParams({ view: viewMode });
+  if (queryText.trim() !== "") {
+    params.set("q", queryText.trim());
+  }
+  if (providerFilter !== "all") {
+    params.set("provider", providerFilter);
+  }
+
   try {
-    const response = await fetch(`http://127.0.0.1:${apiPort}/search-sets/${slug}/image-assets`, {
-      cache: "no-store",
-    });
+    const response = await fetch(
+      `http://127.0.0.1:${apiPort}/search-sets/${slug}/local-result-set?${params.toString()}`,
+      { cache: "no-store" },
+    );
 
     if (!response.ok) {
-      return [];
+      return emptyCollectionLocalResultSet(viewMode);
     }
 
-    const payload = (await response.json()) as { image_assets: LibraryImageAssetSummary[] };
-    return payload.image_assets;
+    const payload = (await response.json()) as CollectionLocalResultSetPayload;
+    return {
+      query: payload.query,
+      provider: payload.provider,
+      view: payload.view,
+      counts: payload.counts,
+      providerFacets: payload.provider_facets.map((facet) => ({
+        provider: facet.provider,
+        objectCount: facet.object_count,
+        imageCount: facet.image_count,
+      })),
+      objects: payload.objects,
+      imageAssets: payload.image_assets,
+    };
   } catch {
-    return [];
+    return emptyCollectionLocalResultSet(viewMode);
   }
 }
 
@@ -299,15 +348,19 @@ async function getCollectionObjectDetail(
 function createCollectionObjectHref(
   slug: string,
   collectionObject: CollectionObjectSummary | LibraryImageAssetSummary,
-  filterText: string,
+  collectionFilterText: string,
+  localQueryText: string,
+  providerFilter: string,
   viewMode: GridViewMode,
 ): string {
   return createGridStateHref({
-    filterText,
+    collectionFilterText,
+    localQueryText,
     object: {
       objectId: collectionObject.object_id,
       provider: collectionObject.provider,
     },
+    provider: providerFilter,
     searchSetSlug: slug,
     viewMode,
     workspaceMode: "search-set",
@@ -317,11 +370,15 @@ function createCollectionObjectHref(
 function createCollectionImageAssetHref(
   slug: string,
   imageAsset: LibraryImageAssetSummary,
-  filterText: string,
+  collectionFilterText: string,
+  localQueryText: string,
+  providerFilter: string,
 ): string {
   return createGridStateHref({
-    filterText,
+    collectionFilterText,
     imageAssetId: imageAsset.image_asset_id,
+    localQueryText,
+    provider: providerFilter,
     searchSetSlug: slug,
     viewMode: "images",
     workspaceMode: "search-set",
@@ -893,7 +950,13 @@ function ProviderSourceControls({
 
 export default async function Home({ searchParams }: HomeProps) {
   const resolvedSearchParams = await searchParams;
-  const filterText = getFirstParam(resolvedSearchParams?.filter) ?? "";
+  const legacyFilterText = getFirstParam(resolvedSearchParams?.filter) ?? "";
+  const collectionFilterText =
+    getFirstParam(resolvedSearchParams?.collection_filter) ?? legacyFilterText;
+  const libraryFilterText = legacyFilterText;
+  const localQueryText = getFirstParam(resolvedSearchParams?.q) ?? "";
+  const providerFilter =
+    getFirstParam(resolvedSearchParams?.provider)?.trim() || "all";
   const collectNoticeCode = getFirstParam(resolvedSearchParams?.collect_notice);
   const collectionErrorCode = getFirstParam(resolvedSearchParams?.collection_error);
   const exportError = getFirstParam(resolvedSearchParams?.export_error) ?? "";
@@ -960,21 +1023,25 @@ export default async function Home({ searchParams }: HomeProps) {
           ),
         });
   const collectNotice = collectNoticeFromCode(collectNoticeCode, activeProviderCollections);
-  const collectionObjects =
+  const collectionLocalResultSet =
     activeSearchSet === null || workspaceMode !== "search-set"
-      ? []
-      : await getCollectionObjects(apiPort, activeSearchSet.slug);
-  const collectionImageAssets =
-    activeSearchSet === null || workspaceMode !== "search-set"
-      ? []
-      : await getCollectionImageAssets(apiPort, activeSearchSet.slug);
+      ? emptyCollectionLocalResultSet(gridViewMode)
+      : await getCollectionLocalResultSet(
+          apiPort,
+          activeSearchSet.slug,
+          gridViewMode,
+          localQueryText,
+          providerFilter,
+        );
+  const collectionObjects = collectionLocalResultSet.objects;
+  const collectionImageAssets = collectionLocalResultSet.imageAssets;
   const libraryObjects =
     workspaceMode === "user-library"
-      ? await getLibraryObjects(apiPort, filterText)
+      ? await getLibraryObjects(apiPort, libraryFilterText)
       : [];
   const libraryImageAssets =
     workspaceMode === "user-library"
-      ? await getLibraryImageAssets(apiPort, filterText)
+      ? await getLibraryImageAssets(apiPort, libraryFilterText)
       : [];
   const activeImageAssets =
     workspaceMode === "search-set"
@@ -1035,13 +1102,15 @@ export default async function Home({ searchParams }: HomeProps) {
   const selectedObjectCloseHref =
     workspaceMode === "user-library"
       ? createGridStateHref({
-          filterText,
+          filterText: libraryFilterText,
           viewMode: gridViewMode,
           workspaceMode: "user-library",
         })
       : selectedObjectDetailSearchSetSlug !== null
         ? createGridStateHref({
-            filterText,
+            collectionFilterText,
+            localQueryText,
+            provider: providerFilter,
             searchSetSlug: selectedObjectDetailSearchSetSlug,
             viewMode: gridViewMode,
             workspaceMode: "search-set",
@@ -1050,13 +1119,15 @@ export default async function Home({ searchParams }: HomeProps) {
   const selectedImageCloseHref =
     workspaceMode === "user-library"
       ? createGridStateHref({
-          filterText,
+          filterText: libraryFilterText,
           viewMode: gridViewMode,
           workspaceMode: "user-library",
         })
       : activeSearchSet !== null
         ? createGridStateHref({
-            filterText,
+            collectionFilterText,
+            localQueryText,
+            provider: providerFilter,
             searchSetSlug: activeSearchSet.slug,
             viewMode: gridViewMode,
             workspaceMode: "search-set",
@@ -1106,7 +1177,9 @@ export default async function Home({ searchParams }: HomeProps) {
             createCollectionObjectHref(
               selectedObjectDetailSearchSetSlug,
               collectionObject,
-              filterText,
+              collectionFilterText,
+              localQueryText,
+              providerFilter,
               gridViewMode,
             ),
         })
@@ -1117,7 +1190,7 @@ export default async function Home({ searchParams }: HomeProps) {
             currentProvider: selectedObjectRoute.provider,
             items: libraryObjects,
             createHref: (libraryObject) =>
-              createLibraryObjectHref(libraryObject, filterText, gridViewMode),
+              createLibraryObjectHref(libraryObject, libraryFilterText, gridViewMode),
           })
         : { nextObjectHref: null, previousObjectHref: null };
   const selectedImageNavigationHrefs =
@@ -1129,9 +1202,11 @@ export default async function Home({ searchParams }: HomeProps) {
               ? createCollectionImageAssetHref(
                   activeSearchSet.slug,
                   imageAsset,
-                  filterText,
+                  collectionFilterText,
+                  localQueryText,
+                  providerFilter,
                 )
-              : createLibraryImageAssetHref(imageAsset, filterText),
+              : createLibraryImageAssetHref(imageAsset, libraryFilterText),
           isCurrentItem: (imageAsset) =>
             imageAsset.image_asset_id === selectedActiveImageAsset.image_asset_id,
         })
@@ -1142,10 +1217,12 @@ export default async function Home({ searchParams }: HomeProps) {
         ? createCollectionObjectHref(
             activeSearchSet.slug,
             selectedActiveImageAsset,
-            filterText,
+            collectionFilterText,
+            localQueryText,
+            providerFilter,
             gridViewMode,
           )
-        : createLibraryObjectHref(selectedActiveImageAsset, filterText, gridViewMode)
+        : createLibraryObjectHref(selectedActiveImageAsset, libraryFilterText, gridViewMode)
       : "/";
   const selectedObjectCollectionLabels =
     workspaceMode === "user-library"
@@ -1158,22 +1235,24 @@ export default async function Home({ searchParams }: HomeProps) {
   const contentHeaderObjectCount =
     workspaceMode === "user-library"
       ? libraryObjects.length
-      : activeSearchSet?.importedObjectCount ?? 0;
+      : collectionLocalResultSet.counts.objects;
   const contentHeaderImageCount =
     workspaceMode === "user-library"
       ? libraryImageAssets.length
-      : activeSearchSet?.importedImageCount ?? 0;
+      : collectionLocalResultSet.counts.images;
   const gridViewObjectHref =
     workspaceMode === "search-set" && activeSearchSet !== null
       ? createGridStateHref({
-          filterText,
+          collectionFilterText,
+          localQueryText,
+          provider: providerFilter,
           searchSetSlug: activeSearchSet.slug,
           viewMode: "objects",
           workspaceMode: "search-set",
         })
       : workspaceMode === "user-library"
         ? createGridStateHref({
-            filterText,
+            filterText: libraryFilterText,
             viewMode: "objects",
             workspaceMode: "user-library",
           })
@@ -1181,14 +1260,16 @@ export default async function Home({ searchParams }: HomeProps) {
   const gridViewImageHref =
     workspaceMode === "search-set" && activeSearchSet !== null
       ? createGridStateHref({
-          filterText,
+          collectionFilterText,
+          localQueryText,
+          provider: providerFilter,
           searchSetSlug: activeSearchSet.slug,
           viewMode: "images",
           workspaceMode: "search-set",
         })
       : workspaceMode === "user-library"
         ? createGridStateHref({
-            filterText,
+            filterText: libraryFilterText,
             viewMode: "images",
             workspaceMode: "user-library",
           })
@@ -1202,7 +1283,7 @@ export default async function Home({ searchParams }: HomeProps) {
       contentHeaderImageCount={contentHeaderImageCount}
       contentHeaderObjectCount={contentHeaderObjectCount}
       dashboardView={dashboardView}
-      filterText={filterText}
+      filterText={collectionFilterText}
       gridViewImageHref={gridViewImageHref}
       gridViewMode={
         workspaceMode === "search-set" || workspaceMode === "user-library"
@@ -1224,7 +1305,7 @@ export default async function Home({ searchParams }: HomeProps) {
         ) : workspaceMode === "user-library" ? (
           <UserLibraryWorkspace
             apiBaseUrl={apiBaseUrl}
-            filterText={filterText}
+            filterText={libraryFilterText}
             gridViewMode={gridViewMode}
             imageAssets={libraryImageAssets}
             imageCount={dashboardView.libraryImageCount}
@@ -1289,41 +1370,59 @@ export default async function Home({ searchParams }: HomeProps) {
               <CollectionResultsGrid
                 apiBaseUrl={apiBaseUrl}
                 closeImageHref={createGridStateHref({
-                  filterText,
+                  collectionFilterText,
+                  localQueryText,
+                  provider: providerFilter,
                   searchSetSlug: activeSearchSet.slug,
                   viewMode: "images",
                   workspaceMode: "search-set",
                 })}
                 closeObjectHref={createGridStateHref({
-                  filterText,
+                  collectionFilterText,
+                  localQueryText,
+                  provider: providerFilter,
                   searchSetSlug: activeSearchSet.slug,
                   viewMode: gridViewMode,
                   workspaceMode: "search-set",
                 })}
+                collectionFilterText={collectionFilterText}
                 collectionDisplayName={activeSearchSet.displayName}
                 createImageAssetHref={(imageAsset) =>
                   createCollectionImageAssetHref(
                     activeSearchSet.slug,
                     imageAsset,
-                    filterText,
+                    collectionFilterText,
+                    localQueryText,
+                    providerFilter,
                   )
                 }
                 createObjectHref={(collectionObject) =>
                   createCollectionObjectHref(
                     activeSearchSet.slug,
                     collectionObject,
-                    filterText,
+                    collectionFilterText,
+                    localQueryText,
+                    providerFilter,
                     gridViewMode,
                   )
                 }
+                hasLocalMaterial={
+                  activeSearchSet.importedObjectCount > 0 ||
+                  activeSearchSet.importedImageCount > 0
+                }
                 imageAssets={collectionImageAssets}
+                localQueryText={collectionLocalResultSet.query}
                 objects={collectionObjects}
+                providerFacets={collectionLocalResultSet.providerFacets}
+                providerFilter={collectionLocalResultSet.provider}
                 resolvedImageAssetId={
                   selectedImageDetailResolved && Number.isFinite(selectedImageAssetId)
                     ? selectedImageAssetId
                     : null
                 }
                 resolvedObject={selectedObjectDetailResolved ? selectedObjectRoute : null}
+                resultCounts={collectionLocalResultSet.counts}
+                searchSetSlug={activeSearchSet.slug}
                 viewMode={gridViewMode}
               />
             </section>

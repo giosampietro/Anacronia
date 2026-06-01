@@ -889,6 +889,100 @@ def test_api_returns_collection_image_assets_newest_first(tmp_path):
     }
 
 
+def test_api_returns_read_only_collection_local_result_set_with_query_counts_and_facets(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+
+    class TrackingGridCandidateClient:
+        def __init__(self) -> None:
+            self.queries: list[str] = []
+
+        def search_object_ids(self, term: str) -> list[int]:
+            self.queries.append(term)
+            assert term == "snake"
+            return [20, 40]
+
+    candidate_client = TrackingGridCandidateClient()
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            met_candidate_client=candidate_client,
+            met_record_client=FakeMetGridRecordClient(),
+            download_image_bytes=lambda _url: ppm_image_bytes(width=1600, height=800),
+        )
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Snake Study", "terms_text": "snake"},
+    )
+    run_response = client.post(
+        "/search-sets/snake-study/provider-collections/met/runs",
+        json={"candidate_offset": 0, "candidate_limit": 2},
+    )
+    client.post(f"/provider-collections/met/runs/{run_response.json()['run_id']}/ingest")
+    provider_queries = list(candidate_client.queries)
+
+    response = client.get(
+        "/search-sets/snake-study/local-result-set?view=objects&q=ceramics"
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert candidate_client.queries == provider_queries
+    assert payload["query"] == "ceramics"
+    assert payload["provider"] == "all"
+    assert payload["view"] == "objects"
+    assert payload["counts"] == {"objects": 1, "images": 3}
+    assert payload["provider_facets"] == [
+        {"provider": "met", "object_count": 1, "image_count": 3}
+    ]
+    assert [museum_object["object_id"] for museum_object in payload["objects"]] == [40]
+    assert payload["image_assets"] == []
+    assert payload["pagination"] == {
+        "total": 1,
+        "count": 1,
+        "limit": None,
+        "offset": 0,
+        "has_more": False,
+    }
+
+    filtered_response = client.get(
+        "/search-sets/snake-study/local-result-set"
+        "?view=images&q=ceramics&provider=unknown&limit=2"
+    )
+
+    assert filtered_response.status_code == 200
+    filtered_payload = filtered_response.json()
+    assert filtered_payload["counts"] == {"objects": 1, "images": 3}
+    assert filtered_payload["provider_facets"] == [
+        {"provider": "met", "object_count": 1, "image_count": 3}
+    ]
+    assert filtered_payload["image_assets"] == []
+    assert filtered_payload["pagination"] == {
+        "total": 0,
+        "count": 0,
+        "limit": 2,
+        "offset": 0,
+        "has_more": False,
+    }
+
+    paged_response = client.get(
+        "/search-sets/snake-study/local-result-set"
+        "?view=images&q=ceramics&provider=met&limit=2&offset=1"
+    )
+
+    assert paged_response.status_code == 200
+    paged_payload = paged_response.json()
+    assert [asset["object_id"] for asset in paged_payload["image_assets"]] == [40, 40]
+    assert paged_payload["pagination"] == {
+        "total": 3,
+        "count": 2,
+        "limit": 2,
+        "offset": 1,
+        "has_more": False,
+    }
+
+
 def test_api_returns_user_library_image_assets_once_with_collection_membership(tmp_path):
     storage = initialize_storage(project_root=tmp_path)
 

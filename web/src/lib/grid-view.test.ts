@@ -19,7 +19,8 @@ describe("grid view URL helpers", () => {
   it("omits default view params and includes non-default view params", () => {
     expect(
       createGridStateHref({
-        filterText: "",
+        collectionFilterText: "",
+        localQueryText: "",
         searchSetSlug: "snake-study",
         viewMode: "objects",
         workspaceMode: "search-set",
@@ -27,7 +28,8 @@ describe("grid view URL helpers", () => {
     ).toBe("/?search_set=snake-study");
     expect(
       createGridStateHref({
-        filterText: "",
+        collectionFilterText: "",
+        localQueryText: "",
         searchSetSlug: "snake-study",
         viewMode: "images",
         workspaceMode: "search-set",
@@ -49,10 +51,26 @@ describe("grid view URL helpers", () => {
     ).toBe("/?mode=user-library&view=objects&filter=snake");
   });
 
+  it("keeps sidebar Collection filters separate from local result queries", () => {
+    expect(
+      createGridStateHref({
+        collectionFilterText: "venice",
+        localQueryText: "serpent",
+        provider: "met",
+        searchSetSlug: "snake-study",
+        viewMode: "images",
+        workspaceMode: "search-set",
+      }),
+    ).toBe(
+      "/?search_set=snake-study&view=images&collection_filter=venice&q=serpent&provider=met",
+    );
+  });
+
   it("serializes exactly one detail selector", () => {
     expect(
       createGridStateHref({
-        filterText: "",
+        collectionFilterText: "",
+        localQueryText: "",
         imageAssetId: 502,
         object: { objectId: 40, provider: "met" },
         searchSetSlug: "snake-study",

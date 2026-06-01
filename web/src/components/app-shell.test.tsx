@@ -37,7 +37,7 @@ function normalizeServerHtml(html: string): string {
 }
 
 describe("AppShell", () => {
-  it("renders a unified uppercase Collection header with Object and Image counts", () => {
+  it("keeps the Collection header focused while the Local Result Set owns grid controls", () => {
     const html = normalizeServerHtml(renderToString(
       <AppShell
         activeSearchSetSlug="intaglio"
@@ -59,15 +59,10 @@ describe("AppShell", () => {
 
     expect(html).toContain("INTAGLIO RINGS");
     expect(html).toContain("aria-label=\"Workspace\"");
-    expect(html).toContain("aria-label=\"Primary grid view controls\"");
-    expect(html).toContain("aria-label=\"Collection counts\"");
-    expect(html).toContain("lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]");
-    expect(html).toContain("lg:col-start-2");
-    expect(html).toContain("Show Objects");
-    expect(html).toContain("Show Images");
-    expect(html).toContain("/?search_set=intaglio&amp;view=images");
-    expect(html).toContain("12 objects");
-    expect(html).toContain("38 images");
+    expect(html).not.toContain("aria-label=\"Primary grid view controls\"");
+    expect(html).not.toContain("aria-label=\"Collection counts\"");
+    expect(html).not.toContain("12 objects");
+    expect(html).not.toContain("38 images");
   });
 
   it("labels the library header as My Library with the same count pattern", () => {

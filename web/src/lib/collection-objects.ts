@@ -12,6 +12,17 @@ export type CollectionObjectSummary = {
   has_sibling_images: boolean;
 };
 
+export type CollectionResultCounts = {
+  objects: number;
+  images: number;
+};
+
+export type CollectionProviderFacet = {
+  provider: string;
+  objectCount: number;
+  imageCount: number;
+};
+
 export type LibraryImageAssetCollection = {
   slug: string;
   display_name: string;

@@ -11,15 +11,15 @@ export function getFirstParam(value: string | string[] | undefined): string | un
 }
 
 export function createSearchSetHref(slug: string, filterText: string): string {
-  return createWorkspaceHref({ filterText, searchSetSlug: slug });
+  return createWorkspaceHref({ collectionFilterText: filterText, searchSetSlug: slug });
 }
 
 export function createNewSearchSetHref(filterText: string): string {
-  return createWorkspaceHref({ filterText, mode: "new-search-set" });
+  return createWorkspaceHref({ collectionFilterText: filterText, mode: "new-search-set" });
 }
 
 export function createUserLibraryHref(filterText: string): string {
-  return createWorkspaceHref({ filterText, mode: "user-library" });
+  return createWorkspaceHref({ collectionFilterText: filterText, mode: "user-library" });
 }
 
 export function createWorkspaceMode(
@@ -58,11 +58,11 @@ export function filterSearchSets(
 }
 
 function createWorkspaceHref({
-  filterText,
+  collectionFilterText,
   mode,
   searchSetSlug,
 }: {
-  filterText: string;
+  collectionFilterText: string;
   mode?: WorkspaceMode;
   searchSetSlug?: string;
 }): string {
@@ -74,8 +74,8 @@ function createWorkspaceHref({
   if (searchSetSlug !== undefined) {
     params.set("search_set", searchSetSlug);
   }
-  if (filterText.trim() !== "") {
-    params.set("filter", filterText.trim());
+  if (collectionFilterText.trim() !== "") {
+    params.set("collection_filter", collectionFilterText.trim());
   }
 
   const query = params.toString();

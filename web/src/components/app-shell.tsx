@@ -112,7 +112,7 @@ function workspaceLabel({
 }
 
 function shouldShowContentCounts(workspaceMode: WorkspaceMode): boolean {
-  return workspaceMode === "search-set" || workspaceMode === "user-library";
+  return workspaceMode === "user-library";
 }
 
 function runtimeSummaryRow(rows: StatusRow[]): StatusRow | null {

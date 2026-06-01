@@ -35,11 +35,15 @@ const masks: DashboardSearchSetView = {
 
 describe("workspace navigation helpers", () => {
   it("builds navigation hrefs that preserve Collection filters", () => {
-    expect(createNewSearchSetHref("snake")).toBe("/?mode=new-search-set&filter=snake");
-    expect(createSearchSetHref("snake-studies", "snake")).toBe(
-      "/?search_set=snake-studies&filter=snake",
+    expect(createNewSearchSetHref("snake")).toBe(
+      "/?mode=new-search-set&collection_filter=snake",
     );
-    expect(createUserLibraryHref("snake")).toBe("/?mode=user-library&filter=snake");
+    expect(createSearchSetHref("snake-studies", "snake")).toBe(
+      "/?search_set=snake-studies&collection_filter=snake",
+    );
+    expect(createUserLibraryHref("snake")).toBe(
+      "/?mode=user-library&collection_filter=snake",
+    );
   });
 
   it("selects the New Collection workspace when requested or no Collection exists", () => {

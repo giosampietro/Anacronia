@@ -77,17 +77,32 @@ describe("CollectionResultsGrid", () => {
         apiBaseUrl="http://127.0.0.1:18670"
         closeImageHref="/?search_set=snake-study&view=images"
         closeObjectHref="/?search_set=snake-study"
+        collectionFilterText="venice"
         collectionDisplayName="Snake Study"
         createImageAssetHref={(imageAsset) => `/?image=${imageAsset.image_asset_id}`}
         createObjectHref={(object) => `/?object=met:${object.object_id}`}
         imageAssets={imageAssets}
+        localQueryText="ceramics"
         objects={objects}
+        providerFacets={[{ provider: "met", objectCount: 1, imageCount: 2 }]}
+        providerFilter="all"
+        resultCounts={{ objects: 1, images: 2 }}
+        searchSetSlug="snake-study"
         viewMode="objects"
       />,
     ));
 
     expect(html).toContain("Local Museum Objects in this Collection");
-    expect(html).toContain("1 shown");
+    expect(html).toContain("name=\"q\"");
+    expect(html).toContain("value=\"ceramics\"");
+    expect(html).toContain("name=\"collection_filter\"");
+    expect(html).toContain("value=\"venice\"");
+    expect(html).toContain("Objects");
+    expect(html).toContain("1");
+    expect(html).toContain("Images");
+    expect(html).toContain("2");
+    expect(html).toContain("Met");
+    expect(html).not.toContain("1 shown");
     expect(html).toContain("3 images");
     expect(html).toContain("/?object=met:40");
     expect(html).not.toContain("/?image=8");
@@ -99,17 +114,26 @@ describe("CollectionResultsGrid", () => {
         apiBaseUrl="http://127.0.0.1:18670"
         closeImageHref="/?search_set=snake-study&view=images"
         closeObjectHref="/?search_set=snake-study"
+        collectionFilterText=""
         collectionDisplayName="Snake Study"
         createImageAssetHref={(imageAsset) => `/?image=${imageAsset.image_asset_id}`}
         createObjectHref={(object) => `/?object=met:${object.object_id}`}
         imageAssets={imageAssets}
+        localQueryText=""
         objects={objects}
+        providerFacets={[{ provider: "met", objectCount: 1, imageCount: 2 }]}
+        providerFilter="met"
+        resultCounts={{ objects: 1, images: 2 }}
+        searchSetSlug="snake-study"
         viewMode="images"
       />,
     ));
 
     expect(html).toContain("Local Image Assets in this Collection");
-    expect(html).toContain("2 shown");
+    expect(html).toContain("aria-current=\"page\"");
+    expect(html).toContain("Images");
+    expect(html).toContain("2");
+    expect(html).not.toContain("2 shown");
     expect(html).toContain("/?image=9");
     expect(html).toContain("/?image=8");
     expect(html).not.toContain("3 images");
