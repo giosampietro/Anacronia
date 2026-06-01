@@ -62,6 +62,9 @@ export function createGridStateHref({
   object,
   provider = "all",
   searchSetSlug,
+  selectedImageAssetIds = [],
+  selectedObjectKeys = [],
+  selectionMode = false,
   viewMode,
   workspaceMode,
 }: {
@@ -72,6 +75,9 @@ export function createGridStateHref({
   object?: ObjectRouteRef;
   provider?: string;
   searchSetSlug?: string;
+  selectedImageAssetIds?: number[];
+  selectedObjectKeys?: string[];
+  selectionMode?: boolean;
   viewMode: GridViewMode;
   workspaceMode: WorkspaceMode;
 }): string {
@@ -99,6 +105,23 @@ export function createGridStateHref({
   }
   if (provider.trim() !== "" && provider !== "all") {
     params.set("provider", provider.trim());
+  }
+  if (selectionMode) {
+    params.set("select", "1");
+    for (const selectedObjectKey of selectedObjectKeys) {
+      const parsedObject = parseObjectRouteKey(selectedObjectKey);
+      if (parsedObject !== null) {
+        params.append(
+          "selected_object",
+          createObjectRouteKey(parsedObject.provider, parsedObject.objectId),
+        );
+      }
+    }
+    for (const selectedImageAssetId of selectedImageAssetIds) {
+      if (Number.isFinite(selectedImageAssetId)) {
+        params.append("selected_image", String(selectedImageAssetId));
+      }
+    }
   }
   if (filterText !== undefined && filterText.trim() !== "") {
     params.set("filter", filterText.trim());

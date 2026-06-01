@@ -89,6 +89,9 @@ describe("CollectionResultsGrid", () => {
         providerFilter="all"
         resultCounts={{ objects: 1, images: 2 }}
         searchSetSlug="snake-study"
+        selectedImageAssetIds={[]}
+        selectedObjectKeys={["met:999"]}
+        selectionMode
         viewMode="objects"
       />,
     ));
@@ -104,6 +107,15 @@ describe("CollectionResultsGrid", () => {
     expect(html).toContain("1");
     expect(html).toContain("Images");
     expect(html).toContain("2");
+    expect(html).toContain("Done");
+    expect(html).toContain("Select visible");
+    expect(html).toMatch(/>0<\/span> visible[\s\S]*>1<\/span> selected/);
+    expect(html).toContain("Export selected");
+    expect(html).toContain("Delete selected");
+    expect(html).toContain("Select Met object 40");
+    expect(html).toContain(
+      "selected_object=met%3A999&amp;selected_object=met%3A40",
+    );
     expect(html).toContain("Met");
     expect(html).not.toContain("1 shown");
     expect(html).toContain("3 images");
@@ -128,6 +140,9 @@ describe("CollectionResultsGrid", () => {
         providerFilter="met"
         resultCounts={{ objects: 1, images: 2 }}
         searchSetSlug="snake-study"
+        selectedImageAssetIds={[8]}
+        selectedObjectKeys={[]}
+        selectionMode
         viewMode="images"
       />,
     ));
@@ -135,6 +150,9 @@ describe("CollectionResultsGrid", () => {
     expect(html).toContain("Local Image Assets in this Collection");
     expect(html).not.toContain("Clear local search");
     expect(html).toContain("aria-current=\"page\"");
+    expect(html).toMatch(/>1<\/span> visible[\s\S]*>1<\/span> selected/);
+    expect(html).toContain("Select Image Asset 9");
+    expect(html).toContain("Deselect Image Asset 8");
     expect(html).toContain("Images");
     expect(html).toContain("2");
     expect(html).not.toContain("2 shown");

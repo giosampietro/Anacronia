@@ -1,5 +1,13 @@
 import Link from "next/link";
-import { Database, Images, Search } from "lucide-react";
+import {
+  Check,
+  Database,
+  Download,
+  Images,
+  Search,
+  Square,
+  Trash2,
+} from "lucide-react";
 
 import {
   ImageAssetDetailPendingLink,
@@ -9,7 +17,7 @@ import { CollectionResultSetSearchForm } from "@/components/collection-result-se
 import { ObjectDetailPendingLink } from "@/components/object-detail-pending-link";
 import { AspectRatio } from "@/components/ui/aspect-ratio";
 import { Badge } from "@/components/ui/badge";
-import { buttonVariants } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -34,6 +42,7 @@ import {
 import { formatCollectionDisplayName } from "@/lib/collection-display";
 import {
   createGridStateHref,
+  createObjectRouteKey,
   type GridViewMode,
   type ObjectRouteRef,
 } from "@/lib/grid-view";
@@ -44,6 +53,7 @@ import {
   IMAGE_GRID_PROVIDER_BADGE_CLASS_NAME,
   IMAGE_GRID_TILE_CLASS_NAME,
 } from "@/lib/image-grid-style";
+import { cn } from "@/lib/utils";
 
 type CollectionResultsGridProps = {
   apiBaseUrl: string;
@@ -63,6 +73,9 @@ type CollectionResultsGridProps = {
   resolvedObject?: ObjectRouteRef | null;
   resultCounts: CollectionResultCounts;
   searchSetSlug: string;
+  selectedImageAssetIds?: number[];
+  selectedObjectKeys?: string[];
+  selectionMode?: boolean;
   viewMode: GridViewMode;
 };
 
@@ -91,6 +104,34 @@ function viewNoun(viewMode: GridViewMode): string {
 
 function viewCountLabel(viewMode: GridViewMode, counts: CollectionResultCounts): number {
   return viewMode === "objects" ? counts.objects : counts.images;
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return Array.from(new Set(values));
+}
+
+function uniqueNumbers(values: number[]): number[] {
+  return Array.from(new Set(values.filter(Number.isFinite)));
+}
+
+function toggleStringSelection(values: string[], value: string): string[] {
+  return values.includes(value)
+    ? values.filter((selectedValue) => selectedValue !== value)
+    : [...values, value];
+}
+
+function toggleNumberSelection(values: number[], value: number): number[] {
+  return values.includes(value)
+    ? values.filter((selectedValue) => selectedValue !== value)
+    : [...values, value];
+}
+
+function countSelectedVisible<T>(
+  visibleItems: T[],
+  selectedItems: Set<string | number>,
+  getIdentity: (item: T) => string | number,
+): number {
+  return visibleItems.filter((item) => selectedItems.has(getIdentity(item))).length;
 }
 
 function ProjectionControls({
@@ -155,6 +196,9 @@ function ProviderFacets({
   providerFilter,
   resultCounts,
   searchSetSlug,
+  selectedImageAssetIds,
+  selectedObjectKeys,
+  selectionMode,
   viewMode,
 }: {
   collectionFilterText: string;
@@ -163,6 +207,9 @@ function ProviderFacets({
   providerFilter: string;
   resultCounts: CollectionResultCounts;
   searchSetSlug: string;
+  selectedImageAssetIds: number[];
+  selectedObjectKeys: string[];
+  selectionMode: boolean;
   viewMode: GridViewMode;
 }) {
   const allCount = viewCountLabel(viewMode, resultCounts);
@@ -180,6 +227,9 @@ function ProviderFacets({
           localQueryText,
           provider: "all",
           searchSetSlug,
+          selectedImageAssetIds,
+          selectedObjectKeys,
+          selectionMode,
           viewMode,
           workspaceMode: "search-set",
         })}
@@ -206,6 +256,9 @@ function ProviderFacets({
               localQueryText,
               provider: facet.provider,
               searchSetSlug,
+              selectedImageAssetIds,
+              selectedObjectKeys,
+              selectionMode,
               viewMode,
               workspaceMode: "search-set",
             })}
@@ -219,6 +272,139 @@ function ProviderFacets({
           </Link>
         );
       })}
+    </div>
+  );
+}
+
+function SelectionControls({
+  collectionFilterText,
+  imageAssets,
+  localQueryText,
+  objects,
+  providerFilter,
+  searchSetSlug,
+  selectedImageAssetIds,
+  selectedObjectKeys,
+  selectionMode,
+  viewMode,
+}: {
+  collectionFilterText: string;
+  imageAssets: LibraryImageAssetSummary[];
+  localQueryText: string;
+  objects: CollectionObjectSummary[];
+  providerFilter: string;
+  searchSetSlug: string;
+  selectedImageAssetIds: number[];
+  selectedObjectKeys: string[];
+  selectionMode: boolean;
+  viewMode: GridViewMode;
+}) {
+  const visibleObjectKeys = objects.map((collectionObject) =>
+    createObjectRouteKey(collectionObject.provider, collectionObject.object_id),
+  );
+  const visibleImageAssetIds = imageAssets.map(
+    (imageAsset) => imageAsset.image_asset_id,
+  );
+  const selectedObjectKeySet = new Set<string>(selectedObjectKeys);
+  const selectedImageAssetIdSet = new Set<number>(selectedImageAssetIds);
+  const selectedVisibleCount =
+    viewMode === "objects"
+      ? countSelectedVisible(objects, selectedObjectKeySet, (collectionObject) =>
+          createObjectRouteKey(collectionObject.provider, collectionObject.object_id),
+        )
+      : countSelectedVisible(
+          imageAssets,
+          selectedImageAssetIdSet,
+          (imageAsset) => imageAsset.image_asset_id,
+        );
+  const selectedTotalCount =
+    viewMode === "objects" ? selectedObjectKeys.length : selectedImageAssetIds.length;
+  const visibleCount = viewMode === "objects" ? objects.length : imageAssets.length;
+  const selectHref = createGridStateHref({
+    collectionFilterText,
+    localQueryText,
+    provider: providerFilter,
+    searchSetSlug,
+    selectionMode: true,
+    viewMode,
+    workspaceMode: "search-set",
+  });
+  const doneHref = createGridStateHref({
+    collectionFilterText,
+    localQueryText,
+    provider: providerFilter,
+    searchSetSlug,
+    viewMode,
+    workspaceMode: "search-set",
+  });
+  const selectVisibleHref = createGridStateHref({
+    collectionFilterText,
+    localQueryText,
+    provider: providerFilter,
+    searchSetSlug,
+    selectedImageAssetIds:
+      viewMode === "images"
+        ? uniqueNumbers([...selectedImageAssetIds, ...visibleImageAssetIds])
+        : selectedImageAssetIds,
+    selectedObjectKeys:
+      viewMode === "objects"
+        ? uniqueStrings([...selectedObjectKeys, ...visibleObjectKeys])
+        : selectedObjectKeys,
+    selectionMode: true,
+    viewMode,
+    workspaceMode: "search-set",
+  });
+
+  if (!selectionMode) {
+    return (
+      <Link
+        className={buttonVariants({ size: "sm", variant: "outline" })}
+        href={selectHref}
+        scroll={false}
+      >
+        Select
+      </Link>
+    );
+  }
+
+  return (
+    <div
+      aria-label="Selection controls"
+      className="flex min-w-0 flex-wrap items-center gap-2"
+    >
+      <Link
+        className={buttonVariants({ size: "sm", variant: "secondary" })}
+        href={doneHref}
+        scroll={false}
+      >
+        Done
+      </Link>
+      {visibleCount > 0 ? (
+        <Link
+          className={buttonVariants({ size: "sm", variant: "outline" })}
+          href={selectVisibleHref}
+          scroll={false}
+        >
+          Select visible
+        </Link>
+      ) : (
+        <Button disabled size="sm" type="button" variant="outline">
+          Select visible
+        </Button>
+      )}
+      <p className="text-sm text-muted-foreground">
+        <span className="font-mono tabular-nums">{selectedVisibleCount}</span> visible
+        <span aria-hidden="true"> · </span>
+        <span className="font-mono tabular-nums">{selectedTotalCount}</span> selected
+      </p>
+      <Button disabled size="sm" type="button" variant="outline">
+        <Download data-icon="inline-start" />
+        Export selected
+      </Button>
+      <Button disabled size="sm" type="button" variant="destructive">
+        <Trash2 data-icon="inline-start" />
+        Delete selected
+      </Button>
     </div>
   );
 }
@@ -279,12 +465,19 @@ export function CollectionResultsGrid({
   resolvedObject = null,
   resultCounts,
   searchSetSlug,
+  selectedImageAssetIds = [],
+  selectedObjectKeys = [],
+  selectionMode = false,
   viewMode,
 }: CollectionResultsGridProps) {
   const shownCount = viewMode === "objects" ? objects.length : imageAssets.length;
   const formattedCollectionDisplayName = formatCollectionDisplayName(
     collectionDisplayName,
   );
+  const normalizedSelectedImageAssetIds = uniqueNumbers(selectedImageAssetIds);
+  const normalizedSelectedObjectKeys = uniqueStrings(selectedObjectKeys);
+  const selectedImageAssetIdSet = new Set(normalizedSelectedImageAssetIds);
+  const selectedObjectKeySet = new Set(normalizedSelectedObjectKeys);
 
   return (
     <Card className="min-w-0">
@@ -303,6 +496,9 @@ export function CollectionResultsGrid({
             localQueryText={localQueryText}
             providerFilter={providerFilter}
             searchSetSlug={searchSetSlug}
+            selectedImageAssetIds={normalizedSelectedImageAssetIds}
+            selectedObjectKeys={normalizedSelectedObjectKeys}
+            selectionMode={selectionMode}
             viewMode={viewMode}
           />
           <ProjectionControls
@@ -320,6 +516,21 @@ export function CollectionResultsGrid({
             providerFilter={providerFilter}
             resultCounts={resultCounts}
             searchSetSlug={searchSetSlug}
+            selectedImageAssetIds={normalizedSelectedImageAssetIds}
+            selectedObjectKeys={normalizedSelectedObjectKeys}
+            selectionMode={selectionMode}
+            viewMode={viewMode}
+          />
+          <SelectionControls
+            collectionFilterText={collectionFilterText}
+            imageAssets={imageAssets}
+            localQueryText={localQueryText}
+            objects={objects}
+            providerFilter={providerFilter}
+            searchSetSlug={searchSetSlug}
+            selectedImageAssetIds={normalizedSelectedImageAssetIds}
+            selectedObjectKeys={normalizedSelectedObjectKeys}
+            selectionMode={selectionMode}
             viewMode={viewMode}
           />
         </div>
@@ -342,6 +553,25 @@ export function CollectionResultsGrid({
                 collectionObject.provider,
                 collectionObject.object_id,
               );
+              const objectSelectionKey = createObjectRouteKey(
+                collectionObject.provider,
+                collectionObject.object_id,
+              );
+              const isSelected = selectedObjectKeySet.has(objectSelectionKey);
+              const toggleHref = createGridStateHref({
+                collectionFilterText,
+                localQueryText,
+                provider: providerFilter,
+                searchSetSlug,
+                selectedImageAssetIds: normalizedSelectedImageAssetIds,
+                selectedObjectKeys: toggleStringSelection(
+                  normalizedSelectedObjectKeys,
+                  objectSelectionKey,
+                ),
+                selectionMode: true,
+                viewMode,
+                workspaceMode: "search-set",
+              });
               const thumbSrc = imageUrl(apiBaseUrl, collectionObject.cover_thumb_url);
               const objectAlt =
                 collectionObject.title ||
@@ -354,48 +584,71 @@ export function CollectionResultsGrid({
                   : "grid";
 
               return (
-                <ObjectDetailPendingLink
-                  ariaLabel={`Open ${collectionObjectProviderLabel} object ${collectionObject.object_id}`}
-                  className={IMAGE_GRID_TILE_CLASS_NAME}
-                  closeHref={closeObjectHref}
-                  href={createObjectHref(collectionObject)}
-                  id={tileId}
+                <div
                   key={`${collectionObject.provider}-${collectionObject.object_id}-${tileStateKey}`}
-                  preview={{
-                    alt: objectAlt,
-                    collectionLabel: formattedCollectionDisplayName,
-                    height: collectionObject.cover_original_height,
-                    imageCount: collectionObject.image_count,
-                    providerLabel: collectionObjectProviderLabel,
-                    src: thumbSrc,
-                    title: collectionObject.title || "Untitled object",
-                    width: collectionObject.cover_original_width,
-                  }}
+                  className="relative"
                 >
-                  <AspectRatio ratio={4 / 5}>
-                    <ImageGridThumbnail alt={objectAlt} src={thumbSrc} />
-                    {collectionObject.has_sibling_images ? (
-                      <span
-                        aria-label={`${collectionObject.image_count} images`}
-                        className={IMAGE_GRID_CAROUSEL_INDICATOR_CLASS_NAME}
-                      >
-                        <Images data-icon="inline-start" />
-                        {collectionObject.image_count}
-                      </span>
-                    ) : null}
-                    <Badge
-                      className={IMAGE_GRID_PROVIDER_BADGE_CLASS_NAME}
-                      variant="secondary"
+                  {selectionMode ? (
+                    <Link
+                      aria-label={`${isSelected ? "Deselect" : "Select"} ${collectionObjectProviderLabel} object ${collectionObject.object_id}`}
+                      className={cn(
+                        buttonVariants({
+                          size: "icon-sm",
+                          variant: isSelected ? "default" : "secondary",
+                        }),
+                        "absolute left-1.5 top-1.5 z-20 size-7 rounded-full bg-background/92 shadow-sm backdrop-blur-sm",
+                      )}
+                      href={toggleHref}
+                      scroll={false}
                     >
-                      {collectionObjectProviderLabel}
-                    </Badge>
-                    <div className={IMAGE_GRID_OVERLAY_CLASS_NAME}>
-                      <p className="mt-1 line-clamp-2 text-xs font-medium leading-tight">
-                        {collectionObject.title || "Untitled object"}
-                      </p>
-                    </div>
-                  </AspectRatio>
-                </ObjectDetailPendingLink>
+                      {isSelected ? <Check /> : <Square />}
+                    </Link>
+                  ) : null}
+                  <ObjectDetailPendingLink
+                    ariaLabel={`Open ${collectionObjectProviderLabel} object ${collectionObject.object_id}`}
+                    className={IMAGE_GRID_TILE_CLASS_NAME}
+                    closeHref={closeObjectHref}
+                    href={createObjectHref(collectionObject)}
+                    id={tileId}
+                    preview={{
+                      alt: objectAlt,
+                      collectionLabel: formattedCollectionDisplayName,
+                      height: collectionObject.cover_original_height,
+                      imageCount: collectionObject.image_count,
+                      providerLabel: collectionObjectProviderLabel,
+                      src: thumbSrc,
+                      title: collectionObject.title || "Untitled object",
+                      width: collectionObject.cover_original_width,
+                    }}
+                  >
+                    <AspectRatio ratio={4 / 5}>
+                      <ImageGridThumbnail alt={objectAlt} src={thumbSrc} />
+                      {collectionObject.has_sibling_images ? (
+                        <span
+                          aria-label={`${collectionObject.image_count} images`}
+                          className={IMAGE_GRID_CAROUSEL_INDICATOR_CLASS_NAME}
+                        >
+                          <Images data-icon="inline-start" />
+                          {collectionObject.image_count}
+                        </span>
+                      ) : null}
+                      <Badge
+                        className={cn(
+                          IMAGE_GRID_PROVIDER_BADGE_CLASS_NAME,
+                          selectionMode && "left-9 opacity-100",
+                        )}
+                        variant="secondary"
+                      >
+                        {collectionObjectProviderLabel}
+                      </Badge>
+                      <div className={IMAGE_GRID_OVERLAY_CLASS_NAME}>
+                        <p className="mt-1 line-clamp-2 text-xs font-medium leading-tight">
+                          {collectionObject.title || "Untitled object"}
+                        </p>
+                      </div>
+                    </AspectRatio>
+                  </ObjectDetailPendingLink>
+                </div>
               );
             })}
           </div>
@@ -408,6 +661,23 @@ export function CollectionResultsGrid({
               const tileId = createCollectionImageAssetTileId(
                 imageAsset.image_asset_id,
               );
+              const isSelected = selectedImageAssetIdSet.has(
+                imageAsset.image_asset_id,
+              );
+              const toggleHref = createGridStateHref({
+                collectionFilterText,
+                localQueryText,
+                provider: providerFilter,
+                searchSetSlug,
+                selectedImageAssetIds: toggleNumberSelection(
+                  normalizedSelectedImageAssetIds,
+                  imageAsset.image_asset_id,
+                ),
+                selectedObjectKeys: normalizedSelectedObjectKeys,
+                selectionMode: true,
+                viewMode,
+                workspaceMode: "search-set",
+              });
               const thumbSrc = imageUrl(apiBaseUrl, imageAsset.thumb_url);
               const imageAssetAlt =
                 imageAsset.title ||
@@ -416,38 +686,61 @@ export function CollectionResultsGrid({
                 resolvedImageAssetId === imageAsset.image_asset_id ? "resolved" : "grid";
 
               return (
-                <ImageAssetDetailPendingLink
-                  ariaLabel={`Open ${imageAssetProviderLabel} Image Asset ${imageAsset.image_asset_id}`}
-                  className={IMAGE_GRID_TILE_CLASS_NAME}
-                  closeHref={closeImageHref}
-                  href={createImageAssetHref(imageAsset)}
-                  id={tileId}
+                <div
                   key={`${imageAsset.image_asset_id}-${tileStateKey}`}
-                  preview={{
-                    alt: imageAssetAlt,
-                    height: imageAsset.original_height,
-                    parentTitle: imageAsset.title || "Untitled object",
-                    providerLabel: imageAssetProviderLabel,
-                    src: thumbSrc,
-                    title: "Image Asset",
-                    width: imageAsset.original_width,
-                  }}
+                  className="relative"
                 >
-                  <AspectRatio ratio={4 / 5}>
-                    <ImageGridThumbnail alt={imageAssetAlt} src={thumbSrc} />
-                    <Badge
-                      className={IMAGE_GRID_PROVIDER_BADGE_CLASS_NAME}
-                      variant="secondary"
+                  {selectionMode ? (
+                    <Link
+                      aria-label={`${isSelected ? "Deselect" : "Select"} Image Asset ${imageAsset.image_asset_id}`}
+                      className={cn(
+                        buttonVariants({
+                          size: "icon-sm",
+                          variant: isSelected ? "default" : "secondary",
+                        }),
+                        "absolute left-1.5 top-1.5 z-20 size-7 rounded-full bg-background/92 shadow-sm backdrop-blur-sm",
+                      )}
+                      href={toggleHref}
+                      scroll={false}
                     >
-                      {imageAssetProviderLabel}
-                    </Badge>
-                    <div className={IMAGE_GRID_OVERLAY_CLASS_NAME}>
-                      <p className="mt-1 line-clamp-2 text-xs font-medium leading-tight">
-                        {imageAsset.title || "Untitled object"}
-                      </p>
-                    </div>
-                  </AspectRatio>
-                </ImageAssetDetailPendingLink>
+                      {isSelected ? <Check /> : <Square />}
+                    </Link>
+                  ) : null}
+                  <ImageAssetDetailPendingLink
+                    ariaLabel={`Open ${imageAssetProviderLabel} Image Asset ${imageAsset.image_asset_id}`}
+                    className={IMAGE_GRID_TILE_CLASS_NAME}
+                    closeHref={closeImageHref}
+                    href={createImageAssetHref(imageAsset)}
+                    id={tileId}
+                    preview={{
+                      alt: imageAssetAlt,
+                      height: imageAsset.original_height,
+                      parentTitle: imageAsset.title || "Untitled object",
+                      providerLabel: imageAssetProviderLabel,
+                      src: thumbSrc,
+                      title: "Image Asset",
+                      width: imageAsset.original_width,
+                    }}
+                  >
+                    <AspectRatio ratio={4 / 5}>
+                      <ImageGridThumbnail alt={imageAssetAlt} src={thumbSrc} />
+                      <Badge
+                        className={cn(
+                          IMAGE_GRID_PROVIDER_BADGE_CLASS_NAME,
+                          selectionMode && "left-9 opacity-100",
+                        )}
+                        variant="secondary"
+                      >
+                        {imageAssetProviderLabel}
+                      </Badge>
+                      <div className={IMAGE_GRID_OVERLAY_CLASS_NAME}>
+                        <p className="mt-1 line-clamp-2 text-xs font-medium leading-tight">
+                          {imageAsset.title || "Untitled object"}
+                        </p>
+                      </div>
+                    </AspectRatio>
+                  </ImageAssetDetailPendingLink>
+                </div>
               );
             })}
           </div>
