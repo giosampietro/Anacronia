@@ -17,7 +17,7 @@ const rows: StatusRow[] = [
 const dashboardView: OperationalDashboardView = {
   activeSearchSet: {
     activeTerms: ["snake"],
-    displayName: "Intaglio",
+    displayName: "inTagLIO rings",
     inactiveTerms: [],
     importedImageCount: 38,
     importedObjectCount: 12,
@@ -57,7 +57,12 @@ describe("AppShell", () => {
       </AppShell>,
     ));
 
-    expect(html).toContain("INTAGLIO");
+    expect(html).toContain("INTAGLIO RINGS");
+    expect(html).toContain("aria-label=\"Workspace\"");
+    expect(html).toContain("aria-label=\"Primary grid view controls\"");
+    expect(html).toContain("aria-label=\"Collection counts\"");
+    expect(html).toContain("lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]");
+    expect(html).toContain("lg:col-start-2");
     expect(html).toContain("Show Objects");
     expect(html).toContain("Show Images");
     expect(html).toContain("/?search_set=intaglio&amp;view=images");

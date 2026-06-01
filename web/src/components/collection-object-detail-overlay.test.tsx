@@ -15,7 +15,7 @@ describe("CollectionObjectDetailOverlay", () => {
       <CollectionObjectDetailOverlay
         apiBaseUrl="http://127.0.0.1:18670"
         closeHref="/?search_set=snake"
-        collectionLabels={["Snake Studies"]}
+        collectionLabels={["sNaKe STUDIES"]}
         returnFocusId="collection-object-met-40"
         detail={{
           object: {
@@ -91,6 +91,7 @@ describe("CollectionObjectDetailOverlay", () => {
     expect(normalizedHtml).toContain("Provider record");
     expect(normalizedHtml).toContain("Collections");
     expect(normalizedHtml).toContain("Snake Studies");
+    expect(normalizedHtml).not.toContain("sNaKe STUDIES");
     expect(normalizedHtml).toContain("Greek and Roman Art");
     expect(normalizedHtml).toContain("Unknown");
     expect(normalizedHtml).toContain("Terracotta");

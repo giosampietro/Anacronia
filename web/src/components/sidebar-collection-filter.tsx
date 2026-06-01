@@ -19,6 +19,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
+import { formatCollectionDisplayName } from "@/lib/collection-display";
 import { cn } from "@/lib/utils";
 
 type SidebarCollectionFilterProps = {
@@ -72,6 +73,7 @@ export function SidebarCollectionFilter({
           </Empty>
         ) : (
           filteredSearchSets.map((searchSet) => {
+            const collectionName = formatCollectionDisplayName(searchSet.displayName);
             const isActive =
               workspaceMode === "search-set" &&
               searchSet.slug === activeSearchSetSlug;
@@ -91,7 +93,7 @@ export function SidebarCollectionFilter({
                   render={
                     <Link href={createSearchSetHref(searchSet.slug, filterText)} />
                   }
-                  tooltip={searchSet.displayName}
+                  tooltip={collectionName}
                 >
                   {isOpen ? (
                     <FolderOpen className="text-sidebar-foreground/75" />
@@ -99,7 +101,7 @@ export function SidebarCollectionFilter({
                     <FolderClosed className="text-sidebar-foreground/65" />
                   )}
                   <span className="min-w-0 flex-1 truncate group-data-[collapsible=icon]:hidden">
-                    {searchSet.displayName}
+                    {collectionName}
                   </span>
                   <span
                     aria-label={`${searchSet.importedImageCount} images`}

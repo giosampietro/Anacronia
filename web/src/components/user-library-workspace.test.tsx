@@ -30,8 +30,8 @@ const imageAssets: LibraryImageAssetSummary[] = [
     thumb_url: "/image-assets/9/thumb",
     standard_url: "/image-assets/9/standard",
     collections: [
-      { slug: "snake-study", display_name: "Snake Study" },
-      { slug: "serpent-study", display_name: "Serpent Study" },
+      { slug: "snake-study", display_name: "sNaKe STUDY" },
+      { slug: "serpent-study", display_name: "SERPENT study" },
     ],
   },
   {
@@ -49,7 +49,7 @@ const imageAssets: LibraryImageAssetSummary[] = [
     has_sibling_images: false,
     thumb_url: "/image-assets/4/thumb",
     standard_url: "/image-assets/4/standard",
-    collections: [{ slug: "snake-study", display_name: "Snake Study" }],
+    collections: [{ slug: "snake-study", display_name: "sNaKe STUDY" }],
   },
 ];
 
@@ -67,8 +67,8 @@ const objects: LibraryObjectSummary[] = [
     cover_thumb_url: "/image-assets/9/thumb",
     has_sibling_images: true,
     collections: [
-      { slug: "snake-study", display_name: "Snake Study" },
-      { slug: "serpent-study", display_name: "Serpent Study" },
+      { slug: "snake-study", display_name: "sNaKe STUDY" },
+      { slug: "serpent-study", display_name: "SERPENT study" },
     ],
   },
   {
@@ -83,7 +83,7 @@ const objects: LibraryObjectSummary[] = [
     cover_original_height: 1600,
     cover_thumb_url: "/image-assets/4/thumb",
     has_sibling_images: false,
-    collections: [{ slug: "snake-study", display_name: "Snake Study" }],
+    collections: [{ slug: "snake-study", display_name: "sNaKe STUDY" }],
   },
 ];
 
@@ -102,6 +102,8 @@ describe("UserLibraryWorkspace", () => {
 
     expect(html).toContain("Snake Study");
     expect(html).toContain("Serpent Study");
+    expect(html).not.toContain("sNaKe STUDY");
+    expect(html).not.toContain("SERPENT study");
     expect(html).not.toContain(">3</");
     expect(html).toContain("Met");
     expect(html).toContain("/?mode=user-library&amp;image=9");

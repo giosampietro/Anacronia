@@ -12,7 +12,7 @@ describe("createOperationalDashboardView", () => {
       },
       search_sets: [
         {
-          display_name: "Snake Studies",
+          display_name: "sNaKe STUDIES",
           slug: "snake-studies",
           terms: [
             { term: "snake", active: true },

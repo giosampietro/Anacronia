@@ -52,6 +52,7 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar";
 import type { AppVersionStamp } from "@/lib/app-version";
+import { formatCollectionDisplayName } from "@/lib/collection-display";
 import type { OperationalDashboardView } from "@/lib/dashboard";
 import type { GridViewMode } from "@/lib/grid-view";
 import type { StatusRow } from "@/lib/status";
@@ -105,7 +106,9 @@ function workspaceLabel({
     return "MY LIBRARY";
   }
 
-  return (dashboardView.activeSearchSet?.displayName ?? "Collection").toUpperCase();
+  return formatCollectionDisplayName(
+    dashboardView.activeSearchSet?.displayName ?? "Collection",
+  ).toUpperCase();
 }
 
 function shouldShowContentCounts(workspaceMode: WorkspaceMode): boolean {
@@ -384,33 +387,46 @@ export function AppShell({
         workspaceMode={workspaceMode}
       />
       <SidebarInset>
-        <header className="sticky top-0 z-20 flex min-h-12 shrink-0 flex-wrap items-center gap-3 border-b bg-background/95 px-4 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-          <SidebarTrigger className="-ml-1" />
-          <Separator
-            className="data-vertical:h-4 data-vertical:self-auto"
-            orientation="vertical"
-          />
-          <div className="flex min-w-0 flex-1 items-center gap-3">
+        <header className="sticky top-0 z-20 grid min-h-12 shrink-0 grid-cols-1 items-center gap-x-3 gap-y-2 border-b bg-background/95 px-4 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/80 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
+          <div
+            aria-label="Workspace"
+            className="flex min-w-0 items-center gap-3 lg:col-start-1 lg:row-start-1"
+          >
+            <SidebarTrigger className="-ml-1" />
+            <Separator
+              className="data-vertical:h-4 data-vertical:self-auto"
+              orientation="vertical"
+            />
             <span className="truncate text-sm font-semibold uppercase tracking-wide">
               {workspaceLabel({ dashboardView, workspaceMode })}
             </span>
           </div>
           {shouldShowContentCounts(workspaceMode) ? (
-            <div className="flex shrink-0 flex-wrap items-center gap-2">
+            <>
               {gridViewMode && gridViewObjectHref && gridViewImageHref ? (
-                <GridViewSwitch
-                  imageHref={gridViewImageHref}
-                  objectHref={gridViewObjectHref}
-                  viewMode={gridViewMode}
-                />
+                <div
+                  aria-label="Primary grid view controls"
+                  className="flex min-w-0 justify-center lg:col-start-2 lg:row-start-1"
+                >
+                  <GridViewSwitch
+                    imageHref={gridViewImageHref}
+                    objectHref={gridViewObjectHref}
+                    viewMode={gridViewMode}
+                  />
+                </div>
               ) : null}
-              <Badge className="shrink-0 tabular-nums" variant="outline">
-                {contentHeaderObjectCount} objects
-              </Badge>
-              <Badge className="shrink-0 tabular-nums" variant="outline">
-                {contentHeaderImageCount} images
-              </Badge>
-            </div>
+              <div
+                aria-label="Collection counts"
+                className="flex min-w-0 flex-wrap items-center justify-end gap-2 lg:col-start-3 lg:row-start-1"
+              >
+                <Badge className="shrink-0 tabular-nums" variant="outline">
+                  {contentHeaderObjectCount} objects
+                </Badge>
+                <Badge className="shrink-0 tabular-nums" variant="outline">
+                  {contentHeaderImageCount} images
+                </Badge>
+              </div>
+            </>
           ) : null}
         </header>
         {children}

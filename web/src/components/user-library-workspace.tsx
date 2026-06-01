@@ -10,6 +10,7 @@ import {
   type LibraryImageAssetSummary,
   type LibraryObjectSummary,
 } from "@/lib/collection-objects";
+import { formatCollectionDisplayName } from "@/lib/collection-display";
 import {
   createGridStateHref,
   type GridViewMode,
@@ -96,9 +97,13 @@ function collectionLabel(item: { collections: { display_name: string }[] }): str
   }
 
   const [firstCollection, ...extraCollections] = item.collections;
+  const firstCollectionName = formatCollectionDisplayName(
+    firstCollection.display_name,
+  );
+
   return extraCollections.length === 0
-    ? firstCollection.display_name
-    : `${firstCollection.display_name} +${extraCollections.length}`;
+    ? firstCollectionName
+    : `${firstCollectionName} +${extraCollections.length}`;
 }
 
 function EmptyLibraryState({
@@ -268,7 +273,9 @@ export function UserLibraryWorkspace({
                     </Badge>
                     <p className="sr-only">
                       {imageAsset.collections
-                        .map((collection) => collection.display_name)
+                        .map((collection) =>
+                          formatCollectionDisplayName(collection.display_name),
+                        )
                         .join(", ")}
                     </p>
                   </div>

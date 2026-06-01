@@ -27,6 +27,7 @@ import {
   type CollectionObjectSummary,
   type LibraryImageAssetSummary,
 } from "@/lib/collection-objects";
+import { formatCollectionDisplayName } from "@/lib/collection-display";
 import type { GridViewMode, ObjectRouteRef } from "@/lib/grid-view";
 import {
   IMAGE_GRID_CAROUSEL_INDICATOR_CLASS_NAME,
@@ -101,6 +102,9 @@ export function CollectionResultsGrid({
   viewMode,
 }: CollectionResultsGridProps) {
   const shownCount = viewMode === "objects" ? objects.length : imageAssets.length;
+  const formattedCollectionDisplayName = formatCollectionDisplayName(
+    collectionDisplayName,
+  );
 
   return (
     <Card className="min-w-0">
@@ -151,7 +155,7 @@ export function CollectionResultsGrid({
                   key={`${collectionObject.provider}-${collectionObject.object_id}-${tileStateKey}`}
                   preview={{
                     alt: objectAlt,
-                    collectionLabel: collectionDisplayName,
+                    collectionLabel: formattedCollectionDisplayName,
                     height: collectionObject.cover_original_height,
                     imageCount: collectionObject.image_count,
                     providerLabel: collectionObjectProviderLabel,

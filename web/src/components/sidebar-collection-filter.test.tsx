@@ -6,7 +6,7 @@ import { SidebarProvider } from "./ui/sidebar";
 import type { DashboardSearchSetView } from "@/lib/dashboard";
 
 const snakeStudy: DashboardSearchSetView = {
-  displayName: "Snake Study",
+  displayName: "sNaKe STUDY",
   slug: "snake-study",
   activeTerms: ["snake"],
   inactiveTerms: [],
@@ -43,6 +43,7 @@ describe("SidebarCollectionFilter", () => {
     );
 
     expect(html).toContain("Snake Study");
+    expect(html).not.toContain("sNaKe STUDY");
     expect(html).not.toContain("Masks");
     expect(html).not.toContain("type=\"submit\"");
     expect(html).not.toContain("Search Collections");
@@ -64,6 +65,7 @@ describe("SidebarCollectionFilter", () => {
     expect(html).toContain("lucide-folder-open");
     expect(html).toContain("lucide-folder-closed");
     expect(html).toContain("Snake Study");
+    expect(html).not.toContain("sNaKe STUDY");
     expect(html).toContain("snake");
     expect(html).toContain("5 images");
     expect(html).not.toContain("lucide-database");

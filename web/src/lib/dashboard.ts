@@ -1,3 +1,4 @@
+import { formatCollectionDisplayName } from "./collection-display";
 import type { SearchSetTerm } from "./search-sets";
 
 export type DashboardProviderCollection = {
@@ -132,7 +133,7 @@ export function createOperationalDashboardView(
     }));
 
     return {
-      displayName: searchSet.display_name,
+      displayName: formatCollectionDisplayName(searchSet.display_name),
       slug: searchSet.slug,
       activeTerms,
       inactiveTerms,

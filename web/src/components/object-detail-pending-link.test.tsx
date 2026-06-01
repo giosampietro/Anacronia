@@ -23,7 +23,7 @@ describe("ObjectDetailPendingLink", () => {
         initialPending
         preview={{
           alt: "Met Image Asset 9",
-          collectionLabel: "snake",
+          collectionLabel: "sNaKe jewelry",
           height: 800,
           imageCount: 3,
           providerLabel: "Met",
@@ -43,7 +43,8 @@ describe("ObjectDetailPendingLink", () => {
     expect(html).toContain('width="1600"');
     expect(html).toContain('height="800"');
     expect(html).toContain("Met");
-    expect(html).toContain("snake");
+    expect(html).toContain("Snake Jewelry");
+    expect(html).not.toContain("sNaKe jewelry");
     expect(html).toContain(">3</");
     expect(html).toContain("Close detail");
     expect(html).toContain("data-slot=\"skeleton\"");

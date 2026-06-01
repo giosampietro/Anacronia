@@ -26,6 +26,7 @@ import type {
 } from "@/lib/collection-objects";
 import { imageUrl } from "@/lib/collection-objects";
 import { nextCarouselIndex, previousCarouselIndex } from "@/lib/carousel";
+import { formatCollectionDisplayName } from "@/lib/collection-display";
 import { getObjectDetailOverlayKeyAction } from "@/lib/detail-overlay-keyboard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -327,7 +328,7 @@ function CollectionsCard({ collectionLabels }: { collectionLabels: string[] }) {
         <div className="flex flex-wrap gap-2">
           {collectionLabels.map((label) => (
             <Badge key={label} variant="secondary">
-              {label}
+              {formatCollectionDisplayName(label)}
             </Badge>
           ))}
         </div>

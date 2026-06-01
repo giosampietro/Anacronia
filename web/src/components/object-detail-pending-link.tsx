@@ -9,6 +9,7 @@ import { AlertCircle, Images, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { formatCollectionDisplayName } from "@/lib/collection-display";
 import { cn } from "@/lib/utils";
 
 type ObjectDetailPreview = {
@@ -163,7 +164,9 @@ function ObjectDetailPendingOverlay({
             <div className="mb-2 flex flex-wrap items-center gap-2">
               <Badge variant="secondary">{preview.providerLabel}</Badge>
               {preview.collectionLabel ? (
-                <Badge variant="outline">{preview.collectionLabel}</Badge>
+                <Badge variant="outline">
+                  {formatCollectionDisplayName(preview.collectionLabel)}
+                </Badge>
               ) : null}
               {preview.imageCount && preview.imageCount > 1 ? (
                 <Badge variant="secondary">
