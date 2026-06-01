@@ -25,6 +25,7 @@ Can Anacronia prototype local result search, Object/Image projection, counters, 
 - The Normal / No Material / Failure controls are prototype-only state forcing controls. Keep them out of the product-facing result bar and place them in a clearly marked prototype/debug rail.
 - The four metric cards were too heavy for the product surface. Counts now live inside the Object/Image view controls, so the grid area can stay focused on results, empty state, or failure state.
 - Provider controls now expose facet counts for the active Object/Image projection. These counts respect scope and query, but are computed before the current Provider filter so Met and V&A show what each click would reveal.
+- Result tiles now reuse the production image grid classes, thumbnail component, 4:5 aspect-ratio tile, provider badge, overlay, and Object carousel indicator instead of bespoke prototype cards. The prototype layout keeps those grid items self-sized so the side rail does not stretch them into tall columns.
 - Detailed total/shown diagnostics still belong in the state rail or notes, not in the primary user workflow.
 
 ## Architectural Recommendation

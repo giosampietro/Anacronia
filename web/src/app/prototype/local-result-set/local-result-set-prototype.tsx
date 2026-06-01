@@ -43,6 +43,13 @@ import {
   InputGroupInput,
 } from "@/components/ui/input-group";
 import { Separator } from "@/components/ui/separator";
+import {
+  IMAGE_GRID_CAROUSEL_INDICATOR_CLASS_NAME,
+  IMAGE_GRID_CLASS_NAME,
+  IMAGE_GRID_OVERLAY_CLASS_NAME,
+  IMAGE_GRID_PROVIDER_BADGE_CLASS_NAME,
+  IMAGE_GRID_TILE_CLASS_NAME,
+} from "@/lib/image-grid-style";
 import { cn } from "@/lib/utils";
 
 import {
@@ -752,75 +759,73 @@ function ResultTile({
   selected,
   selectionMode,
   toggleSelected,
-  updateState,
+  state,
 }: {
   item: ResultItem;
   selected: boolean;
   selectionMode: boolean;
   toggleSelected: () => void;
-  updateState: (patch: Partial<PrototypeState>) => void;
+  state: PrototypeState;
 }) {
   const isImage = item.kind === "image";
   const thumb = isImage ? item.image.thumb : item.object.images[0]?.thumb;
   const title = isImage ? item.image.title : item.object.title;
-  const subtitle = isImage ? item.object.title : item.object.objectName;
+  const alt = title || `${providerLabel(item.object.provider)} result`;
   const imageCount = item.object.images.length;
 
   return (
-    <article
+    <a
+      aria-label={`Open ${title}`}
       className={cn(
-        "group relative overflow-hidden rounded-xl border bg-card shadow-sm transition",
-        selected && "ring-2 ring-primary",
+        IMAGE_GRID_TILE_CLASS_NAME,
+        "self-start",
+        selected && "ring-2 ring-primary ring-offset-2 ring-offset-background",
       )}
+      href={hrefFor(state, { detail: item.id })}
+      onClick={(event) => {
+        if (!selectionMode) {
+          return;
+        }
+
+        event.preventDefault();
+        toggleSelected();
+      }}
     >
       <AspectRatio ratio={4 / 5}>
-        {thumb ? (
-          <ImageGridThumbnail
-            alt=""
-            className="size-full object-cover"
-            src={thumb}
-          />
-        ) : null}
-        <div className="absolute inset-x-2 top-2 flex items-start justify-between gap-2">
-          <Badge variant="secondary">{providerLabel(item.object.provider)}</Badge>
-          {selectionMode ? (
-            <button
-              aria-label={selected ? "Unselect result" : "Select result"}
-              className={cn(
-                "flex size-7 items-center justify-center rounded-full border bg-background/90 text-foreground shadow-sm",
-                selected && "bg-primary text-primary-foreground",
-              )}
-              onClick={toggleSelected}
-              type="button"
-            >
-              {selected ? <Check className="size-4" /> : <Square className="size-4" />}
-            </button>
-          ) : null}
-        </div>
+        {thumb ? <ImageGridThumbnail alt={alt} src={thumb} /> : null}
         {imageCount > 1 && !isImage ? (
-          <Badge className="absolute bottom-2 left-2" variant="secondary">
+          <span
+            aria-label={`${imageCount} images`}
+            className={IMAGE_GRID_CAROUSEL_INDICATOR_CLASS_NAME}
+          >
             <Images data-icon="inline-start" />
             {imageCount}
-          </Badge>
+          </span>
         ) : null}
-        <div className="absolute inset-x-2 bottom-2 rounded-lg bg-background/92 p-2 shadow-sm backdrop-blur">
-          <p className="line-clamp-2 text-xs font-medium leading-tight">{title}</p>
-          <p className="mt-1 truncate text-[11px] text-muted-foreground">{subtitle}</p>
-          <div className="mt-2 flex items-center justify-between gap-2">
-            <span className="truncate text-[11px] text-muted-foreground">
-              {item.collectionLabels.join(", ")}
-            </span>
-            <button
-              className="text-[11px] font-medium text-foreground underline-offset-4 hover:underline"
-              onClick={() => updateState({ detail: item.id })}
-              type="button"
-            >
-              Detail
-            </button>
-          </div>
+        {selectionMode ? (
+          <span
+            aria-label={selected ? "Selected result" : "Selectable result"}
+            className={cn(
+              "absolute right-1.5 top-1.5 flex size-5 items-center justify-center rounded-lg bg-background/88 text-foreground opacity-100 backdrop-blur-sm",
+              selected && "bg-primary text-primary-foreground",
+            )}
+          >
+            {selected ? <Check className="size-3.5" /> : <Square className="size-3.5" />}
+          </span>
+        ) : null}
+        <Badge
+          className={IMAGE_GRID_PROVIDER_BADGE_CLASS_NAME}
+          variant="secondary"
+        >
+          {providerLabel(item.object.provider)}
+        </Badge>
+        <div className={IMAGE_GRID_OVERLAY_CLASS_NAME}>
+          <p className="mt-1 line-clamp-2 text-xs font-medium leading-tight">
+            {title || "Untitled result"}
+          </p>
         </div>
       </AspectRatio>
-    </article>
+    </a>
   );
 }
 
@@ -830,21 +835,19 @@ function ResultsGrid({
   selectionMode,
   setSelectedIds,
   state,
-  updateState,
 }: {
   resultSet: ResultSet;
   selectedIds: Set<string>;
   selectionMode: boolean;
   setSelectedIds: (selectedIds: Set<string>) => void;
   state: PrototypeState;
-  updateState: (patch: Partial<PrototypeState>) => void;
 }) {
   if (state.scenario === "error" || resultSet.activeItems.length === 0) {
     return <EmptyResultState state={state} />;
   }
 
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+    <div className={cn(IMAGE_GRID_CLASS_NAME, "content-start items-start")}>
       {resultSet.activeItems.map((item) => {
         const selected = selectedIds.has(item.id);
 
@@ -854,6 +857,7 @@ function ResultsGrid({
             key={item.id}
             selected={selected}
             selectionMode={selectionMode}
+            state={state}
             toggleSelected={() => {
               const next = new Set(selectedIds);
               if (selected) {
@@ -863,7 +867,6 @@ function ResultsGrid({
               }
               setSelectedIds(next);
             }}
-            updateState={updateState}
           />
         );
       })}
@@ -1108,7 +1111,6 @@ export function LocalResultSetPrototype({
                   selectionMode={selectionMode}
                   setSelectedIds={setSelectedIds}
                   state={state}
-                  updateState={updateState}
                 />
                 <div className="grid content-start gap-5">
                   <DetailRail detail={detail} state={state} updateState={updateState} />
@@ -1129,7 +1131,6 @@ export function LocalResultSetPrototype({
                   selectionMode={selectionMode}
                   setSelectedIds={setSelectedIds}
                   state={state}
-                  updateState={updateState}
                 />
                 <DetailRail detail={detail} state={state} updateState={updateState} />
               </div>
