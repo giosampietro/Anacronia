@@ -10,6 +10,7 @@ import type {
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
     push: vi.fn(),
+    replace: vi.fn(),
   }),
 }));
 
@@ -97,6 +98,7 @@ describe("CollectionResultsGrid", () => {
     expect(html).toContain("value=\"ceramics\"");
     expect(html).toContain("name=\"collection_filter\"");
     expect(html).toContain("value=\"venice\"");
+    expect(html).not.toContain("action=\"/\"");
     expect(html).toContain("Objects");
     expect(html).toContain("1");
     expect(html).toContain("Images");

@@ -5,6 +5,7 @@ import {
   ImageAssetDetailPendingLink,
 } from "@/components/image-asset-detail-overlay";
 import { ImageGridThumbnail } from "@/components/image-grid-thumbnail";
+import { CollectionResultSetSearchForm } from "@/components/collection-result-set-search-form";
 import { ObjectDetailPendingLink } from "@/components/object-detail-pending-link";
 import { AspectRatio } from "@/components/ui/aspect-ratio";
 import { Badge } from "@/components/ui/badge";
@@ -23,12 +24,6 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupButton,
-  InputGroupInput,
-} from "@/components/ui/input-group";
 import {
   imageUrl,
   type CollectionProviderFacet,
@@ -96,53 +91,6 @@ function viewNoun(viewMode: GridViewMode): string {
 
 function viewCountLabel(viewMode: GridViewMode, counts: CollectionResultCounts): number {
   return viewMode === "objects" ? counts.objects : counts.images;
-}
-
-function CollectionResultSetSearchForm({
-  collectionFilterText,
-  localQueryText,
-  providerFilter,
-  searchSetSlug,
-  viewMode,
-}: {
-  collectionFilterText: string;
-  localQueryText: string;
-  providerFilter: string;
-  searchSetSlug: string;
-  viewMode: GridViewMode;
-}) {
-  return (
-    <form action="/" className="min-w-[min(100%,20rem)] flex-1">
-      <input name="search_set" type="hidden" value={searchSetSlug} />
-      {viewMode === "images" ? (
-        <input name="view" type="hidden" value="images" />
-      ) : null}
-      {collectionFilterText.trim() !== "" ? (
-        <input
-          name="collection_filter"
-          type="hidden"
-          value={collectionFilterText.trim()}
-        />
-      ) : null}
-      {providerFilter !== "all" ? (
-        <input name="provider" type="hidden" value={providerFilter} />
-      ) : null}
-      <InputGroup>
-        <InputGroupAddon>
-          <Search />
-        </InputGroupAddon>
-        <InputGroupInput
-          aria-label="Search local Collection results"
-          defaultValue={localQueryText}
-          name="q"
-          placeholder="Search local results"
-        />
-        <InputGroupAddon align="inline-end">
-          <InputGroupButton type="submit">Search</InputGroupButton>
-        </InputGroupAddon>
-      </InputGroup>
-    </form>
-  );
 }
 
 function ProjectionControls({
