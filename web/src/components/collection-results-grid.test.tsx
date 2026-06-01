@@ -96,6 +96,7 @@ describe("CollectionResultsGrid", () => {
     expect(html).toContain("Local Museum Objects in this Collection");
     expect(html).toContain("name=\"q\"");
     expect(html).toContain("value=\"ceramics\"");
+    expect(html).toContain("Clear local search");
     expect(html).toContain("name=\"collection_filter\"");
     expect(html).toContain("value=\"venice\"");
     expect(html).not.toContain("action=\"/\"");
@@ -132,6 +133,7 @@ describe("CollectionResultsGrid", () => {
     ));
 
     expect(html).toContain("Local Image Assets in this Collection");
+    expect(html).not.toContain("Clear local search");
     expect(html).toContain("aria-current=\"page\"");
     expect(html).toContain("Images");
     expect(html).toContain("2");

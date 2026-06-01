@@ -2,7 +2,7 @@
 
 import { useTransition, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { Search } from "lucide-react";
+import { Search, X } from "lucide-react";
 
 import {
   InputGroup,
@@ -29,6 +29,7 @@ export function CollectionResultSetSearchForm({
 }: CollectionResultSetSearchFormProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const hasLocalQuery = localQueryText.trim() !== "";
 
   function submitLocalQuery(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -40,6 +41,21 @@ export function CollectionResultSetSearchForm({
     const href = createGridStateHref({
       collectionFilterText,
       localQueryText: queryText,
+      provider: providerFilter,
+      searchSetSlug,
+      viewMode,
+      workspaceMode: "search-set",
+    });
+
+    startTransition(() => {
+      router.replace(href, { scroll: false });
+    });
+  }
+
+  function clearLocalQuery() {
+    const href = createGridStateHref({
+      collectionFilterText,
+      localQueryText: "",
       provider: providerFilter,
       searchSetSlug,
       viewMode,
@@ -82,6 +98,17 @@ export function CollectionResultSetSearchForm({
           placeholder="Search local results"
         />
         <InputGroupAddon align="inline-end">
+          {hasLocalQuery ? (
+            <InputGroupButton
+              aria-label="Clear local search"
+              disabled={isPending}
+              onClick={clearLocalQuery}
+              size="icon-xs"
+              title="Clear local search"
+            >
+              <X />
+            </InputGroupButton>
+          ) : null}
           <InputGroupButton disabled={isPending} type="submit">
             Search
           </InputGroupButton>

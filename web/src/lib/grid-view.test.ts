@@ -64,6 +64,18 @@ describe("grid view URL helpers", () => {
     ).toBe(
       "/?search_set=snake-study&view=images&collection_filter=venice&q=serpent&provider=met",
     );
+    expect(
+      createGridStateHref({
+        collectionFilterText: "venice",
+        localQueryText: "",
+        provider: "met",
+        searchSetSlug: "snake-study",
+        viewMode: "images",
+        workspaceMode: "search-set",
+      }),
+    ).toBe(
+      "/?search_set=snake-study&view=images&collection_filter=venice&provider=met",
+    );
   });
 
   it("serializes exactly one detail selector", () => {
