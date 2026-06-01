@@ -75,6 +75,9 @@ describe("AppShell", () => {
         contentHeaderObjectCount={4}
         dashboardView={{ ...dashboardView, activeSearchSet: null }}
         filterText=""
+        gridViewImageHref="/?mode=user-library"
+        gridViewMode="images"
+        gridViewObjectHref="/?mode=user-library&view=objects"
         rows={rows}
         workspaceMode="user-library"
       >
@@ -83,6 +86,9 @@ describe("AppShell", () => {
     ));
 
     expect(html).toContain("MY LIBRARY");
+    expect(html).toContain("aria-label=\"Primary grid view controls\"");
+    expect(html).toContain("data-slot=\"toggle-group\"");
+    expect(html).toContain("aria-label=\"Grid view\"");
     expect(html).toContain("4 objects");
     expect(html).toContain("7 images");
   });

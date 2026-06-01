@@ -11,6 +11,7 @@ import {
   Plus,
 } from "lucide-react";
 
+import { GridViewSwitch } from "@/components/grid-view-switch";
 import { ThemeSwitch } from "@/components/theme-switch";
 import { SidebarCollectionFilter } from "@/components/sidebar-collection-filter";
 import { Badge } from "@/components/ui/badge";
@@ -29,10 +30,6 @@ import {
 } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
-import {
-  ToggleGroup,
-  ToggleGroupItem,
-} from "@/components/ui/toggle-group";
 import {
   Sidebar,
   SidebarContent,
@@ -190,44 +187,6 @@ function RuntimeStatusFooter({
         </SidebarGroup>
       </CollapsibleContent>
     </Collapsible>
-  );
-}
-
-function GridViewSwitch({
-  imageHref,
-  objectHref,
-  viewMode,
-}: {
-  imageHref: string;
-  objectHref: string;
-  viewMode: GridViewMode;
-}) {
-  return (
-    <ToggleGroup
-      aria-label="Grid view"
-      className="shrink-0"
-      size="sm"
-      spacing={0}
-      value={[viewMode]}
-      variant="outline"
-    >
-      <ToggleGroupItem
-        aria-label="Show Objects"
-        nativeButton={false}
-        render={<Link href={objectHref} scroll={false} />}
-        value="objects"
-      >
-        Objects
-      </ToggleGroupItem>
-      <ToggleGroupItem
-        aria-label="Show Images"
-        nativeButton={false}
-        render={<Link href={imageHref} scroll={false} />}
-        value="images"
-      >
-        Images
-      </ToggleGroupItem>
-    </ToggleGroup>
   );
 }
 
@@ -409,6 +368,7 @@ export function AppShell({
                   className="flex min-w-0 justify-center lg:col-start-2 lg:row-start-1"
                 >
                   <GridViewSwitch
+                    className="shrink-0"
                     imageHref={gridViewImageHref}
                     objectHref={gridViewObjectHref}
                     viewMode={gridViewMode}

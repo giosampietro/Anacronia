@@ -103,6 +103,11 @@ describe("CollectionResultsGrid", () => {
     expect(html).toContain("name=\"collection_filter\"");
     expect(html).toContain("value=\"venice\"");
     expect(html).not.toContain("action=\"/\"");
+    expect(html).toContain("data-slot=\"toggle-group\"");
+    expect(html).toContain("aria-label=\"Object and Image result views\"");
+    expect(html).toContain(
+      "href=\"/?search_set=snake-study&amp;view=images&amp;collection_filter=venice&amp;q=ceramics\"",
+    );
     expect(html).toContain("Objects");
     expect(html).toContain("1");
     expect(html).toContain("Images");
@@ -153,6 +158,12 @@ describe("CollectionResultsGrid", () => {
     expect(html).toContain("aria-label=\"Search local Collection results\"");
     expect(html).toContain("placeholder=\"\"");
     expect(html).not.toContain("Clear local search");
+    expect(html).toContain("data-slot=\"toggle-group\"");
+    expect(html).toContain("aria-label=\"Object and Image result views\"");
+    expect(html).toContain("href=\"/?search_set=snake-study&amp;provider=met\"");
+    expect(html).toContain(
+      "href=\"/?search_set=snake-study&amp;view=images&amp;provider=met\"",
+    );
     expect(html).toContain("aria-current=\"page\"");
     expect(html).toContain("1 selected");
     expect(html).toContain("Select Image Asset 9");

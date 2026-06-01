@@ -3,6 +3,7 @@ import { Database, Search } from "lucide-react";
 
 import { CollectionResultSelectionSurface } from "@/components/collection-result-selection-surface";
 import { CollectionResultSetSearchForm } from "@/components/collection-result-set-search-form";
+import { GridViewSwitch } from "@/components/grid-view-switch";
 import { buttonVariants } from "@/components/ui/button";
 import {
   Card,
@@ -87,43 +88,33 @@ function ProjectionControls({
   searchSetSlug: string;
   viewMode: GridViewMode;
 }) {
-  const items: { label: string; mode: GridViewMode; count: number }[] = [
-    { label: "Objects", mode: "objects", count: resultCounts.objects },
-    { label: "Images", mode: "images", count: resultCounts.images },
-  ];
+  const objectHref = createGridStateHref({
+    collectionFilterText,
+    localQueryText,
+    provider: providerFilter,
+    searchSetSlug,
+    viewMode: "objects",
+    workspaceMode: "search-set",
+  });
+  const imageHref = createGridStateHref({
+    collectionFilterText,
+    localQueryText,
+    provider: providerFilter,
+    searchSetSlug,
+    viewMode: "images",
+    workspaceMode: "search-set",
+  });
 
   return (
-    <div aria-label="Object and Image result views" className="flex shrink-0 gap-1">
-      {items.map((item) => {
-        const isActive = viewMode === item.mode;
-        const href = createGridStateHref({
-          collectionFilterText,
-          localQueryText,
-          provider: providerFilter,
-          searchSetSlug,
-          viewMode: item.mode,
-          workspaceMode: "search-set",
-        });
-
-        return (
-          <Link
-            aria-current={isActive ? "page" : undefined}
-            className={buttonVariants({
-              size: "sm",
-              variant: isActive ? "secondary" : "outline",
-            })}
-            href={href}
-            key={item.mode}
-            scroll={false}
-          >
-            {item.label}
-            <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
-              {item.count}
-            </span>
-          </Link>
-        );
-      })}
-    </div>
+    <GridViewSwitch
+      ariaLabel="Object and Image result views"
+      className="shrink-0"
+      imageCount={resultCounts.images}
+      imageHref={imageHref}
+      objectCount={resultCounts.objects}
+      objectHref={objectHref}
+      viewMode={viewMode}
+    />
   );
 }
 
