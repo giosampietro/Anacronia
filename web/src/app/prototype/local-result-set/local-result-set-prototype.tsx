@@ -3,6 +3,7 @@
 import { type FormEvent, useMemo, useState } from "react";
 import {
   AlertCircle,
+  ArrowRightFromLine,
   Check,
   CircleDashed,
   Database,
@@ -12,6 +13,7 @@ import {
   ListFilter,
   Search,
   Square,
+  Trash2,
   X,
 } from "lucide-react";
 
@@ -22,6 +24,14 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { ImageAssetDetailPendingLink } from "@/components/image-asset-detail-overlay";
 import { ImageGridThumbnail } from "@/components/image-grid-thumbnail";
 import { ObjectDetailPendingLink } from "@/components/object-detail-pending-link";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Empty,
   EmptyDescription,
@@ -73,6 +83,8 @@ type PrototypeState = {
 type LocalResultSetPrototypeProps = {
   initialState: PrototypeState;
 };
+
+type SelectionDialogKind = "delete" | "export";
 
 type ResultObject = {
   collectionLabels: string[];
@@ -133,6 +145,19 @@ function providerLabel(provider: PrototypeProvider): string {
   }
 
   return "All Providers";
+}
+
+function selectionNoun(view: PrototypeView, count: number): string {
+  const singular = view === "images" ? "image" : "object";
+  return count === 1 ? singular : `${singular}s`;
+}
+
+function selectionScopeLabel(resultSet: ResultSet, state: PrototypeState): string {
+  if (state.scope === "library") {
+    return "the user library";
+  }
+
+  return resultSet.activeCollection?.displayName ?? "this collection";
 }
 
 function searchCorpus({
@@ -604,12 +629,14 @@ function SearchControls({
 
 function SelectionToolbar({
   activeItems,
+  onOpenSelectionDialog,
   selectedIds,
   selectionMode,
   setSelectedIds,
   setSelectionMode,
 }: {
   activeItems: ResultItem[];
+  onOpenSelectionDialog: (dialogKind: SelectionDialogKind) => void;
   selectedIds: Set<string>;
   selectionMode: boolean;
   setSelectedIds: (selectedIds: Set<string>) => void;
@@ -619,48 +646,156 @@ function SelectionToolbar({
   const selectedVisibleIds = visibleIds.filter((id) => selectedIds.has(id));
   const allVisibleSelected =
     visibleIds.length > 0 && selectedVisibleIds.length === visibleIds.length;
+  const hasSelection = selectedVisibleIds.length > 0;
 
   return (
-    <div className="flex flex-wrap items-center justify-end gap-3">
+    <div className="flex flex-wrap items-center justify-between gap-3">
       {selectionMode ? (
         <>
-          <Button
-            disabled={visibleIds.length === 0}
-            onClick={() => {
-              if (allVisibleSelected) {
-                const next = new Set(selectedIds);
-                visibleIds.forEach((id) => next.delete(id));
-                setSelectedIds(next);
-                return;
-              }
-              setSelectedIds(new Set([...selectedIds, ...visibleIds]));
-            }}
-            size="sm"
-            variant="outline"
-          >
-            {allVisibleSelected ? "Deselect all" : "Select all"}
-          </Button>
-          <Button
-            onClick={() => {
-              setSelectionMode(false);
-              setSelectedIds(new Set());
-            }}
-            size="sm"
-            variant="outline"
-          >
-            Cancel
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              aria-label="Export selected"
+              disabled={!hasSelection}
+              onClick={() => onOpenSelectionDialog("export")}
+              size="icon-sm"
+              variant="ghost"
+            >
+              <ArrowRightFromLine />
+            </Button>
+            <Button
+              aria-label="Delete selected"
+              disabled={!hasSelection}
+              onClick={() => onOpenSelectionDialog("delete")}
+              size="icon-sm"
+              variant="ghost"
+            >
+              <Trash2 />
+            </Button>
+          </div>
+          <div className="flex items-center gap-3">
+            <Button
+              disabled={visibleIds.length === 0}
+              onClick={() => {
+                if (allVisibleSelected) {
+                  const next = new Set(selectedIds);
+                  visibleIds.forEach((id) => next.delete(id));
+                  setSelectedIds(next);
+                  return;
+                }
+                setSelectedIds(new Set([...selectedIds, ...visibleIds]));
+              }}
+              size="sm"
+              variant="outline"
+            >
+              {allVisibleSelected ? "Deselect all" : "Select all"}
+            </Button>
+            <Button
+              onClick={() => {
+                setSelectionMode(false);
+                setSelectedIds(new Set());
+              }}
+              size="sm"
+              variant="outline"
+            >
+              Cancel
+            </Button>
+          </div>
         </>
       ) : (
-        <Button
-          onClick={() => setSelectionMode(true)}
-          size="sm"
-          variant="outline"
-        >
-          Select
-        </Button>
+        <div className="flex w-full justify-end">
+          <Button
+            onClick={() => setSelectionMode(true)}
+            size="sm"
+            variant="outline"
+          >
+            Select
+          </Button>
+        </div>
       )}
     </div>
+  );
+}
+
+function SelectionActionDialog({
+  dialogKind,
+  onClose,
+  resultSet,
+  selectedItems,
+  state,
+}: {
+  dialogKind: SelectionDialogKind | null;
+  onClose: () => void;
+  resultSet: ResultSet;
+  selectedItems: ResultItem[];
+  state: PrototypeState;
+}) {
+  const selectedCount = selectedItems.length;
+  const noun = selectionNoun(state.view, selectedCount);
+  const scopeLabel = selectionScopeLabel(resultSet, state);
+  const deleteActionLabel = `Delete ${noun}`;
+  const title =
+    dialogKind === "delete"
+      ? `Delete ${selectedCount} ${noun}?`
+      : `Export ${selectedCount} ${noun}`;
+
+  return (
+    <Dialog open={dialogKind !== null} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent aria-label={title}>
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>
+            {dialogKind === "delete"
+              ? "This prototype does not delete data. It shows the decision point before a destructive action."
+              : "This prototype does not export files. It shows where export choices would live."}
+          </DialogDescription>
+        </DialogHeader>
+
+        {dialogKind === "delete" ? (
+          <div className="grid gap-4 text-sm">
+            <p>
+              The selected {noun} would be removed from {scopeLabel}. We still need
+              to triage whether delete means removing from this collection only, or
+              deleting from all collections and the user library.
+            </p>
+            <div className="rounded-lg border bg-muted/40 p-3 text-muted-foreground">
+              Open product question: collection-scoped removal vs global library
+              deletion.
+            </div>
+          </div>
+        ) : (
+          <div className="grid gap-3 text-sm">
+            {[
+              "Export selected image files",
+              "Export metadata as CSV",
+              "Export object records with image references",
+            ].map((option) => (
+              <div
+                className="flex items-center justify-between rounded-lg border bg-muted/30 px-3 py-2"
+                key={option}
+              >
+                <span>{option}</span>
+                <Badge variant="secondary">prototype</Badge>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <DialogFooter>
+          <Button onClick={onClose} variant="outline">
+            Cancel
+          </Button>
+          {dialogKind === "delete" ? (
+            <Button onClick={onClose} variant="destructive">
+              {deleteActionLabel}
+            </Button>
+          ) : (
+            <Button onClick={onClose}>
+              Export options
+            </Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -719,7 +854,13 @@ function ResultTile({
   const closeHref = hrefFor(state, { detail: "" });
   const detailHref = hrefFor(state, { detail: item.id });
   const tileId = `prototype-result-${item.id.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
-  const tileClassName = cn(IMAGE_GRID_TILE_CLASS_NAME, "self-start");
+  const tileClassName = cn(
+    IMAGE_GRID_TILE_CLASS_NAME,
+    "self-start",
+    selectionMode &&
+      selected &&
+      "ring-2 ring-white ring-offset-2 ring-offset-background",
+  );
   const tileContents = (
     <AspectRatio ratio={4 / 5}>
       {thumb ? <ImageGridThumbnail alt={alt} src={thumb} /> : null}
@@ -870,10 +1011,17 @@ export function LocalResultSetPrototype({
 }: LocalResultSetPrototypeProps) {
   const [state, updateState] = usePrototypeRoute(initialState);
   const [selectionMode, setSelectionMode] = useState(false);
+  const [selectionDialog, setSelectionDialog] = useState<SelectionDialogKind | null>(
+    null,
+  );
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const resultSet = useMemo(
     () => createResultSet({ includeIncoming: false, state }),
     [state],
+  );
+  const selectedItems = useMemo(
+    () => resultSet.activeItems.filter((item) => selectedIds.has(item.id)),
+    [resultSet.activeItems, selectedIds],
   );
 
   return (
@@ -890,10 +1038,16 @@ export function LocalResultSetPrototype({
           <div className="grid gap-5 px-5 py-5 lg:px-7">
             <SelectionToolbar
               activeItems={resultSet.activeItems}
+              onOpenSelectionDialog={setSelectionDialog}
               selectedIds={selectedIds}
               selectionMode={selectionMode}
               setSelectedIds={setSelectedIds}
-              setSelectionMode={setSelectionMode}
+              setSelectionMode={(nextSelectionMode) => {
+                setSelectionMode(nextSelectionMode);
+                if (!nextSelectionMode) {
+                  setSelectionDialog(null);
+                }
+              }}
             />
 
             <ResultsGrid
@@ -906,6 +1060,13 @@ export function LocalResultSetPrototype({
           </div>
         </section>
       </div>
+      <SelectionActionDialog
+        dialogKind={selectionDialog}
+        onClose={() => setSelectionDialog(null)}
+        resultSet={resultSet}
+        selectedItems={selectedItems}
+        state={state}
+      />
     </main>
   );
 }
