@@ -19,3 +19,5 @@ This is a single-context repo: read root `CONTEXT.md` first and use `docs/adr/` 
 When giving the user terminal commands for local checks or manual testing, also add or update a double-clickable Mac `.command` file under `batch-cmd/` and link it in the chat. The user prefers not to type terminal commands.
 
 At the end of every issue implementation, include a direct browser URL the user can open to check the result in the app. Before presenting that link, verify that the required local services are running; if they are not, start them and keep them running so the link loads.
+
+Final handoff links must be real-app, real-data links: before reporting completion, run the implemented branch against the user's actual app data on the expected app port, open that exact URL, verify the changed UI is visible there, and never present prototype, fixture, or alternate-port QA instances as the user check link unless explicitly labeled as such.
