@@ -262,14 +262,16 @@ function SelectionActionDialog({
   collectionDisplayName,
   dialogKind,
   onClose,
+  open,
   selectedCount,
   selectedIds,
   searchSetSlug,
   viewMode,
 }: {
   collectionDisplayName: string;
-  dialogKind: SelectionDialogKind | null;
+  dialogKind: SelectionDialogKind;
   onClose: () => void;
+  open: boolean;
   selectedCount: number;
   selectedIds: string[];
   searchSetSlug: string;
@@ -287,7 +289,6 @@ function SelectionActionDialog({
       : `Export ${selectedCount} ${noun}`;
 
   function closeDialog() {
-    setExportStatus({ state: "idle" });
     onClose();
   }
 
@@ -334,7 +335,7 @@ function SelectionActionDialog({
 
   return (
     <Dialog
-      open={dialogKind !== null}
+      open={open}
       onOpenChange={(open) => {
         if (!open && exportStatus.state !== "pending") {
           closeDialog();
@@ -491,9 +492,10 @@ export function CollectionResultSelectionSurface({
   const [lastSelectionAnchorId, setLastSelectionAnchorId] = useState<string | null>(
     null,
   );
-  const [selectionDialog, setSelectionDialog] = useState<SelectionDialogKind | null>(
-    null,
-  );
+  const [selectionDialogKind, setSelectionDialogKind] =
+    useState<SelectionDialogKind>("export");
+  const [selectionDialogOpen, setSelectionDialogOpen] = useState(false);
+  const [selectionDialogSession, setSelectionDialogSession] = useState(0);
   const formattedCollectionDisplayName = formatCollectionDisplayName(
     collectionDisplayName,
   );
@@ -513,7 +515,13 @@ export function CollectionResultSelectionSurface({
     setSelectionMode(false);
     setSelectedIds(new Set());
     setLastSelectionAnchorId(null);
-    setSelectionDialog(null);
+    setSelectionDialogOpen(false);
+  }
+
+  function openSelectionDialog(dialogKind: SelectionDialogKind) {
+    setSelectionDialogKind(dialogKind);
+    setSelectionDialogSession((currentSession) => currentSession + 1);
+    setSelectionDialogOpen(true);
   }
 
   function toggleVisibleSelection() {
@@ -566,7 +574,7 @@ export function CollectionResultSelectionSurface({
     <div className="grid gap-3">
       <SelectionToolbar
         onCancel={resetSelection}
-        onOpenSelectionDialog={setSelectionDialog}
+        onOpenSelectionDialog={openSelectionDialog}
         onToggleVisible={toggleVisibleSelection}
         selectedTotalCount={selectedTotalCount}
         selectedVisibleCount={selectedVisibleCount}
@@ -793,8 +801,10 @@ export function CollectionResultSelectionSurface({
       )}
       <SelectionActionDialog
         collectionDisplayName={collectionDisplayName}
-        dialogKind={selectionDialog}
-        onClose={() => setSelectionDialog(null)}
+        dialogKind={selectionDialogKind}
+        key={selectionDialogSession}
+        onClose={() => setSelectionDialogOpen(false)}
+        open={selectionDialogOpen}
         selectedCount={selectedTotalCount}
         selectedIds={Array.from(selectedIds)}
         searchSetSlug={searchSetSlug}
