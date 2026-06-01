@@ -575,19 +575,24 @@ function CollectBusyNote({ collectAvailable }: { collectAvailable: boolean }) {
 }
 
 function NewSearchSetWorkspace({ collectAvailable }: { collectAvailable: boolean }) {
-  return (
-    <div className="mx-auto flex max-w-4xl flex-col gap-7">
-      <header className="flex flex-col gap-3">
-        <p className="text-sm font-medium text-muted-foreground">Create</p>
-        <h1 className="font-heading text-4xl leading-tight font-semibold tracking-normal md:text-5xl">
-          New Collection
-        </h1>
-      </header>
+  if (!collectAvailable) {
+    return (
+      <div className="mx-auto flex max-w-4xl flex-col gap-4">
+        <Card size="sm">
+          <CardHeader>
+            <CardTitle>A search is already running</CardTitle>
+            <CardDescription>
+              Let this one finish or stop it before starting a new Collection.
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      </div>
+    );
+  }
 
-      <NewCollectionForm
-        action={createSearchSetAndCollectFromMet}
-        collectAvailable={collectAvailable}
-      />
+  return (
+    <div className="mx-auto flex max-w-4xl flex-col gap-4">
+      <NewCollectionForm action={createSearchSetAndCollectFromMet} />
     </div>
   );
 }
@@ -1165,6 +1170,7 @@ export default async function Home({ searchParams }: HomeProps) {
     <AppShell
       activeSearchSetSlug={activeSearchSet?.slug ?? null}
       appVersionStamp={appVersionStamp}
+      collectAvailable={collectAvailable}
       contentHeaderImageCount={contentHeaderImageCount}
       contentHeaderObjectCount={contentHeaderObjectCount}
       dashboardView={dashboardView}

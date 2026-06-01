@@ -20,7 +20,7 @@ export function BatchTargetControl({
   return (
     <FieldGroup>
       <Field>
-        <FieldLabel htmlFor={`${idPrefix}_batch_target`}>Batch target</FieldLabel>
+        <FieldLabel htmlFor={`${idPrefix}_batch_target`}>Images to find</FieldLabel>
         <NativeSelect
           className="w-full"
           defaultValue={defaultBatchTarget}
@@ -29,7 +29,7 @@ export function BatchTargetControl({
         >
           {BATCH_TARGET_OPTIONS.map((option) => (
             <NativeSelectOption key={option} value={option}>
-              {option}
+              {option} images
             </NativeSelectOption>
           ))}
         </NativeSelect>
