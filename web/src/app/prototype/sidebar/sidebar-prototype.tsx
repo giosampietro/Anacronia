@@ -1,13 +1,13 @@
 "use client";
 
-import type { CSSProperties, ReactNode } from "react";
+import { useState, type CSSProperties, type ReactNode } from "react";
 import {
   Activity,
-  Database,
+  FolderClosed,
+  FolderOpen,
   HardDrive,
   Images,
   Library,
-  MoreHorizontal,
   Plus,
   Search,
   Settings,
@@ -28,7 +28,6 @@ import {
   SidebarInput,
   SidebarInset,
   SidebarMenu,
-  SidebarMenuAction,
   SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
@@ -67,6 +66,7 @@ type SidebarPrototypeProps = {
 };
 
 type VariantConfig = {
+  collectionLayout: "keywords-below" | "keywords-inline";
   collapsible: "icon" | "none";
   defaultOpen: boolean;
   description: string;
@@ -77,28 +77,22 @@ type VariantConfig = {
 
 const variants: Record<SidebarPrototypeVariant, VariantConfig> = {
   A: {
+    collectionLayout: "keywords-below",
     collapsible: "none",
     defaultOpen: true,
-    description: "Closest to today: permanent navigation, no collapsed state.",
+    description: "Compact folder row with a single comma-separated keyword line when open.",
     main: "flush",
     sidebarVariant: "sidebar",
-    title: "Persistent navigator",
+    title: "Open detail line",
   },
   B: {
-    collapsible: "icon",
-    defaultOpen: false,
-    description: "Collapses to an icon rail; good for dense visual review.",
+    collectionLayout: "keywords-inline",
+    collapsible: "none",
+    defaultOpen: true,
+    description: "Tightest scan: open keywords stay in the folder/title row.",
     main: "flush",
     sidebarVariant: "sidebar",
-    title: "Icon rail",
-  },
-  C: {
-    collapsible: "icon",
-    defaultOpen: true,
-    description: "Native shadcn inset shell with a framed workspace.",
-    main: "inset",
-    sidebarVariant: "inset",
-    title: "Inset workspace",
+    title: "Inline keywords",
   },
 };
 
@@ -135,6 +129,15 @@ function providerStatus(searchSet: PrototypeSearchSet): string {
 
 function primaryProvider(searchSet: PrototypeSearchSet | null): PrototypeProviderCollection | null {
   return searchSet?.provider_collections[0] ?? null;
+}
+
+function keywordSummary(searchSet: PrototypeSearchSet): string {
+  const activeTerms = searchSet.terms
+    .filter((term) => term.active)
+    .map((term) => term.term);
+  const terms = activeTerms.length > 0 ? activeTerms : searchSet.terms.map((term) => term.term);
+
+  return terms.join(", ") || "No keywords";
 }
 
 function VariantSwitcher({ activeVariant }: { activeVariant: SidebarPrototypeVariant }) {
@@ -181,6 +184,95 @@ function BrandMenu({
           <Settings className="ml-auto" />
         </SidebarMenuButton>
       </SidebarMenuItem>
+    </SidebarMenu>
+  );
+}
+
+function CompactCollectionList({
+  activeSearchSet,
+  layout,
+  searchSets,
+}: {
+  activeSearchSet: PrototypeSearchSet | null;
+  layout: VariantConfig["collectionLayout"];
+  searchSets: PrototypeSearchSet[];
+}) {
+  const initialOpenSlug = activeSearchSet?.slug ?? searchSets[0]?.slug ?? null;
+  const [openSlugs, setOpenSlugs] = useState<Set<string>>(
+    () => new Set(initialOpenSlug === null ? [] : [initialOpenSlug]),
+  );
+
+  function toggleOpen(slug: string) {
+    setOpenSlugs((currentOpenSlugs) => {
+      const nextOpenSlugs = new Set(currentOpenSlugs);
+
+      if (nextOpenSlugs.has(slug)) {
+        nextOpenSlugs.delete(slug);
+      } else {
+        nextOpenSlugs.add(slug);
+      }
+
+      return nextOpenSlugs;
+    });
+  }
+
+  return (
+    <SidebarMenu className="mt-1 gap-0.5">
+      {searchSets.map((searchSet) => {
+        const imageCount = importedImageCount(searchSet);
+        const isOpen = openSlugs.has(searchSet.slug);
+        const keywords = keywordSummary(searchSet);
+
+        return (
+          <SidebarMenuItem key={searchSet.slug}>
+            <SidebarMenuButton
+              aria-expanded={isOpen}
+              aria-label={`Toggle ${searchSet.display_name} keywords`}
+              className={cn(
+                "h-8 gap-2 rounded-md px-2 text-[13px] font-normal",
+                isOpen && "bg-sidebar-accent text-sidebar-accent-foreground",
+              )}
+              isActive={searchSet.slug === activeSearchSet?.slug}
+              onClick={() => toggleOpen(searchSet.slug)}
+              tooltip={searchSet.display_name}
+              type="button"
+            >
+              {isOpen ? (
+                <FolderOpen className="text-sidebar-foreground/75" />
+              ) : (
+                <FolderClosed className="text-sidebar-foreground/65" />
+              )}
+              <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
+                <span
+                  className={cn(
+                    "truncate",
+                    layout === "keywords-inline" && isOpen && "max-w-[48%]",
+                  )}
+                >
+                  {searchSet.display_name}
+                </span>
+                {layout === "keywords-inline" && isOpen ? (
+                  <span className="min-w-0 flex-1 truncate text-xs font-normal text-sidebar-foreground/55">
+                    {keywords}
+                  </span>
+                ) : null}
+              </span>
+              <span
+                aria-label={`${imageCount} images`}
+                className="ml-auto shrink-0 font-mono text-[11px] font-normal tabular-nums text-sidebar-foreground/55"
+                title={`${imageCount} images`}
+              >
+                {imageCount}
+              </span>
+            </SidebarMenuButton>
+            {layout === "keywords-below" && isOpen ? (
+              <p className="ml-8 mr-2 pb-1 pr-2 text-xs leading-5 text-sidebar-foreground/55">
+                {keywords}
+              </p>
+            ) : null}
+          </SidebarMenuItem>
+        );
+      })}
     </SidebarMenu>
   );
 }
@@ -241,24 +333,11 @@ function AppSidebar({
             <Plus />
           </SidebarGroupAction>
           <SidebarGroupContent>
-            <SidebarMenu>
-              {searchSets.map((searchSet) => (
-                <SidebarMenuItem key={searchSet.slug}>
-                  <SidebarMenuButton
-                    isActive={searchSet.slug === activeSearchSet?.slug}
-                    render={<a href="#" />}
-                    tooltip={searchSet.display_name}
-                  >
-                    <Database />
-                    <span>{searchSet.display_name}</span>
-                  </SidebarMenuButton>
-                  <SidebarMenuBadge>{importedImageCount(searchSet)}</SidebarMenuBadge>
-                  <SidebarMenuAction aria-label={`More actions for ${searchSet.display_name}`} showOnHover>
-                    <MoreHorizontal />
-                  </SidebarMenuAction>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
+            <CompactCollectionList
+              activeSearchSet={activeSearchSet}
+              layout={config.collectionLayout}
+              searchSets={searchSets}
+            />
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
@@ -446,8 +525,8 @@ export function SidebarPrototype({
 }: SidebarPrototypeProps) {
   const config = variants[variant];
   const providerStyle = {
-    "--sidebar-width": "21rem",
-    "--sidebar-width-mobile": "20rem",
+    "--sidebar-width": "18rem",
+    "--sidebar-width-mobile": "18rem",
   } as CSSProperties;
 
   return (

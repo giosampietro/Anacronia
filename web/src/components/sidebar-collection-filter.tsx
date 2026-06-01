@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Database, MoreHorizontal, Search } from "lucide-react";
+import { FolderClosed, FolderOpen, Search } from "lucide-react";
 
 import type { DashboardSearchSetView } from "@/lib/dashboard";
 import type { WorkspaceMode } from "@/lib/workspace";
@@ -16,11 +16,10 @@ import {
 import {
   SidebarInput,
   SidebarMenu,
-  SidebarMenuAction,
-  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
+import { cn } from "@/lib/utils";
 
 type SidebarCollectionFilterProps = {
   activeSearchSetSlug: string | null;
@@ -36,10 +35,17 @@ export function SidebarCollectionFilter({
   workspaceMode,
 }: SidebarCollectionFilterProps) {
   const [filterText, setFilterText] = useState(initialFilterText);
+  const [openedSearchSetSlug, setOpenedSearchSetSlug] = useState<string | null>(
+    activeSearchSetSlug,
+  );
   const filteredSearchSets = useMemo(
     () => filterSearchSets(searchSets, filterText),
     [filterText, searchSets],
   );
+
+  function openSearchSet(slug: string) {
+    setOpenedSearchSetSlug(slug);
+  }
 
   return (
     <>
@@ -54,7 +60,7 @@ export function SidebarCollectionFilter({
         />
       </div>
 
-      <SidebarMenu className="mt-3">
+      <SidebarMenu className="mt-3 gap-0.5">
         {filteredSearchSets.length === 0 ? (
           <Empty className="border group-data-[collapsible=icon]:hidden">
             <EmptyHeader>
@@ -65,38 +71,52 @@ export function SidebarCollectionFilter({
             </EmptyHeader>
           </Empty>
         ) : (
-          filteredSearchSets.map((searchSet) => (
-            <SidebarMenuItem
-              key={searchSet.slug}
-            >
-              <SidebarMenuButton
-                isActive={
-                  workspaceMode === "search-set" &&
-                  searchSet.slug === activeSearchSetSlug
-                }
-                render={<Link href={createSearchSetHref(searchSet.slug, filterText)} />}
-                size="lg"
-                tooltip={searchSet.displayName}
-              >
-                <Database />
-                <span className="flex min-w-0 flex-col gap-0.5 group-data-[collapsible=icon]:hidden">
-                  <span className="truncate">
+          filteredSearchSets.map((searchSet) => {
+            const isActive =
+              workspaceMode === "search-set" &&
+              searchSet.slug === activeSearchSetSlug;
+            const isOpen = openedSearchSetSlug === searchSet.slug;
+            const termSummary = searchSet.termSummary || "No active terms";
+
+            return (
+              <SidebarMenuItem key={searchSet.slug}>
+                <SidebarMenuButton
+                  aria-expanded={isOpen}
+                  className={cn(
+                    "h-8 gap-2 rounded-md px-2 text-[13px] font-normal",
+                    isOpen && "bg-sidebar-accent text-sidebar-accent-foreground",
+                  )}
+                  isActive={isActive}
+                  onClick={() => openSearchSet(searchSet.slug)}
+                  render={
+                    <Link href={createSearchSetHref(searchSet.slug, filterText)} />
+                  }
+                  tooltip={searchSet.displayName}
+                >
+                  {isOpen ? (
+                    <FolderOpen className="text-sidebar-foreground/75" />
+                  ) : (
+                    <FolderClosed className="text-sidebar-foreground/65" />
+                  )}
+                  <span className="min-w-0 flex-1 truncate group-data-[collapsible=icon]:hidden">
                     {searchSet.displayName}
                   </span>
-                  <span className="truncate text-xs font-normal text-muted-foreground">
-                    {searchSet.termSummary || "No active terms"}
+                  <span
+                    aria-label={`${searchSet.importedImageCount} images`}
+                    className="ml-auto shrink-0 font-mono text-[11px] font-normal tabular-nums text-sidebar-foreground/55 group-data-[collapsible=icon]:hidden"
+                    title={`${searchSet.importedImageCount} images`}
+                  >
+                    {searchSet.importedImageCount}
                   </span>
-                </span>
-              </SidebarMenuButton>
-              <SidebarMenuBadge>{searchSet.importedImageCount}</SidebarMenuBadge>
-              <SidebarMenuAction
-                aria-label={`More actions for ${searchSet.displayName}`}
-                showOnHover
-              >
-                <MoreHorizontal />
-              </SidebarMenuAction>
-            </SidebarMenuItem>
-          ))
+                </SidebarMenuButton>
+                {isOpen ? (
+                  <p className="ml-8 mr-2 pb-1 pr-2 text-xs leading-5 text-sidebar-foreground/55 group-data-[collapsible=icon]:hidden">
+                    {termSummary}
+                  </p>
+                ) : null}
+              </SidebarMenuItem>
+            );
+          })
         )}
       </SidebarMenu>
     </>

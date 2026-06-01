@@ -4,7 +4,7 @@ import type { CollectionObjectSummary } from "@/lib/collection-objects";
 import { SidebarPrototype } from "./sidebar-prototype";
 
 const DEFAULT_API_PORT = 18670;
-const variants = ["A", "B", "C"] as const;
+const variants = ["A", "B"] as const;
 
 export type SidebarPrototypeVariant = (typeof variants)[number];
 
@@ -45,6 +45,112 @@ type PrototypeDashboard = {
     service: string;
     status: string;
   };
+};
+
+const fallbackDashboard: PrototypeDashboard = {
+  provider_focus: [
+    {
+      imported_image_count: 738,
+      provider: "met",
+      search_set_count: 6,
+    },
+  ],
+  search_sets: [
+    {
+      display_name: "Snake Study",
+      provider_collections: [
+        {
+          collect_status: "completed",
+          imported_image_count: 184,
+          imported_object_count: 126,
+          provider: "met",
+        },
+      ],
+      slug: "snake-study",
+      terms: [
+        { active: true, term: "snake" },
+        { active: true, term: "serpent" },
+        { active: true, term: "cobra" },
+        { active: true, term: "python" },
+      ],
+    },
+    {
+      display_name: "Intaglio Animals",
+      provider_collections: [
+        {
+          collect_status: "paused",
+          imported_image_count: 96,
+          imported_object_count: 71,
+          provider: "met",
+        },
+      ],
+      slug: "intaglio-animals",
+      terms: [
+        { active: true, term: "intaglio" },
+        { active: true, term: "lion" },
+        { active: true, term: "bull" },
+        { active: true, term: "eagle" },
+      ],
+    },
+    {
+      display_name: "Winged Figures",
+      provider_collections: [
+        {
+          collect_status: "completed",
+          imported_image_count: 211,
+          imported_object_count: 159,
+          provider: "met",
+        },
+      ],
+      slug: "winged-figures",
+      terms: [
+        { active: true, term: "winged" },
+        { active: true, term: "angel" },
+        { active: true, term: "nike" },
+        { active: true, term: "victory" },
+      ],
+    },
+    {
+      display_name: "Ritual Vessels",
+      provider_collections: [
+        {
+          collect_status: "completed",
+          imported_image_count: 152,
+          imported_object_count: 118,
+          provider: "met",
+        },
+      ],
+      slug: "ritual-vessels",
+      terms: [
+        { active: true, term: "vessel" },
+        { active: true, term: "libation" },
+        { active: true, term: "offering" },
+        { active: true, term: "ritual" },
+      ],
+    },
+    {
+      display_name: "Blue Glaze",
+      provider_collections: [
+        {
+          collect_status: "running",
+          imported_image_count: 68,
+          imported_object_count: 53,
+          provider: "met",
+        },
+      ],
+      slug: "blue-glaze",
+      terms: [
+        { active: true, term: "blue glaze" },
+        { active: true, term: "faience" },
+        { active: true, term: "cobalt" },
+      ],
+    },
+  ],
+  worker_status: {
+    active_collect_job_id: null,
+    service: "worker",
+    status: "idle",
+  },
 };
 
 function getPort(name: string, fallback: number): number {
@@ -105,7 +211,7 @@ export default async function SidebarPrototypePage({
   const variant = normalizeVariant(firstParam(resolvedSearchParams?.variant));
   const apiPort = getPort("ANACRONIA_API_PORT", DEFAULT_API_PORT);
   const apiBaseUrl = `http://127.0.0.1:${apiPort}`;
-  const dashboard = await getDashboard(apiPort);
+  const dashboard = (await getDashboard(apiPort)) ?? fallbackDashboard;
   const searchSets = dashboard?.search_sets ?? [];
   const activeSearchSet =
     searchSets.find((searchSet) => searchSet.slug === "snake") ??
