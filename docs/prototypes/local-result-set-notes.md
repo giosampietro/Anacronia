@@ -74,6 +74,7 @@ This gives **Depth** because grids, counters, detail links, and selection all ge
 
 ## Prototype Verdict To Carry Forward
 
+- The Search + Select pattern is frozen for production handoff. Continue from `docs/ux/local-result-set-contract.md`; do not keep expanding this prototype before implementation planning.
 - Keep `collection_filter` separate from `q`.
 - Treat Object/Image view as a projection of the same result set, not as separate data flows.
 - Treat selection as identity-based over the active projection and query.
