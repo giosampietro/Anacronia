@@ -125,6 +125,7 @@ function GridViewSwitch({
     >
       <ToggleGroupItem
         aria-label="Show Objects"
+        nativeButton={false}
         render={<Link href={objectHref} scroll={false} />}
         value="objects"
       >
@@ -132,6 +133,7 @@ function GridViewSwitch({
       </ToggleGroupItem>
       <ToggleGroupItem
         aria-label="Show Images"
+        nativeButton={false}
         render={<Link href={imageHref} scroll={false} />}
         value="images"
       >
