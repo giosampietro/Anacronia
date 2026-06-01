@@ -17,9 +17,6 @@ type CollectionResultSetSearchFormProps = {
   localQueryText: string;
   providerFilter: string;
   searchSetSlug: string;
-  selectedImageAssetIds?: number[];
-  selectedObjectKeys?: string[];
-  selectionMode?: boolean;
   viewMode: GridViewMode;
 };
 
@@ -28,9 +25,6 @@ export function CollectionResultSetSearchForm({
   localQueryText,
   providerFilter,
   searchSetSlug,
-  selectedImageAssetIds = [],
-  selectedObjectKeys = [],
-  selectionMode = false,
   viewMode,
 }: CollectionResultSetSearchFormProps) {
   const router = useRouter();
@@ -49,9 +43,6 @@ export function CollectionResultSetSearchForm({
       localQueryText: queryText,
       provider: providerFilter,
       searchSetSlug,
-      selectedImageAssetIds,
-      selectedObjectKeys,
-      selectionMode,
       viewMode,
       workspaceMode: "search-set",
     });
@@ -67,9 +58,6 @@ export function CollectionResultSetSearchForm({
       localQueryText: "",
       provider: providerFilter,
       searchSetSlug,
-      selectedImageAssetIds,
-      selectedObjectKeys,
-      selectionMode,
       viewMode,
       workspaceMode: "search-set",
     });

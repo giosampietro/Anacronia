@@ -78,51 +78,6 @@ describe("grid view URL helpers", () => {
     );
   });
 
-  it("serializes Local Result Set selection only when explicitly requested", () => {
-    expect(
-      createGridStateHref({
-        collectionFilterText: "jewelry",
-        localQueryText: "vase",
-        provider: "met",
-        searchSetSlug: "snake-study",
-        selectedObjectKeys: ["met:40", "met:42"],
-        selectionMode: true,
-        viewMode: "objects",
-        workspaceMode: "search-set",
-      }),
-    ).toBe(
-      "/?search_set=snake-study&collection_filter=jewelry&q=vase&provider=met&select=1&selected_object=met%3A40&selected_object=met%3A42",
-    );
-    expect(
-      createGridStateHref({
-        collectionFilterText: "jewelry",
-        localQueryText: "",
-        provider: "met",
-        searchSetSlug: "snake-study",
-        selectedImageAssetIds: [9, 8],
-        selectionMode: true,
-        viewMode: "images",
-        workspaceMode: "search-set",
-      }),
-    ).toBe(
-      "/?search_set=snake-study&view=images&collection_filter=jewelry&provider=met&select=1&selected_image=9&selected_image=8",
-    );
-    expect(
-      createGridStateHref({
-        collectionFilterText: "jewelry",
-        localQueryText: "vase",
-        provider: "met",
-        searchSetSlug: "snake-study",
-        selectedObjectKeys: ["met:40"],
-        selectionMode: false,
-        viewMode: "objects",
-        workspaceMode: "search-set",
-      }),
-    ).toBe(
-      "/?search_set=snake-study&collection_filter=jewelry&q=vase&provider=met",
-    );
-  });
-
   it("serializes exactly one detail selector", () => {
     expect(
       createGridStateHref({
