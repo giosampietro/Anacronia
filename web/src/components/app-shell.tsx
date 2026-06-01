@@ -13,6 +13,14 @@ import {
 import { ThemeSwitch } from "@/components/theme-switch";
 import { SidebarCollectionFilter } from "@/components/sidebar-collection-filter";
 import { Badge } from "@/components/ui/badge";
+import {
+  Popover,
+  PopoverContent,
+  PopoverDescription,
+  PopoverHeader,
+  PopoverTitle,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
 import {
@@ -46,6 +54,7 @@ type AppShellProps = {
   activeSearchSetSlug: string | null;
   appVersionStamp: AppVersionStamp;
   children: ReactNode;
+  collectAvailable: boolean;
   contentHeaderImageCount?: number;
   contentHeaderObjectCount?: number;
   dashboardView: OperationalDashboardView;
@@ -99,9 +108,63 @@ function BrandHeader() {
   );
 }
 
+function NewCollectionSidebarItem({
+  collectAvailable,
+  filterText,
+  workspaceMode,
+}: {
+  collectAvailable: boolean;
+  filterText: string;
+  workspaceMode: WorkspaceMode;
+}) {
+  if (collectAvailable) {
+    return (
+      <SidebarMenuItem>
+        <SidebarMenuButton
+          isActive={workspaceMode === "new-search-set"}
+          render={<Link href={createNewSearchSetHref(filterText)} />}
+          tooltip="New Collection"
+        >
+          <Plus />
+          <span className="group-data-[collapsible=icon]:hidden">
+            New Collection
+          </span>
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+    );
+  }
+
+  return (
+    <SidebarMenuItem>
+      <Popover>
+        <PopoverTrigger
+          nativeButton
+          render={
+            <SidebarMenuButton isActive={workspaceMode === "new-search-set"} />
+          }
+        >
+          <Plus />
+          <span className="group-data-[collapsible=icon]:hidden">
+            New Collection
+          </span>
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-80" side="right">
+          <PopoverHeader>
+            <PopoverTitle>A search is already running</PopoverTitle>
+            <PopoverDescription>
+              Let this one finish or stop it before starting a new Collection.
+            </PopoverDescription>
+          </PopoverHeader>
+        </PopoverContent>
+      </Popover>
+    </SidebarMenuItem>
+  );
+}
+
 function AppSidebar({
   activeSearchSetSlug,
   appVersionStamp,
+  collectAvailable,
   dashboardView,
   filterText,
   rows,
@@ -112,18 +175,11 @@ function AppSidebar({
       <SidebarHeader>
         <BrandHeader />
         <SidebarMenu className="gap-3">
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              isActive={workspaceMode === "new-search-set"}
-              render={<Link href={createNewSearchSetHref(filterText)} />}
-              tooltip="New Collection"
-            >
-              <Plus />
-              <span className="group-data-[collapsible=icon]:hidden">
-                New Collection
-              </span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
+          <NewCollectionSidebarItem
+            collectAvailable={collectAvailable}
+            filterText={filterText}
+            workspaceMode={workspaceMode}
+          />
           <SidebarMenuItem>
             <SidebarMenuButton
               isActive={workspaceMode === "user-library"}
@@ -194,6 +250,7 @@ export function AppShell({
   activeSearchSetSlug,
   appVersionStamp,
   children,
+  collectAvailable,
   contentHeaderImageCount = 0,
   contentHeaderObjectCount = 0,
   dashboardView,
@@ -211,6 +268,7 @@ export function AppShell({
       <AppSidebar
         activeSearchSetSlug={activeSearchSetSlug}
         appVersionStamp={appVersionStamp}
+        collectAvailable={collectAvailable}
         dashboardView={dashboardView}
         filterText={filterText}
         rows={rows}

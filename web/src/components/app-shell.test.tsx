@@ -42,6 +42,7 @@ describe("AppShell", () => {
       <AppShell
         activeSearchSetSlug="intaglio"
         appVersionStamp={{ display: "v0.1.60", title: "App version v0.1.60" }}
+        collectAvailable
         contentHeaderImageCount={38}
         contentHeaderObjectCount={12}
         dashboardView={dashboardView}
@@ -63,6 +64,7 @@ describe("AppShell", () => {
       <AppShell
         activeSearchSetSlug={null}
         appVersionStamp={{ display: "v0.1.60", title: "App version v0.1.60" }}
+        collectAvailable
         contentHeaderImageCount={7}
         contentHeaderObjectCount={4}
         dashboardView={{ ...dashboardView, activeSearchSet: null }}
@@ -84,6 +86,7 @@ describe("AppShell", () => {
       <AppShell
         activeSearchSetSlug="intaglio"
         appVersionStamp={{ display: "v0.1.60", title: "App version v0.1.60" }}
+        collectAvailable
         contentHeaderImageCount={38}
         contentHeaderObjectCount={12}
         dashboardView={dashboardView}
@@ -98,5 +101,27 @@ describe("AppShell", () => {
     expect(html).toContain("Local runtime");
     expect(html).toContain("data-slot=\"sidebar-group-label\"");
     expect(html).not.toContain("lucide-hard-drive");
+  });
+
+  it("keeps New Collection in place when another search is active", () => {
+    const html = renderToString(
+      <AppShell
+        activeSearchSetSlug="intaglio"
+        appVersionStamp={{ display: "v0.1.60", title: "App version v0.1.60" }}
+        collectAvailable={false}
+        contentHeaderImageCount={38}
+        contentHeaderObjectCount={12}
+        dashboardView={dashboardView}
+        filterText=""
+        rows={rows}
+        workspaceMode="search-set"
+      >
+        <div>Grid</div>
+      </AppShell>,
+    );
+
+    expect(html).toContain("aria-haspopup=\"dialog\"");
+    expect(html).not.toContain("mode=new-search-set");
+    expect(html).not.toContain("View search");
   });
 });
