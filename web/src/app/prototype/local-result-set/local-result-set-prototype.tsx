@@ -10,7 +10,6 @@ import {
   Images,
   Library,
   ListFilter,
-  Plus,
   Search,
   Square,
   X,
@@ -20,15 +19,9 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AspectRatio } from "@/components/ui/aspect-ratio";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { ImageAssetDetailPendingLink } from "@/components/image-asset-detail-overlay";
 import { ImageGridThumbnail } from "@/components/image-grid-thumbnail";
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { ObjectDetailPendingLink } from "@/components/object-detail-pending-link";
 import {
   Empty,
   EmptyDescription,
@@ -42,7 +35,6 @@ import {
   InputGroupButton,
   InputGroupInput,
 } from "@/components/ui/input-group";
-import { Separator } from "@/components/ui/separator";
 import {
   IMAGE_GRID_CAROUSEL_INDICATOR_CLASS_NAME,
   IMAGE_GRID_CLASS_NAME,
@@ -122,12 +114,6 @@ const providers: Array<{ label: string; value: PrototypeProvider }> = [
   { label: "All Providers", value: "all" },
   { label: "Met", value: "met" },
   { label: "V&A", value: "vam" },
-];
-
-const scenarios: Array<{ label: string; value: PrototypeScenario }> = [
-  { label: "Normal", value: "normal" },
-  { label: "No Material", value: "empty" },
-  { label: "Failure", value: "error" },
 ];
 
 function objectKey(object: PrototypeMuseumObject): string {
@@ -503,12 +489,10 @@ function CollectionRail({
 
 function SearchControls({
   resultSet,
-  selectedVisibleCount,
   state,
   updateState,
 }: {
   resultSet: ResultSet;
-  selectedVisibleCount: number;
   state: PrototypeState;
   updateState: (patch: Partial<PrototypeState>) => void;
 }) {
@@ -535,11 +519,6 @@ function SearchControls({
             Local Result Set
           </p>
           <h1 className="mt-1 truncate text-xl font-semibold">{scopeLabel}</h1>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {selectedVisibleCount > 0 ? (
-            <Badge>{selectedVisibleCount} selected here</Badge>
-          ) : null}
         </div>
       </div>
 
@@ -625,18 +604,14 @@ function SearchControls({
 
 function SelectionToolbar({
   activeItems,
-  includeIncoming,
   selectedIds,
   selectionMode,
-  setIncludeIncoming,
   setSelectedIds,
   setSelectionMode,
 }: {
   activeItems: ResultItem[];
-  includeIncoming: boolean;
   selectedIds: Set<string>;
   selectionMode: boolean;
-  setIncludeIncoming: (includeIncoming: boolean) => void;
   setSelectedIds: (selectedIds: Set<string>) => void;
   setSelectionMode: (selectionMode: boolean) => void;
 }) {
@@ -644,86 +619,48 @@ function SelectionToolbar({
   const selectedVisibleIds = visibleIds.filter((id) => selectedIds.has(id));
   const allVisibleSelected =
     visibleIds.length > 0 && selectedVisibleIds.length === visibleIds.length;
-  const clearSelectionDuplicatesVisibleAction =
-    allVisibleSelected && selectedIds.size === selectedVisibleIds.length;
-  const showClearSelection =
-    selectedIds.size > 0 && !clearSelectionDuplicatesVisibleAction;
 
   return (
-    <Card size="sm">
-      <CardContent className="flex flex-wrap items-center gap-3">
-        <Button
-          onClick={() => setSelectionMode(!selectionMode)}
-          size="sm"
-          variant={selectionMode ? "default" : "outline"}
-        >
-          {selectionMode ? <Check data-icon="inline-start" /> : <Square data-icon="inline-start" />}
-          Selection
-        </Button>
-        <Button
-          disabled={!selectionMode || visibleIds.length === 0}
-          onClick={() => {
-            if (allVisibleSelected) {
-              const next = new Set(selectedIds);
-              visibleIds.forEach((id) => next.delete(id));
-              setSelectedIds(next);
-              return;
-            }
-            setSelectedIds(new Set([...selectedIds, ...visibleIds]));
-          }}
-          size="sm"
-          variant="outline"
-        >
-          {allVisibleSelected ? "Unselect shown" : "Select all shown"}
-        </Button>
-        {showClearSelection ? (
+    <div className="flex flex-wrap items-center justify-end gap-3">
+      {selectionMode ? (
+        <>
           <Button
-            onClick={() => setSelectedIds(new Set())}
+            disabled={visibleIds.length === 0}
+            onClick={() => {
+              if (allVisibleSelected) {
+                const next = new Set(selectedIds);
+                visibleIds.forEach((id) => next.delete(id));
+                setSelectedIds(next);
+                return;
+              }
+              setSelectedIds(new Set([...selectedIds, ...visibleIds]));
+            }}
             size="sm"
             variant="outline"
           >
-            Clear selection
+            {allVisibleSelected ? "Deselect all" : "Select all"}
           </Button>
-        ) : null}
-        <Separator className="h-5" orientation="vertical" />
-        <Button
-          onClick={() => setIncludeIncoming(!includeIncoming)}
-          size="sm"
-          variant={includeIncoming ? "secondary" : "outline"}
-        >
-          <Plus data-icon="inline-start" />
-          Insert new result
-        </Button>
-        <span className="text-sm text-muted-foreground">
-          {selectedVisibleIds.length} shown selected / {selectedIds.size} total selected
-        </span>
-        {includeIncoming && selectedIds.size > 0 ? (
-          <Badge variant="outline">new result is not auto-selected</Badge>
-        ) : null}
-      </CardContent>
-    </Card>
-  );
-}
-
-function PrototypeStateControls({ state }: { state: PrototypeState }) {
-  return (
-    <Card size="sm">
-      <CardHeader>
-        <CardTitle>Prototype States</CardTitle>
-        <CardDescription>Forced fixtures for empty and failure review</CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-wrap gap-2">
-        {scenarios.map((scenario) => (
-          <AnchorButton
-            active={state.scenario === scenario.value}
-            href={hrefFor(state, { detail: "", scenario: scenario.value })}
-            key={scenario.value}
+          <Button
+            onClick={() => {
+              setSelectionMode(false);
+              setSelectedIds(new Set());
+            }}
+            size="sm"
+            variant="outline"
           >
-            {scenario.label}
-          </AnchorButton>
-        ))}
-      </CardContent>
-    </Card>
+            Cancel
+          </Button>
+        </>
+      ) : (
+        <Button
+          onClick={() => setSelectionMode(true)}
+          size="sm"
+          variant="outline"
+        >
+          Select
+        </Button>
+      )}
+    </div>
   );
 }
 
@@ -778,48 +715,107 @@ function ResultTile({
   const title = isImage ? item.image.title : item.object.title;
   const alt = title || `${providerLabel(item.object.provider)} result`;
   const imageCount = item.object.images.length;
-
-  return (
-    <a
-      aria-label={`Open ${title}`}
-      className={cn(
-        IMAGE_GRID_TILE_CLASS_NAME,
-        "self-start",
-        selected && "ring-2 ring-primary ring-offset-2 ring-offset-background",
-      )}
-      href={hrefFor(state, { detail: item.id })}
-      onClick={(event) => {
-        if (!selectionMode) {
-          return;
-        }
-
-        event.preventDefault();
-        toggleSelected();
-      }}
-    >
-      <AspectRatio ratio={4 / 5}>
-        {thumb ? <ImageGridThumbnail alt={alt} src={thumb} /> : null}
-        {imageCount > 1 && !isImage ? (
-          <span
-            aria-label={`${imageCount} images`}
-            className={IMAGE_GRID_CAROUSEL_INDICATOR_CLASS_NAME}
-          >
-            <Images data-icon="inline-start" />
-            {imageCount}
-          </span>
-        ) : null}
+  const provider = providerLabel(item.object.provider);
+  const closeHref = hrefFor(state, { detail: "" });
+  const detailHref = hrefFor(state, { detail: item.id });
+  const tileId = `prototype-result-${item.id.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+  const tileClassName = cn(IMAGE_GRID_TILE_CLASS_NAME, "self-start");
+  const tileContents = (
+    <AspectRatio ratio={4 / 5}>
+      {thumb ? <ImageGridThumbnail alt={alt} src={thumb} /> : null}
+      {imageCount > 1 && !isImage ? (
+        <span
+          aria-label={`${imageCount} images`}
+          className={IMAGE_GRID_CAROUSEL_INDICATOR_CLASS_NAME}
+        >
+          <Images data-icon="inline-start" />
+          {imageCount}
+        </span>
+      ) : null}
+      {selectionMode ? (
+        <span
+          aria-hidden="true"
+          className={cn(
+            "absolute left-1.5 top-1.5 z-10 flex size-6 items-center justify-center rounded-full border bg-background/90 text-foreground shadow-sm backdrop-blur-sm",
+            selected && "border-primary bg-primary text-primary-foreground",
+          )}
+        >
+          {selected ? <Check className="size-4" /> : <Square className="size-4" />}
+        </span>
+      ) : (
         <Badge
           className={IMAGE_GRID_PROVIDER_BADGE_CLASS_NAME}
           variant="secondary"
         >
-          {providerLabel(item.object.provider)}
+          {provider}
         </Badge>
-        <div className={IMAGE_GRID_OVERLAY_CLASS_NAME}>
-          <p className="mt-1 line-clamp-2 text-xs font-medium leading-tight">
-            {title || "Untitled result"}
-          </p>
-        </div>
-      </AspectRatio>
+      )}
+      <div className={IMAGE_GRID_OVERLAY_CLASS_NAME}>
+        <p className="mt-1 line-clamp-2 text-xs font-medium leading-tight">
+          {title || "Untitled result"}
+        </p>
+      </div>
+    </AspectRatio>
+  );
+
+  if (!selectionMode && isImage) {
+    return (
+      <ImageAssetDetailPendingLink
+        ariaLabel={`Open ${title}`}
+        className={tileClassName}
+        closeHref={closeHref}
+        href={detailHref}
+        id={tileId}
+        preview={{
+          alt,
+          height: 400,
+          parentTitle: item.object.title || "Untitled object",
+          providerLabel: provider,
+          src: thumb ?? "",
+          title: item.image.title || "Image Asset",
+          width: 320,
+        }}
+      >
+        {tileContents}
+      </ImageAssetDetailPendingLink>
+    );
+  }
+
+  if (!selectionMode) {
+    return (
+      <ObjectDetailPendingLink
+        ariaLabel={`Open ${title}`}
+        className={tileClassName}
+        closeHref={closeHref}
+        href={detailHref}
+        id={tileId}
+        preview={{
+          alt,
+          collectionLabel: item.collectionLabels[0],
+          height: 400,
+          imageCount,
+          providerLabel: provider,
+          src: thumb ?? "",
+          title: item.object.title || "Untitled object",
+          width: 320,
+        }}
+      >
+        {tileContents}
+      </ObjectDetailPendingLink>
+    );
+  }
+
+  return (
+    <a
+      aria-label={`${selected ? "Deselect" : "Select"} ${title}`}
+      className={tileClassName}
+      href={detailHref}
+      onClick={(event) => {
+        event.preventDefault();
+        toggleSelected();
+      }}
+    >
+      {tileContents}
     </a>
   );
 }
@@ -869,211 +865,16 @@ function ResultsGrid({
   );
 }
 
-function DetailRail({
-  detail,
-  state,
-  updateState,
-}: {
-  detail: ResultItem | null;
-  state: PrototypeState;
-  updateState: (patch: Partial<PrototypeState>) => void;
-}) {
-  if (detail === null) {
-    return (
-      <Card className="sticky top-4">
-        <CardHeader>
-          <CardTitle>Detail Anchor</CardTitle>
-          <CardDescription>No result selected</CardDescription>
-        </CardHeader>
-        <CardContent className="text-sm text-muted-foreground">
-          Detail links preserve <code>scope</code>, <code>search_set</code>,{" "}
-          <code>q</code>, <code>provider</code>, and <code>view</code>.
-        </CardContent>
-      </Card>
-    );
-  }
-
-  const isImage = detail.kind === "image";
-
-  return (
-    <Card className="sticky top-4">
-      <CardHeader>
-        <CardTitle>{isImage ? detail.image.title : detail.object.title}</CardTitle>
-        <CardDescription>
-          {isImage ? `Image Asset ${detail.image.imageAssetId}` : `Museum Object ${detail.object.objectId}`}
-        </CardDescription>
-        <CardAction>
-          <Button
-            aria-label="Close detail"
-            onClick={() => updateState({ detail: "" })}
-            size="icon-xs"
-            variant="ghost"
-          >
-            <X />
-          </Button>
-        </CardAction>
-      </CardHeader>
-      <CardContent className="grid gap-4">
-        <AspectRatio ratio={4 / 5}>
-          <ImageGridThumbnail
-            alt=""
-            className="size-full rounded-xl object-cover"
-            src={isImage ? detail.image.thumb : detail.object.images[0]?.thumb}
-          />
-        </AspectRatio>
-        <div className="grid gap-2 text-sm">
-          <div className="flex justify-between gap-3">
-            <span className="text-muted-foreground">Provider</span>
-            <span>{providerLabel(detail.object.provider)}</span>
-          </div>
-          <div className="flex justify-between gap-3">
-            <span className="text-muted-foreground">Collections</span>
-            <span className="text-right">{detail.collectionLabels.join(", ")}</span>
-          </div>
-          <div className="flex justify-between gap-3">
-            <span className="text-muted-foreground">Identity</span>
-            <span className="font-mono text-xs">{detail.id}</span>
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-1">
-          {(isImage ? detail.image.descriptors : detail.object.descriptors).map((descriptor) => (
-            <Badge key={descriptor} variant="secondary">
-              {descriptor}
-            </Badge>
-          ))}
-        </div>
-        <a
-          className={cn(buttonVariants({ size: "sm", variant: "outline" }), "w-fit")}
-          href={hrefFor(state, { detail: detail.id })}
-        >
-          Reloadable detail URL
-        </a>
-      </CardContent>
-    </Card>
-  );
-}
-
-function StateRail({
-  resultSet,
-  selectedIds,
-  state,
-}: {
-  resultSet: ResultSet;
-  selectedIds: Set<string>;
-  state: PrototypeState;
-}) {
-  const stateRows = [
-    ["scope", state.scope],
-    ["search_set", state.scope === "collection" ? state.searchSet : "-"],
-    ["collection_filter", state.collectionFilter || "-"],
-    ["q", state.q || "-"],
-    ["provider", state.provider],
-    ["view", state.view],
-    ["scenario", state.scenario],
-    ["detail", state.detail || "-"],
-    ["items", String(resultSet.activeItems.length)],
-    ["selected", String(selectedIds.size)],
-  ];
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>State</CardTitle>
-        <CardDescription>Result-set Interface surface</CardDescription>
-      </CardHeader>
-      <CardContent className="grid gap-2">
-        {stateRows.map(([label, value]) => (
-          <div className="grid grid-cols-[8rem_1fr] gap-3 text-xs" key={label}>
-            <span className="text-muted-foreground">{label}</span>
-            <span className="min-w-0 truncate font-mono">{value}</span>
-          </div>
-        ))}
-      </CardContent>
-    </Card>
-  );
-}
-
-function ArchitectureCard() {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Local Result Set Module</CardTitle>
-        <CardDescription>Prototype contract candidate</CardDescription>
-      </CardHeader>
-      <CardContent className="grid gap-3 text-sm">
-        <div className="rounded-lg border bg-muted/30 p-3">
-          <p className="font-medium">Interface</p>
-          <p className="mt-1 text-muted-foreground">
-            scope, query, Provider facet, projection, counts, pagination,
-            identity, detail anchor, selection.
-          </p>
-        </div>
-        <div className="rounded-lg border bg-muted/30 p-3">
-          <p className="font-medium">Seam</p>
-          <p className="mt-1 text-muted-foreground">
-            production Adapter can query local SQLite; prototype Adapter uses fixtures.
-          </p>
-        </div>
-        <div className="rounded-lg border bg-muted/30 p-3">
-          <p className="font-medium">Depth</p>
-          <p className="mt-1 text-muted-foreground">
-            grids, counts, detail navigation, and curation consume one Module.
-          </p>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function VariantSwitcher({
-  state,
-}: {
-  state: PrototypeState;
-}) {
-  return (
-    <nav className="fixed bottom-5 left-1/2 z-30 flex -translate-x-1/2 items-center gap-1 rounded-full border bg-background/95 p-1 shadow-lg backdrop-blur">
-      <a
-        className={cn(
-          "rounded-full px-3 py-2 text-sm font-medium",
-          state.variant === "A" && "bg-foreground text-background",
-        )}
-        href={hrefFor(state, { variant: "A" })}
-      >
-        A Search-first
-      </a>
-      <a
-        className={cn(
-          "rounded-full px-3 py-2 text-sm font-medium",
-          state.variant === "B" && "bg-foreground text-background",
-        )}
-        href={hrefFor(state, { variant: "B" })}
-      >
-        B Contract rail
-      </a>
-    </nav>
-  );
-}
-
 export function LocalResultSetPrototype({
   initialState,
 }: LocalResultSetPrototypeProps) {
   const [state, updateState] = usePrototypeRoute(initialState);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
-  const [includeIncoming, setIncludeIncoming] = useState(false);
   const resultSet = useMemo(
-    () => createResultSet({ includeIncoming, state }),
-    [includeIncoming, state],
+    () => createResultSet({ includeIncoming: false, state }),
+    [state],
   );
-  const selectedVisibleCount = resultSet.activeItems.filter((item) =>
-    selectedIds.has(item.id),
-  ).length;
-  const detail =
-    resultSet.activeItems.find((item) => item.id === state.detail) ??
-    [...resultSet.queryObjects, ...resultSet.queryImages].find(
-      (item) => item.id === state.detail,
-    ) ??
-    null;
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -1082,7 +883,6 @@ export function LocalResultSetPrototype({
         <section className="min-w-0">
           <SearchControls
             resultSet={resultSet}
-            selectedVisibleCount={selectedVisibleCount}
             state={state}
             updateState={updateState}
           />
@@ -1090,50 +890,22 @@ export function LocalResultSetPrototype({
           <div className="grid gap-5 px-5 py-5 lg:px-7">
             <SelectionToolbar
               activeItems={resultSet.activeItems}
-              includeIncoming={includeIncoming}
               selectedIds={selectedIds}
               selectionMode={selectionMode}
-              setIncludeIncoming={setIncludeIncoming}
               setSelectedIds={setSelectedIds}
               setSelectionMode={setSelectionMode}
             />
 
-            {state.variant === "A" ? (
-              <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_22rem]">
-                <ResultsGrid
-                  resultSet={resultSet}
-                  selectedIds={selectedIds}
-                  selectionMode={selectionMode}
-                  setSelectedIds={setSelectedIds}
-                  state={state}
-                />
-                <div className="grid content-start gap-5">
-                  <DetailRail detail={detail} state={state} updateState={updateState} />
-                  <StateRail resultSet={resultSet} selectedIds={selectedIds} state={state} />
-                  <PrototypeStateControls state={state} />
-                </div>
-              </div>
-            ) : (
-              <div className="grid gap-5 2xl:grid-cols-[18rem_minmax(0,1fr)_22rem]">
-                <div className="grid content-start gap-5">
-                  <ArchitectureCard />
-                  <PrototypeStateControls state={state} />
-                  <StateRail resultSet={resultSet} selectedIds={selectedIds} state={state} />
-                </div>
-                <ResultsGrid
-                  resultSet={resultSet}
-                  selectedIds={selectedIds}
-                  selectionMode={selectionMode}
-                  setSelectedIds={setSelectedIds}
-                  state={state}
-                />
-                <DetailRail detail={detail} state={state} updateState={updateState} />
-              </div>
-            )}
+            <ResultsGrid
+              resultSet={resultSet}
+              selectedIds={selectedIds}
+              selectionMode={selectionMode}
+              setSelectedIds={setSelectedIds}
+              state={state}
+            />
           </div>
         </section>
       </div>
-      <VariantSwitcher state={state} />
     </main>
   );
 }
