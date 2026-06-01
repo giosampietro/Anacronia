@@ -111,7 +111,10 @@ describe("CollectionResultsGrid", () => {
     expect(html).toContain("Delete selected");
     expect(html).toContain("Deselect Coiled Snake Bowl");
     expect(html).toContain("border-2 border-white");
-    expect(html).toContain("rounded-full border border-white/90");
+    expect(html).toContain(
+      "rounded-full border shadow-sm backdrop-blur-sm border-primary bg-primary text-primary-foreground",
+    );
+    expect(html).not.toContain("border-white/90 bg-background/45");
     expect(html).not.toContain("selected_object=");
     expect(html).not.toContain("select=1");
     expect(html).toContain("Met");
@@ -148,6 +151,8 @@ describe("CollectionResultsGrid", () => {
     expect(html).toContain("1 selected");
     expect(html).toContain("Select Image Asset 9");
     expect(html).toContain("Deselect Image Asset 8");
+    expect(html).toContain("rounded-full border border-white/90 bg-background/45");
+    expect(html).toContain("border-primary bg-primary text-primary-foreground");
     expect(html).not.toContain("selected_image=");
     expect(html).not.toContain("select=1");
     expect(html).toContain("Images");

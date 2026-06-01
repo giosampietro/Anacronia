@@ -11,6 +11,14 @@ import { AspectRatio } from "@/components/ui/aspect-ratio";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   imageUrl,
   type CollectionObjectSummary,
   type LibraryImageAssetSummary,
@@ -48,6 +56,8 @@ type CollectionResultSelectionSurfaceProps = {
   searchSetSlug: string;
   viewMode: GridViewMode;
 };
+
+type SelectionDialogKind = "delete" | "export";
 
 function objectProviderDisplayLabel(provider: string): string {
   if (provider === "met") {
@@ -94,8 +104,14 @@ function selectionCountLabel({
   return `${selectedVisibleCount} shown selected / ${selectedTotalCount} total selected`;
 }
 
+function selectionNoun(viewMode: GridViewMode, count: number): string {
+  const singular = viewMode === "images" ? "image" : "object";
+  return count === 1 ? singular : `${singular}s`;
+}
+
 function SelectionToolbar({
   onCancel,
+  onOpenSelectionDialog,
   onToggleVisible,
   selectedTotalCount,
   selectedVisibleCount,
@@ -105,6 +121,7 @@ function SelectionToolbar({
   visibleSelectionComplete,
 }: {
   onCancel: () => void;
+  onOpenSelectionDialog: (dialogKind: SelectionDialogKind) => void;
   onToggleVisible: () => void;
   selectedTotalCount: number;
   selectedVisibleCount: number;
@@ -136,7 +153,8 @@ function SelectionToolbar({
       <div className="flex min-w-0 items-center gap-2">
         <Button
           aria-label="Export selected"
-          disabled={selectedTotalCount === 0}
+          disabled={selectedVisibleCount === 0}
+          onClick={() => onOpenSelectionDialog("export")}
           size="icon-sm"
           type="button"
           variant="ghost"
@@ -145,7 +163,8 @@ function SelectionToolbar({
         </Button>
         <Button
           aria-label="Delete selected"
-          disabled={selectedTotalCount === 0}
+          disabled={selectedVisibleCount === 0}
+          onClick={() => onOpenSelectionDialog("delete")}
           size="icon-sm"
           type="button"
           variant="ghost"
@@ -174,6 +193,88 @@ function SelectionToolbar({
   );
 }
 
+function SelectionActionDialog({
+  collectionDisplayName,
+  dialogKind,
+  onClose,
+  selectedCount,
+  viewMode,
+}: {
+  collectionDisplayName: string;
+  dialogKind: SelectionDialogKind | null;
+  onClose: () => void;
+  selectedCount: number;
+  viewMode: GridViewMode;
+}) {
+  const noun = selectionNoun(viewMode, selectedCount);
+  const scopeLabel = formatCollectionDisplayName(collectionDisplayName);
+  const deleteActionLabel = `Delete ${noun}`;
+  const title =
+    dialogKind === "delete"
+      ? `Delete ${selectedCount} ${noun}?`
+      : `Export ${selectedCount} ${noun}`;
+
+  return (
+    <Dialog open={dialogKind !== null} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent aria-label={title}>
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>
+            {dialogKind === "delete"
+              ? "This prototype does not delete data. It shows the decision point before a destructive action."
+              : "This prototype does not export files. It shows where export choices would live."}
+          </DialogDescription>
+        </DialogHeader>
+
+        {dialogKind === "delete" ? (
+          <div className="grid gap-4 text-sm">
+            <p>
+              The selected {noun} would be removed from {scopeLabel}. We still need
+              to triage whether delete means removing from this collection only, or
+              deleting from all collections and the user library.
+            </p>
+            <div className="rounded-lg border bg-muted/40 p-3 text-muted-foreground">
+              Open product question: collection-scoped removal vs global library
+              deletion.
+            </div>
+          </div>
+        ) : (
+          <div className="grid gap-3 text-sm">
+            {[
+              "Export selected image files",
+              "Export metadata as CSV",
+              "Export object records with image references",
+            ].map((option) => (
+              <div
+                className="flex items-center justify-between rounded-lg border bg-muted/30 px-3 py-2"
+                key={option}
+              >
+                <span>{option}</span>
+                <Badge variant="secondary">prototype</Badge>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <DialogFooter>
+          <Button onClick={onClose} type="button" variant="outline">
+            Cancel
+          </Button>
+          {dialogKind === "delete" ? (
+            <Button onClick={onClose} type="button" variant="destructive">
+              {deleteActionLabel}
+            </Button>
+          ) : (
+            <Button onClick={onClose} type="button">
+              Export options
+            </Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function CollectionResultSelectionSurface({
   apiBaseUrl,
   closeImageHref,
@@ -198,6 +299,9 @@ export function CollectionResultSelectionSurface({
   const [lastSelectionAnchorId, setLastSelectionAnchorId] = useState<string | null>(
     null,
   );
+  const [selectionDialog, setSelectionDialog] = useState<SelectionDialogKind | null>(
+    null,
+  );
   const formattedCollectionDisplayName = formatCollectionDisplayName(
     collectionDisplayName,
   );
@@ -217,6 +321,7 @@ export function CollectionResultSelectionSurface({
     setSelectionMode(false);
     setSelectedIds(new Set());
     setLastSelectionAnchorId(null);
+    setSelectionDialog(null);
   }
 
   function toggleVisibleSelection() {
@@ -269,6 +374,7 @@ export function CollectionResultSelectionSurface({
     <div className="grid gap-3">
       <SelectionToolbar
         onCancel={resetSelection}
+        onOpenSelectionDialog={setSelectionDialog}
         onToggleVisible={toggleVisibleSelection}
         selectedTotalCount={selectedTotalCount}
         selectedVisibleCount={selectedVisibleCount}
@@ -333,7 +439,10 @@ export function CollectionResultSelectionSurface({
                 {selectionMode ? (
                   <span
                     aria-hidden="true"
-                    className={`absolute left-1.5 top-1.5 z-10 flex size-6 items-center justify-center rounded-full border border-white/90 bg-background/45 shadow-sm backdrop-blur-sm${isSelected ? " border-primary bg-primary text-primary-foreground" : " text-transparent"}`}
+                    className={cn(
+                      "absolute left-1.5 top-1.5 z-10 flex size-6 items-center justify-center rounded-full border border-white/90 bg-background/45 text-transparent shadow-sm backdrop-blur-sm",
+                      isSelected && "border-primary bg-primary text-primary-foreground",
+                    )}
                   >
                     {isSelected ? <Check className="size-4" /> : null}
                   </span>
@@ -430,7 +539,10 @@ export function CollectionResultSelectionSurface({
                 {selectionMode ? (
                   <span
                     aria-hidden="true"
-                    className={`absolute left-1.5 top-1.5 z-10 flex size-6 items-center justify-center rounded-full border border-white/90 bg-background/45 shadow-sm backdrop-blur-sm${isSelected ? " border-primary bg-primary text-primary-foreground" : " text-transparent"}`}
+                    className={cn(
+                      "absolute left-1.5 top-1.5 z-10 flex size-6 items-center justify-center rounded-full border border-white/90 bg-background/45 text-transparent shadow-sm backdrop-blur-sm",
+                      isSelected && "border-primary bg-primary text-primary-foreground",
+                    )}
                   >
                     {isSelected ? <Check className="size-4" /> : null}
                   </span>
@@ -487,6 +599,13 @@ export function CollectionResultSelectionSurface({
           })}
         </div>
       )}
+      <SelectionActionDialog
+        collectionDisplayName={collectionDisplayName}
+        dialogKind={selectionDialog}
+        onClose={() => setSelectionDialog(null)}
+        selectedCount={selectedVisibleCount}
+        viewMode={viewMode}
+      />
     </div>
   );
 }
