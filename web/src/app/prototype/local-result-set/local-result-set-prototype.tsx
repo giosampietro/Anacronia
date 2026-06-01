@@ -1,6 +1,6 @@
 "use client";
 
-import { type FormEvent, useMemo, useState } from "react";
+import { type FormEvent, type MouseEvent, useMemo, useState } from "react";
 import {
   AlertCircle,
   ArrowRightFromLine,
@@ -12,7 +12,6 @@ import {
   Library,
   ListFilter,
   Search,
-  Square,
   Trash2,
   X,
 } from "lucide-react";
@@ -630,6 +629,7 @@ function SearchControls({
 function SelectionToolbar({
   activeItems,
   onOpenSelectionDialog,
+  onResetSelectionAnchor,
   selectedIds,
   selectionMode,
   setSelectedIds,
@@ -637,6 +637,7 @@ function SelectionToolbar({
 }: {
   activeItems: ResultItem[];
   onOpenSelectionDialog: (dialogKind: SelectionDialogKind) => void;
+  onResetSelectionAnchor: () => void;
   selectedIds: Set<string>;
   selectionMode: boolean;
   setSelectedIds: (selectedIds: Set<string>) => void;
@@ -680,6 +681,7 @@ function SelectionToolbar({
                   const next = new Set(selectedIds);
                   visibleIds.forEach((id) => next.delete(id));
                   setSelectedIds(next);
+                  onResetSelectionAnchor();
                   return;
                 }
                 setSelectedIds(new Set([...selectedIds, ...visibleIds]));
@@ -693,6 +695,7 @@ function SelectionToolbar({
               onClick={() => {
                 setSelectionMode(false);
                 setSelectedIds(new Set());
+                onResetSelectionAnchor();
               }}
               size="sm"
               variant="outline"
@@ -842,7 +845,7 @@ function ResultTile({
   item: ResultItem;
   selected: boolean;
   selectionMode: boolean;
-  toggleSelected: () => void;
+  toggleSelected: (event: MouseEvent<HTMLAnchorElement>) => void;
   state: PrototypeState;
 }) {
   const isImage = item.kind === "image";
@@ -857,13 +860,16 @@ function ResultTile({
   const tileClassName = cn(
     IMAGE_GRID_TILE_CLASS_NAME,
     "self-start",
-    selectionMode &&
-      selected &&
-      "ring-2 ring-white ring-offset-2 ring-offset-background",
   );
   const tileContents = (
     <AspectRatio ratio={4 / 5}>
       {thumb ? <ImageGridThumbnail alt={alt} src={thumb} /> : null}
+      {selectionMode && selected ? (
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 z-[8] rounded-lg border-2 border-white"
+        />
+      ) : null}
       {imageCount > 1 && !isImage ? (
         <span
           aria-label={`${imageCount} images`}
@@ -877,11 +883,11 @@ function ResultTile({
         <span
           aria-hidden="true"
           className={cn(
-            "absolute left-1.5 top-1.5 z-10 flex size-6 items-center justify-center rounded-full border bg-background/90 text-foreground shadow-sm backdrop-blur-sm",
+            "absolute left-1.5 top-1.5 z-10 flex size-6 items-center justify-center rounded-full border border-white/90 bg-background/45 text-transparent shadow-sm backdrop-blur-sm",
             selected && "border-primary bg-primary text-primary-foreground",
           )}
         >
-          {selected ? <Check className="size-4" /> : <Square className="size-4" />}
+          {selected ? <Check className="size-4" /> : null}
         </span>
       ) : (
         <Badge
@@ -953,7 +959,7 @@ function ResultTile({
       href={detailHref}
       onClick={(event) => {
         event.preventDefault();
-        toggleSelected();
+        toggleSelected(event);
       }}
     >
       {tileContents}
@@ -962,21 +968,27 @@ function ResultTile({
 }
 
 function ResultsGrid({
+  lastSelectionAnchorId,
   resultSet,
   selectedIds,
   selectionMode,
+  setLastSelectionAnchorId,
   setSelectedIds,
   state,
 }: {
+  lastSelectionAnchorId: string | null;
   resultSet: ResultSet;
   selectedIds: Set<string>;
   selectionMode: boolean;
+  setLastSelectionAnchorId: (id: string | null) => void;
   setSelectedIds: (selectedIds: Set<string>) => void;
   state: PrototypeState;
 }) {
   if (state.scenario === "error" || resultSet.activeItems.length === 0) {
     return <EmptyResultState state={state} />;
   }
+
+  const visibleIds = resultSet.activeItems.map((item) => item.id);
 
   return (
     <div className={cn(IMAGE_GRID_CLASS_NAME, "content-start items-start")}>
@@ -990,14 +1002,32 @@ function ResultsGrid({
             selected={selected}
             selectionMode={selectionMode}
             state={state}
-            toggleSelected={() => {
+            toggleSelected={(event) => {
               const next = new Set(selectedIds);
+              const anchorIndex =
+                lastSelectionAnchorId === null
+                  ? -1
+                  : visibleIds.indexOf(lastSelectionAnchorId);
+              const itemIndex = visibleIds.indexOf(item.id);
+
+              if (event.shiftKey && anchorIndex !== -1 && itemIndex !== -1) {
+                const [start, end] =
+                  anchorIndex < itemIndex
+                    ? [anchorIndex, itemIndex]
+                    : [itemIndex, anchorIndex];
+                visibleIds.slice(start, end + 1).forEach((id) => next.add(id));
+                setSelectedIds(next);
+                setLastSelectionAnchorId(item.id);
+                return;
+              }
+
               if (selected) {
                 next.delete(item.id);
               } else {
                 next.add(item.id);
               }
               setSelectedIds(next);
+              setLastSelectionAnchorId(item.id);
             }}
           />
         );
@@ -1012,6 +1042,9 @@ export function LocalResultSetPrototype({
   const [state, updateState] = usePrototypeRoute(initialState);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectionDialog, setSelectionDialog] = useState<SelectionDialogKind | null>(
+    null,
+  );
+  const [lastSelectionAnchorId, setLastSelectionAnchorId] = useState<string | null>(
     null,
   );
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
@@ -1039,6 +1072,7 @@ export function LocalResultSetPrototype({
             <SelectionToolbar
               activeItems={resultSet.activeItems}
               onOpenSelectionDialog={setSelectionDialog}
+              onResetSelectionAnchor={() => setLastSelectionAnchorId(null)}
               selectedIds={selectedIds}
               selectionMode={selectionMode}
               setSelectedIds={setSelectedIds}
@@ -1046,14 +1080,17 @@ export function LocalResultSetPrototype({
                 setSelectionMode(nextSelectionMode);
                 if (!nextSelectionMode) {
                   setSelectionDialog(null);
+                  setLastSelectionAnchorId(null);
                 }
               }}
             />
 
             <ResultsGrid
+              lastSelectionAnchorId={lastSelectionAnchorId}
               resultSet={resultSet}
               selectedIds={selectedIds}
               selectionMode={selectionMode}
+              setLastSelectionAnchorId={setLastSelectionAnchorId}
               setSelectedIds={setSelectedIds}
               state={state}
             />
