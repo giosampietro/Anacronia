@@ -15,15 +15,24 @@ import {
 import {
   Field,
   FieldDescription,
+  FieldError,
   FieldLabel,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
-import { canStartNewCollectionSearch } from "@/lib/new-collection";
+import {
+  canStartNewCollectionSearch,
+  isDuplicateCollectionName,
+  type ExistingCollectionIdentity,
+} from "@/lib/new-collection";
+
+export type NewCollectionServerError = "duplicate_name";
 
 type NewCollectionFormProps = {
   action: (formData: FormData) => void | Promise<void>;
+  existingCollections?: ExistingCollectionIdentity[];
+  serverError?: NewCollectionServerError | null;
 };
 
 const providerSources = [
@@ -105,26 +114,50 @@ function StartSearchButton({ disabled }: { disabled: boolean }) {
   );
 }
 
-export function NewCollectionForm({ action }: NewCollectionFormProps) {
+export function NewCollectionForm({
+  action,
+  existingCollections = [],
+  serverError = null,
+}: NewCollectionFormProps) {
   const [displayName, setDisplayName] = useState("");
   const [termsText, setTermsText] = useState("");
-  const canStart = canStartNewCollectionSearch(displayName, termsText);
+  const duplicateName = isDuplicateCollectionName(displayName, existingCollections);
+  const serverDuplicateName = serverError === "duplicate_name" && displayName.trim() === "";
+  const nameError = duplicateName || serverDuplicateName
+    ? "A Collection with this name already exists."
+    : "";
+  const canStart = canStartNewCollectionSearch(
+    displayName,
+    termsText,
+    existingCollections,
+  );
 
   return (
-    <form action={action} className="mx-auto flex w-full max-w-4xl flex-col gap-4">
+    <form
+      action={action}
+      autoComplete="off"
+      className="mx-auto flex w-full max-w-4xl flex-col gap-4"
+    >
+      <input name="display_name" type="hidden" value={displayName} />
       <StepCard number={1} title="Name the Collection">
-        <Field>
-          <FieldLabel className="sr-only" htmlFor="display_name">
+        <Field data-invalid={Boolean(nameError)}>
+          <FieldLabel className="sr-only" htmlFor="collection_name_entry">
             Collection name
           </FieldLabel>
           <Input
-            id="display_name"
-            name="display_name"
+            aria-describedby={nameError ? "collection_name_error" : undefined}
+            aria-invalid={Boolean(nameError)}
+            autoComplete="off"
+            autoCorrect="off"
+            id="collection_name_entry"
+            name="collection_name_entry"
             onChange={(event) => setDisplayName(event.currentTarget.value)}
             placeholder="Snake studies"
             required
+            spellCheck={false}
             value={displayName}
           />
+          <FieldError id="collection_name_error">{nameError}</FieldError>
         </Field>
       </StepCard>
 

@@ -32,6 +32,32 @@ describe("NewCollectionForm", () => {
     expect(html).not.toContain("Batch target");
   });
 
+  it("renders the Collection name entry without browser autofill history", () => {
+    formStatus.pending = false;
+
+    const html = renderToString(<NewCollectionForm action={() => undefined} />);
+
+    expect(html).toContain("autoComplete=\"off\"");
+    expect(html).toContain("name=\"collection_name_entry\"");
+    expect(html).toContain("name=\"display_name\"");
+    expect(html).not.toContain("name=\"display_name\" id=\"display_name\"");
+  });
+
+  it("shows a duplicate Collection name error when the server redirects back after rejection", () => {
+    formStatus.pending = false;
+
+    const html = renderToString(
+      <NewCollectionForm
+        action={() => undefined}
+        existingCollections={[{ displayName: "Snake Studies", slug: "snake-studies" }]}
+        serverError="duplicate_name"
+      />,
+    );
+
+    expect(html).toContain("A Collection with this name already exists.");
+    expect(html).toContain("disabled=\"\"");
+  });
+
   it("shows immediate feedback while the start search action is pending", () => {
     formStatus.pending = true;
 

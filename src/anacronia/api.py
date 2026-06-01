@@ -46,7 +46,9 @@ from anacronia.met_provider import HttpMetCandidateClient, fetch_bytes_url
 from anacronia.search_sets import (
     SearchSet,
     create_or_continue_search_set,
+    get_search_set,
     list_search_sets,
+    slugify_search_set_name,
 )
 from anacronia.storage import initialize_storage
 from anacronia.worker import (
@@ -449,6 +451,18 @@ def create_app(
 
     @app.post("/search-sets")
     def create_search_set(request: SearchSetRequest) -> dict[str, object]:
+        slug = slugify_search_set_name(request.display_name)
+        if slug:
+            try:
+                get_search_set(database_path=resolved_database_path, slug=slug)
+            except LookupError:
+                pass
+            else:
+                raise HTTPException(
+                    status_code=409,
+                    detail="A Collection with this name already exists.",
+                )
+
         try:
             search_set = create_or_continue_search_set(
                 database_path=resolved_database_path,

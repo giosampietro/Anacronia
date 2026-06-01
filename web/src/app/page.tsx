@@ -12,7 +12,10 @@ import {
   createCollectionObjectTileId,
 } from "@/components/collection-results-grid";
 import { ImageAssetDetailOverlay } from "@/components/image-asset-detail-overlay";
-import { NewCollectionForm } from "@/components/new-collection-form";
+import {
+  NewCollectionForm,
+  type NewCollectionServerError,
+} from "@/components/new-collection-form";
 import {
   ObjectDetailErrorOverlay,
 } from "@/components/object-detail-pending-link";
@@ -118,6 +121,7 @@ type HomeProps = {
     object?: string | string[];
     object_id?: string | string[];
     object_provider?: string | string[];
+    collection_error?: string | string[];
     search_set?: string | string[];
     view?: string | string[];
   }>;
@@ -350,6 +354,11 @@ async function createSearchSetAndCollectFromMet(formData: FormData) {
     }),
   });
 
+  if (searchSetResponse.status === 409) {
+    revalidatePath("/");
+    redirect("/?mode=new-search-set&collection_error=duplicate_name");
+  }
+
   if (!searchSetResponse.ok) {
     revalidatePath("/");
     return;
@@ -574,7 +583,15 @@ function CollectBusyNote({ collectAvailable }: { collectAvailable: boolean }) {
   );
 }
 
-function NewSearchSetWorkspace({ collectAvailable }: { collectAvailable: boolean }) {
+function NewSearchSetWorkspace({
+  collectAvailable,
+  existingCollections,
+  serverError,
+}: {
+  collectAvailable: boolean;
+  existingCollections: { displayName: string; slug: string }[];
+  serverError: NewCollectionServerError | null;
+}) {
   if (!collectAvailable) {
     return (
       <div className="mx-auto flex max-w-4xl flex-col gap-4">
@@ -592,7 +609,11 @@ function NewSearchSetWorkspace({ collectAvailable }: { collectAvailable: boolean
 
   return (
     <div className="mx-auto flex max-w-4xl flex-col gap-4">
-      <NewCollectionForm action={createSearchSetAndCollectFromMet} />
+      <NewCollectionForm
+        action={createSearchSetAndCollectFromMet}
+        existingCollections={existingCollections}
+        serverError={serverError}
+      />
     </div>
   );
 }
@@ -874,6 +895,7 @@ export default async function Home({ searchParams }: HomeProps) {
   const resolvedSearchParams = await searchParams;
   const filterText = getFirstParam(resolvedSearchParams?.filter) ?? "";
   const collectNoticeCode = getFirstParam(resolvedSearchParams?.collect_notice);
+  const collectionErrorCode = getFirstParam(resolvedSearchParams?.collection_error);
   const exportError = getFirstParam(resolvedSearchParams?.export_error) ?? "";
   const exportFormat = collectionExportFormatFromParam(
     getFirstParam(resolvedSearchParams?.export_format) ?? "",
@@ -916,6 +938,12 @@ export default async function Home({ searchParams }: HomeProps) {
   ]);
   const dashboard = dashboardResponse ?? emptyDashboard(apiHealth.worker.status);
   const dashboardView = createOperationalDashboardView(dashboard, activeSearchSetSlug);
+  const existingCollections = dashboardView.searchSets.map((searchSet) => ({
+    displayName: searchSet.displayName,
+    slug: searchSet.slug,
+  }));
+  const newCollectionServerError: NewCollectionServerError | null =
+    collectionErrorCode === "duplicate_name" ? "duplicate_name" : null;
   const rows = createStatusRows({ uiPort, apiPort, apiHealth });
   const activeSearchSet = dashboardView.activeSearchSet;
   const collectAvailable = canStartCollect(dashboardView.workerStatus);
@@ -1188,7 +1216,11 @@ export default async function Home({ searchParams }: HomeProps) {
       <DashboardAutoRefresh enabled={shouldAutoRefreshDashboard(dashboardView.workerStatus)} />
       <div className="min-w-0 px-5 py-6 md:px-8 lg:px-10 lg:py-9">
         {workspaceMode === "new-search-set" ? (
-          <NewSearchSetWorkspace collectAvailable={collectAvailable} />
+          <NewSearchSetWorkspace
+            collectAvailable={collectAvailable}
+            existingCollections={existingCollections}
+            serverError={newCollectionServerError}
+          />
         ) : workspaceMode === "user-library" ? (
           <UserLibraryWorkspace
             apiBaseUrl={apiBaseUrl}
@@ -1205,7 +1237,11 @@ export default async function Home({ searchParams }: HomeProps) {
             resolvedObject={selectedObjectDetailResolved ? selectedObjectRoute : null}
           />
         ) : activeSearchSet === null ? (
-          <NewSearchSetWorkspace collectAvailable={collectAvailable} />
+          <NewSearchSetWorkspace
+            collectAvailable={collectAvailable}
+            existingCollections={existingCollections}
+            serverError={newCollectionServerError}
+          />
         ) : (
           <div className="mx-auto flex max-w-7xl flex-col gap-7">
             <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(320px,420px)] xl:items-start">

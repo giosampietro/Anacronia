@@ -172,8 +172,9 @@ def test_api_starts_locked_collection_with_initial_met_provider_source(tmp_path)
         },
     )
 
-    assert response.status_code == 200
-    assert response.json()["terms"] == [
+    assert response.status_code == 409
+    assert response.json()["detail"] == "A Collection with this name already exists."
+    assert client.get("/search-sets").json()[0]["terms"] == [
         {"term": "snake", "active": True},
         {"term": "anaconda", "active": True},
     ]
