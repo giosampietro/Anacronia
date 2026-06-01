@@ -20,6 +20,12 @@ Can Anacronia prototype local result search, Object/Image projection, counters, 
   - `scenario`: `normal`, `empty`, or `error`
   - `detail`: selected result identity
 
+## Iteration Notes
+
+- The Normal / No Material / Failure controls are prototype-only state forcing controls. Keep them out of the product-facing result bar and place them in a clearly marked prototype/debug rail.
+- The four metric cards were too heavy for the product surface. Counts now live inside the Object/Image view controls, so the grid area can stay focused on results, empty state, or failure state.
+- Detailed total/shown diagnostics still belong in the state rail or notes, not in the primary user workflow.
+
 ## Architectural Recommendation
 
 The production follow-up should deepen a **Local Result Set Module** with a small **Interface** and a larger **Implementation** behind it.
@@ -71,3 +77,4 @@ This gives **Depth** because grids, counters, detail links, and selection all ge
   - total Objects and Images in the active scope
   - shown Objects and Images after query/facet
   - selected visible vs selected total when selection can span hidden results
+- Product UI should prefer compact counts on controls over a separate metric row.

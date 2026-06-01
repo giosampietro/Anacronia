@@ -301,26 +301,6 @@ function usePrototypeRoute(initialState: PrototypeState) {
   return [state, updateState] as const;
 }
 
-function MetricCard({
-  label,
-  sublabel,
-  value,
-}: {
-  label: string;
-  sublabel: string;
-  value: number;
-}) {
-  return (
-    <div className="min-w-0 rounded-xl border bg-card px-4 py-3">
-      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-        {label}
-      </p>
-      <p className="mt-1 text-2xl font-semibold tabular-nums">{value}</p>
-      <p className="mt-1 truncate text-xs text-muted-foreground">{sublabel}</p>
-    </div>
-  );
-}
-
 function AnchorButton({
   active,
   children,
@@ -339,6 +319,27 @@ function AnchorButton({
     >
       {children}
     </a>
+  );
+}
+
+function ControlCount({
+  active,
+  value,
+}: {
+  active: boolean;
+  value: number;
+}) {
+  return (
+    <span
+      className={cn(
+        "ml-1 rounded-full px-1.5 py-0.5 text-xs font-semibold tabular-nums",
+        active
+          ? "bg-background/20 text-inherit"
+          : "bg-muted text-muted-foreground",
+      )}
+    >
+      {value}
+    </span>
   );
 }
 
@@ -482,8 +483,6 @@ function SearchControls({
           <h1 className="mt-1 truncate text-xl font-semibold">{scopeLabel}</h1>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="outline">{providerLabel(state.provider)}</Badge>
-          <Badge variant="secondary">{state.view}</Badge>
           {selectedVisibleCount > 0 ? (
             <Badge>{selectedVisibleCount} selected here</Badge>
           ) : null}
@@ -529,6 +528,10 @@ function SearchControls({
           >
             <Database data-icon="inline-start" />
             Objects
+            <ControlCount
+              active={state.view === "objects"}
+              value={resultSet.queryObjects.length}
+            />
           </AnchorButton>
           <AnchorButton
             active={state.view === "images"}
@@ -536,6 +539,10 @@ function SearchControls({
           >
             <Images data-icon="inline-start" />
             Images
+            <ControlCount
+              active={state.view === "images"}
+              value={resultSet.queryImages.length}
+            />
           </AnchorButton>
         </div>
 
@@ -551,38 +558,6 @@ function SearchControls({
           ))}
         </div>
       </div>
-    </div>
-  );
-}
-
-function ResultMetrics({ resultSet, state }: { resultSet: ResultSet; state: PrototypeState }) {
-  const scopeName =
-    state.scope === "library"
-      ? "library"
-      : resultSet.activeCollection?.displayName ?? "Collection";
-
-  return (
-    <div className="grid gap-3 md:grid-cols-4">
-      <MetricCard
-        label="Objects"
-        sublabel={`total in ${scopeName}`}
-        value={resultSet.baseObjects.length}
-      />
-      <MetricCard
-        label="Images"
-        sublabel={`total in ${scopeName}`}
-        value={resultSet.baseImages.length}
-      />
-      <MetricCard
-        label="Shown Objects"
-        sublabel={state.q ? `matching "${state.q}"` : "current query"}
-        value={resultSet.queryObjects.length}
-      />
-      <MetricCard
-        label="Shown Images"
-        sublabel={state.q ? `matching "${state.q}"` : "current query"}
-        value={resultSet.queryImages.length}
-      />
     </div>
   );
 }
@@ -659,6 +634,28 @@ function SelectionToolbar({
         {includeIncoming && selectedIds.size > 0 ? (
           <Badge variant="outline">new result is not auto-selected</Badge>
         ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function PrototypeStateControls({ state }: { state: PrototypeState }) {
+  return (
+    <Card size="sm">
+      <CardHeader>
+        <CardTitle>Prototype States</CardTitle>
+        <CardDescription>Forced fixtures for empty and failure review</CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-wrap gap-2">
+        {scenarios.map((scenario) => (
+          <AnchorButton
+            active={state.scenario === scenario.value}
+            href={hrefFor(state, { detail: "", scenario: scenario.value })}
+            key={scenario.value}
+          >
+            {scenario.label}
+          </AnchorButton>
+        ))}
       </CardContent>
     </Card>
   );
@@ -1040,20 +1037,6 @@ export function LocalResultSetPrototype({
           />
 
           <div className="grid gap-5 px-5 py-5 lg:px-7">
-            <div className="flex flex-wrap gap-2">
-              {scenarios.map((scenario) => (
-                <AnchorButton
-                  active={state.scenario === scenario.value}
-                  href={hrefFor(state, { detail: "", scenario: scenario.value })}
-                  key={scenario.value}
-                >
-                  {scenario.label}
-                </AnchorButton>
-              ))}
-            </div>
-
-            <ResultMetrics resultSet={resultSet} state={state} />
-
             <SelectionToolbar
               activeItems={resultSet.activeItems}
               includeIncoming={includeIncoming}
@@ -1077,12 +1060,14 @@ export function LocalResultSetPrototype({
                 <div className="grid content-start gap-5">
                   <DetailRail detail={detail} state={state} updateState={updateState} />
                   <StateRail resultSet={resultSet} selectedIds={selectedIds} state={state} />
+                  <PrototypeStateControls state={state} />
                 </div>
               </div>
             ) : (
               <div className="grid gap-5 2xl:grid-cols-[18rem_minmax(0,1fr)_22rem]">
                 <div className="grid content-start gap-5">
                   <ArchitectureCard />
+                  <PrototypeStateControls state={state} />
                   <StateRail resultSet={resultSet} selectedIds={selectedIds} state={state} />
                 </div>
                 <ResultsGrid
