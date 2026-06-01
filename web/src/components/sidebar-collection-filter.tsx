@@ -2,11 +2,12 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { FolderClosed, FolderOpen, Search } from "lucide-react";
+import { FolderClosed, FolderOpen, ListFilter, Search } from "lucide-react";
 
 import type { DashboardSearchSetView } from "@/lib/dashboard";
 import type { WorkspaceMode } from "@/lib/workspace";
 import { createSearchSetHref, filterSearchSets } from "@/lib/workspace";
+import { Spinner } from "@/components/ui/spinner";
 import {
   Empty,
   EmptyHeader,
@@ -28,6 +29,13 @@ type SidebarCollectionFilterProps = {
   searchSets: DashboardSearchSetView[];
   workspaceMode: WorkspaceMode;
 };
+
+function isCollectionSearchActive(searchSet: DashboardSearchSetView): boolean {
+  return searchSet.providerCollections.some(
+    (providerCollection) =>
+      providerCollection.status === "running" || providerCollection.status === "stopping",
+  );
+}
 
 export function SidebarCollectionFilter({
   activeSearchSetSlug,
@@ -51,7 +59,7 @@ export function SidebarCollectionFilter({
   return (
     <>
       <div className="relative group-data-[collapsible=icon]:hidden">
-        <Search className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 opacity-50" />
+        <ListFilter className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 opacity-50" />
         <SidebarInput
           aria-label="Filter Collections"
           className="pl-8"
@@ -79,6 +87,7 @@ export function SidebarCollectionFilter({
               searchSet.slug === activeSearchSetSlug;
             const isOpen = openedSearchSetSlug === searchSet.slug;
             const termSummary = searchSet.termSummary || "No active terms";
+            const searchActive = isCollectionSearchActive(searchSet);
 
             return (
               <SidebarMenuItem key={searchSet.slug}>
@@ -104,11 +113,20 @@ export function SidebarCollectionFilter({
                     {collectionName}
                   </span>
                   <span
-                    aria-label={`${searchSet.importedImageCount} images`}
-                    className="ml-auto shrink-0 font-mono text-[11px] font-normal tabular-nums text-sidebar-foreground/55 group-data-[collapsible=icon]:hidden"
-                    title={`${searchSet.importedImageCount} images`}
+                    className="ml-auto flex shrink-0 items-center gap-1 font-mono text-[11px] font-normal tabular-nums text-sidebar-foreground/55 group-data-[collapsible=icon]:hidden"
                   >
-                    {searchSet.importedImageCount}
+                    {searchActive ? (
+                      <Spinner
+                        aria-label={`${collectionName} search in progress`}
+                        className="size-3"
+                      />
+                    ) : null}
+                    <span
+                      aria-label={`${searchSet.importedImageCount} images`}
+                      title={`${searchSet.importedImageCount} images`}
+                    >
+                      {searchSet.importedImageCount}
+                    </span>
                   </span>
                 </SidebarMenuButton>
                 {isOpen ? (

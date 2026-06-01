@@ -17,6 +17,28 @@ const snakeStudy: DashboardSearchSetView = {
   importedImageCount: 5,
 };
 
+const runningSnakeStudy: DashboardSearchSetView = {
+  ...snakeStudy,
+  providerCollections: [
+    {
+      provider: "met",
+      providerLabel: "Met",
+      status: "running",
+      pauseReason: "",
+      candidateOffset: 0,
+      candidateLimit: 20,
+      batchTarget: 5,
+      nextCandidateOffset: 20,
+      progressLabel: "0/0 candidates",
+      progressPercent: 0,
+      importedObjectCount: 2,
+      importedImageCount: 5,
+      continueCandidateOffset: null,
+      latestRunLabel: "Collect 1",
+    },
+  ],
+};
+
 const masks: DashboardSearchSetView = {
   displayName: "Masks",
   slug: "masks",
@@ -45,6 +67,7 @@ describe("SidebarCollectionFilter", () => {
     expect(html).toContain("Snake Study");
     expect(html).not.toContain("sNaKe STUDY");
     expect(html).not.toContain("Masks");
+    expect(html).toContain("lucide-list-filter");
     expect(html).not.toContain("type=\"submit\"");
     expect(html).not.toContain("Search Collections");
   });
@@ -70,5 +93,66 @@ describe("SidebarCollectionFilter", () => {
     expect(html).toContain("5 images");
     expect(html).not.toContain("lucide-database");
     expect(html).not.toContain("More actions for Snake Study");
+  });
+
+  it("keeps the search icon only for the empty Collection filter state", () => {
+    const html = renderToString(
+      <SidebarProvider>
+        <SidebarCollectionFilter
+          activeSearchSetSlug={null}
+          initialFilterText="zzzz"
+          searchSets={[snakeStudy, masks]}
+          workspaceMode="search-set"
+        />
+      </SidebarProvider>,
+    );
+
+    expect(html).toContain("No matching Collections");
+    expect(html).toContain("lucide-list-filter");
+    expect(html).toContain("lucide-search");
+  });
+
+  it("renders a spinner next to the image count for actively searching Collections", () => {
+    const html = renderToString(
+      <SidebarProvider>
+        <SidebarCollectionFilter
+          activeSearchSetSlug="snake-study"
+          initialFilterText=""
+          searchSets={[runningSnakeStudy, masks]}
+          workspaceMode="search-set"
+        />
+      </SidebarProvider>,
+    );
+
+    expect(html).toContain("Snake Study search in progress");
+    expect(html).toContain("lucide-loader");
+    expect(html).toContain("5 images");
+  });
+
+  it("does not render a spinner for paused Collections", () => {
+    const html = renderToString(
+      <SidebarProvider>
+        <SidebarCollectionFilter
+          activeSearchSetSlug="snake-study"
+          initialFilterText=""
+          searchSets={[
+            {
+              ...runningSnakeStudy,
+              providerCollections: runningSnakeStudy.providerCollections.map(
+                (providerCollection) => ({
+                  ...providerCollection,
+                  status: "paused",
+                }),
+              ),
+            },
+          ]}
+          workspaceMode="search-set"
+        />
+      </SidebarProvider>,
+    );
+
+    expect(html).not.toContain("search in progress");
+    expect(html).not.toContain("lucide-loader");
+    expect(html).toContain("5 images");
   });
 });
