@@ -1,6 +1,6 @@
 "use client";
 
-import type { MouseEvent } from "react";
+import type { MouseEvent, ReactNode } from "react";
 import { useMemo, useState } from "react";
 import {
   ArrowRightFromLine,
@@ -40,10 +40,10 @@ import {
   imageUrl,
   type CollectionObjectSummary,
   type LibraryImageAssetSummary,
+  type LibraryObjectSummary,
 } from "@/lib/collection-objects";
 import { formatCollectionDisplayName } from "@/lib/collection-display";
 import {
-  createGridStateHref,
   createObjectRouteKey,
   type GridViewMode,
   type ObjectRouteRef,
@@ -58,6 +58,7 @@ import {
   type CollectionExportFormat,
 } from "@/lib/export-workflow";
 import {
+  IMAGE_GRID_BADGE_CLASS_NAME,
   IMAGE_GRID_CAROUSEL_INDICATOR_CLASS_NAME,
   IMAGE_GRID_CLASS_NAME,
   IMAGE_GRID_OVERLAY_CLASS_NAME,
@@ -66,21 +67,28 @@ import {
 } from "@/lib/image-grid-style";
 import { cn } from "@/lib/utils";
 
-type CollectionResultSelectionSurfaceProps = {
+type LocalResultObjectSummary = CollectionObjectSummary | LibraryObjectSummary;
+
+type LocalResultSelectionSurfaceProps = {
   apiBaseUrl: string;
   closeImageHref: string;
   closeObjectHref: string;
-  collectionDisplayName: string;
-  collectionFilterText: string;
+  emptyState?: ReactNode;
+  exportEndpoint?: string;
+  imageAssetHref: (imageAsset: LibraryImageAssetSummary) => string;
+  imageAssetTileId: (imageAsset: LibraryImageAssetSummary) => string;
   imageAssets: LibraryImageAssetSummary[];
+  imageCollectionsLabel?: (imageAsset: LibraryImageAssetSummary) => string;
+  imageTopBadgeLabel?: (imageAsset: LibraryImageAssetSummary) => string;
   initialSelectedIds?: string[];
   initialSelectionMode?: boolean;
-  localQueryText: string;
-  objects: CollectionObjectSummary[];
-  providerFilter: string;
+  objectCollectionLabel: (collectionObject: LocalResultObjectSummary) => string;
+  objectHref: (collectionObject: LocalResultObjectSummary) => string;
+  objectTileId: (collectionObject: LocalResultObjectSummary) => string;
+  objects: LocalResultObjectSummary[];
   resolvedImageAssetId?: number | null;
   resolvedObject?: ObjectRouteRef | null;
-  searchSetSlug: string;
+  scopeDisplayName: string;
   viewMode: GridViewMode;
 };
 
@@ -132,15 +140,7 @@ function objectProviderDisplayLabel(provider: string): string {
   return provider.trim() || "Unknown";
 }
 
-function createCollectionObjectTileId(provider: string, objectId: number): string {
-  return `collection-object-${provider}-${objectId}`;
-}
-
-function createCollectionImageAssetTileId(imageAssetId: number): string {
-  return `collection-image-asset-${imageAssetId}`;
-}
-
-function objectSelectionId(collectionObject: CollectionObjectSummary): string {
+function objectSelectionId(collectionObject: LocalResultObjectSummary): string {
   return `object:${createObjectRouteKey(
     collectionObject.provider,
     collectionObject.object_id,
@@ -259,29 +259,30 @@ function SelectionToolbar({
 }
 
 function SelectionActionDialog({
-  collectionDisplayName,
   dialogKind,
+  exportEndpoint,
   onClose,
   open,
+  scopeDisplayName,
   selectedCount,
   selectedIds,
-  searchSetSlug,
   viewMode,
 }: {
-  collectionDisplayName: string;
   dialogKind: SelectionDialogKind;
+  exportEndpoint?: string;
   onClose: () => void;
   open: boolean;
+  scopeDisplayName: string;
   selectedCount: number;
   selectedIds: string[];
-  searchSetSlug: string;
   viewMode: GridViewMode;
 }) {
   const [exportStatus, setExportStatus] = useState<SelectionExportStatus>({
     state: "idle",
   });
   const noun = selectionNoun(viewMode, selectedCount);
-  const scopeLabel = formatCollectionDisplayName(collectionDisplayName);
+  const scopeLabel = formatCollectionDisplayName(scopeDisplayName);
+  const canExport = exportEndpoint !== undefined;
   const deleteActionLabel = `Delete ${noun}`;
   const title =
     dialogKind === "delete"
@@ -293,10 +294,14 @@ function SelectionActionDialog({
   }
 
   async function exportSelected(format: CollectionExportFormat) {
+    if (exportEndpoint === undefined) {
+      return;
+    }
+
     setExportStatus({ format, state: "pending" });
     try {
       const response = await fetch(
-        `/api/search-sets/${encodeURIComponent(searchSetSlug)}/exports`,
+        exportEndpoint,
         {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -348,7 +353,9 @@ function SelectionActionDialog({
           <DialogDescription>
             {dialogKind === "delete"
               ? "This prototype does not delete data. It shows the decision point before a destructive action."
-              : `Export selected ${noun} from ${scopeLabel}.`}
+              : canExport
+                ? `Export selected ${noun} from ${scopeLabel}.`
+                : `Selected export from ${scopeLabel} is reserved for the shared result-set workflow.`}
           </DialogDescription>
         </DialogHeader>
 
@@ -364,7 +371,7 @@ function SelectionActionDialog({
               deletion.
             </div>
           </div>
-        ) : (
+        ) : canExport ? (
           <div className="grid gap-4 text-sm">
             {exportStatus.state === "success" ? null : (
               <ItemGroup className="gap-2">
@@ -440,6 +447,16 @@ function SelectionActionDialog({
               </Alert>
             ) : null}
           </div>
+        ) : (
+          <Alert>
+            <CircleAlert />
+            <AlertTitle>Export not wired for this scope yet</AlertTitle>
+            <AlertDescription>
+              This uses the same selected export entry point as Collections, but User
+              Library export still needs a backend destination contract before it can
+              write files.
+            </AlertDescription>
+          </Alert>
         )}
 
         <DialogFooter>
@@ -468,23 +485,28 @@ function SelectionActionDialog({
   );
 }
 
-export function CollectionResultSelectionSurface({
+export function LocalResultSelectionSurface({
   apiBaseUrl,
   closeImageHref,
   closeObjectHref,
-  collectionDisplayName,
-  collectionFilterText,
+  emptyState,
+  exportEndpoint,
+  imageAssetHref,
+  imageAssetTileId,
   imageAssets,
+  imageCollectionsLabel,
+  imageTopBadgeLabel,
   initialSelectedIds = [],
   initialSelectionMode = false,
-  localQueryText,
+  objectCollectionLabel,
+  objectHref,
+  objectTileId,
   objects,
-  providerFilter,
   resolvedImageAssetId = null,
   resolvedObject = null,
-  searchSetSlug,
+  scopeDisplayName,
   viewMode,
-}: CollectionResultSelectionSurfaceProps) {
+}: LocalResultSelectionSurfaceProps) {
   const [selectionMode, setSelectionMode] = useState(initialSelectionMode);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(
     () => new Set(uniqueSelectedIds(initialSelectedIds)),
@@ -496,9 +518,6 @@ export function CollectionResultSelectionSurface({
     useState<SelectionDialogKind>("export");
   const [selectionDialogOpen, setSelectionDialogOpen] = useState(false);
   const [selectionDialogSession, setSelectionDialogSession] = useState(0);
-  const formattedCollectionDisplayName = formatCollectionDisplayName(
-    collectionDisplayName,
-  );
   const visibleIds = useMemo(
     () =>
       viewMode === "objects"
@@ -583,30 +602,17 @@ export function CollectionResultSelectionSurface({
         visibleCount={visibleIds.length}
         visibleSelectionComplete={visibleSelectionComplete}
       />
-      {viewMode === "objects" ? (
+      {visibleIds.length === 0 ? emptyState : null}
+      {visibleIds.length > 0 ? viewMode === "objects" ? (
         <div className={cn(IMAGE_GRID_CLASS_NAME, "content-start items-start")}>
           {objects.map((collectionObject) => {
             const collectionObjectProviderLabel = objectProviderDisplayLabel(
               collectionObject.provider,
             );
-            const tileId = createCollectionObjectTileId(
-              collectionObject.provider,
-              collectionObject.object_id,
-            );
+            const tileId = objectTileId(collectionObject);
             const selectionId = objectSelectionId(collectionObject);
             const isSelected = selectedIds.has(selectionId);
-            const href = createGridStateHref({
-              collectionFilterText,
-              localQueryText,
-              object: {
-                objectId: collectionObject.object_id,
-                provider: collectionObject.provider,
-              },
-              provider: providerFilter,
-              searchSetSlug,
-              viewMode,
-              workspaceMode: "search-set",
-            });
+            const href = objectHref(collectionObject);
             const thumbSrc = imageUrl(apiBaseUrl, collectionObject.cover_thumb_url);
             const title = collectionObject.title || "Untitled object";
             const objectAlt =
@@ -685,7 +691,7 @@ export function CollectionResultSelectionSurface({
                 key={`${collectionObject.provider}-${collectionObject.object_id}-${tileStateKey}`}
                 preview={{
                   alt: objectAlt,
-                  collectionLabel: formattedCollectionDisplayName,
+                  collectionLabel: objectCollectionLabel(collectionObject),
                   height: collectionObject.cover_original_height,
                   imageCount: collectionObject.image_count,
                   providerLabel: collectionObjectProviderLabel,
@@ -705,20 +711,10 @@ export function CollectionResultSelectionSurface({
             const imageAssetProviderLabel = objectProviderDisplayLabel(
               imageAsset.provider,
             );
-            const tileId = createCollectionImageAssetTileId(
-              imageAsset.image_asset_id,
-            );
+            const tileId = imageAssetTileId(imageAsset);
             const selectionId = imageSelectionId(imageAsset);
             const isSelected = selectedIds.has(selectionId);
-            const href = createGridStateHref({
-              collectionFilterText,
-              imageAssetId: imageAsset.image_asset_id,
-              localQueryText,
-              provider: providerFilter,
-              searchSetSlug,
-              viewMode: "images",
-              workspaceMode: "search-set",
-            });
+            const href = imageAssetHref(imageAsset);
             const thumbSrc = imageUrl(apiBaseUrl, imageAsset.thumb_url);
             const title = imageAsset.title || "Untitled object";
             const imageAssetLabel = `Image Asset ${imageAsset.image_asset_id}`;
@@ -746,6 +742,18 @@ export function CollectionResultSelectionSurface({
                   >
                     {isSelected ? <Check className="size-4" /> : null}
                   </span>
+                ) : imageTopBadgeLabel ? (
+                  <div className="absolute inset-x-2 top-2 flex translate-y-1 items-start justify-between gap-2 opacity-0 transition-all duration-200 group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100">
+                    <Badge
+                      className={cn(
+                        "min-w-0 max-w-[70%] truncate",
+                        IMAGE_GRID_BADGE_CLASS_NAME,
+                      )}
+                      variant="secondary"
+                    >
+                      {imageTopBadgeLabel(imageAsset)}
+                    </Badge>
+                  </div>
                 ) : (
                   <Badge
                     className={IMAGE_GRID_PROVIDER_BADGE_CLASS_NAME}
@@ -755,9 +763,25 @@ export function CollectionResultSelectionSurface({
                   </Badge>
                 )}
                 <div className={IMAGE_GRID_OVERLAY_CLASS_NAME}>
-                  <p className="mt-1 line-clamp-2 text-xs font-medium leading-tight">
-                    {title}
-                  </p>
+                  {imageTopBadgeLabel ? (
+                    <>
+                      <Badge
+                        className={IMAGE_GRID_BADGE_CLASS_NAME}
+                        variant="secondary"
+                      >
+                        {imageAssetProviderLabel}
+                      </Badge>
+                      {imageCollectionsLabel ? (
+                        <p className="sr-only">
+                          {imageCollectionsLabel(imageAsset)}
+                        </p>
+                      ) : null}
+                    </>
+                  ) : (
+                    <p className="mt-1 line-clamp-2 text-xs font-medium leading-tight">
+                      {title}
+                    </p>
+                  )}
                 </div>
               </AspectRatio>
             );
@@ -798,16 +822,16 @@ export function CollectionResultSelectionSurface({
             );
           })}
         </div>
-      )}
+      ) : null}
       <SelectionActionDialog
-        collectionDisplayName={collectionDisplayName}
         dialogKind={selectionDialogKind}
+        exportEndpoint={exportEndpoint}
         key={selectionDialogSession}
         onClose={() => setSelectionDialogOpen(false)}
         open={selectionDialogOpen}
+        scopeDisplayName={scopeDisplayName}
         selectedCount={selectedTotalCount}
         selectedIds={Array.from(selectedIds)}
-        searchSetSlug={searchSetSlug}
         viewMode={viewMode}
       />
     </div>

@@ -10,6 +10,7 @@ import type {
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
     push: vi.fn(),
+    replace: vi.fn(),
   }),
 }));
 
@@ -92,14 +93,23 @@ describe("UserLibraryWorkspace", () => {
     const html = renderToString(
       <UserLibraryWorkspace
         apiBaseUrl="http://127.0.0.1:18670"
-        filterText=""
-        gridViewMode="images"
         imageAssets={imageAssets}
-        imageCount={2}
+        localQueryText=""
         objects={objects}
+        providerFacets={[{ provider: "met", objectCount: 2, imageCount: 2 }]}
+        providerFilter="all"
+        resultCounts={{ objects: 2, images: 2 }}
+        viewMode="images"
       />,
     );
 
+    expect(html).toContain("aria-label=\"Search local User Library results\"");
+    expect(html).toContain("name=\"q\"");
+    expect(html).toContain("placeholder=\"\"");
+    expect(html).toContain("data-slot=\"toggle-group\"");
+    expect(html).toContain("aria-label=\"Object and Image result views\"");
+    expect(html).toContain("All Providers");
+    expect(html).toContain("Select");
     expect(html).toContain("Snake Study");
     expect(html).toContain("Serpent Study");
     expect(html).not.toContain("sNaKe STUDY");
@@ -114,8 +124,6 @@ describe("UserLibraryWorkspace", () => {
     expect(html).not.toContain("collected Image Assets across all Collections");
     expect(html).not.toContain(">Library<");
     expect(html).not.toContain(">User Library<");
-    expect(html).not.toContain("Coiled Snake Bowl");
-    expect(html).not.toContain("Bowl");
     expect(html).not.toContain("No library grid yet");
   });
 
@@ -123,16 +131,25 @@ describe("UserLibraryWorkspace", () => {
     const html = renderToString(
       <UserLibraryWorkspace
         apiBaseUrl="http://127.0.0.1:18670"
-        filterText=""
-        gridViewMode="objects"
         imageAssets={imageAssets}
-        imageCount={2}
+        initialSelectedIds={["object:met:40"]}
+        initialSelectionMode
+        localQueryText="snake"
         objects={objects}
+        providerFacets={[{ provider: "met", objectCount: 2, imageCount: 2 }]}
+        providerFilter="met"
+        resultCounts={{ objects: 2, images: 2 }}
+        viewMode="objects"
       />,
     );
 
-    expect(html).toContain("/?mode=user-library&amp;search_set=snake-study&amp;view=objects&amp;object=met%3A40");
-    expect(html).toContain("/?mode=user-library&amp;search_set=snake-study&amp;view=objects&amp;object=met%3A20");
+    expect(html).toContain("value=\"snake\"");
+    expect(html).toContain("Clear local search");
+    expect(html).toContain("1 selected");
+    expect(html).toContain("Export selected");
+    expect(html).toContain("Delete selected");
+    expect(html).toContain("/?mode=user-library&amp;search_set=snake-study&amp;view=objects&amp;object=met%3A40&amp;q=snake&amp;provider=met");
+    expect(html).toContain("/?mode=user-library&amp;search_set=snake-study&amp;view=objects&amp;object=met%3A20&amp;q=snake&amp;provider=met");
     expect(html).toContain("3 images");
     expect(html).toContain("Coiled Snake Bowl");
   });
@@ -141,11 +158,13 @@ describe("UserLibraryWorkspace", () => {
     const html = renderToString(
       <UserLibraryWorkspace
         apiBaseUrl="http://127.0.0.1:18670"
-        filterText=""
-        gridViewMode="images"
         imageAssets={[]}
-        imageCount={0}
+        localQueryText=""
         objects={[]}
+        providerFacets={[]}
+        providerFilter="all"
+        resultCounts={{ objects: 0, images: 0 }}
+        viewMode="images"
       />,
     );
 
@@ -157,11 +176,13 @@ describe("UserLibraryWorkspace", () => {
     const html = renderToString(
       <UserLibraryWorkspace
         apiBaseUrl="http://127.0.0.1:18670"
-        filterText="cobra"
-        gridViewMode="images"
         imageAssets={[]}
-        imageCount={2}
+        localQueryText="cobra"
         objects={[]}
+        providerFacets={[{ provider: "met", objectCount: 1, imageCount: 2 }]}
+        providerFilter="all"
+        resultCounts={{ objects: 1, images: 2 }}
+        viewMode="images"
       />,
     );
 

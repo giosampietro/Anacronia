@@ -138,6 +138,17 @@ class CollectionLocalResultSet:
     image_assets: list[LibraryImageAssetSummary]
 
 
+@dataclass(frozen=True)
+class LibraryLocalResultSet:
+    query: str
+    provider: str
+    view: str
+    counts: CollectionResultCounts
+    provider_facets: list[CollectionProviderFacet]
+    objects: list[LibraryObjectSummary]
+    image_assets: list[LibraryImageAssetSummary]
+
+
 def raw_string(record: dict[str, object], key: str) -> str:
     value = record.get(key)
     if isinstance(value, str):
@@ -597,6 +608,54 @@ def get_collection_local_result_set(
         image_assets = all_query_image_assets
 
     return CollectionLocalResultSet(
+        query=query,
+        provider=selected_provider,
+        view=view,
+        counts=CollectionResultCounts(
+            objects=len(all_query_objects),
+            images=len(all_query_image_assets),
+        ),
+        provider_facets=create_collection_provider_facets(all_query_image_assets),
+        objects=objects,
+        image_assets=image_assets,
+    )
+
+
+def get_library_local_result_set(
+    *,
+    database_path: Path,
+    query_text: str = "",
+    provider: str = "all",
+    view: str = "images",
+) -> LibraryLocalResultSet:
+    query = normalized_local_query(query_text)
+    provider_filter = normalized_provider_filter(provider)
+    selected_provider = provider_filter or "all"
+    all_query_objects = list_library_objects(
+        database_path=database_path,
+        filter_text=query,
+    )
+    all_query_image_assets = list_library_image_assets(
+        database_path=database_path,
+        filter_text=query,
+    )
+
+    if provider_filter:
+        objects = [
+            library_object
+            for library_object in all_query_objects
+            if library_object.provider == provider_filter
+        ]
+        image_assets = [
+            image_asset
+            for image_asset in all_query_image_assets
+            if image_asset.provider == provider_filter
+        ]
+    else:
+        objects = all_query_objects
+        image_assets = all_query_image_assets
+
+    return LibraryLocalResultSet(
         query=query,
         provider=selected_provider,
         view=view,

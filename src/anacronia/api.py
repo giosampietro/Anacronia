@@ -23,8 +23,10 @@ from anacronia.collection_objects import (
     CollectionObjectSummary,
     LibraryImageAssetCollection,
     LibraryImageAssetSummary,
+    LibraryLocalResultSet,
     LibraryObjectSummary,
     get_collection_local_result_set as load_collection_local_result_set,
+    get_library_local_result_set as load_library_local_result_set,
     get_collection_object_detail,
     get_image_asset_derivative_path,
     list_collection_image_assets,
@@ -402,6 +404,37 @@ def serialize_collection_local_result_set(
     }
 
 
+def serialize_library_local_result_set(
+    result_set: LibraryLocalResultSet,
+    *,
+    objects: list[LibraryObjectSummary],
+    image_assets: list[LibraryImageAssetSummary],
+    pagination: GridPagination,
+) -> dict[str, object]:
+    return {
+        "query": result_set.query,
+        "provider": result_set.provider,
+        "view": result_set.view,
+        "counts": {
+            "objects": result_set.counts.objects,
+            "images": result_set.counts.images,
+        },
+        "provider_facets": [
+            serialize_collection_provider_facet(facet)
+            for facet in result_set.provider_facets
+        ],
+        "objects": [
+            serialize_library_object_summary(library_object)
+            for library_object in objects
+        ],
+        "image_assets": [
+            serialize_library_image_asset_summary(image_asset)
+            for image_asset in image_assets
+        ],
+        "pagination": pagination,
+    }
+
+
 def serialize_collection_object_detail(
     detail: CollectionObjectDetail,
 ) -> dict[str, object]:
@@ -535,6 +568,42 @@ def create_app(
     def get_dashboard() -> dict[str, object]:
         dashboard = get_operational_dashboard(database_path=resolved_database_path)
         return serialize_operational_dashboard(dashboard)
+
+    @app.get("/library/local-result-set")
+    def get_library_local_result_set(
+        q: str = "",
+        provider: str = "all",
+        view: LocalResultSetView = "images",
+        limit: GridPageLimit = None,
+        offset: GridPageOffset = 0,
+    ) -> dict[str, object]:
+        result_set = load_library_local_result_set(
+            database_path=resolved_database_path,
+            query_text=q,
+            provider=provider,
+            view=view,
+        )
+        if view == "objects":
+            objects, pagination = paginate_grid_items(
+                result_set.objects,
+                limit=limit,
+                offset=offset,
+            )
+            image_assets: list[LibraryImageAssetSummary] = []
+        else:
+            image_assets, pagination = paginate_grid_items(
+                result_set.image_assets,
+                limit=limit,
+                offset=offset,
+            )
+            objects = []
+
+        return serialize_library_local_result_set(
+            result_set,
+            objects=objects,
+            image_assets=image_assets,
+            pagination=pagination,
+        )
 
     @app.get("/library/image-assets")
     def get_library_image_assets(

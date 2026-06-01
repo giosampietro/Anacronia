@@ -11,6 +11,7 @@ import {
   InputGroupInput,
 } from "@/components/ui/input-group";
 import { createGridStateHref, type GridViewMode } from "@/lib/grid-view";
+import type { WorkspaceMode } from "@/lib/workspace";
 
 type CollectionResultSetSearchFormProps = {
   collectionFilterText: string;
@@ -20,16 +21,39 @@ type CollectionResultSetSearchFormProps = {
   viewMode: GridViewMode;
 };
 
-export function CollectionResultSetSearchForm({
-  collectionFilterText,
+type LocalResultSetSearchFormProps = {
+  ariaLabel: string;
+  collectionFilterText?: string;
+  localQueryText: string;
+  providerFilter: string;
+  searchSetSlug?: string;
+  viewMode: GridViewMode;
+  workspaceMode: WorkspaceMode;
+};
+
+export function LocalResultSetSearchForm({
+  ariaLabel,
+  collectionFilterText = "",
   localQueryText,
   providerFilter,
   searchSetSlug,
   viewMode,
-}: CollectionResultSetSearchFormProps) {
+  workspaceMode,
+}: LocalResultSetSearchFormProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const hasLocalQuery = localQueryText.trim() !== "";
+
+  function createHref(queryText: string): string {
+    return createGridStateHref({
+      collectionFilterText,
+      localQueryText: queryText,
+      provider: providerFilter,
+      searchSetSlug,
+      viewMode,
+      workspaceMode,
+    });
+  }
 
   function submitLocalQuery(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -38,32 +62,14 @@ export function CollectionResultSetSearchForm({
     const queryText =
       typeof submittedQuery === "string" ? submittedQuery.trim() : "";
 
-    const href = createGridStateHref({
-      collectionFilterText,
-      localQueryText: queryText,
-      provider: providerFilter,
-      searchSetSlug,
-      viewMode,
-      workspaceMode: "search-set",
-    });
-
     startTransition(() => {
-      router.replace(href, { scroll: false });
+      router.replace(createHref(queryText), { scroll: false });
     });
   }
 
   function clearLocalQuery() {
-    const href = createGridStateHref({
-      collectionFilterText,
-      localQueryText: "",
-      provider: providerFilter,
-      searchSetSlug,
-      viewMode,
-      workspaceMode: "search-set",
-    });
-
     startTransition(() => {
-      router.replace(href, { scroll: false });
+      router.replace(createHref(""), { scroll: false });
     });
   }
 
@@ -72,9 +78,14 @@ export function CollectionResultSetSearchForm({
       className="min-w-[min(100%,20rem)] flex-1"
       onSubmit={submitLocalQuery}
     >
-      <input name="search_set" type="hidden" value={searchSetSlug} />
-      {viewMode === "images" ? (
-        <input name="view" type="hidden" value="images" />
+      {workspaceMode === "user-library" ? (
+        <input name="mode" type="hidden" value="user-library" />
+      ) : null}
+      {searchSetSlug !== undefined ? (
+        <input name="search_set" type="hidden" value={searchSetSlug} />
+      ) : null}
+      {viewMode === "objects" || viewMode === "images" ? (
+        <input name="view" type="hidden" value={viewMode} />
       ) : null}
       {collectionFilterText.trim() !== "" ? (
         <input
@@ -91,7 +102,7 @@ export function CollectionResultSetSearchForm({
           <Search />
         </InputGroupAddon>
         <InputGroupInput
-          aria-label="Search local Collection results"
+          aria-label={ariaLabel}
           defaultValue={localQueryText}
           key={localQueryText}
           name="q"
@@ -115,5 +126,25 @@ export function CollectionResultSetSearchForm({
         </InputGroupAddon>
       </InputGroup>
     </form>
+  );
+}
+
+export function CollectionResultSetSearchForm({
+  collectionFilterText,
+  localQueryText,
+  providerFilter,
+  searchSetSlug,
+  viewMode,
+}: CollectionResultSetSearchFormProps) {
+  return (
+    <LocalResultSetSearchForm
+      ariaLabel="Search local Collection results"
+      collectionFilterText={collectionFilterText}
+      localQueryText={localQueryText}
+      providerFilter={providerFilter}
+      searchSetSlug={searchSetSlug}
+      viewMode={viewMode}
+      workspaceMode="search-set"
+    />
   );
 }

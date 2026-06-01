@@ -1132,6 +1132,104 @@ def test_api_returns_user_library_objects_once_with_collection_membership(tmp_pa
     assert [museum_object["object_id"] for museum_object in filtered_response.json()["objects"]] == [40]
 
 
+def test_api_returns_user_library_local_result_set_with_counts_and_facets(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+
+    class SharedLibraryCandidateClient:
+        def search_object_ids(self, term: str) -> list[int]:
+            return {
+                "snake": [20, 40],
+                "bowl": [40],
+            }[term]
+
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            met_candidate_client=SharedLibraryCandidateClient(),
+            met_record_client=FakeMetGridRecordClient(),
+            download_image_bytes=lambda _url: ppm_image_bytes(width=1600, height=800),
+        )
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Snake Study", "terms_text": "snake"},
+    )
+    snake_run_response = client.post(
+        "/search-sets/snake-study/provider-collections/met/runs",
+        json={"candidate_offset": 0, "candidate_limit": 2},
+    )
+    client.post(f"/provider-collections/met/runs/{snake_run_response.json()['run_id']}/ingest")
+    client.post(
+        "/search-sets",
+        json={"display_name": "Bowl Study", "terms_text": "bowl"},
+    )
+    bowl_run_response = client.post(
+        "/search-sets/bowl-study/provider-collections/met/runs",
+        json={"candidate_offset": 0, "candidate_limit": 1},
+    )
+    client.post(f"/provider-collections/met/runs/{bowl_run_response.json()['run_id']}/ingest")
+
+    response = client.get("/library/local-result-set?view=objects&q=Bowl%20Study")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["query"] == "bowl study"
+    assert payload["provider"] == "all"
+    assert payload["view"] == "objects"
+    assert payload["counts"] == {"objects": 1, "images": 3}
+    assert payload["provider_facets"] == [
+        {"provider": "met", "object_count": 1, "image_count": 3}
+    ]
+    assert [museum_object["object_id"] for museum_object in payload["objects"]] == [40]
+    assert payload["objects"][0]["collections"] == [
+        {"slug": "bowl-study", "display_name": "Bowl Study"},
+        {"slug": "snake-study", "display_name": "Snake Study"},
+    ]
+    assert payload["image_assets"] == []
+    assert payload["pagination"] == {
+        "total": 1,
+        "count": 1,
+        "limit": None,
+        "offset": 0,
+        "has_more": False,
+    }
+
+    filtered_response = client.get(
+        "/library/local-result-set?view=images&q=Bowl%20Study&provider=unknown&limit=2"
+    )
+
+    assert filtered_response.status_code == 200
+    filtered_payload = filtered_response.json()
+    assert filtered_payload["counts"] == {"objects": 1, "images": 3}
+    assert filtered_payload["provider_facets"] == [
+        {"provider": "met", "object_count": 1, "image_count": 3}
+    ]
+    assert filtered_payload["image_assets"] == []
+    assert filtered_payload["pagination"] == {
+        "total": 0,
+        "count": 0,
+        "limit": 2,
+        "offset": 0,
+        "has_more": False,
+    }
+
+    paged_response = client.get(
+        "/library/local-result-set?view=images&q=Bowl%20Study&provider=met&limit=2&offset=1"
+    )
+
+    assert paged_response.status_code == 200
+    paged_payload = paged_response.json()
+    assert [asset["object_id"] for asset in paged_payload["image_assets"]] == [40, 40]
+    assert paged_payload["pagination"] == {
+        "total": 3,
+        "count": 2,
+        "limit": 2,
+        "offset": 1,
+        "has_more": False,
+    }
+
+
 def test_api_paginates_filtered_user_library_after_searching_all_assets(tmp_path):
     storage = initialize_storage(project_root=tmp_path)
 

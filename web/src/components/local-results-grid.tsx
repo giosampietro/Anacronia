@@ -1,0 +1,349 @@
+"use client";
+
+import Link from "next/link";
+import { Database, Search } from "lucide-react";
+
+import { LocalResultSelectionSurface } from "@/components/local-result-selection-surface";
+import { LocalResultSetSearchForm } from "@/components/collection-result-set-search-form";
+import { GridViewSwitch } from "@/components/grid-view-switch";
+import { buttonVariants } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+} from "@/components/ui/card";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import {
+  type CollectionProviderFacet,
+  type CollectionResultCounts,
+  type CollectionObjectSummary,
+  type LibraryImageAssetSummary,
+  type LibraryObjectSummary,
+} from "@/lib/collection-objects";
+import { createGridStateHref, type GridViewMode, type ObjectRouteRef } from "@/lib/grid-view";
+import type { WorkspaceMode } from "@/lib/workspace";
+
+type LocalResultObjectSummary = CollectionObjectSummary | LibraryObjectSummary;
+
+type LocalResultsGridProps = {
+  apiBaseUrl: string;
+  closeImageHref: string;
+  closeObjectHref: string;
+  collectionFilterText?: string;
+  exportEndpoint?: string;
+  hasLocalMaterial?: boolean;
+  imageAssetHref: (imageAsset: LibraryImageAssetSummary) => string;
+  imageAssetTileId: (imageAsset: LibraryImageAssetSummary) => string;
+  imageAssets: LibraryImageAssetSummary[];
+  imageCollectionsLabel?: (imageAsset: LibraryImageAssetSummary) => string;
+  imageTopBadgeLabel?: (imageAsset: LibraryImageAssetSummary) => string;
+  initialSelectedIds?: string[];
+  initialSelectionMode?: boolean;
+  localQueryText: string;
+  objectCollectionLabel: (collectionObject: LocalResultObjectSummary) => string;
+  objectHref: (collectionObject: LocalResultObjectSummary) => string;
+  objectTileId: (collectionObject: LocalResultObjectSummary) => string;
+  objects: LocalResultObjectSummary[];
+  providerFacets: CollectionProviderFacet[];
+  providerFilter: string;
+  resolvedImageAssetId?: number | null;
+  resolvedObject?: ObjectRouteRef | null;
+  resultCounts: CollectionResultCounts;
+  scopeDisplayName: string;
+  searchAriaLabel: string;
+  searchSetSlug?: string;
+  viewMode: GridViewMode;
+  workspaceMode: WorkspaceMode;
+};
+
+function objectProviderDisplayLabel(provider: string): string {
+  if (provider === "met") {
+    return "Met";
+  }
+
+  return provider.trim() || "Unknown";
+}
+
+function viewNoun(viewMode: GridViewMode): string {
+  return viewMode === "objects" ? "Objects" : "Image Assets";
+}
+
+function viewCountLabel(viewMode: GridViewMode, counts: CollectionResultCounts): number {
+  return viewMode === "objects" ? counts.objects : counts.images;
+}
+
+function ProjectionControls({
+  collectionFilterText,
+  localQueryText,
+  providerFilter,
+  resultCounts,
+  searchSetSlug,
+  viewMode,
+  workspaceMode,
+}: {
+  collectionFilterText: string;
+  localQueryText: string;
+  providerFilter: string;
+  resultCounts: CollectionResultCounts;
+  searchSetSlug?: string;
+  viewMode: GridViewMode;
+  workspaceMode: WorkspaceMode;
+}) {
+  const objectHref = createGridStateHref({
+    collectionFilterText,
+    localQueryText,
+    provider: providerFilter,
+    searchSetSlug,
+    viewMode: "objects",
+    workspaceMode,
+  });
+  const imageHref = createGridStateHref({
+    collectionFilterText,
+    localQueryText,
+    provider: providerFilter,
+    searchSetSlug,
+    viewMode: "images",
+    workspaceMode,
+  });
+
+  return (
+    <GridViewSwitch
+      ariaLabel="Object and Image result views"
+      className="shrink-0"
+      imageCount={resultCounts.images}
+      imageHref={imageHref}
+      objectCount={resultCounts.objects}
+      objectHref={objectHref}
+      viewMode={viewMode}
+    />
+  );
+}
+
+function ProviderFacets({
+  collectionFilterText,
+  localQueryText,
+  providerFacets,
+  providerFilter,
+  resultCounts,
+  searchSetSlug,
+  viewMode,
+  workspaceMode,
+}: {
+  collectionFilterText: string;
+  localQueryText: string;
+  providerFacets: CollectionProviderFacet[];
+  providerFilter: string;
+  resultCounts: CollectionResultCounts;
+  searchSetSlug?: string;
+  viewMode: GridViewMode;
+  workspaceMode: WorkspaceMode;
+}) {
+  const allCount = viewCountLabel(viewMode, resultCounts);
+
+  return (
+    <div aria-label="Provider filters" className="flex min-w-0 flex-wrap gap-1">
+      <Link
+        aria-current={providerFilter === "all" ? "page" : undefined}
+        className={buttonVariants({
+          size: "sm",
+          variant: providerFilter === "all" ? "secondary" : "outline",
+        })}
+        href={createGridStateHref({
+          collectionFilterText,
+          localQueryText,
+          provider: "all",
+          searchSetSlug,
+          viewMode,
+          workspaceMode,
+        })}
+        scroll={false}
+      >
+        All Providers
+        <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+          {allCount}
+        </span>
+      </Link>
+      {providerFacets.map((facet) => {
+        const isActive = providerFilter === facet.provider;
+        const count = viewMode === "objects" ? facet.objectCount : facet.imageCount;
+
+        return (
+          <Link
+            aria-current={isActive ? "page" : undefined}
+            className={buttonVariants({
+              size: "sm",
+              variant: isActive ? "secondary" : "outline",
+            })}
+            href={createGridStateHref({
+              collectionFilterText,
+              localQueryText,
+              provider: facet.provider,
+              searchSetSlug,
+              viewMode,
+              workspaceMode,
+            })}
+            key={facet.provider}
+            scroll={false}
+          >
+            {objectProviderDisplayLabel(facet.provider)}
+            <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+              {count}
+            </span>
+          </Link>
+        );
+      })}
+    </div>
+  );
+}
+
+function EmptyResults({
+  hasLocalMaterial,
+  localQueryText,
+  providerFilter,
+  viewMode,
+  workspaceMode,
+}: {
+  hasLocalMaterial: boolean;
+  localQueryText: string;
+  providerFilter: string;
+  viewMode: GridViewMode;
+  workspaceMode: WorkspaceMode;
+}) {
+  const noun = viewNoun(viewMode);
+  const trimmedQuery = localQueryText.trim();
+  const hasActiveFilter = trimmedQuery !== "" || providerFilter !== "all";
+
+  return (
+    <Empty className="border">
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          {hasLocalMaterial && hasActiveFilter ? <Search /> : <Database />}
+        </EmptyMedia>
+        <EmptyTitle>
+          {hasLocalMaterial && hasActiveFilter
+            ? `No matching ${noun}`
+            : `No ${noun} yet`}
+        </EmptyTitle>
+        <EmptyDescription>
+          {hasLocalMaterial && trimmedQuery !== ""
+            ? `No ${noun.toLowerCase()} matched "${trimmedQuery}".`
+            : hasLocalMaterial
+              ? `No ${noun.toLowerCase()} matched this Provider.`
+              : workspaceMode === "user-library"
+                ? "Start a Collection search to add local Image Assets to the User Library."
+                : "Start search to add local Museum Objects and Image Assets to this Collection."}
+        </EmptyDescription>
+      </EmptyHeader>
+    </Empty>
+  );
+}
+
+export function LocalResultsGrid({
+  apiBaseUrl,
+  closeImageHref,
+  closeObjectHref,
+  collectionFilterText = "",
+  exportEndpoint,
+  hasLocalMaterial = false,
+  imageAssetHref,
+  imageAssetTileId,
+  imageAssets,
+  imageCollectionsLabel,
+  imageTopBadgeLabel,
+  initialSelectedIds = [],
+  initialSelectionMode = false,
+  localQueryText,
+  objectCollectionLabel,
+  objectHref,
+  objectTileId,
+  objects,
+  providerFacets,
+  providerFilter,
+  resolvedImageAssetId = null,
+  resolvedObject = null,
+  resultCounts,
+  scopeDisplayName,
+  searchAriaLabel,
+  searchSetSlug,
+  viewMode,
+  workspaceMode,
+}: LocalResultsGridProps) {
+  const shownCount = viewMode === "objects" ? objects.length : imageAssets.length;
+  const emptyState = (
+    <EmptyResults
+      hasLocalMaterial={hasLocalMaterial}
+      localQueryText={localQueryText}
+      providerFilter={providerFilter}
+      viewMode={viewMode}
+      workspaceMode={workspaceMode}
+    />
+  );
+
+  return (
+    <Card className="min-w-0">
+      <CardHeader className="gap-4">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <LocalResultSetSearchForm
+            ariaLabel={searchAriaLabel}
+            collectionFilterText={collectionFilterText}
+            localQueryText={localQueryText}
+            providerFilter={providerFilter}
+            searchSetSlug={searchSetSlug}
+            viewMode={viewMode}
+            workspaceMode={workspaceMode}
+          />
+          <ProjectionControls
+            collectionFilterText={collectionFilterText}
+            localQueryText={localQueryText}
+            providerFilter={providerFilter}
+            resultCounts={resultCounts}
+            searchSetSlug={searchSetSlug}
+            viewMode={viewMode}
+            workspaceMode={workspaceMode}
+          />
+          <ProviderFacets
+            collectionFilterText={collectionFilterText}
+            localQueryText={localQueryText}
+            providerFacets={providerFacets}
+            providerFilter={providerFilter}
+            resultCounts={resultCounts}
+            searchSetSlug={searchSetSlug}
+            viewMode={viewMode}
+            workspaceMode={workspaceMode}
+          />
+        </div>
+      </CardHeader>
+      <CardContent>
+        <LocalResultSelectionSurface
+            apiBaseUrl={apiBaseUrl}
+            closeImageHref={closeImageHref}
+            closeObjectHref={closeObjectHref}
+            emptyState={shownCount === 0 ? emptyState : undefined}
+            exportEndpoint={exportEndpoint}
+            imageAssetHref={imageAssetHref}
+            imageAssetTileId={imageAssetTileId}
+            imageAssets={imageAssets}
+            imageCollectionsLabel={imageCollectionsLabel}
+            imageTopBadgeLabel={imageTopBadgeLabel}
+            initialSelectedIds={initialSelectedIds}
+            initialSelectionMode={initialSelectionMode}
+            key={`${workspaceMode}:${searchSetSlug ?? "library"}:${viewMode}`}
+            objectCollectionLabel={objectCollectionLabel}
+            objectHref={objectHref}
+            objectTileId={objectTileId}
+            objects={objects}
+            resolvedImageAssetId={resolvedImageAssetId}
+            resolvedObject={resolvedObject}
+            scopeDisplayName={scopeDisplayName}
+            viewMode={viewMode}
+          />
+      </CardContent>
+    </Card>
+  );
+}

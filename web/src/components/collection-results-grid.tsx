@@ -1,29 +1,25 @@
-import Link from "next/link";
-import { Database, Search } from "lucide-react";
+"use client";
 
-import { CollectionResultSelectionSurface } from "@/components/collection-result-selection-surface";
-import { CollectionResultSetSearchForm } from "@/components/collection-result-set-search-form";
-import { GridViewSwitch } from "@/components/grid-view-switch";
-import { buttonVariants } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-} from "@/components/ui/card";
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty";
+import { LocalResultsGrid } from "@/components/local-results-grid";
+import { formatCollectionDisplayName } from "@/lib/collection-display";
 import {
   type CollectionProviderFacet,
   type CollectionResultCounts,
   type CollectionObjectSummary,
   type LibraryImageAssetSummary,
+  type LibraryObjectSummary,
 } from "@/lib/collection-objects";
-import { createGridStateHref, type GridViewMode, type ObjectRouteRef } from "@/lib/grid-view";
+import {
+  createGridStateHref,
+  type GridViewMode,
+  type ObjectRouteRef,
+} from "@/lib/grid-view";
+import {
+  createCollectionImageAssetTileId,
+  createCollectionObjectTileId,
+} from "@/lib/grid-tile-ids";
+
+type LocalResultObjectSummary = CollectionObjectSummary | LibraryObjectSummary;
 
 type CollectionResultsGridProps = {
   apiBaseUrl: string;
@@ -46,191 +42,6 @@ type CollectionResultsGridProps = {
   viewMode: GridViewMode;
 };
 
-export function createCollectionObjectTileId(
-  provider: string,
-  objectId: number,
-): string {
-  return `collection-object-${provider}-${objectId}`;
-}
-
-export function createCollectionImageAssetTileId(imageAssetId: number): string {
-  return `collection-image-asset-${imageAssetId}`;
-}
-
-function objectProviderDisplayLabel(provider: string): string {
-  if (provider === "met") {
-    return "Met";
-  }
-
-  return provider.trim() || "Unknown";
-}
-
-function viewNoun(viewMode: GridViewMode): string {
-  return viewMode === "objects" ? "Objects" : "Image Assets";
-}
-
-function viewCountLabel(viewMode: GridViewMode, counts: CollectionResultCounts): number {
-  return viewMode === "objects" ? counts.objects : counts.images;
-}
-
-function ProjectionControls({
-  collectionFilterText,
-  localQueryText,
-  providerFilter,
-  resultCounts,
-  searchSetSlug,
-  viewMode,
-}: {
-  collectionFilterText: string;
-  localQueryText: string;
-  providerFilter: string;
-  resultCounts: CollectionResultCounts;
-  searchSetSlug: string;
-  viewMode: GridViewMode;
-}) {
-  const objectHref = createGridStateHref({
-    collectionFilterText,
-    localQueryText,
-    provider: providerFilter,
-    searchSetSlug,
-    viewMode: "objects",
-    workspaceMode: "search-set",
-  });
-  const imageHref = createGridStateHref({
-    collectionFilterText,
-    localQueryText,
-    provider: providerFilter,
-    searchSetSlug,
-    viewMode: "images",
-    workspaceMode: "search-set",
-  });
-
-  return (
-    <GridViewSwitch
-      ariaLabel="Object and Image result views"
-      className="shrink-0"
-      imageCount={resultCounts.images}
-      imageHref={imageHref}
-      objectCount={resultCounts.objects}
-      objectHref={objectHref}
-      viewMode={viewMode}
-    />
-  );
-}
-
-function ProviderFacets({
-  collectionFilterText,
-  localQueryText,
-  providerFacets,
-  providerFilter,
-  resultCounts,
-  searchSetSlug,
-  viewMode,
-}: {
-  collectionFilterText: string;
-  localQueryText: string;
-  providerFacets: CollectionProviderFacet[];
-  providerFilter: string;
-  resultCounts: CollectionResultCounts;
-  searchSetSlug: string;
-  viewMode: GridViewMode;
-}) {
-  const allCount = viewCountLabel(viewMode, resultCounts);
-
-  return (
-    <div aria-label="Provider filters" className="flex min-w-0 flex-wrap gap-1">
-      <Link
-        aria-current={providerFilter === "all" ? "page" : undefined}
-        className={buttonVariants({
-          size: "sm",
-          variant: providerFilter === "all" ? "secondary" : "outline",
-        })}
-        href={createGridStateHref({
-          collectionFilterText,
-          localQueryText,
-          provider: "all",
-          searchSetSlug,
-          viewMode,
-          workspaceMode: "search-set",
-        })}
-        scroll={false}
-      >
-        All Providers
-        <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
-          {allCount}
-        </span>
-      </Link>
-      {providerFacets.map((facet) => {
-        const isActive = providerFilter === facet.provider;
-        const count = viewMode === "objects" ? facet.objectCount : facet.imageCount;
-
-        return (
-          <Link
-            aria-current={isActive ? "page" : undefined}
-            className={buttonVariants({
-              size: "sm",
-              variant: isActive ? "secondary" : "outline",
-            })}
-            href={createGridStateHref({
-              collectionFilterText,
-              localQueryText,
-              provider: facet.provider,
-              searchSetSlug,
-              viewMode,
-              workspaceMode: "search-set",
-            })}
-            key={facet.provider}
-            scroll={false}
-          >
-            {objectProviderDisplayLabel(facet.provider)}
-            <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
-              {count}
-            </span>
-          </Link>
-        );
-      })}
-    </div>
-  );
-}
-
-function EmptyResults({
-  hasLocalMaterial,
-  localQueryText,
-  providerFilter,
-  viewMode,
-}: {
-  hasLocalMaterial: boolean;
-  localQueryText: string;
-  providerFilter: string;
-  viewMode: GridViewMode;
-}) {
-  const noun = viewNoun(viewMode);
-  const trimmedQuery = localQueryText.trim();
-  const hasActiveFilter = trimmedQuery !== "" || providerFilter !== "all";
-
-  return (
-    <Empty className="border">
-      <EmptyHeader>
-        <EmptyMedia variant="icon">
-          {hasLocalMaterial && hasActiveFilter ? <Search /> : <Database />}
-        </EmptyMedia>
-        <EmptyTitle>
-          {hasLocalMaterial && hasActiveFilter
-            ? `No matching ${noun}`
-            : `No ${noun} yet`}
-        </EmptyTitle>
-        <EmptyDescription>
-          {hasLocalMaterial && trimmedQuery !== ""
-            ? `No ${noun.toLowerCase()} matched "${trimmedQuery}".`
-            : hasLocalMaterial
-              ? `No ${noun.toLowerCase()} matched this Provider.`
-              : "Start search to add local Museum Objects and Image Assets to this Collection."}
-        </EmptyDescription>
-      </EmptyHeader>
-    </Empty>
-  );
-}
-
 export function CollectionResultsGrid({
   apiBaseUrl,
   closeImageHref,
@@ -251,67 +62,66 @@ export function CollectionResultsGrid({
   searchSetSlug,
   viewMode,
 }: CollectionResultsGridProps) {
-  const shownCount = viewMode === "objects" ? objects.length : imageAssets.length;
-
   return (
-    <Card className="min-w-0">
-      <CardHeader className="gap-4">
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <CollectionResultSetSearchForm
-            collectionFilterText={collectionFilterText}
-            localQueryText={localQueryText}
-            providerFilter={providerFilter}
-            searchSetSlug={searchSetSlug}
-            viewMode={viewMode}
-          />
-          <ProjectionControls
-            collectionFilterText={collectionFilterText}
-            localQueryText={localQueryText}
-            providerFilter={providerFilter}
-            resultCounts={resultCounts}
-            searchSetSlug={searchSetSlug}
-            viewMode={viewMode}
-          />
-          <ProviderFacets
-            collectionFilterText={collectionFilterText}
-            localQueryText={localQueryText}
-            providerFacets={providerFacets}
-            providerFilter={providerFilter}
-            resultCounts={resultCounts}
-            searchSetSlug={searchSetSlug}
-            viewMode={viewMode}
-          />
-        </div>
-      </CardHeader>
-      <CardContent>
-        {shownCount === 0 ? (
-          <EmptyResults
-            hasLocalMaterial={hasLocalMaterial}
-            localQueryText={localQueryText}
-            providerFilter={providerFilter}
-            viewMode={viewMode}
-          />
-        ) : (
-          <CollectionResultSelectionSurface
-            apiBaseUrl={apiBaseUrl}
-            closeImageHref={closeImageHref}
-            closeObjectHref={closeObjectHref}
-            collectionDisplayName={collectionDisplayName}
-            collectionFilterText={collectionFilterText}
-            imageAssets={imageAssets}
-            initialSelectedIds={initialSelectedIds}
-            initialSelectionMode={initialSelectionMode}
-            key={`${searchSetSlug}:${viewMode}`}
-            localQueryText={localQueryText}
-            objects={objects}
-            providerFilter={providerFilter}
-            resolvedImageAssetId={resolvedImageAssetId}
-            resolvedObject={resolvedObject}
-            searchSetSlug={searchSetSlug}
-            viewMode={viewMode}
-          />
-        )}
-      </CardContent>
-    </Card>
+    <LocalResultsGrid
+      apiBaseUrl={apiBaseUrl}
+      closeImageHref={closeImageHref}
+      closeObjectHref={closeObjectHref}
+      collectionFilterText={collectionFilterText}
+      exportEndpoint={`/api/search-sets/${encodeURIComponent(searchSetSlug)}/exports`}
+      hasLocalMaterial={hasLocalMaterial}
+      imageAssetHref={(imageAsset) =>
+        createGridStateHref({
+          collectionFilterText,
+          imageAssetId: imageAsset.image_asset_id,
+          localQueryText,
+          provider: providerFilter,
+          searchSetSlug,
+          viewMode: "images",
+          workspaceMode: "search-set",
+        })
+      }
+      imageAssetTileId={(imageAsset) =>
+        createCollectionImageAssetTileId(imageAsset.image_asset_id)
+      }
+      imageAssets={imageAssets}
+      initialSelectedIds={initialSelectedIds}
+      initialSelectionMode={initialSelectionMode}
+      localQueryText={localQueryText}
+      objectCollectionLabel={() =>
+        formatCollectionDisplayName(collectionDisplayName)
+      }
+      objectHref={(collectionObject: LocalResultObjectSummary) =>
+        createGridStateHref({
+          collectionFilterText,
+          localQueryText,
+          object: {
+            objectId: collectionObject.object_id,
+            provider: collectionObject.provider,
+          },
+          provider: providerFilter,
+          searchSetSlug,
+          viewMode,
+          workspaceMode: "search-set",
+        })
+      }
+      objectTileId={(collectionObject) =>
+        createCollectionObjectTileId(
+          collectionObject.provider,
+          collectionObject.object_id,
+        )
+      }
+      objects={objects}
+      providerFacets={providerFacets}
+      providerFilter={providerFilter}
+      resolvedImageAssetId={resolvedImageAssetId}
+      resolvedObject={resolvedObject}
+      resultCounts={resultCounts}
+      scopeDisplayName={collectionDisplayName}
+      searchAriaLabel="Search local Collection results"
+      searchSetSlug={searchSetSlug}
+      viewMode={viewMode}
+      workspaceMode="search-set"
+    />
   );
 }
