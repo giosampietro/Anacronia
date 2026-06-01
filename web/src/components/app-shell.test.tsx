@@ -87,7 +87,7 @@ describe("AppShell", () => {
     expect(html).toContain("7 images");
   });
 
-  it("renders the runtime footer heading as a sidebar section label without an action icon", () => {
+  it("renders a collapsed runtime status footer without a local runtime label", () => {
     const html = renderToString(
       <AppShell
         activeSearchSetSlug="intaglio"
@@ -104,8 +104,9 @@ describe("AppShell", () => {
       </AppShell>,
     );
 
-    expect(html).toContain("Local runtime");
-    expect(html).toContain("data-slot=\"sidebar-group-label\"");
+    expect(html).toContain("Runtime status");
+    expect(html).toContain("ok");
+    expect(html).not.toContain("Local runtime");
     expect(html).not.toContain("lucide-hard-drive");
   });
 

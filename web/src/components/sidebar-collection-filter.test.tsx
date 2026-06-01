@@ -47,4 +47,26 @@ describe("SidebarCollectionFilter", () => {
     expect(html).not.toContain("type=\"submit\"");
     expect(html).not.toContain("Search Collections");
   });
+
+  it("renders active Collections as compact linked folders with keyword details", () => {
+    const html = renderToString(
+      <SidebarProvider>
+        <SidebarCollectionFilter
+          activeSearchSetSlug="snake-study"
+          initialFilterText=""
+          searchSets={[snakeStudy, masks]}
+          workspaceMode="search-set"
+        />
+      </SidebarProvider>,
+    );
+
+    expect(html).toContain("href=\"/?search_set=snake-study\"");
+    expect(html).toContain("lucide-folder-open");
+    expect(html).toContain("lucide-folder-closed");
+    expect(html).toContain("Snake Study");
+    expect(html).toContain("snake");
+    expect(html).toContain("5 images");
+    expect(html).not.toContain("lucide-database");
+    expect(html).not.toContain("More actions for Snake Study");
+  });
 });

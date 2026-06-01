@@ -1,9 +1,10 @@
 "use client";
 
-import type { CSSProperties, ReactNode } from "react";
+import { useState, type CSSProperties, type ReactNode } from "react";
 import Link from "next/link";
 import {
   Activity,
+  ChevronRight,
   CircleAlert,
   CircleCheck,
   Library,
@@ -13,6 +14,11 @@ import {
 import { ThemeSwitch } from "@/components/theme-switch";
 import { SidebarCollectionFilter } from "@/components/sidebar-collection-filter";
 import { Badge } from "@/components/ui/badge";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import {
   Popover,
   PopoverContent,
@@ -49,6 +55,7 @@ import type { AppVersionStamp } from "@/lib/app-version";
 import type { OperationalDashboardView } from "@/lib/dashboard";
 import type { GridViewMode } from "@/lib/grid-view";
 import type { StatusRow } from "@/lib/status";
+import { cn } from "@/lib/utils";
 import type { WorkspaceMode } from "@/lib/workspace";
 import {
   createNewSearchSetHref,
@@ -103,6 +110,84 @@ function workspaceLabel({
 
 function shouldShowContentCounts(workspaceMode: WorkspaceMode): boolean {
   return workspaceMode === "search-set" || workspaceMode === "user-library";
+}
+
+function runtimeSummaryRow(rows: StatusRow[]): StatusRow | null {
+  return (
+    rows.find((row) => row.name.toLowerCase().includes("python")) ??
+    rows.find((row) => row.name.toLowerCase().includes("worker")) ??
+    rows[0] ??
+    null
+  );
+}
+
+function RuntimeStatusFooter({
+  appVersionStamp,
+  rows,
+}: {
+  appVersionStamp: AppVersionStamp;
+  rows: StatusRow[];
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const summaryRow = runtimeSummaryRow(rows);
+  const summaryState = summaryRow?.displayState ?? "unknown";
+
+  return (
+    <Collapsible open={isOpen} onOpenChange={setIsOpen}>
+      <SidebarMenu>
+        <SidebarMenuItem>
+          <CollapsibleTrigger
+            aria-label={isOpen ? "Collapse runtime status" : "Expand runtime status"}
+            render={<SidebarMenuButton tooltip="Runtime status" />}
+          >
+            {runtimeStatusIcon(summaryRow?.state ?? "idle")}
+            <span className="min-w-0 flex-1 truncate group-data-[collapsible=icon]:hidden">
+              Runtime status
+            </span>
+            <span className="ml-auto shrink-0 font-mono text-[11px] text-sidebar-foreground/60 group-data-[collapsible=icon]:hidden">
+              {summaryState}
+            </span>
+            <ChevronRight
+              className={cn(
+                "ml-1 text-sidebar-foreground/45 transition-transform group-data-[collapsible=icon]:hidden",
+                isOpen && "rotate-90",
+              )}
+            />
+          </CollapsibleTrigger>
+        </SidebarMenuItem>
+      </SidebarMenu>
+
+      <CollapsibleContent className="group-data-[collapsible=icon]:hidden">
+        <SidebarGroup className="px-0 pb-0 pt-2">
+          <SidebarGroupLabel className="gap-3 px-3">
+            <span className="truncate">Runtime details</span>
+            <Badge
+              className="ml-auto h-5 shrink-0 px-1.5 font-mono text-[10px] text-sidebar-foreground/70"
+              title={appVersionStamp.title}
+              variant="outline"
+            >
+              {appVersionStamp.display}
+            </Badge>
+          </SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {rows.map((row) => (
+                <SidebarMenuItem key={row.name}>
+                  <SidebarMenuButton tooltip={row.detail}>
+                    {runtimeStatusIcon(row.state)}
+                    <span className="group-data-[collapsible=icon]:hidden">
+                      {row.name}
+                    </span>
+                  </SidebarMenuButton>
+                  <SidebarMenuBadge>{row.displayState}</SidebarMenuBadge>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+      </CollapsibleContent>
+    </Collapsible>
+  );
 }
 
 function GridViewSwitch({
@@ -247,6 +332,7 @@ function AppSidebar({
           <SidebarGroupLabel>Collections</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarCollectionFilter
+              key={`${workspaceMode}:${activeSearchSetSlug ?? "none"}`}
               activeSearchSetSlug={activeSearchSetSlug}
               initialFilterText={filterText}
               searchSets={dashboardView.searchSets}
@@ -259,33 +345,7 @@ function AppSidebar({
       <SidebarSeparator />
 
       <SidebarFooter>
-        <SidebarGroup className="p-0">
-          <SidebarGroupLabel className="gap-3">
-            <span className="truncate">Local runtime</span>
-            <Badge
-              className="ml-auto h-5 shrink-0 px-1.5 font-mono text-[10px] text-sidebar-foreground/70"
-              title={appVersionStamp.title}
-              variant="outline"
-            >
-              {appVersionStamp.display}
-            </Badge>
-          </SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {rows.map((row) => (
-                <SidebarMenuItem key={row.name}>
-                  <SidebarMenuButton tooltip={row.detail}>
-                    {runtimeStatusIcon(row.state)}
-                    <span className="group-data-[collapsible=icon]:hidden">
-                      {row.name}
-                    </span>
-                  </SidebarMenuButton>
-                  <SidebarMenuBadge>{row.displayState}</SidebarMenuBadge>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        <RuntimeStatusFooter appVersionStamp={appVersionStamp} rows={rows} />
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>
