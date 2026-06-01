@@ -52,6 +52,7 @@ import type { AppVersionStamp } from "@/lib/app-version";
 import { formatCollectionDisplayName } from "@/lib/collection-display";
 import type { OperationalDashboardView } from "@/lib/dashboard";
 import type { GridViewMode } from "@/lib/grid-view";
+import { FOOTER_PROJECT_CREDIT } from "@/lib/project-attribution";
 import type { StatusRow } from "@/lib/status";
 import { cn } from "@/lib/utils";
 import type { WorkspaceMode } from "@/lib/workspace";
@@ -190,6 +191,14 @@ function RuntimeStatusFooter({
   );
 }
 
+function ProjectAttributionFooter() {
+  return (
+    <p className="px-2 pb-1 text-[11px] leading-4 text-sidebar-foreground/55 group-data-[collapsible=icon]:hidden">
+      {FOOTER_PROJECT_CREDIT}
+    </p>
+  );
+}
+
 function BrandHeader() {
   return (
     <div className="flex h-12 min-w-0 items-center gap-3 rounded-xl px-2 group-data-[collapsible=icon]:hidden">
@@ -308,6 +317,7 @@ function AppSidebar({
 
       <SidebarFooter>
         <RuntimeStatusFooter appVersionStamp={appVersionStamp} rows={rows} />
+        <ProjectAttributionFooter />
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>

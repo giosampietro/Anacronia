@@ -29,6 +29,10 @@ This repository now contains the local app shell plus planning artifacts:
 
 Generated data belongs under `./data` by default. The directory is ignored by git except for `data/README.md`.
 
+## Credits
+
+Anacronia is designed and developed by Giorgio Olivero, working publicly as Gio Sampietro.
+
 ## Local Setup
 
 Anacronia targets Apple Silicon Macs, M1 or newer. Python work uses Python 3.12.
