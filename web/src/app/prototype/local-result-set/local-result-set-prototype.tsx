@@ -644,6 +644,10 @@ function SelectionToolbar({
   const selectedVisibleIds = visibleIds.filter((id) => selectedIds.has(id));
   const allVisibleSelected =
     visibleIds.length > 0 && selectedVisibleIds.length === visibleIds.length;
+  const clearSelectionDuplicatesVisibleAction =
+    allVisibleSelected && selectedIds.size === selectedVisibleIds.length;
+  const showClearSelection =
+    selectedIds.size > 0 && !clearSelectionDuplicatesVisibleAction;
 
   return (
     <Card size="sm">
@@ -672,14 +676,15 @@ function SelectionToolbar({
         >
           {allVisibleSelected ? "Unselect shown" : "Select all shown"}
         </Button>
-        <Button
-          disabled={selectedIds.size === 0}
-          onClick={() => setSelectedIds(new Set())}
-          size="sm"
-          variant="outline"
-        >
-          Clear
-        </Button>
+        {showClearSelection ? (
+          <Button
+            onClick={() => setSelectedIds(new Set())}
+            size="sm"
+            variant="outline"
+          >
+            Clear selection
+          </Button>
+        ) : null}
         <Separator className="h-5" orientation="vertical" />
         <Button
           onClick={() => setIncludeIncoming(!includeIncoming)}
@@ -801,17 +806,6 @@ function ResultTile({
           >
             <Images data-icon="inline-start" />
             {imageCount}
-          </span>
-        ) : null}
-        {selectionMode ? (
-          <span
-            aria-label={selected ? "Selected result" : "Selectable result"}
-            className={cn(
-              "absolute right-1.5 top-1.5 flex size-5 items-center justify-center rounded-lg bg-background/88 text-foreground opacity-100 backdrop-blur-sm",
-              selected && "bg-primary text-primary-foreground",
-            )}
-          >
-            {selected ? <Check className="size-3.5" /> : <Square className="size-3.5" />}
           </span>
         ) : null}
         <Badge

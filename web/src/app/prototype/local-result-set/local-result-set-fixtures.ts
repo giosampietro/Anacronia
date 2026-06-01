@@ -38,22 +38,19 @@ export type PrototypeMuseumObject = {
 function svgThumb({
   accent,
   background,
-  label,
-  motif,
 }: {
   accent: string;
   background: string;
-  label: string;
-  motif: string;
 }): string {
   const svg = `
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 400">
-    <rect width="320" height="400" fill="${background}"/>
-    <rect x="26" y="28" width="268" height="344" rx="18" fill="rgba(255,255,255,0.13)" stroke="rgba(255,255,255,0.35)" stroke-width="2"/>
-    <circle cx="91" cy="118" r="46" fill="${accent}" opacity="0.82"/>
-    <path d="${motif}" fill="none" stroke="rgba(255,255,255,0.78)" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
-    <text x="32" y="342" fill="rgba(255,255,255,0.9)" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="700">${label}</text>
-    <text x="32" y="370" fill="rgba(255,255,255,0.68)" font-family="Inter, Arial, sans-serif" font-size="15">prototype fixture</text>
+    <defs>
+      <linearGradient id="swatch" x1="0" x2="1" y1="0" y2="1">
+        <stop offset="0" stop-color="${accent}"/>
+        <stop offset="1" stop-color="${background}"/>
+      </linearGradient>
+    </defs>
+    <rect width="320" height="400" fill="url(#swatch)"/>
   </svg>`;
 
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
@@ -63,50 +60,34 @@ const thumbs = {
   antelope: svgThumb({
     accent: "#8bbf9f",
     background: "#29332d",
-    label: "Antelope",
-    motif: "M78 238 C115 183, 163 186, 210 240 S277 282, 286 212",
   }),
   cobra: svgThumb({
     accent: "#d5b16f",
     background: "#3a3024",
-    label: "Cobra",
-    motif: "M87 274 C129 198, 186 205, 209 124 C230 57, 276 70, 268 143",
   }),
   faience: svgThumb({
     accent: "#5e9eb8",
     background: "#253341",
-    label: "Faience",
-    motif: "M73 264 C111 306, 207 304, 247 263 M102 159 C136 134, 185 132, 219 160",
   }),
   hand: svgThumb({
     accent: "#c18d72",
     background: "#342c2a",
-    label: "Hand",
-    motif: "M93 278 C111 218, 111 144, 129 110 M154 258 L158 98 M185 255 C198 202, 194 139, 207 113 M221 276 C243 227, 247 174, 247 139",
   }),
   mask: svgThumb({
     accent: "#b07f60",
     background: "#2f2d33",
-    label: "Mask",
-    motif: "M102 149 C113 83, 214 83, 224 150 C239 248, 174 294, 160 302 C146 294, 83 248, 102 149",
   }),
   serpent: svgThumb({
     accent: "#9baa63",
     background: "#263126",
-    label: "Serpent",
-    motif: "M60 244 C98 177, 158 308, 204 211 C241 133, 284 167, 271 225",
   }),
   vessel: svgThumb({
     accent: "#a98f73",
     background: "#343025",
-    label: "Vessel",
-    motif: "M103 136 H217 M118 151 C101 199, 113 274, 160 301 C207 274, 219 199, 202 151",
   }),
   wing: svgThumb({
     accent: "#8ea4c8",
     background: "#28313c",
-    label: "Wing",
-    motif: "M73 266 C129 131, 213 109, 269 94 C235 177, 198 253, 111 299",
   }),
 };
 
