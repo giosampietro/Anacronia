@@ -93,9 +93,12 @@ describe("CollectionResultsGrid", () => {
       />,
     ));
 
-    expect(html).toContain("Local Museum Objects in this Collection");
+    expect(html).not.toContain("Results");
+    expect(html).not.toContain("Local Museum Objects in this Collection");
+    expect(html).toContain("aria-label=\"Search local Collection results\"");
     expect(html).toContain("name=\"q\"");
     expect(html).toContain("value=\"ceramics\"");
+    expect(html).toContain("placeholder=\"\"");
     expect(html).toContain("Clear local search");
     expect(html).toContain("name=\"collection_filter\"");
     expect(html).toContain("value=\"venice\"");
@@ -145,7 +148,10 @@ describe("CollectionResultsGrid", () => {
       />,
     ));
 
-    expect(html).toContain("Local Image Assets in this Collection");
+    expect(html).not.toContain("Results");
+    expect(html).not.toContain("Local Image Assets in this Collection");
+    expect(html).toContain("aria-label=\"Search local Collection results\"");
+    expect(html).toContain("placeholder=\"\"");
     expect(html).not.toContain("Clear local search");
     expect(html).toContain("aria-current=\"page\"");
     expect(html).toContain("1 selected");

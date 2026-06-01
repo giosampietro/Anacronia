@@ -95,7 +95,7 @@ export function CollectionResultSetSearchForm({
           defaultValue={localQueryText}
           key={localQueryText}
           name="q"
-          placeholder="Search local results"
+          placeholder=""
         />
         <InputGroupAddon align="inline-end">
           {hasLocalQuery ? (

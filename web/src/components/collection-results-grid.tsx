@@ -7,9 +7,7 @@ import { buttonVariants } from "@/components/ui/button";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import {
   Empty,
@@ -267,14 +265,6 @@ export function CollectionResultsGrid({
   return (
     <Card className="min-w-0">
       <CardHeader className="gap-4">
-        <div className="min-w-0">
-          <CardTitle>Results</CardTitle>
-          <CardDescription>
-            {viewMode === "objects"
-              ? "Local Museum Objects in this Collection"
-              : "Local Image Assets in this Collection"}
-          </CardDescription>
-        </div>
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <CollectionResultSetSearchForm
             collectionFilterText={collectionFilterText}
