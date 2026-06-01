@@ -31,10 +31,10 @@ import {
   Item,
   ItemContent,
   ItemDescription,
+  ItemGroup,
   ItemMedia,
   ItemTitle,
 } from "@/components/ui/item";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Spinner } from "@/components/ui/spinner";
 import {
   imageUrl,
@@ -95,13 +95,9 @@ type SelectionExportResponse = {
 
 type SelectionExportStatus =
   | { state: "idle" }
-  | { state: "pending" }
+  | { format: CollectionExportFormat; state: "pending" }
   | { result: SelectionExportResponse; state: "success" }
   | { message: string; state: "error" };
-
-function isCollectionExportFormat(value: string): value is CollectionExportFormat {
-  return value === "jsonl" || value === "csv" || value === "package";
-}
 
 function selectionExportErrorMessage(payload: unknown): string {
   if (
@@ -279,7 +275,6 @@ function SelectionActionDialog({
   searchSetSlug: string;
   viewMode: GridViewMode;
 }) {
-  const [format, setFormat] = useState<CollectionExportFormat>("jsonl");
   const [exportStatus, setExportStatus] = useState<SelectionExportStatus>({
     state: "idle",
   });
@@ -290,13 +285,14 @@ function SelectionActionDialog({
     dialogKind === "delete"
       ? `Delete ${selectedCount} ${noun}?`
       : `Export ${selectedCount} ${noun}`;
-  const exportButtonLabel =
-    exportStatus.state === "pending"
-      ? exportPendingLabel(format)
-      : exportActionLabel(format);
 
-  async function exportSelected() {
-    setExportStatus({ state: "pending" });
+  function closeDialog() {
+    setExportStatus({ state: "idle" });
+    onClose();
+  }
+
+  async function exportSelected(format: CollectionExportFormat) {
+    setExportStatus({ format, state: "pending" });
     try {
       const response = await fetch(
         `/api/search-sets/${encodeURIComponent(searchSetSlug)}/exports`,
@@ -337,7 +333,14 @@ function SelectionActionDialog({
   }
 
   return (
-    <Dialog open={dialogKind !== null} onOpenChange={(open) => !open && onClose()}>
+    <Dialog
+      open={dialogKind !== null}
+      onOpenChange={(open) => {
+        if (!open && exportStatus.state !== "pending") {
+          closeDialog();
+        }
+      }}
+    >
       <DialogContent aria-label={title}>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
@@ -362,47 +365,44 @@ function SelectionActionDialog({
           </div>
         ) : (
           <div className="grid gap-4 text-sm">
-            <RadioGroup
-              aria-label="Selected export format"
-              className="grid gap-2"
-              value={format}
-              onValueChange={(value) => {
-                if (isCollectionExportFormat(value)) {
-                  setFormat(value);
-                  setExportStatus({ state: "idle" });
-                }
-              }}
-            >
-              {COLLECTION_EXPORT_FORMAT_OPTIONS.map((option) => {
-                const id = `${searchSetSlug}-selected-export-${option.format}`;
-                const selected = format === option.format;
+            {exportStatus.state === "success" ? null : (
+              <ItemGroup className="gap-2">
+                {COLLECTION_EXPORT_FORMAT_OPTIONS.map((option) => {
+                  const pending =
+                    exportStatus.state === "pending" &&
+                    exportStatus.format === option.format;
 
-                return (
-                  <Item
-                    className={cn(
-                      "cursor-pointer items-start",
-                      "hover:bg-muted/50 has-disabled:cursor-not-allowed has-disabled:opacity-50",
-                      selected && "border-ring shadow-xs",
-                    )}
-                    key={option.format}
-                    render={<label htmlFor={id} />}
-                    variant={selected ? "muted" : "outline"}
-                  >
-                    <ItemMedia>
-                      <RadioGroupItem
-                        disabled={exportStatus.state === "pending"}
-                        id={id}
-                        value={option.format}
-                      />
-                    </ItemMedia>
-                    <ItemContent>
-                      <ItemTitle>{option.title}</ItemTitle>
-                      <ItemDescription>{option.description}</ItemDescription>
-                    </ItemContent>
-                  </Item>
-                );
-              })}
-            </RadioGroup>
+                  return (
+                    <Item
+                      className={cn(
+                        "cursor-pointer items-start text-left hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50",
+                        pending && "border-ring bg-muted/50 shadow-xs",
+                      )}
+                      key={option.format}
+                      render={
+                        <button
+                          aria-label={exportActionLabel(option.format)}
+                          disabled={exportStatus.state === "pending"}
+                          onClick={() => exportSelected(option.format)}
+                          type="button"
+                        />
+                      }
+                      variant="outline"
+                    >
+                      <ItemMedia variant="icon">
+                        {pending ? <Spinner /> : <Download />}
+                      </ItemMedia>
+                      <ItemContent>
+                        <ItemTitle>
+                          {pending ? exportPendingLabel(option.format) : option.title}
+                        </ItemTitle>
+                        <ItemDescription>{option.description}</ItemDescription>
+                      </ItemContent>
+                    </Item>
+                  );
+                })}
+              </ItemGroup>
+            )}
 
             {exportStatus.state === "success" ? (
               <Alert>
@@ -442,31 +442,23 @@ function SelectionActionDialog({
         )}
 
         <DialogFooter>
-          <Button
-            disabled={exportStatus.state === "pending"}
-            onClick={onClose}
-            type="button"
-            variant="outline"
-          >
-            Cancel
-          </Button>
           {dialogKind === "delete" ? (
-            <Button onClick={onClose} type="button" variant="destructive">
-              {deleteActionLabel}
-            </Button>
+            <>
+              <Button onClick={closeDialog} type="button" variant="outline">
+                Cancel
+              </Button>
+              <Button onClick={closeDialog} type="button" variant="destructive">
+                {deleteActionLabel}
+              </Button>
+            </>
           ) : (
             <Button
-              aria-busy={exportStatus.state === "pending"}
-              disabled={selectedCount === 0 || exportStatus.state === "pending"}
-              onClick={exportSelected}
+              disabled={exportStatus.state === "pending"}
+              onClick={closeDialog}
               type="button"
+              variant={exportStatus.state === "success" ? "default" : "outline"}
             >
-              {exportStatus.state === "pending" ? (
-                <Spinner data-icon="inline-start" />
-              ) : (
-                <Download data-icon="inline-start" />
-              )}
-              {exportButtonLabel}
+              {exportStatus.state === "success" ? "Done" : "Cancel"}
             </Button>
           )}
         </DialogFooter>

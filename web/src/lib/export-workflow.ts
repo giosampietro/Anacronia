@@ -14,18 +14,18 @@ export const COLLECTION_EXPORT_FORMAT_OPTIONS: Array<{
 }> = [
   {
     format: "jsonl",
-    title: "JSONL",
-    description: "Metadata manifest for Python and AI workflows.",
+    title: "Export metadata JSONL",
+    description: "For Python and AI workflows.",
   },
   {
     format: "csv",
-    title: "CSV",
-    description: "Spreadsheet-friendly metadata.",
+    title: "Export spreadsheet CSV",
+    description: "For spreadsheet review.",
   },
   {
     format: "package",
-    title: "Package",
-    description: "Metadata plus copied image derivatives.",
+    title: "Export images + metadata",
+    description: "Includes metadata, 1024 images, and thumbnails.",
   },
 ];
 
@@ -70,27 +70,36 @@ export function collectionExportAvailability({
 }
 
 export function exportActionLabel(format: CollectionExportFormat): string {
-  if (format === "package") {
-    return "Build package";
+  switch (format) {
+    case "jsonl":
+      return "Export metadata JSONL";
+    case "csv":
+      return "Export spreadsheet CSV";
+    case "package":
+      return "Export images + metadata";
   }
-
-  return `Export ${format.toUpperCase()}`;
 }
 
 export function exportPendingLabel(format: CollectionExportFormat): string {
-  if (format === "package") {
-    return "Building package...";
+  switch (format) {
+    case "jsonl":
+      return "Exporting metadata JSONL...";
+    case "csv":
+      return "Exporting spreadsheet CSV...";
+    case "package":
+      return "Exporting images + metadata...";
   }
-
-  return `Exporting ${format.toUpperCase()}...`;
 }
 
 export function exportSuccessLabel(format: CollectionExportFormat): string {
-  if (format === "package") {
-    return "Package export ready";
+  switch (format) {
+    case "jsonl":
+      return "Metadata JSONL export ready";
+    case "csv":
+      return "Spreadsheet CSV export ready";
+    case "package":
+      return "Images + metadata export ready";
   }
-
-  return `${format.toUpperCase()} export ready`;
 }
 
 export function exportArtifactSummary({
@@ -110,7 +119,7 @@ export function exportArtifactSummary({
     return `${imageAssetLabel} written to metadata.csv.`;
   }
 
-  return `${imageAssetLabel} packaged with manifest.jsonl, metadata.csv, standard-1024 images, and thumb-256 images.`;
+  return `${imageAssetLabel} exported with metadata, 1024 images, and thumbnails.`;
 }
 
 function parseImageSelectionId(value: string): number | null {
