@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   collectionExportAvailability,
+  createSelectedCollectionExportRequest,
   exportActionLabel,
   exportArtifactSummary,
   exportPendingLabel,
@@ -70,5 +71,42 @@ describe("collection export labels", () => {
     expect(exportArtifactSummary({ format: "package", rowCount: "155" })).toBe(
       "155 Image Assets packaged with manifest.jsonl, metadata.csv, standard-1024 images, and thumb-256 images."
     );
+  });
+});
+
+describe("selected collection export request", () => {
+  it("uses all selected Image Asset identities for Image view export", () => {
+    expect(
+      createSelectedCollectionExportRequest({
+        format: "csv",
+        selectedIds: ["image:9", "image:12", "object:met:40"],
+        viewMode: "images",
+      }),
+    ).toEqual({
+      format: "csv",
+      selection: {
+        image_asset_ids: [9, 12],
+        objects: [],
+      },
+    });
+  });
+
+  it("uses all selected Object identities for Object view export", () => {
+    expect(
+      createSelectedCollectionExportRequest({
+        format: "jsonl",
+        selectedIds: ["object:met:40", "object:va:100", "image:9"],
+        viewMode: "objects",
+      }),
+    ).toEqual({
+      format: "jsonl",
+      selection: {
+        image_asset_ids: [],
+        objects: [
+          { provider: "met", object_id: 40 },
+          { provider: "va", object_id: 100 },
+        ],
+      },
+    });
   });
 });

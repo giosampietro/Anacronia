@@ -2,12 +2,21 @@
 
 import type { MouseEvent } from "react";
 import { useMemo, useState } from "react";
-import { ArrowRightFromLine, Check, Images, Trash2 } from "lucide-react";
+import {
+  ArrowRightFromLine,
+  Check,
+  CircleAlert,
+  CircleCheck,
+  Download,
+  Images,
+  Trash2,
+} from "lucide-react";
 
 import { ImageAssetDetailPendingLink } from "@/components/image-asset-detail-overlay";
 import { ImageGridThumbnail } from "@/components/image-grid-thumbnail";
 import { ObjectDetailPendingLink } from "@/components/object-detail-pending-link";
 import { AspectRatio } from "@/components/ui/aspect-ratio";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,6 +27,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Item,
+  ItemContent,
+  ItemDescription,
+  ItemMedia,
+  ItemTitle,
+} from "@/components/ui/item";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Spinner } from "@/components/ui/spinner";
 import {
   imageUrl,
   type CollectionObjectSummary,
@@ -30,6 +48,15 @@ import {
   type GridViewMode,
   type ObjectRouteRef,
 } from "@/lib/grid-view";
+import {
+  COLLECTION_EXPORT_FORMAT_OPTIONS,
+  createSelectedCollectionExportRequest,
+  exportActionLabel,
+  exportArtifactSummary,
+  exportPendingLabel,
+  exportSuccessLabel,
+  type CollectionExportFormat,
+} from "@/lib/export-workflow";
 import {
   IMAGE_GRID_CAROUSEL_INDICATOR_CLASS_NAME,
   IMAGE_GRID_CLASS_NAME,
@@ -58,6 +85,48 @@ type CollectionResultSelectionSurfaceProps = {
 };
 
 type SelectionDialogKind = "delete" | "export";
+
+type SelectionExportResponse = {
+  format: CollectionExportFormat;
+  export_path: string;
+  row_count: number;
+  skipped_image_asset_count: number;
+};
+
+type SelectionExportStatus =
+  | { state: "idle" }
+  | { state: "pending" }
+  | { result: SelectionExportResponse; state: "success" }
+  | { message: string; state: "error" };
+
+function isCollectionExportFormat(value: string): value is CollectionExportFormat {
+  return value === "jsonl" || value === "csv" || value === "package";
+}
+
+function selectionExportErrorMessage(payload: unknown): string {
+  if (
+    payload &&
+    typeof payload === "object" &&
+    "detail" in payload &&
+    typeof payload.detail === "string"
+  ) {
+    return payload.detail;
+  }
+
+  if (
+    payload &&
+    typeof payload === "object" &&
+    "detail" in payload &&
+    payload.detail &&
+    typeof payload.detail === "object" &&
+    "message" in payload.detail &&
+    typeof payload.detail.message === "string"
+  ) {
+    return payload.detail.message;
+  }
+
+  return "Export failed.";
+}
 
 function objectProviderDisplayLabel(provider: string): string {
   if (provider === "met") {
@@ -153,7 +222,7 @@ function SelectionToolbar({
       <div className="flex min-w-0 items-center gap-2">
         <Button
           aria-label="Export selected"
-          disabled={selectedVisibleCount === 0}
+          disabled={selectedTotalCount === 0}
           onClick={() => onOpenSelectionDialog("export")}
           size="icon-sm"
           type="button"
@@ -163,7 +232,7 @@ function SelectionToolbar({
         </Button>
         <Button
           aria-label="Delete selected"
-          disabled={selectedVisibleCount === 0}
+          disabled={selectedTotalCount === 0}
           onClick={() => onOpenSelectionDialog("delete")}
           size="icon-sm"
           type="button"
@@ -198,14 +267,22 @@ function SelectionActionDialog({
   dialogKind,
   onClose,
   selectedCount,
+  selectedIds,
+  searchSetSlug,
   viewMode,
 }: {
   collectionDisplayName: string;
   dialogKind: SelectionDialogKind | null;
   onClose: () => void;
   selectedCount: number;
+  selectedIds: string[];
+  searchSetSlug: string;
   viewMode: GridViewMode;
 }) {
+  const [format, setFormat] = useState<CollectionExportFormat>("jsonl");
+  const [exportStatus, setExportStatus] = useState<SelectionExportStatus>({
+    state: "idle",
+  });
   const noun = selectionNoun(viewMode, selectedCount);
   const scopeLabel = formatCollectionDisplayName(collectionDisplayName);
   const deleteActionLabel = `Delete ${noun}`;
@@ -213,6 +290,51 @@ function SelectionActionDialog({
     dialogKind === "delete"
       ? `Delete ${selectedCount} ${noun}?`
       : `Export ${selectedCount} ${noun}`;
+  const exportButtonLabel =
+    exportStatus.state === "pending"
+      ? exportPendingLabel(format)
+      : exportActionLabel(format);
+
+  async function exportSelected() {
+    setExportStatus({ state: "pending" });
+    try {
+      const response = await fetch(
+        `/api/search-sets/${encodeURIComponent(searchSetSlug)}/exports`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(
+            createSelectedCollectionExportRequest({
+              format,
+              selectedIds,
+              viewMode,
+            }),
+          ),
+        },
+      );
+      const payload = (await response.json().catch(() => null)) as
+        | SelectionExportResponse
+        | unknown;
+
+      if (!response.ok) {
+        setExportStatus({
+          message: selectionExportErrorMessage(payload),
+          state: "error",
+        });
+        return;
+      }
+
+      setExportStatus({
+        result: payload as SelectionExportResponse,
+        state: "success",
+      });
+    } catch {
+      setExportStatus({
+        message: "Export failed.",
+        state: "error",
+      });
+    }
+  }
 
   return (
     <Dialog open={dialogKind !== null} onOpenChange={(open) => !open && onClose()}>
@@ -222,7 +344,7 @@ function SelectionActionDialog({
           <DialogDescription>
             {dialogKind === "delete"
               ? "This prototype does not delete data. It shows the decision point before a destructive action."
-              : "This prototype does not export files. It shows where export choices would live."}
+              : `Export selected ${noun} from ${scopeLabel}.`}
           </DialogDescription>
         </DialogHeader>
 
@@ -239,25 +361,93 @@ function SelectionActionDialog({
             </div>
           </div>
         ) : (
-          <div className="grid gap-3 text-sm">
-            {[
-              "Export selected image files",
-              "Export metadata as CSV",
-              "Export object records with image references",
-            ].map((option) => (
-              <div
-                className="flex items-center justify-between rounded-lg border bg-muted/30 px-3 py-2"
-                key={option}
-              >
-                <span>{option}</span>
-                <Badge variant="secondary">prototype</Badge>
-              </div>
-            ))}
+          <div className="grid gap-4 text-sm">
+            <RadioGroup
+              aria-label="Selected export format"
+              className="grid gap-2"
+              value={format}
+              onValueChange={(value) => {
+                if (isCollectionExportFormat(value)) {
+                  setFormat(value);
+                  setExportStatus({ state: "idle" });
+                }
+              }}
+            >
+              {COLLECTION_EXPORT_FORMAT_OPTIONS.map((option) => {
+                const id = `${searchSetSlug}-selected-export-${option.format}`;
+                const selected = format === option.format;
+
+                return (
+                  <Item
+                    className={cn(
+                      "cursor-pointer items-start",
+                      "hover:bg-muted/50 has-disabled:cursor-not-allowed has-disabled:opacity-50",
+                      selected && "border-ring shadow-xs",
+                    )}
+                    key={option.format}
+                    render={<label htmlFor={id} />}
+                    variant={selected ? "muted" : "outline"}
+                  >
+                    <ItemMedia>
+                      <RadioGroupItem
+                        disabled={exportStatus.state === "pending"}
+                        id={id}
+                        value={option.format}
+                      />
+                    </ItemMedia>
+                    <ItemContent>
+                      <ItemTitle>{option.title}</ItemTitle>
+                      <ItemDescription>{option.description}</ItemDescription>
+                    </ItemContent>
+                  </Item>
+                );
+              })}
+            </RadioGroup>
+
+            {exportStatus.state === "success" ? (
+              <Alert>
+                <CircleCheck />
+                <AlertTitle>
+                  {exportSuccessLabel(exportStatus.result.format)}
+                </AlertTitle>
+                <AlertDescription>
+                  <p>
+                    {exportArtifactSummary({
+                      format: exportStatus.result.format,
+                      rowCount: String(exportStatus.result.row_count),
+                    })}
+                  </p>
+                  <p className="mt-1 break-all font-mono text-xs">
+                    {exportStatus.result.export_path}
+                  </p>
+                  {exportStatus.result.skipped_image_asset_count > 0 ? (
+                    <p className="mt-2 text-xs">
+                      {exportStatus.result.skipped_image_asset_count} Image Asset
+                      {exportStatus.result.skipped_image_asset_count === 1 ? "" : "s"} skipped.
+                      See export-warnings.json in the export folder.
+                    </p>
+                  ) : null}
+                </AlertDescription>
+              </Alert>
+            ) : null}
+
+            {exportStatus.state === "error" ? (
+              <Alert variant="destructive">
+                <CircleAlert />
+                <AlertTitle>Export failed</AlertTitle>
+                <AlertDescription>{exportStatus.message}</AlertDescription>
+              </Alert>
+            ) : null}
           </div>
         )}
 
         <DialogFooter>
-          <Button onClick={onClose} type="button" variant="outline">
+          <Button
+            disabled={exportStatus.state === "pending"}
+            onClick={onClose}
+            type="button"
+            variant="outline"
+          >
             Cancel
           </Button>
           {dialogKind === "delete" ? (
@@ -265,8 +455,18 @@ function SelectionActionDialog({
               {deleteActionLabel}
             </Button>
           ) : (
-            <Button onClick={onClose} type="button">
-              Export options
+            <Button
+              aria-busy={exportStatus.state === "pending"}
+              disabled={selectedCount === 0 || exportStatus.state === "pending"}
+              onClick={exportSelected}
+              type="button"
+            >
+              {exportStatus.state === "pending" ? (
+                <Spinner data-icon="inline-start" />
+              ) : (
+                <Download data-icon="inline-start" />
+              )}
+              {exportButtonLabel}
             </Button>
           )}
         </DialogFooter>
@@ -603,7 +803,9 @@ export function CollectionResultSelectionSurface({
         collectionDisplayName={collectionDisplayName}
         dialogKind={selectionDialog}
         onClose={() => setSelectionDialog(null)}
-        selectedCount={selectedVisibleCount}
+        selectedCount={selectedTotalCount}
+        selectedIds={Array.from(selectedIds)}
+        searchSetSlug={searchSetSlug}
         viewMode={viewMode}
       />
     </div>

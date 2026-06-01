@@ -97,6 +97,8 @@ def export_collection(
     data_root: Path,
     search_set_slug: str,
     export_format: ExportFormat,
+    selected_image_asset_ids: list[int] | None = None,
+    selected_objects: list[tuple[str, int]] | None = None,
     timestamp: str | None = None,
 ) -> CollectionExportResult:
     if export_format not in {"jsonl", "csv", "package"}:
@@ -110,6 +112,15 @@ def export_collection(
             connection=connection,
             search_set_slug=search_set_slug,
         )
+        if selected_image_asset_ids is not None or selected_objects is not None:
+            selected_ids = set(selected_image_asset_ids or [])
+            selected_object_refs = set(selected_objects or [])
+            image_assets = [
+                image_asset
+                for image_asset in image_assets
+                if image_asset.image_asset_id in selected_ids
+                or (image_asset.provider, image_asset.object_id) in selected_object_refs
+            ]
         rows_and_skips = build_export_rows(
             connection=connection,
             collection=collection,

@@ -1,5 +1,6 @@
 import csv
 import json
+import sqlite3
 
 import pytest
 
@@ -66,6 +67,16 @@ def build_exportable_collection(tmp_path):
     return storage
 
 
+def get_image_asset_ids(database_path):
+    with sqlite3.connect(database_path) as connection:
+        return [
+            int(row[0])
+            for row in connection.execute(
+                "SELECT id FROM image_assets ORDER BY id"
+            ).fetchall()
+        ]
+
+
 def test_exports_collection_jsonl_rows_with_descriptors_and_semantic_text(tmp_path):
     storage = build_exportable_collection(tmp_path)
 
@@ -124,6 +135,69 @@ def test_exports_collection_jsonl_rows_with_descriptors_and_semantic_text(tmp_pa
         "Medium: Terracotta. Classification: Ceramics. Culture: Moche. "
         "Period: Early Intermediate Period. Date: 3rd-7th century. Place: Peru."
     )
+
+
+def test_exports_selected_image_asset_jsonl_rows_only_selected_asset(tmp_path):
+    storage = build_exportable_collection(tmp_path)
+    selected_image_asset_id = get_image_asset_ids(storage.database_path)[0]
+
+    result = export_collection(
+        database_path=storage.database_path,
+        data_root=storage.data_root,
+        search_set_slug="snake-study",
+        export_format="jsonl",
+        selected_image_asset_ids=[selected_image_asset_id],
+        timestamp="260530-1234Z",
+    )
+
+    assert result.row_count == 1
+    rows = [
+        json.loads(line)
+        for line in (result.export_path / "manifest.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert [row["image_asset"]["image_asset_id"] for row in rows] == [
+        selected_image_asset_id
+    ]
+
+
+def test_exports_selected_object_jsonl_rows_expand_to_object_image_assets(tmp_path):
+    storage = build_exportable_collection(tmp_path)
+
+    result = export_collection(
+        database_path=storage.database_path,
+        data_root=storage.data_root,
+        search_set_slug="snake-study",
+        export_format="jsonl",
+        selected_objects=[("met", 40)],
+        timestamp="260530-1234Z",
+    )
+
+    assert result.row_count == 2
+    rows = [
+        json.loads(line)
+        for line in (result.export_path / "manifest.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert {row["image_asset"]["object_id"] for row in rows} == {40}
+    assert {row["image_asset"]["source_image_url"] for row in rows} == {
+        "https://images.metmuseum.org/40-primary.jpg",
+        "https://images.metmuseum.org/40-detail-a.jpg",
+    }
+
+
+def test_exports_selected_unknown_image_asset_ids_do_not_export_collection_assets(tmp_path):
+    storage = build_exportable_collection(tmp_path)
+
+    with pytest.raises(NoExportableAssetsError):
+        export_collection(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            search_set_slug="snake-study",
+            export_format="jsonl",
+            selected_image_asset_ids=[999_999],
+            timestamp="260530-1234Z",
+        )
+
+    assert not (storage.data_root / "exports" / "snake-study").exists()
 
 
 def test_exports_collection_csv_with_flat_stable_columns(tmp_path):

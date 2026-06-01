@@ -1,9 +1,46 @@
+import { parseObjectRouteKey, type GridViewMode } from "./grid-view";
+
 export type CollectionExportAvailability = {
   available: boolean;
   reason: string;
 };
 
 export type CollectionExportFormat = "jsonl" | "csv" | "package";
+
+export const COLLECTION_EXPORT_FORMAT_OPTIONS: Array<{
+  format: CollectionExportFormat;
+  title: string;
+  description: string;
+}> = [
+  {
+    format: "jsonl",
+    title: "JSONL",
+    description: "Metadata manifest for Python and AI workflows.",
+  },
+  {
+    format: "csv",
+    title: "CSV",
+    description: "Spreadsheet-friendly metadata.",
+  },
+  {
+    format: "package",
+    title: "Package",
+    description: "Metadata plus copied image derivatives.",
+  },
+];
+
+export type CollectionExportObjectSelection = {
+  provider: string;
+  object_id: number;
+};
+
+export type SelectedCollectionExportRequest = {
+  format: CollectionExportFormat;
+  selection: {
+    image_asset_ids: number[];
+    objects: CollectionExportObjectSelection[];
+  };
+};
 
 export function collectionExportAvailability({
   importedImageCount,
@@ -74,4 +111,63 @@ export function exportArtifactSummary({
   }
 
   return `${imageAssetLabel} packaged with manifest.jsonl, metadata.csv, standard-1024 images, and thumb-256 images.`;
+}
+
+function parseImageSelectionId(value: string): number | null {
+  if (!value.startsWith("image:")) {
+    return null;
+  }
+
+  const imageAssetId = Number.parseInt(value.slice("image:".length), 10);
+  return Number.isFinite(imageAssetId) ? imageAssetId : null;
+}
+
+function parseObjectSelectionId(value: string): CollectionExportObjectSelection | null {
+  if (!value.startsWith("object:")) {
+    return null;
+  }
+
+  const objectRouteRef = parseObjectRouteKey(value.slice("object:".length));
+  if (objectRouteRef === null) {
+    return null;
+  }
+
+  return {
+    provider: objectRouteRef.provider,
+    object_id: objectRouteRef.objectId,
+  };
+}
+
+export function createSelectedCollectionExportRequest({
+  format,
+  selectedIds,
+  viewMode,
+}: {
+  format: CollectionExportFormat;
+  selectedIds: string[];
+  viewMode: GridViewMode;
+}): SelectedCollectionExportRequest {
+  if (viewMode === "images") {
+    return {
+      format,
+      selection: {
+        image_asset_ids: selectedIds.flatMap((selectedId) => {
+          const imageAssetId = parseImageSelectionId(selectedId);
+          return imageAssetId === null ? [] : [imageAssetId];
+        }),
+        objects: [],
+      },
+    };
+  }
+
+  return {
+    format,
+    selection: {
+      image_asset_ids: [],
+      objects: selectedIds.flatMap((selectedId) => {
+        const selectedObject = parseObjectSelectionId(selectedId);
+        return selectedObject === null ? [] : [selectedObject];
+      }),
+    },
+  };
 }

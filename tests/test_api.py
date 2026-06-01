@@ -1,3 +1,6 @@
+import json
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -1369,6 +1372,96 @@ def test_api_exports_collection_jsonl_with_absolute_path(tmp_path):
     assert payload["skipped_image_assets"] == []
     assert payload["export_path"].startswith(str(storage.data_root / "exports" / "snake-study"))
     assert (storage.data_root / "exports" / "snake-study").is_dir()
+
+
+def test_api_exports_selected_image_assets_only(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            met_candidate_client=FakeMetGridCandidateClient(),
+            met_record_client=FakeMetGridRecordClient(),
+            download_image_bytes=lambda _url: ppm_image_bytes(width=1600, height=800),
+        )
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Snake Study", "terms_text": "snake"},
+    )
+    run_response = client.post(
+        "/search-sets/snake-study/provider-collections/met/runs",
+        json={"candidate_offset": 0, "candidate_limit": 2},
+    )
+    client.post(f"/provider-collections/met/runs/{run_response.json()['run_id']}/ingest")
+    image_assets = client.get(
+        "/search-sets/snake-study/local-result-set?view=images"
+    ).json()["image_assets"]
+    selected_image_asset_id = image_assets[0]["image_asset_id"]
+
+    response = client.post(
+        "/search-sets/snake-study/exports",
+        json={
+            "format": "jsonl",
+            "selection": {"image_asset_ids": [selected_image_asset_id]},
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["row_count"] == 1
+    rows = [
+        json.loads(line)
+        for line in (Path(payload["export_path"]) / "manifest.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert [row["image_asset"]["image_asset_id"] for row in rows] == [
+        selected_image_asset_id
+    ]
+
+
+def test_api_exports_selected_objects_as_image_asset_rows(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            met_candidate_client=FakeMetGridCandidateClient(),
+            met_record_client=FakeMetGridRecordClient(),
+            download_image_bytes=lambda _url: ppm_image_bytes(width=1600, height=800),
+        )
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Snake Study", "terms_text": "snake"},
+    )
+    run_response = client.post(
+        "/search-sets/snake-study/provider-collections/met/runs",
+        json={"candidate_offset": 0, "candidate_limit": 2},
+    )
+    client.post(f"/provider-collections/met/runs/{run_response.json()['run_id']}/ingest")
+
+    response = client.post(
+        "/search-sets/snake-study/exports",
+        json={
+            "format": "jsonl",
+            "selection": {
+                "objects": [{"provider": "met", "object_id": 40}],
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["row_count"] == 3
+    rows = [
+        json.loads(line)
+        for line in (Path(payload["export_path"]) / "manifest.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert {row["image_asset"]["object_id"] for row in rows} == {40}
 
 
 def test_api_rejects_export_for_zero_image_collection(tmp_path):

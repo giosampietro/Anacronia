@@ -15,33 +15,12 @@ import {
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Spinner } from "@/components/ui/spinner";
 import {
+  COLLECTION_EXPORT_FORMAT_OPTIONS,
   exportActionLabel,
   exportPendingLabel,
   type CollectionExportFormat,
 } from "@/lib/export-workflow";
 import { cn } from "@/lib/utils";
-
-const EXPORT_FORMAT_OPTIONS: Array<{
-  format: CollectionExportFormat;
-  title: string;
-  description: string;
-}> = [
-  {
-    format: "jsonl",
-    title: "JSONL",
-    description: "Metadata manifest for Python and AI workflows.",
-  },
-  {
-    format: "csv",
-    title: "CSV",
-    description: "Spreadsheet-friendly metadata.",
-  },
-  {
-    format: "package",
-    title: "Package",
-    description: "Metadata plus copied image derivatives.",
-  },
-];
 
 function isCollectionExportFormat(value: string): value is CollectionExportFormat {
   return value === "jsonl" || value === "csv" || value === "package";
@@ -104,7 +83,7 @@ export function CollectionExportForm({
           }
         }}
       >
-        {EXPORT_FORMAT_OPTIONS.map((option) => {
+        {COLLECTION_EXPORT_FORMAT_OPTIONS.map((option) => {
           const id = `${searchSetSlug}-export-${option.format}`;
           const selected = format === option.format;
 

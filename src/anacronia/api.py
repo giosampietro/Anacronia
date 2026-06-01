@@ -113,8 +113,19 @@ class StartMetCollectRequest(BaseModel):
     batch_target: BatchTarget = DEFAULT_BATCH_TARGET
 
 
+class CollectionExportObjectSelection(BaseModel):
+    provider: str
+    object_id: int
+
+
+class CollectionExportSelection(BaseModel):
+    image_asset_ids: list[int] = Field(default_factory=list)
+    objects: list[CollectionExportObjectSelection] = Field(default_factory=list)
+
+
 class CollectionExportRequest(BaseModel):
     format: ExportFormat
+    selection: CollectionExportSelection | None = None
 
 
 def serialize_search_set(search_set: SearchSet) -> dict[str, object]:
@@ -669,12 +680,25 @@ def create_app(
             dashboard=get_operational_dashboard(database_path=resolved_database_path),
             slug=slug,
         )
+        selected_image_asset_ids = (
+            request.selection.image_asset_ids if request.selection is not None else None
+        )
+        selected_objects = (
+            [
+                (selected_object.provider, selected_object.object_id)
+                for selected_object in request.selection.objects
+            ]
+            if request.selection is not None
+            else None
+        )
         try:
             result = export_collection(
                 database_path=resolved_database_path,
                 data_root=resolved_data_root,
                 search_set_slug=slug,
                 export_format=request.format,
+                selected_image_asset_ids=selected_image_asset_ids,
+                selected_objects=selected_objects,
             )
         except NoExportableAssetsError as error:
             raise HTTPException(
