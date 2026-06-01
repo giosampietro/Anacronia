@@ -22,6 +22,10 @@ import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  ToggleGroup,
+  ToggleGroupItem,
+} from "@/components/ui/toggle-group";
+import {
   canStartNewCollectionSearch,
   isDuplicateCollectionName,
   type ExistingCollectionIdentity,
@@ -40,6 +44,8 @@ const providerSources = [
   { label: "V&A", value: "vna", disabled: true },
   { label: "Europeana", value: "europeana", disabled: true },
 ] as const;
+
+const selectedProviderSource = "met";
 
 function StepNumber({ children }: { children: ReactNode }) {
   return (
@@ -71,26 +77,31 @@ function StepCard({
 
 function ImageSourceControl() {
   return (
-    <div aria-label="Image source" className="flex flex-wrap gap-2" role="group">
+    <ToggleGroup
+      aria-label="Image source"
+      className="flex flex-wrap"
+      size="sm"
+      value={[selectedProviderSource]}
+      variant="outline"
+    >
       {providerSources.map((provider) => {
-        const selected = provider.value === "met";
+        const selected = provider.value === selectedProviderSource;
 
         return (
-          <Button
-            aria-pressed={selected}
+          <ToggleGroupItem
             disabled={provider.disabled}
             key={provider.value}
             size="sm"
             title={provider.disabled ? "Not available yet" : undefined}
             type="button"
-            variant={selected ? "default" : "outline"}
+            value={provider.value}
           >
             {selected ? <Check data-icon="inline-start" /> : null}
             {provider.label}
-          </Button>
+          </ToggleGroupItem>
         );
       })}
-    </div>
+    </ToggleGroup>
   );
 }
 

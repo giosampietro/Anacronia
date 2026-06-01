@@ -7,3 +7,7 @@ A user-facing fact should appear once in a view. Do not repeat the same metadata
 Actions may refer to the same entity, such as `Open provider record`, but they should not restate metadata already shown elsewhere.
 
 If information feels important enough to repeat, promote it to the one correct location instead.
+
+## UI Component Layers
+
+Build generic UI from shadcn primitives and domain UI from named Anacronia components. Add custom markup only after checking both layers and documenting why neither fits.
