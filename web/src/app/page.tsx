@@ -4,7 +4,6 @@ import { redirect } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { DashboardAutoRefresh } from "@/components/dashboard-auto-refresh";
 import { BatchTargetControl } from "@/components/batch-target-control";
-import { CollectionExportForm } from "@/components/collection-export-form";
 import { CollectionObjectDetailOverlay } from "@/components/collection-object-detail-overlay";
 import {
   CollectionResultsGrid,
@@ -27,14 +26,13 @@ import {
   createLibraryObjectTileId,
   UserLibraryWorkspace,
 } from "@/components/user-library-workspace";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
   CardAction,
   CardContent,
   CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -49,7 +47,6 @@ import {
   Activity,
   CircleAlert,
   CircleCheck,
-  Download,
 } from "lucide-react";
 
 import {
@@ -68,12 +65,6 @@ import {
 } from "@/lib/collection-objects";
 import { shouldAutoRefreshDashboard } from "@/lib/dashboard-refresh";
 import { DEFAULT_BATCH_TARGET, normalizeBatchTarget } from "@/lib/candidate-limits";
-import {
-  collectionExportAvailability,
-  exportArtifactSummary,
-  exportSuccessLabel,
-  type CollectionExportFormat,
-} from "@/lib/export-workflow";
 import { readAppVersionStamp } from "@/lib/app-version";
 import {
   getActionFormDataString,
@@ -112,11 +103,6 @@ type HomeProps = {
   searchParams?: Promise<{
     collect_notice?: string | string[];
     collection_filter?: string | string[];
-    export_error?: string | string[];
-    export_format?: string | string[];
-    export_path?: string | string[];
-    export_rows?: string | string[];
-    export_skipped?: string | string[];
     filter?: string | string[];
     image?: string | string[];
     image_asset_id?: string | string[];
@@ -502,75 +488,6 @@ async function stopMetCollect(formData: FormData) {
   redirect(`/?search_set=${slug}`);
 }
 
-type CollectionExportResponse = {
-  format: CollectionExportFormat;
-  export_path: string;
-  row_count: number;
-  skipped_image_asset_count: number;
-};
-
-function collectionExportFormatFromParam(value: string): CollectionExportFormat | undefined {
-  if (value === "jsonl" || value === "csv" || value === "package") {
-    return value;
-  }
-
-  return undefined;
-}
-
-function exportErrorMessage(payload: unknown): string {
-  if (
-    payload &&
-    typeof payload === "object" &&
-    "detail" in payload &&
-    typeof payload.detail === "string"
-  ) {
-    return payload.detail;
-  }
-  if (
-    payload &&
-    typeof payload === "object" &&
-    "detail" in payload &&
-    payload.detail &&
-    typeof payload.detail === "object" &&
-    "message" in payload.detail &&
-    typeof payload.detail.message === "string"
-  ) {
-    return payload.detail.message;
-  }
-
-  return "Export failed.";
-}
-
-async function exportSearchSet(formData: FormData) {
-  "use server";
-
-  const apiPort = getPort("ANACRONIA_API_PORT", DEFAULT_API_PORT);
-  const slug = getActionFormDataString(formData, "slug");
-  const exportFormat = getActionFormDataString(formData, "export_format");
-  const params = new URLSearchParams({ search_set: slug });
-  const response = await fetch(`http://127.0.0.1:${apiPort}/search-sets/${slug}/exports`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ format: exportFormat }),
-  });
-  const payload = (await response.json()) as CollectionExportResponse | unknown;
-
-  revalidatePath("/");
-  if (!response.ok) {
-    params.set("export_error", exportErrorMessage(payload));
-    redirect(`/?${params.toString()}`);
-  }
-
-  const exportResponse = payload as CollectionExportResponse;
-  params.set("export_format", exportResponse.format);
-  params.set("export_path", exportResponse.export_path);
-  params.set("export_rows", String(exportResponse.row_count));
-  if (exportResponse.skipped_image_asset_count > 0) {
-    params.set("export_skipped", String(exportResponse.skipped_image_asset_count));
-  }
-  redirect(`/?${params.toString()}`);
-}
-
 function statusVariant(state: string): "default" | "destructive" | "secondary" | "outline" {
   if (state === "ok" || state === "running" || state === "stopping" || state === "completed") {
     return "default";
@@ -672,78 +589,6 @@ function NewSearchSetWorkspace({
         serverError={serverError}
       />
     </div>
-  );
-}
-
-function CollectionExportControls({
-  available,
-  error,
-  exportFormat,
-  exportPath,
-  rowCount,
-  reason,
-  searchSetSlug,
-  skippedCount,
-}: {
-  available: boolean;
-  error: string;
-  exportFormat?: CollectionExportFormat;
-  exportPath: string;
-  rowCount: string;
-  reason: string;
-  searchSetSlug: string;
-  skippedCount: string;
-}) {
-  return (
-    <Card>
-      <CardHeader>
-        <div className="min-w-0">
-          <CardTitle>Export</CardTitle>
-          <CardDescription>Current Collection</CardDescription>
-        </div>
-        <CardAction>
-          <Download className="size-4 text-muted-foreground" />
-        </CardAction>
-      </CardHeader>
-      <CardContent className="grid gap-3">
-        {reason ? <p className="text-sm text-muted-foreground">{reason}</p> : null}
-        {exportPath ? (
-          <Alert>
-            <CircleCheck />
-            <AlertTitle>
-              {exportFormat ? exportSuccessLabel(exportFormat) : "Export ready"}
-            </AlertTitle>
-            <AlertDescription>
-              {exportFormat && rowCount ? (
-                <p>{exportArtifactSummary({ format: exportFormat, rowCount })}</p>
-              ) : null}
-              <p className="mt-1 break-all font-mono text-xs">{exportPath}</p>
-              {skippedCount ? (
-                <p className="mt-2 text-xs">
-                  {skippedCount} Image Asset{skippedCount === "1" ? "" : "s"} skipped. See
-                  export-warnings.json in the export folder.
-                </p>
-              ) : null}
-            </AlertDescription>
-          </Alert>
-        ) : null}
-        {error ? (
-          <Alert variant="destructive">
-            <CircleAlert />
-            <AlertTitle>Export failed</AlertTitle>
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        ) : null}
-      </CardContent>
-      <CardFooter>
-        <CollectionExportForm
-          action={exportSearchSet}
-          available={available}
-          initialOpen={Boolean(error)}
-          searchSetSlug={searchSetSlug}
-        />
-      </CardFooter>
-    </Card>
   );
 }
 
@@ -959,13 +804,6 @@ export default async function Home({ searchParams }: HomeProps) {
     getFirstParam(resolvedSearchParams?.provider)?.trim() || "all";
   const collectNoticeCode = getFirstParam(resolvedSearchParams?.collect_notice);
   const collectionErrorCode = getFirstParam(resolvedSearchParams?.collection_error);
-  const exportError = getFirstParam(resolvedSearchParams?.export_error) ?? "";
-  const exportFormat = collectionExportFormatFromParam(
-    getFirstParam(resolvedSearchParams?.export_format) ?? "",
-  );
-  const exportPath = getFirstParam(resolvedSearchParams?.export_path) ?? "";
-  const exportRows = getFirstParam(resolvedSearchParams?.export_rows) ?? "";
-  const exportSkipped = getFirstParam(resolvedSearchParams?.export_skipped) ?? "";
   const requestedWorkspaceMode = getFirstParam(resolvedSearchParams?.mode);
   const requestedGridViewMode = getFirstParam(resolvedSearchParams?.view);
   const activeSearchSetSlug = getFirstParam(resolvedSearchParams?.search_set);
@@ -1013,15 +851,6 @@ export default async function Home({ searchParams }: HomeProps) {
   const workspaceMode = createWorkspaceMode(requestedWorkspaceMode, activeSearchSet);
   const gridViewMode = createGridViewMode(requestedGridViewMode, workspaceMode);
   const activeProviderCollections = activeSearchSet?.providerCollections ?? [];
-  const exportAvailability =
-    activeSearchSet === null
-      ? { available: false, reason: "" }
-      : collectionExportAvailability({
-          importedImageCount: activeSearchSet.importedImageCount,
-          providerStatuses: activeProviderCollections.map(
-            (providerCollection) => providerCollection.status,
-          ),
-        });
   const collectNotice = collectNoticeFromCode(collectNoticeCode, activeProviderCollections);
   const collectionLocalResultSet =
     activeSearchSet === null || workspaceMode !== "search-set"
@@ -1351,19 +1180,6 @@ export default async function Home({ searchParams }: HomeProps) {
                 providerCollections={activeProviderCollections}
                 searchSet={activeSearchSet}
               />
-
-              <div className="xl:col-span-2">
-                <CollectionExportControls
-                  available={exportAvailability.available}
-                  error={exportError}
-                  exportFormat={exportFormat}
-                  exportPath={exportPath}
-                  rowCount={exportRows}
-                  reason={exportAvailability.reason}
-                  searchSetSlug={activeSearchSet.slug}
-                  skippedCount={exportSkipped}
-                />
-              </div>
             </section>
 
             <section>
