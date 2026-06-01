@@ -14,6 +14,10 @@ Triage roles map to Anacronia's GitHub labels, with AFK work using `ready-for-ag
 
 This is a single-context repo: read root `CONTEXT.md` first and use `docs/adr/` for future ADRs. See `docs/agents/domain.md`.
 
+### User collaboration and Git sanity checks
+
+The user is learning Git/GitHub and may ask for work across multiple branches, ports, worktrees, PRs, or parallel tasks. Treat normal-language intent as the goal, but sanity-check the local and GitHub state before acting. See `docs/agents/user-collaboration.md`.
+
 ### User test commands
 
 When giving the user terminal commands for local checks or manual testing, also add or update a double-clickable Mac `.command` file under `batch-cmd/` and link it in the chat. The user prefers not to type terminal commands.
