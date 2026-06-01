@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { type FormEvent, useMemo, useState } from "react";
 import {
   AlertCircle,
   Check,
@@ -522,6 +522,11 @@ function SearchControls({
     updateState({ detail: "", q: qDraft });
   }
 
+  function handleQuerySubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    applyQuery();
+  }
+
   return (
     <div className="grid gap-4 border-b bg-background/95 px-5 py-4 backdrop-blur lg:px-7">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -539,36 +544,32 @@ function SearchControls({
       </div>
 
       <div className="grid gap-3 xl:grid-cols-[minmax(280px,1fr)_auto_auto] xl:items-center">
-        <InputGroup className="h-9">
-          <InputGroupAddon>
-            <Search />
-          </InputGroupAddon>
-          <InputGroupInput
-            aria-label="Search local results"
-            onChange={(event) => setQDraft(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                applyQuery();
-              }
-            }}
-            placeholder="Search canonical fields and Descriptors"
-            value={qDraft}
-          />
-          <InputGroupAddon align="inline-end">
-            {qDraft ? (
-              <InputGroupButton
-                aria-label="Clear search"
-                onClick={() => {
-                  setQDraft("");
-                  updateState({ detail: "", q: "" });
-                }}
-              >
-                <X />
-              </InputGroupButton>
-            ) : null}
-            <InputGroupButton onClick={applyQuery}>Search</InputGroupButton>
-          </InputGroupAddon>
-        </InputGroup>
+        <form onSubmit={handleQuerySubmit}>
+          <InputGroup className="h-9">
+            <InputGroupAddon>
+              <Search />
+            </InputGroupAddon>
+            <InputGroupInput
+              aria-label="Search local results"
+              onChange={(event) => setQDraft(event.target.value)}
+              value={qDraft}
+            />
+            <InputGroupAddon align="inline-end">
+              {qDraft ? (
+                <InputGroupButton
+                  aria-label="Clear search"
+                  onClick={() => {
+                    setQDraft("");
+                    updateState({ detail: "", q: "" });
+                  }}
+                >
+                  <X />
+                </InputGroupButton>
+              ) : null}
+              <InputGroupButton type="submit">Search</InputGroupButton>
+            </InputGroupAddon>
+          </InputGroup>
+        </form>
 
         <div className="flex flex-wrap gap-2">
           <AnchorButton
