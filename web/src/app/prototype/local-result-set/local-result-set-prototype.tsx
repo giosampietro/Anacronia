@@ -92,12 +92,21 @@ type ResultImage = {
 
 type ResultItem = ResultObject | ResultImage;
 
+type ProviderFacetCounts = Record<
+  PrototypeProvider,
+  {
+    images: number;
+    objects: number;
+  }
+>;
+
 type ResultSet = {
   activeCollection: PrototypeCollection | null;
   activeItems: ResultItem[];
   baseImages: ResultImage[];
   baseObjects: ResultObject[];
   collections: PrototypeCollection[];
+  providerCounts: ProviderFacetCounts;
   queryImages: ResultImage[];
   queryObjects: ResultObject[];
 };
@@ -169,6 +178,16 @@ function itemMatchesQuery(item: ResultItem, q: string): boolean {
   }).includes(query);
 }
 
+function itemMatchesProvider(item: ResultItem, provider: PrototypeProvider): boolean {
+  if (provider === "all") {
+    return true;
+  }
+
+  return item.kind === "image"
+    ? item.image.provider === provider
+    : item.object.provider === provider;
+}
+
 function collectionMatchesFilter(collection: PrototypeCollection, filter: string): boolean {
   const query = filter.trim().toLowerCase();
   if (query === "") {
@@ -214,14 +233,11 @@ function createResultSet({
       : includeIncoming
         ? [incomingObject, ...prototypeObjects]
         : prototypeObjects;
-  const baseObjects = sourceObjects
+  const scopedObjects = sourceObjects
     .filter((object) =>
       state.scope === "library" || activeCollection === null
         ? true
         : object.collectionSlugs.includes(activeCollection.slug),
-    )
-    .filter((object) =>
-      state.provider === "all" ? true : object.provider === state.provider,
     )
     .map<ResultObject>((object) => ({
       collectionLabels: collectionLabelsForObject(object),
@@ -229,18 +245,43 @@ function createResultSet({
       kind: "object",
       object,
     }));
-  const baseImages = baseObjects.flatMap<ResultImage>((resultObject) =>
-    resultObject.object.images
-      .filter((image) =>
-        state.provider === "all" ? true : image.provider === state.provider,
-      )
-      .map((image) => ({
-        collectionLabels: resultObject.collectionLabels,
-        id: imageKey(image),
-        image,
-        kind: "image",
-        object: resultObject.object,
-      })),
+  const scopedImages = scopedObjects.flatMap<ResultImage>((resultObject) =>
+    resultObject.object.images.map((image) => ({
+      collectionLabels: resultObject.collectionLabels,
+      id: imageKey(image),
+      image,
+      kind: "image",
+      object: resultObject.object,
+    })),
+  );
+  const providerCounts = providers.reduce<ProviderFacetCounts>(
+    (counts, provider) => {
+      const providerObjects = scopedObjects
+        .filter((item) => itemMatchesProvider(item, provider.value))
+        .filter((item) => itemMatchesQuery(item, state.q));
+      const providerImages = scopedImages
+        .filter((item) => itemMatchesProvider(item, provider.value))
+        .filter((item) => itemMatchesQuery(item, state.q));
+
+      return {
+        ...counts,
+        [provider.value]: {
+          images: providerImages.length,
+          objects: providerObjects.length,
+        },
+      };
+    },
+    {
+      all: { images: 0, objects: 0 },
+      met: { images: 0, objects: 0 },
+      vam: { images: 0, objects: 0 },
+    },
+  );
+  const baseObjects = scopedObjects.filter((item) =>
+    itemMatchesProvider(item, state.provider),
+  );
+  const baseImages = scopedImages.filter((item) =>
+    itemMatchesProvider(item, state.provider),
   );
   const queryObjects = baseObjects.filter((item) => itemMatchesQuery(item, state.q));
   const queryImages = baseImages.filter((item) => itemMatchesQuery(item, state.q));
@@ -251,6 +292,7 @@ function createResultSet({
     baseImages,
     baseObjects,
     collections,
+    providerCounts,
     queryImages,
     queryObjects,
   };
@@ -547,15 +589,26 @@ function SearchControls({
         </div>
 
         <div className="flex flex-wrap gap-2">
-          {providers.map((provider) => (
-            <AnchorButton
-              active={state.provider === provider.value}
-              href={hrefFor(state, { detail: "", provider: provider.value })}
-              key={provider.value}
-            >
-              {provider.label}
-            </AnchorButton>
-          ))}
+          {providers.map((provider) => {
+            const providerCount =
+              state.view === "objects"
+                ? resultSet.providerCounts[provider.value].objects
+                : resultSet.providerCounts[provider.value].images;
+
+            return (
+              <AnchorButton
+                active={state.provider === provider.value}
+                href={hrefFor(state, { detail: "", provider: provider.value })}
+                key={provider.value}
+              >
+                {provider.label}
+                <ControlCount
+                  active={state.provider === provider.value}
+                  value={providerCount}
+                />
+              </AnchorButton>
+            );
+          })}
         </div>
       </div>
     </div>
