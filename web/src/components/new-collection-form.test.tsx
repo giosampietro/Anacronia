@@ -26,7 +26,8 @@ describe("NewCollectionForm", () => {
     expect(html).toContain("Add search terms");
     expect(html).toContain("Search image source");
     expect(html).toContain("Images to find");
-    expect(html).toContain("100 images");
+    expect(html).toContain("10 images");
+    expect(html).toMatch(/value="10" selected="">10\s*images/);
     expect(html).toContain("Start search");
     expect(html).not.toContain("terms detected");
     expect(html).not.toContain("Batch target");

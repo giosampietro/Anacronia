@@ -155,7 +155,7 @@ def test_api_starts_locked_collection_with_initial_met_provider_source(tmp_path)
             "pause_reason": "",
             "candidate_offset": 0,
             "candidate_limit": 0,
-            "batch_target": 100,
+            "batch_target": 10,
             "candidate_progress_processed": 0,
             "candidate_progress_total": 0,
             "imported_object_count": 0,
@@ -264,7 +264,7 @@ def test_api_discovers_met_candidates_without_listing_runs_as_search_sets(tmp_pa
         "term_snapshot": ["snake", "anaconda"],
         "candidate_offset": 1,
         "candidate_limit": 2,
-        "batch_target": 100,
+        "batch_target": 10,
         "candidate_progress_total": 2,
         "status": "discovered",
         "candidates": [
@@ -327,7 +327,7 @@ def test_api_starts_met_collect_job_from_search_set(tmp_path):
         "run_id": 1,
         "collect_job_id": 1,
         "status": "running",
-        "batch_target": 100,
+        "batch_target": 10,
     }
     dashboard = client.get("/dashboard").json()
     assert dashboard["worker_status"] == {
@@ -746,7 +746,7 @@ def test_api_returns_operational_dashboard(tmp_path):
         "pause_reason": "",
         "candidate_offset": 1,
         "candidate_limit": 2,
-        "batch_target": 100,
+        "batch_target": 10,
         "candidate_progress_processed": 0,
         "candidate_progress_total": 2,
         "imported_object_count": 1,

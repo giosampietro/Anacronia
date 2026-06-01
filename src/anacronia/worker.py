@@ -5,7 +5,7 @@ import sqlite3
 import time
 from typing import Callable
 
-from anacronia.collection_runs import ensure_collection_run_schema
+from anacronia.collection_runs import DEFAULT_BATCH_TARGET, ensure_collection_run_schema
 from anacronia.met_ingest import (
     DEFAULT_MAX_IMAGES_PER_OBJECT,
     MetIngestSummary,
@@ -87,7 +87,7 @@ def start_collect_job(
     candidate_limit: int,
     candidate_progress_total: int,
     available_disk_bytes: int,
-    batch_target: int = 100,
+    batch_target: int = DEFAULT_BATCH_TARGET,
     max_images_per_object: int = DEFAULT_MAX_IMAGES_PER_OBJECT,
     required_disk_bytes: int = DEFAULT_REQUIRED_DISK_BYTES,
 ) -> CollectJob:
@@ -730,7 +730,7 @@ def ensure_worker_schema(connection: sqlite3.Connection) -> None:
           candidate_offset INTEGER NOT NULL,
           candidate_limit INTEGER NOT NULL,
           candidate_progress_total INTEGER NOT NULL,
-          batch_target INTEGER NOT NULL DEFAULT 100,
+          batch_target INTEGER NOT NULL DEFAULT 10,
           last_processed_run_position INTEGER,
           provider_failure_count INTEGER NOT NULL,
           backoff_seconds INTEGER NOT NULL,
@@ -756,7 +756,7 @@ def ensure_worker_schema(connection: sqlite3.Connection) -> None:
         connection.execute(
             """
             ALTER TABLE collect_jobs
-            ADD COLUMN batch_target INTEGER NOT NULL DEFAULT 100
+            ADD COLUMN batch_target INTEGER NOT NULL DEFAULT 10
             """
         )
 

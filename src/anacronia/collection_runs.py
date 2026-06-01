@@ -12,7 +12,7 @@ from anacronia.search_sets import (
 
 
 MET_PROVIDER = "met"
-DEFAULT_BATCH_TARGET = 100
+DEFAULT_BATCH_TARGET = 10
 
 
 class MetCandidateClient(Protocol):
@@ -228,7 +228,7 @@ def ensure_collection_run_schema(connection: sqlite3.Connection) -> None:
           term_snapshot_json TEXT NOT NULL,
           candidate_offset INTEGER NOT NULL,
           candidate_limit INTEGER NOT NULL,
-          batch_target INTEGER NOT NULL DEFAULT 100,
+          batch_target INTEGER NOT NULL DEFAULT 10,
           candidate_progress_total INTEGER NOT NULL,
           candidate_total INTEGER NOT NULL,
           processed_candidates INTEGER NOT NULL DEFAULT 0,
@@ -246,7 +246,7 @@ def ensure_collection_run_schema(connection: sqlite3.Connection) -> None:
         connection.execute(
             """
             ALTER TABLE collection_runs
-            ADD COLUMN batch_target INTEGER NOT NULL DEFAULT 100
+            ADD COLUMN batch_target INTEGER NOT NULL DEFAULT 10
             """
         )
     connection.execute(

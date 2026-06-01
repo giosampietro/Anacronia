@@ -11,6 +11,7 @@ import {
 describe("batch target settings", () => {
   it("normalizes Met search batch targets to the approved dropdown values", () => {
     expect(BATCH_TARGET_OPTIONS).toEqual([5, 10, 20, 30, 100, 500, 1000]);
+    expect(DEFAULT_BATCH_TARGET).toBe(10);
     expect(normalizeBatchTarget("5")).toBe(5);
     expect(normalizeBatchTarget("500")).toBe(500);
     expect(normalizeBatchTarget("")).toBe(DEFAULT_BATCH_TARGET);
