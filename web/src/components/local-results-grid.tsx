@@ -236,7 +236,7 @@ function EmptyResults({
             : hasLocalMaterial
               ? `No ${noun.toLowerCase()} matched this Provider.`
               : workspaceMode === "user-library"
-                ? "Start a Collection search to add local Image Assets to the User Library."
+                ? "Start a Collection search to add local Image Assets to My Library."
                 : "Start search to add local Museum Objects and Image Assets to this Collection."}
         </EmptyDescription>
       </EmptyHeader>

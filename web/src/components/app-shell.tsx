@@ -277,11 +277,11 @@ function AppSidebar({
             <SidebarMenuButton
               isActive={workspaceMode === "user-library"}
               render={<Link href={createUserLibraryHref(filterText)} />}
-              tooltip="User Library"
+              tooltip="My Library"
             >
               <Library />
               <span className="group-data-[collapsible=icon]:hidden">
-                User Library
+                My Library
               </span>
             </SidebarMenuButton>
             <SidebarMenuBadge>{dashboardView.libraryImageCount}</SidebarMenuBadge>

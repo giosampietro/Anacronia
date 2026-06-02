@@ -32,11 +32,7 @@ export function createWorkspaceMode(
   if (modeParam === "user-library") {
     return "user-library";
   }
-  if (activeSearchSet === null) {
-    return "new-search-set";
-  }
-
-  return "search-set";
+  return activeSearchSet === null ? "user-library" : "search-set";
 }
 
 export function filterSearchSets(
