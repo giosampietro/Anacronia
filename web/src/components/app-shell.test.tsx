@@ -138,4 +138,26 @@ describe("AppShell", () => {
     expect(html).not.toContain("mode=new-search-set");
     expect(html).not.toContain("View search");
   });
+
+  it("restores a closed sidebar as offcanvas instead of an icon rail", () => {
+    const html = renderToString(
+      <AppShell
+        activeSearchSetSlug="intaglio"
+        appVersionStamp={{ display: "v0.1.60", title: "App version v0.1.60" }}
+        collectAvailable
+        dashboardView={dashboardView}
+        defaultSidebarOpen={false}
+        filterText=""
+        rows={rows}
+        workspaceMode="search-set"
+      >
+        <div>Grid</div>
+      </AppShell>,
+    );
+
+    expect(html).toContain("data-state=\"collapsed\"");
+    expect(html).toContain("data-collapsible=\"offcanvas\"");
+    expect(html).not.toContain("data-collapsible=\"icon\"");
+    expect(html).not.toContain("data-slot=\"sidebar-rail\"");
+  });
 });

@@ -1,4 +1,5 @@
 import { revalidatePath } from "next/cache";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/app-shell";
@@ -832,6 +833,8 @@ function ProviderSourceControls({
 
 export default async function Home({ searchParams }: HomeProps) {
   const resolvedSearchParams = await searchParams;
+  const sidebarCookie = (await cookies()).get("sidebar_state")?.value;
+  const defaultSidebarOpen = sidebarCookie !== "false";
   const legacyFilterText = getFirstParam(resolvedSearchParams?.filter) ?? "";
   const collectionFilterText =
     getFirstParam(resolvedSearchParams?.collection_filter) ?? legacyFilterText;
@@ -1183,6 +1186,7 @@ export default async function Home({ searchParams }: HomeProps) {
       contentHeaderImageCount={contentHeaderImageCount}
       contentHeaderObjectCount={contentHeaderObjectCount}
       dashboardView={dashboardView}
+      defaultSidebarOpen={defaultSidebarOpen}
       filterText={collectionFilterText}
       gridViewImageHref={gridViewImageHref}
       gridViewMode={
