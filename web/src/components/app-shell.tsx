@@ -44,7 +44,6 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarProvider,
-  SidebarRail,
   SidebarSeparator,
   SidebarTrigger,
 } from "@/components/ui/sidebar";
@@ -68,6 +67,7 @@ type AppShellProps = {
   contentHeaderImageCount?: number;
   contentHeaderObjectCount?: number;
   dashboardView: OperationalDashboardView;
+  defaultSidebarOpen?: boolean;
   filterText: string;
   gridViewImageHref?: string;
   gridViewMode?: GridViewMode;
@@ -264,7 +264,7 @@ function AppSidebar({
   workspaceMode,
 }: Omit<AppShellProps, "children">) {
   return (
-    <Sidebar collapsible="icon" variant="inset">
+    <Sidebar collapsible="offcanvas" variant="inset">
       <SidebarHeader>
         <BrandHeader />
         <SidebarMenu className="gap-3">
@@ -309,7 +309,6 @@ function AppSidebar({
       <SidebarFooter>
         <RuntimeStatusFooter appVersionStamp={appVersionStamp} rows={rows} />
       </SidebarFooter>
-      <SidebarRail />
     </Sidebar>
   );
 }
@@ -322,6 +321,7 @@ export function AppShell({
   contentHeaderImageCount = 0,
   contentHeaderObjectCount = 0,
   dashboardView,
+  defaultSidebarOpen = true,
   filterText,
   gridViewImageHref,
   gridViewMode,
@@ -335,7 +335,7 @@ export function AppShell({
   } as CSSProperties;
 
   return (
-    <SidebarProvider defaultOpen style={sidebarStyle}>
+    <SidebarProvider defaultOpen={defaultSidebarOpen} style={sidebarStyle}>
       <AppSidebar
         activeSearchSetSlug={activeSearchSetSlug}
         appVersionStamp={appVersionStamp}
