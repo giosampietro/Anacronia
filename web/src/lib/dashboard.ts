@@ -101,9 +101,7 @@ export function createOperationalDashboardView(
     (total, provider) => total + provider.imported_image_count,
     0,
   );
-  const selectedSlug =
-    activeSearchSetSlug ??
-    (dashboard.search_sets.length > 0 ? dashboard.search_sets[0].slug : undefined);
+  const selectedSlug = activeSearchSetSlug;
   const searchSets = dashboard.search_sets.map((searchSet) => {
     const activeTerms = searchSet.terms.filter((term) => term.active).map((term) => term.term);
     const inactiveTerms = searchSet.terms.filter((term) => !term.active).map((term) => term.term);
@@ -154,7 +152,7 @@ export function createOperationalDashboardView(
   return {
     workerStatus: dashboard.worker_status.status,
     libraryImageCount,
-    activeSearchSet: searchSets.find((searchSet) => searchSet.isActive) ?? searchSets[0] ?? null,
+    activeSearchSet: searchSets.find((searchSet) => searchSet.isActive) ?? null,
     searchSets,
     providerFocus: dashboard.provider_focus.map((provider) => ({
       providerLabel: providerLabel(provider.provider),

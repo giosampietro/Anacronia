@@ -46,10 +46,10 @@ describe("workspace navigation helpers", () => {
     );
   });
 
-  it("selects the New Collection workspace when requested or no Collection exists", () => {
+  it("selects explicit workspaces and defaults bare loads to the User Library", () => {
     expect(createWorkspaceMode("new-search-set", snakeStudy)).toBe("new-search-set");
     expect(createWorkspaceMode("user-library", snakeStudy)).toBe("user-library");
-    expect(createWorkspaceMode(undefined, null)).toBe("new-search-set");
+    expect(createWorkspaceMode(undefined, null)).toBe("user-library");
     expect(createWorkspaceMode(undefined, snakeStudy)).toBe("search-set");
   });
 

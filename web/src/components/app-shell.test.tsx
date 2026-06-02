@@ -86,6 +86,7 @@ describe("AppShell", () => {
     ));
 
     expect(html).toContain("MY LIBRARY");
+    expect(html).toContain(">My Library<");
     expect(html).toContain("aria-label=\"Primary grid view controls\"");
     expect(html).toContain("data-slot=\"toggle-group\"");
     expect(html).toContain("aria-label=\"Grid view\"");

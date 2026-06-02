@@ -117,8 +117,8 @@ export function UserLibraryWorkspace({
         resolvedImageAssetId={resolvedImageAssetId}
         resolvedObject={resolvedObject}
         resultCounts={resultCounts}
-        scopeDisplayName="User Library"
-        searchAriaLabel="Search local User Library results"
+        scopeDisplayName="My Library"
+        searchAriaLabel="Search local My Library results"
         viewMode={viewMode}
         workspaceMode="user-library"
       />

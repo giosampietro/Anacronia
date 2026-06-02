@@ -4,46 +4,49 @@ import { createOperationalDashboardView } from "./dashboard";
 
 describe("createOperationalDashboardView", () => {
   it("organizes Collections with Provider Sources, progress, and continuation", () => {
-    const view = createOperationalDashboardView({
-      worker_status: {
-        service: "worker",
-        status: "paused",
-        active_collect_job_id: 4,
+    const view = createOperationalDashboardView(
+      {
+        worker_status: {
+          service: "worker",
+          status: "paused",
+          active_collect_job_id: 4,
+        },
+        search_sets: [
+          {
+            display_name: "sNaKe STUDIES",
+            slug: "snake-studies",
+            terms: [
+              { term: "snake", active: true },
+              { term: "cobra", active: false },
+            ],
+            provider_collections: [
+              {
+                provider: "met",
+                latest_run_id: 7,
+                collect_status: "canceled",
+                pause_reason: "",
+                candidate_offset: 10,
+                candidate_limit: 20,
+                batch_target: 30,
+                candidate_progress_processed: 8,
+                candidate_progress_total: 20,
+                imported_object_count: 3,
+                imported_image_count: 5,
+                continue_candidate_offset: 18,
+              },
+            ],
+          },
+        ],
+        provider_focus: [
+          {
+            provider: "met",
+            search_set_count: 1,
+            imported_image_count: 5,
+          },
+        ],
       },
-      search_sets: [
-        {
-          display_name: "sNaKe STUDIES",
-          slug: "snake-studies",
-          terms: [
-            { term: "snake", active: true },
-            { term: "cobra", active: false },
-          ],
-          provider_collections: [
-            {
-              provider: "met",
-              latest_run_id: 7,
-              collect_status: "canceled",
-              pause_reason: "",
-              candidate_offset: 10,
-              candidate_limit: 20,
-              batch_target: 30,
-              candidate_progress_processed: 8,
-              candidate_progress_total: 20,
-              imported_object_count: 3,
-              imported_image_count: 5,
-              continue_candidate_offset: 18,
-            },
-          ],
-        },
-      ],
-      provider_focus: [
-        {
-          provider: "met",
-          search_set_count: 1,
-          imported_image_count: 5,
-        },
-      ],
-    });
+      "snake-studies",
+    );
 
     expect(view).toEqual({
       workerStatus: "paused",
@@ -171,6 +174,37 @@ describe("createOperationalDashboardView", () => {
     expect(view.searchSets.map((searchSet) => [searchSet.slug, searchSet.isActive])).toEqual([
       ["snake-study", false],
       ["masks", true],
+    ]);
+  });
+
+  it("does not auto-activate the first Collection when none is requested", () => {
+    const view = createOperationalDashboardView({
+      worker_status: {
+        service: "worker",
+        status: "idle",
+        active_collect_job_id: null,
+      },
+      search_sets: [
+        {
+          display_name: "Snake Study",
+          slug: "snake-study",
+          terms: [{ term: "snake", active: true }],
+          provider_collections: [],
+        },
+        {
+          display_name: "Masks",
+          slug: "masks",
+          terms: [{ term: "mask", active: true }],
+          provider_collections: [],
+        },
+      ],
+      provider_focus: [],
+    });
+
+    expect(view.activeSearchSet).toBeNull();
+    expect(view.searchSets.map((searchSet) => [searchSet.slug, searchSet.isActive])).toEqual([
+      ["snake-study", false],
+      ["masks", false],
     ]);
   });
 });

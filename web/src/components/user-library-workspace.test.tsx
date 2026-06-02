@@ -103,7 +103,7 @@ describe("UserLibraryWorkspace", () => {
       />,
     );
 
-    expect(html).toContain("aria-label=\"Search local User Library results\"");
+    expect(html).toContain("aria-label=\"Search local My Library results\"");
     expect(html).toContain("name=\"q\"");
     expect(html).toContain("placeholder=\"\"");
     expect(html).toContain("data-slot=\"toggle-group\"");
