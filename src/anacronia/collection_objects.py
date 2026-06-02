@@ -1033,6 +1033,148 @@ def get_collection_object_detail(
     )
 
 
+def get_library_object_detail(
+    *,
+    database_path: Path,
+    provider: str,
+    object_id: int,
+) -> CollectionObjectDetail | None:
+    with sqlite3.connect(database_path) as connection:
+        ensure_collection_run_schema(connection)
+        ensure_met_ingest_schema(connection)
+        object_row = connection.execute(
+            """
+            SELECT DISTINCT
+              museum_objects.provider,
+              museum_objects.object_id,
+              museum_objects.title,
+              museum_objects.object_name,
+              museum_objects.artist_display_name,
+              museum_objects.object_url,
+              museum_objects.is_public_domain,
+              museum_objects.rights_and_reproduction,
+              museum_objects.metadata_date,
+              museum_objects.raw_record_path
+            FROM museum_objects
+            JOIN image_assets
+              ON image_assets.provider = museum_objects.provider
+              AND image_assets.object_id = museum_objects.object_id
+            WHERE
+              museum_objects.provider = ?
+              AND museum_objects.object_id = ?
+              AND image_assets.imported = 1
+            """,
+            (provider, object_id),
+        ).fetchone()
+        if object_row is None:
+            return None
+        raw_record = load_raw_record(str(object_row[9]))
+
+        image_rows = connection.execute(
+            """
+            SELECT DISTINCT
+              image_assets.id,
+              image_assets.source_image_url,
+              image_assets.image_role,
+              image_assets.image_index,
+              image_assets.original_width,
+              image_assets.original_height
+            FROM image_assets
+            WHERE
+              image_assets.provider = ?
+              AND image_assets.object_id = ?
+              AND image_assets.imported = 1
+            ORDER BY
+              CASE WHEN image_assets.image_role = 'primary' THEN 0 ELSE 1 END,
+              COALESCE(image_assets.image_index, 0),
+              image_assets.id
+            """,
+            (provider, object_id),
+        ).fetchall()
+
+        match_rows = connection.execute(
+            """
+            SELECT DISTINCT
+              object_matches.search_term,
+              object_matches.verified,
+              object_matches.matched_fields_json
+            FROM object_matches
+            WHERE
+              object_matches.provider = ?
+              AND object_matches.object_id = ?
+            ORDER BY object_matches.search_term
+            """,
+            (provider, object_id),
+        ).fetchall()
+
+        skipped_rows = connection.execute(
+            """
+            SELECT source_image_url, image_role, image_index, reason
+            FROM skipped_image_references
+            WHERE provider = ? AND object_id = ?
+            ORDER BY
+              CASE WHEN image_role = 'primary' THEN 0 ELSE 1 END,
+              COALESCE(image_index, 0),
+              source_image_url,
+              reason
+            """,
+            (provider, object_id),
+        ).fetchall()
+
+    return CollectionObjectDetail(
+        object=CollectionObjectMetadata(
+            provider=object_row[0],
+            object_id=int(object_row[1]),
+            title=object_row[2],
+            object_name=object_row[3],
+            artist_display_name=object_row[4],
+            object_url=object_row[5],
+            artist_display_bio=raw_string(raw_record, "artistDisplayBio"),
+            artist_nationality=raw_string(raw_record, "artistNationality"),
+            department=raw_string(raw_record, "department"),
+            object_date=raw_string(raw_record, "objectDate"),
+            medium=raw_string(raw_record, "medium"),
+            dimensions=raw_string(raw_record, "dimensions"),
+            classification=raw_string(raw_record, "classification"),
+            credit_line=raw_string(raw_record, "creditLine"),
+            accession_number=raw_string(raw_record, "accessionNumber"),
+            repository=raw_string(raw_record, "repository"),
+            tags=raw_tags(raw_record),
+            is_public_domain=bool(object_row[6]),
+            rights_and_reproduction=object_row[7],
+            metadata_date=object_row[8],
+        ),
+        images=[
+            CollectionObjectImage(
+                image_asset_id=int(row[0]),
+                source_image_url=row[1],
+                image_role=row[2],
+                image_index=row[3],
+                original_width=int(row[4]),
+                original_height=int(row[5]),
+            )
+            for row in image_rows
+        ],
+        matches=[
+            CollectionObjectMatch(
+                search_term=row[0],
+                verified=bool(row[1]),
+                matched_fields=json.loads(row[2]),
+            )
+            for row in match_rows
+        ],
+        skipped_image_references=[
+            CollectionObjectSkippedImageReference(
+                source_image_url=row[0],
+                image_role=row[1],
+                image_index=row[2],
+                reason=row[3],
+            )
+            for row in skipped_rows
+        ],
+    )
+
+
 def get_image_asset_derivative_path(
     *,
     database_path: Path,

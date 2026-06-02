@@ -6,7 +6,6 @@ import { DashboardAutoRefresh } from "@/components/dashboard-auto-refresh";
 import { BatchTargetControl } from "@/components/batch-target-control";
 import { CollectionObjectDetailOverlay } from "@/components/collection-object-detail-overlay";
 import { CollectionResultsGrid } from "@/components/collection-results-grid";
-import { ImageAssetDetailOverlay } from "@/components/image-asset-detail-overlay";
 import {
   NewCollectionForm,
   type NewCollectionServerError,
@@ -335,6 +334,27 @@ async function getCollectionObjectDetail(
   try {
     const response = await fetch(
       `http://127.0.0.1:${apiPort}/search-sets/${slug}/objects/${provider}/${objectId}`,
+      { cache: "no-store" },
+    );
+
+    if (!response.ok) {
+      return null;
+    }
+
+    return (await response.json()) as CollectionObjectDetail;
+  } catch {
+    return null;
+  }
+}
+
+async function getLibraryObjectDetail(
+  apiPort: number,
+  provider: string,
+  objectId: number,
+): Promise<CollectionObjectDetail | null> {
+  try {
+    const response = await fetch(
+      `http://127.0.0.1:${apiPort}/library/objects/${provider}/${objectId}`,
       { cache: "no-store" },
     );
 
@@ -913,35 +933,41 @@ export default async function Home({ searchParams }: HomeProps) {
     workspaceMode === "search-set"
       ? selectedCollectionImageAsset
       : selectedLibraryImageAsset;
+  const selectedImageObjectRoute =
+    selectedDetailKind === "image" && selectedActiveImageAsset !== null
+      ? {
+          objectId: selectedActiveImageAsset.object_id,
+          provider: selectedActiveImageAsset.provider,
+        }
+      : null;
+  const selectedDetailObjectRoute =
+    selectedDetailKind === "object" ? selectedObjectRoute : selectedImageObjectRoute;
   const selectedLibraryObject =
-    workspaceMode === "user-library" && selectedObjectRoute !== null
+    workspaceMode === "user-library" && selectedDetailObjectRoute !== null
       ? libraryObjects.find(
           (libraryObject) =>
-            libraryObject.provider === selectedObjectRoute.provider &&
-            libraryObject.object_id === selectedObjectRoute.objectId,
+            libraryObject.provider === selectedDetailObjectRoute.provider &&
+            libraryObject.object_id === selectedDetailObjectRoute.objectId,
         ) ?? null
       : null;
-  const selectedObjectDetailSearchSetSlug: string | null =
-    workspaceMode === "search-set"
-      ? activeSearchSet?.slug ?? null
-      : workspaceMode === "user-library"
-        ? activeSearchSetSlug !== undefined &&
-          activeSearchSet?.slug === activeSearchSetSlug
-          ? activeSearchSet.slug
-          : selectedLibraryObject?.collections[0]?.slug ?? null
-        : null;
   const shouldLoadSelectedObjectDetail =
-    selectedDetailKind === "object" &&
-    selectedObjectDetailSearchSetSlug !== null &&
-    selectedObjectRoute !== null;
+    selectedDetailObjectRoute !== null &&
+    ((workspaceMode === "search-set" && activeSearchSet !== null) ||
+      workspaceMode === "user-library");
   const selectedObjectDetail =
     shouldLoadSelectedObjectDetail
-      ? await getCollectionObjectDetail(
-          apiPort,
-          selectedObjectDetailSearchSetSlug,
-          selectedObjectRoute.provider,
-          selectedObjectRoute.objectId,
-        )
+      ? workspaceMode === "search-set" && activeSearchSet !== null
+        ? await getCollectionObjectDetail(
+            apiPort,
+            activeSearchSet.slug,
+            selectedDetailObjectRoute.provider,
+            selectedDetailObjectRoute.objectId,
+          )
+        : await getLibraryObjectDetail(
+            apiPort,
+            selectedDetailObjectRoute.provider,
+            selectedDetailObjectRoute.objectId,
+          )
       : null;
   const selectedImageDetailLoadFailed =
     selectedDetailKind === "image" &&
@@ -955,12 +981,12 @@ export default async function Home({ searchParams }: HomeProps) {
           viewMode: gridViewMode,
           workspaceMode: "user-library",
         })
-      : selectedObjectDetailSearchSetSlug !== null
+      : activeSearchSet !== null
         ? createGridStateHref({
             collectionFilterText,
             localQueryText,
             provider: providerFilter,
-            searchSetSlug: selectedObjectDetailSearchSetSlug,
+            searchSetSlug: activeSearchSet.slug,
             viewMode: gridViewMode,
             workspaceMode: "search-set",
           })
@@ -984,16 +1010,16 @@ export default async function Home({ searchParams }: HomeProps) {
           })
         : "/";
   const selectedObjectReturnFocusId =
-    selectedObjectRoute === null
+    selectedDetailObjectRoute === null
       ? ""
       : workspaceMode === "user-library"
         ? createLibraryObjectTileId(
-            selectedObjectRoute.provider,
-            selectedObjectRoute.objectId,
+            selectedDetailObjectRoute.provider,
+            selectedDetailObjectRoute.objectId,
           )
         : createCollectionObjectTileId(
-            selectedObjectRoute.provider,
-            selectedObjectRoute.objectId,
+            selectedDetailObjectRoute.provider,
+            selectedDetailObjectRoute.objectId,
           );
   const selectedImageReturnFocusId =
     Number.isFinite(selectedImageAssetId)
@@ -1002,8 +1028,8 @@ export default async function Home({ searchParams }: HomeProps) {
         : createCollectionImageAssetTileId(selectedImageAssetId)
       : "";
   const selectedObjectLabel =
-    selectedObjectRoute !== null
-      ? `${objectProviderDisplayLabel(selectedObjectRoute.provider)} object ${selectedObjectRoute.objectId}`
+    selectedDetailObjectRoute !== null
+      ? `${objectProviderDisplayLabel(selectedDetailObjectRoute.provider)} object ${selectedDetailObjectRoute.objectId}`
       : "Selected object";
   const selectedImageLabel =
     Number.isFinite(selectedImageAssetId)
@@ -1017,15 +1043,15 @@ export default async function Home({ searchParams }: HomeProps) {
     selectedActiveImageAsset !== null || selectedImageDetailLoadFailed;
   const selectedObjectNavigationHrefs =
     workspaceMode === "search-set" &&
-    selectedObjectDetailSearchSetSlug !== null &&
-    selectedObjectRoute !== null
+    activeSearchSet !== null &&
+    selectedDetailObjectRoute !== null
       ? createAdjacentObjectHrefs({
-          currentObjectId: selectedObjectRoute.objectId,
-          currentProvider: selectedObjectRoute.provider,
+          currentObjectId: selectedDetailObjectRoute.objectId,
+          currentProvider: selectedDetailObjectRoute.provider,
           items: collectionObjects,
           createHref: (collectionObject) =>
             createCollectionObjectHref(
-              selectedObjectDetailSearchSetSlug,
+              activeSearchSet.slug,
               collectionObject,
               collectionFilterText,
               localQueryText,
@@ -1034,10 +1060,10 @@ export default async function Home({ searchParams }: HomeProps) {
             ),
         })
       : workspaceMode === "user-library" &&
-          selectedObjectRoute !== null
+          selectedDetailObjectRoute !== null
         ? createAdjacentObjectHrefs({
-            currentObjectId: selectedObjectRoute.objectId,
-            currentProvider: selectedObjectRoute.provider,
+            currentObjectId: selectedDetailObjectRoute.objectId,
+            currentProvider: selectedDetailObjectRoute.provider,
             items: libraryObjects,
             createHref: (libraryObject) =>
               createLibraryObjectHref(
@@ -1070,32 +1096,40 @@ export default async function Home({ searchParams }: HomeProps) {
             imageAsset.image_asset_id === selectedActiveImageAsset.image_asset_id,
         })
       : { nextObjectHref: null, previousObjectHref: null };
-  const selectedImageObjectHref =
-    selectedActiveImageAsset !== null
-      ? workspaceMode === "search-set" && activeSearchSet !== null
-        ? createCollectionObjectHref(
-            activeSearchSet.slug,
-            selectedActiveImageAsset,
-            collectionFilterText,
-            localQueryText,
-            providerFilter,
-            gridViewMode,
-          )
-        : createLibraryObjectHref(
-            selectedActiveImageAsset,
-            localQueryText,
-            providerFilter,
-            gridViewMode,
-          )
-      : "/";
   const selectedObjectCollectionLabels =
     workspaceMode === "user-library"
-      ? selectedLibraryObject?.collections.map(
-          (collection) => collection.display_name,
-        ) ?? []
+      ? selectedDetailKind === "image"
+        ? selectedActiveImageAsset?.collections.map(
+            (collection) => collection.display_name,
+          ) ?? []
+        : selectedLibraryObject?.collections.map(
+            (collection) => collection.display_name,
+          ) ?? []
       : activeSearchSet
         ? [activeSearchSet.displayName]
         : [];
+  const selectedDetailCloseHref =
+    selectedDetailKind === "image" ? selectedImageCloseHref : selectedObjectCloseHref;
+  const selectedDetailReturnFocusId =
+    selectedDetailKind === "image"
+      ? selectedImageReturnFocusId
+      : selectedObjectReturnFocusId;
+  const selectedDetailNavigationHrefs =
+    selectedDetailKind === "image"
+      ? selectedImageNavigationHrefs
+      : selectedObjectNavigationHrefs;
+  const selectedDetailLoadFailed =
+    selectedObjectDetailLoadFailed || selectedImageDetailLoadFailed;
+  const selectedDetailLabel =
+    selectedDetailKind === "image" ? selectedImageLabel : selectedObjectLabel;
+  const selectedDetailInitialImageAssetId =
+    selectedDetailKind === "image" && Number.isFinite(selectedImageAssetId)
+      ? selectedImageAssetId
+      : null;
+  const selectedObjectDetailOverlayKey =
+    selectedObjectDetail !== null
+      ? `${selectedObjectDetail.object.provider}-${selectedObjectDetail.object.object_id}-${selectedDetailKind}-${selectedDetailInitialImageAssetId ?? "object"}`
+      : "";
   const contentHeaderObjectCount =
     workspaceMode === "user-library"
       ? libraryLocalResultSet.counts.objects
@@ -1267,36 +1301,20 @@ export default async function Home({ searchParams }: HomeProps) {
         {selectedObjectDetail ? (
           <CollectionObjectDetailOverlay
             apiBaseUrl={apiBaseUrl}
-            closeHref={selectedObjectCloseHref}
+            closeHref={selectedDetailCloseHref}
             collectionLabels={selectedObjectCollectionLabels}
             detail={selectedObjectDetail}
-            key={`${selectedObjectDetail.object.provider}-${selectedObjectDetail.object.object_id}`}
-            nextObjectHref={selectedObjectNavigationHrefs.nextObjectHref}
-            previousObjectHref={selectedObjectNavigationHrefs.previousObjectHref}
-            returnFocusId={selectedObjectReturnFocusId}
+            initialImageAssetId={selectedDetailInitialImageAssetId}
+            key={selectedObjectDetailOverlayKey}
+            nextObjectHref={selectedDetailNavigationHrefs.nextObjectHref}
+            previousObjectHref={selectedDetailNavigationHrefs.previousObjectHref}
+            returnFocusId={selectedDetailReturnFocusId}
           />
-        ) : selectedObjectDetailLoadFailed ? (
+        ) : selectedDetailLoadFailed ? (
           <ObjectDetailErrorOverlay
-            closeHref={selectedObjectCloseHref}
-            objectLabel={selectedObjectLabel}
-            returnFocusId={selectedObjectReturnFocusId}
-          />
-        ) : selectedActiveImageAsset ? (
-          <ImageAssetDetailOverlay
-            apiBaseUrl={apiBaseUrl}
-            closeHref={selectedImageCloseHref}
-            imageAsset={selectedActiveImageAsset}
-            key={selectedActiveImageAsset.image_asset_id}
-            nextImageHref={selectedImageNavigationHrefs.nextObjectHref}
-            objectHref={selectedImageObjectHref}
-            previousImageHref={selectedImageNavigationHrefs.previousObjectHref}
-            returnFocusId={selectedImageReturnFocusId}
-          />
-        ) : selectedImageDetailLoadFailed ? (
-          <ObjectDetailErrorOverlay
-            closeHref={selectedImageCloseHref}
-            objectLabel={selectedImageLabel}
-            returnFocusId={selectedImageReturnFocusId}
+            closeHref={selectedDetailCloseHref}
+            objectLabel={selectedDetailLabel}
+            returnFocusId={selectedDetailReturnFocusId}
           />
         ) : null}
       </div>

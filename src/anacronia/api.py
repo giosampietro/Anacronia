@@ -28,6 +28,7 @@ from anacronia.collection_objects import (
     get_collection_local_result_set as load_collection_local_result_set,
     get_library_local_result_set as load_library_local_result_set,
     get_collection_object_detail,
+    get_library_object_detail,
     get_image_asset_derivative_path,
     list_collection_image_assets,
     list_library_image_assets,
@@ -648,6 +649,17 @@ def create_app(
             ],
             "pagination": pagination,
         }
+
+    @app.get("/library/objects/{provider}/{object_id}")
+    def get_library_object(provider: str, object_id: int) -> dict[str, object]:
+        detail = get_library_object_detail(
+            database_path=resolved_database_path,
+            provider=provider,
+            object_id=object_id,
+        )
+        if detail is None:
+            raise HTTPException(status_code=404, detail="Library object not found.")
+        return serialize_collection_object_detail(detail)
 
     @app.get("/search-sets/{slug}/objects")
     def get_collection_objects(

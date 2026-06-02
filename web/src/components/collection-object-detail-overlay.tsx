@@ -39,6 +39,7 @@ type CollectionObjectDetailOverlayProps = {
   closeHref: string;
   collectionLabels?: string[];
   detail: CollectionObjectDetail;
+  initialImageAssetId?: number | null;
   nextObjectHref?: string | null;
   previousObjectHref?: string | null;
   returnFocusId: string;
@@ -95,6 +96,23 @@ function imageAspectRatioStyle(image: CollectionObjectImage): CSSProperties | un
   }
 
   return { aspectRatio: `${image.original_width} / ${image.original_height}` };
+}
+
+function imageIndexForAssetId(
+  images: CollectionObjectImage[],
+  imageAssetId: number | null | undefined,
+): number {
+  if (imageAssetId === null || imageAssetId === undefined) {
+    return 0;
+  }
+
+  const index = images.findIndex((image) => image.image_asset_id === imageAssetId);
+  return index === -1 ? 0 : index;
+}
+
+function imageRoleLabel(image: CollectionObjectImage): string {
+  const role = image.image_role.trim();
+  return role || "image";
 }
 
 function DataPair({ label, value }: MetadataField) {
@@ -303,6 +321,42 @@ function ObjectFacts({ detail }: { detail: CollectionObjectDetail }) {
         />
       </CardContent>
     </Card>
+  );
+}
+
+function ActiveImageCard({
+  activeImage,
+  activeImageIndex,
+}: {
+  activeImage: CollectionObjectImage | undefined;
+  activeImageIndex: number;
+}) {
+  if (!activeImage) {
+    return null;
+  }
+
+  return (
+    <DetailCard icon={<ImageIcon className="size-4" />} title="Active image">
+      <MetadataGrid
+        fields={[
+          { label: "Image Asset ID", value: activeImage.image_asset_id },
+          { label: "Image number", value: activeImageIndex + 1 },
+          { label: "Role", value: imageRoleLabel(activeImage) },
+          {
+            label: "Provider index",
+            value: activeImage.image_index === null ? "Primary" : activeImage.image_index,
+          },
+          {
+            label: "Dimensions",
+            value:
+              activeImage.original_width > 0 && activeImage.original_height > 0
+                ? `${activeImage.original_width} x ${activeImage.original_height}`
+                : "Unknown",
+          },
+          { label: "Source image URL", value: activeImage.source_image_url },
+        ]}
+      />
+    </DetailCard>
   );
 }
 
@@ -574,15 +628,17 @@ export function CollectionObjectDetailOverlay({
   closeHref,
   collectionLabels = [],
   detail,
+  initialImageAssetId = null,
   nextObjectHref = null,
   previousObjectHref = null,
   returnFocusId,
 }: CollectionObjectDetailOverlayProps) {
   const router = useRouter();
-  const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const images = detail.images;
+  const initialActiveImageIndex = imageIndexForAssetId(images, initialImageAssetId);
+  const [activeImageIndex, setActiveImageIndex] = useState(initialActiveImageIndex);
   const closeRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
-  const images = detail.images;
   const activeImage = images[Math.min(activeImageIndex, Math.max(images.length - 1, 0))];
   const hasMultipleImages = images.length > 1;
   const displayRightsStatement = rightsStatement(detail.object);
@@ -793,6 +849,10 @@ export function CollectionObjectDetailOverlay({
 
         <div className="grid gap-5 p-4 md:p-5">
           <ObjectFacts detail={detail} />
+          <ActiveImageCard
+            activeImage={activeImage}
+            activeImageIndex={activeImageIndex}
+          />
 
           <div className="grid gap-4 lg:grid-cols-3">
             <ProviderRecordCard detail={detail} />

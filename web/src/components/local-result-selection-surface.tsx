@@ -12,7 +12,6 @@ import {
   Trash2,
 } from "lucide-react";
 
-import { ImageAssetDetailPendingLink } from "@/components/image-asset-detail-overlay";
 import { ImageGridThumbnail } from "@/components/image-grid-thumbnail";
 import { ObjectDetailPendingLink } from "@/components/object-detail-pending-link";
 import { AspectRatio } from "@/components/ui/aspect-ratio";
@@ -800,7 +799,7 @@ export function LocalResultSelectionSurface({
                 {tileContents}
               </a>
             ) : (
-              <ImageAssetDetailPendingLink
+              <ObjectDetailPendingLink
                 ariaLabel={`Open ${imageAssetProviderLabel} ${imageAssetLabel}`}
                 className={cn(IMAGE_GRID_TILE_CLASS_NAME, "self-start")}
                 closeHref={closeImageHref}
@@ -809,16 +808,17 @@ export function LocalResultSelectionSurface({
                 key={`${imageAsset.image_asset_id}-${tileStateKey}`}
                 preview={{
                   alt: imageAssetAlt,
+                  collectionLabel: imageTopBadgeLabel?.(imageAsset),
                   height: imageAsset.original_height,
-                  parentTitle: title,
+                  imageCount: imageAsset.image_count,
                   providerLabel: imageAssetProviderLabel,
                   src: thumbSrc,
-                  title: "Image Asset",
+                  title,
                   width: imageAsset.original_width,
                 }}
               >
                 {tileContents}
-              </ImageAssetDetailPendingLink>
+              </ObjectDetailPendingLink>
             );
           })}
         </div>

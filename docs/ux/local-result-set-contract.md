@@ -245,8 +245,7 @@ Keep these interaction details:
 Reuse these production components/classes:
 
 - `ImageGridThumbnail`
-- `ObjectDetailPendingLink`
-- `ImageAssetDetailPendingLink`
+- `ObjectDetailPendingLink` for both Object and Image projection tiles
 - `IMAGE_GRID_CLASS_NAME`
 - `IMAGE_GRID_TILE_CLASS_NAME`
 - `IMAGE_GRID_CAROUSEL_INDICATOR_CLASS_NAME`

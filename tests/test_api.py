@@ -1132,6 +1132,72 @@ def test_api_returns_user_library_objects_once_with_collection_membership(tmp_pa
     assert [museum_object["object_id"] for museum_object in filtered_response.json()["objects"]] == [40]
 
 
+def test_api_returns_user_library_object_detail_without_collection_slug(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+
+    class SharedLibraryCandidateClient:
+        def search_object_ids(self, term: str) -> list[int]:
+            return {
+                "snake": [20, 40],
+                "bowl": [40],
+            }[term]
+
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            met_candidate_client=SharedLibraryCandidateClient(),
+            met_record_client=FakeMetGridRecordClient(),
+            download_image_bytes=lambda _url: ppm_image_bytes(width=1600, height=800),
+        )
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Snake Study", "terms_text": "snake"},
+    )
+    snake_run_response = client.post(
+        "/search-sets/snake-study/provider-collections/met/runs",
+        json={"candidate_offset": 0, "candidate_limit": 2},
+    )
+    client.post(f"/provider-collections/met/runs/{snake_run_response.json()['run_id']}/ingest")
+    client.post(
+        "/search-sets",
+        json={"display_name": "Bowl Study", "terms_text": "bowl"},
+    )
+    bowl_run_response = client.post(
+        "/search-sets/bowl-study/provider-collections/met/runs",
+        json={"candidate_offset": 0, "candidate_limit": 1},
+    )
+    client.post(f"/provider-collections/met/runs/{bowl_run_response.json()['run_id']}/ingest")
+
+    response = client.get("/library/objects/met/40")
+
+    assert response.status_code == 200
+    detail = response.json()
+    assert detail["object"]["object_id"] == 40
+    assert detail["object"]["title"] == "Coiled Snake Bowl"
+    assert [image["image_role"] for image in detail["images"]] == [
+        "primary",
+        "additional",
+        "additional",
+    ]
+    assert [match["search_term"] for match in detail["matches"]] == ["bowl", "snake"]
+    assert detail["matches"][0]["matched_fields"] == ["objectName", "title"]
+    assert detail["matches"][1]["matched_fields"] == ["tags", "title"]
+    assert detail["skipped_image_references"] == [
+        {
+            "source_image_url": "https://images.metmuseum.org/40-skipped.jpg",
+            "image_role": "additional",
+            "image_index": 3,
+            "reason": "beyond_max_images_per_object",
+        }
+    ]
+
+    missing_response = client.get("/library/objects/met/999999")
+
+    assert missing_response.status_code == 404
+
+
 def test_api_returns_user_library_local_result_set_with_counts_and_facets(tmp_path):
     storage = initialize_storage(project_root=tmp_path)
 

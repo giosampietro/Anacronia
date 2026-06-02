@@ -16,6 +16,7 @@ describe("CollectionObjectDetailOverlay", () => {
         apiBaseUrl="http://127.0.0.1:18670"
         closeHref="/?search_set=snake"
         collectionLabels={["sNaKe STUDIES"]}
+        initialImageAssetId={8}
         returnFocusId="collection-object-met-40"
         detail={{
           object: {
@@ -83,11 +84,19 @@ describe("CollectionObjectDetailOverlay", () => {
     const normalizedHtml = html.replace(/<!-- -->/g, "");
 
     expect(normalizedHtml).toContain("Coiled Snake Bowl");
-    expect(normalizedHtml).toContain("http://127.0.0.1:18670/image-assets/7/thumb");
-    expect(normalizedHtml).toContain("http://127.0.0.1:18670/image-assets/7/standard");
-    expect(normalizedHtml).toContain("1 / 2");
+    expect(normalizedHtml).toContain("http://127.0.0.1:18670/image-assets/8/thumb");
+    expect(normalizedHtml).toContain("http://127.0.0.1:18670/image-assets/8/standard");
+    expect(normalizedHtml).toContain("2 / 2");
     expect(normalizedHtml).toContain("Show next image");
     expect(normalizedHtml).toContain("Object facts");
+    expect(normalizedHtml).toContain("Active image");
+    expect(normalizedHtml).toContain("Image Asset ID");
+    expect(normalizedHtml).toContain(">8<");
+    expect(normalizedHtml).toContain("Image number");
+    expect(normalizedHtml).toContain("2");
+    expect(normalizedHtml).toContain("Role");
+    expect(normalizedHtml).toContain("additional");
+    expect(normalizedHtml).toContain("Provider index");
     expect(normalizedHtml).toContain("Provider record");
     expect(normalizedHtml).toContain("Collections");
     expect(normalizedHtml).toContain("Snake Studies");
