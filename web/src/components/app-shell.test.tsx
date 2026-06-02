@@ -65,7 +65,7 @@ describe("AppShell", () => {
     expect(html).not.toContain("38 images");
   });
 
-  it("labels the library header as My Library with the same count pattern", () => {
+  it("keeps the library header focused while the Local Result Set owns grid controls", () => {
     const html = normalizeServerHtml(renderToString(
       <AppShell
         activeSearchSetSlug={null}
@@ -87,11 +87,10 @@ describe("AppShell", () => {
 
     expect(html).toContain("MY LIBRARY");
     expect(html).toContain(">My Library<");
-    expect(html).toContain("aria-label=\"Primary grid view controls\"");
-    expect(html).toContain("data-slot=\"toggle-group\"");
-    expect(html).toContain("aria-label=\"Grid view\"");
-    expect(html).toContain("4 objects");
-    expect(html).toContain("7 images");
+    expect(html).not.toContain("aria-label=\"Primary grid view controls\"");
+    expect(html).not.toContain("aria-label=\"Collection counts\"");
+    expect(html).not.toContain("4 objects");
+    expect(html).not.toContain("7 images");
   });
 
   it("renders a collapsed runtime status footer without a local runtime label", () => {

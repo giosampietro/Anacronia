@@ -11,7 +11,6 @@ import {
   Plus,
 } from "lucide-react";
 
-import { GridViewSwitch } from "@/components/grid-view-switch";
 import { ThemeSwitch } from "@/components/theme-switch";
 import { SidebarCollectionFilter } from "@/components/sidebar-collection-filter";
 import { Badge } from "@/components/ui/badge";
@@ -106,10 +105,6 @@ function workspaceLabel({
   return formatCollectionDisplayName(
     dashboardView.activeSearchSet?.displayName ?? "Collection",
   ).toUpperCase();
-}
-
-function shouldShowContentCounts(workspaceMode: WorkspaceMode): boolean {
-  return workspaceMode === "user-library";
 }
 
 function runtimeSummaryRow(rows: StatusRow[]): StatusRow | null {
@@ -318,14 +313,9 @@ export function AppShell({
   appVersionStamp,
   children,
   collectAvailable,
-  contentHeaderImageCount = 0,
-  contentHeaderObjectCount = 0,
   dashboardView,
   defaultSidebarOpen = true,
   filterText,
-  gridViewImageHref,
-  gridViewMode,
-  gridViewObjectHref,
   rows,
   workspaceMode,
 }: AppShellProps) {
@@ -346,10 +336,10 @@ export function AppShell({
         workspaceMode={workspaceMode}
       />
       <SidebarInset>
-        <header className="sticky top-0 z-20 grid min-h-12 shrink-0 grid-cols-1 items-center gap-x-3 gap-y-2 border-b bg-background/95 px-4 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/80 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
+        <header className="sticky top-0 z-20 flex min-h-12 shrink-0 items-center border-b bg-background/95 px-4 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/80">
           <div
             aria-label="Workspace"
-            className="flex min-w-0 items-center gap-3 lg:col-start-1 lg:row-start-1"
+            className="flex min-w-0 items-center gap-3"
           >
             <SidebarTrigger className="-ml-1" />
             <Separator
@@ -360,34 +350,6 @@ export function AppShell({
               {workspaceLabel({ dashboardView, workspaceMode })}
             </span>
           </div>
-          {shouldShowContentCounts(workspaceMode) ? (
-            <>
-              {gridViewMode && gridViewObjectHref && gridViewImageHref ? (
-                <div
-                  aria-label="Primary grid view controls"
-                  className="flex min-w-0 justify-center lg:col-start-2 lg:row-start-1"
-                >
-                  <GridViewSwitch
-                    className="shrink-0"
-                    imageHref={gridViewImageHref}
-                    objectHref={gridViewObjectHref}
-                    viewMode={gridViewMode}
-                  />
-                </div>
-              ) : null}
-              <div
-                aria-label="Collection counts"
-                className="flex min-w-0 flex-wrap items-center justify-end gap-2 lg:col-start-3 lg:row-start-1"
-              >
-                <Badge className="shrink-0 tabular-nums" variant="outline">
-                  {contentHeaderObjectCount} objects
-                </Badge>
-                <Badge className="shrink-0 tabular-nums" variant="outline">
-                  {contentHeaderImageCount} images
-                </Badge>
-              </div>
-            </>
-          ) : null}
         </header>
         {children}
       </SidebarInset>
