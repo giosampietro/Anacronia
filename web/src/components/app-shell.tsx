@@ -45,6 +45,7 @@ import {
   SidebarProvider,
   SidebarSeparator,
   SidebarTrigger,
+  useSidebar,
 } from "@/components/ui/sidebar";
 import type { AppVersionStamp } from "@/lib/app-version";
 import { formatCollectionDisplayName } from "@/lib/collection-display";
@@ -249,7 +250,18 @@ function NewCollectionSidebarItem({
   );
 }
 
-function AppSidebar({
+type AppSidebarContentProps = Pick<
+  AppShellProps,
+  | "activeSearchSetSlug"
+  | "appVersionStamp"
+  | "collectAvailable"
+  | "dashboardView"
+  | "filterText"
+  | "rows"
+  | "workspaceMode"
+>;
+
+function AppSidebarContent({
   activeSearchSetSlug,
   appVersionStamp,
   collectAvailable,
@@ -257,9 +269,9 @@ function AppSidebar({
   filterText,
   rows,
   workspaceMode,
-}: Omit<AppShellProps, "children">) {
+}: AppSidebarContentProps) {
   return (
-    <Sidebar collapsible="offcanvas" variant="inset">
+    <>
       <SidebarHeader>
         <BrandHeader />
         <SidebarMenu className="gap-3">
@@ -304,7 +316,58 @@ function AppSidebar({
       <SidebarFooter>
         <RuntimeStatusFooter appVersionStamp={appVersionStamp} rows={rows} />
       </SidebarFooter>
+    </>
+  );
+}
+
+function AppSidebar(props: AppSidebarContentProps) {
+  return (
+    <Sidebar collapsible="offcanvas" variant="inset">
+      <AppSidebarContent {...props} />
     </Sidebar>
+  );
+}
+
+function SidebarPreviewTrigger(props: AppSidebarContentProps) {
+  const { isMobile, state } = useSidebar();
+  const previewEnabled = !isMobile && state === "collapsed";
+
+  if (!previewEnabled) {
+    return <SidebarTrigger className="-ml-1" />;
+  }
+
+  return (
+    <Popover modal={false}>
+      <PopoverTrigger
+        closeDelay={140}
+        data-sidebar-preview-trigger="true"
+        delay={100}
+        openOnHover
+        render={
+          <SidebarTrigger
+            aria-label="Open sidebar"
+            className="-ml-1"
+            data-sidebar-preview-trigger="true"
+          />
+        }
+      />
+      <PopoverContent
+        align="start"
+        alignOffset={-10}
+        className="z-50 flex max-h-[calc(100svh-1rem)] w-(--sidebar-width) overflow-hidden rounded-2xl border border-sidebar-border bg-sidebar p-0 text-sidebar-foreground shadow-2xl ring-1 ring-sidebar-border/70 duration-150 data-closed:fade-out-0 data-open:fade-in-0 motion-reduce:duration-75"
+        finalFocus={false}
+        initialFocus={false}
+        side="right"
+        sideOffset={10}
+      >
+        <div
+          className="flex max-h-[calc(100svh-1rem)] min-h-0 w-full flex-col"
+          data-sidebar-preview="true"
+        >
+          <AppSidebarContent {...props} />
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -341,7 +404,15 @@ export function AppShell({
             aria-label="Workspace"
             className="flex min-w-0 items-center gap-3"
           >
-            <SidebarTrigger className="-ml-1" />
+            <SidebarPreviewTrigger
+              activeSearchSetSlug={activeSearchSetSlug}
+              appVersionStamp={appVersionStamp}
+              collectAvailable={collectAvailable}
+              dashboardView={dashboardView}
+              filterText={filterText}
+              rows={rows}
+              workspaceMode={workspaceMode}
+            />
             <Separator
               className="data-vertical:h-4 data-vertical:self-auto"
               orientation="vertical"

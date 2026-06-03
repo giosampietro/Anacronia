@@ -162,7 +162,10 @@ describe("AppShell", () => {
 
     expect(html).toContain("data-state=\"collapsed\"");
     expect(html).toContain("data-collapsible=\"offcanvas\"");
+    expect(html).toContain("data-sidebar-preview-trigger=\"true\"");
     expect(html).not.toContain("data-collapsible=\"icon\"");
     expect(html).not.toContain("data-slot=\"sidebar-rail\"");
+    expect(html).not.toContain("has-data-\\[variant\\=inset\\]\\:bg-sidebar");
+    expect(html).not.toContain("peer-data-\\[state\\=collapsed\\]\\:ml-2");
   });
 });
