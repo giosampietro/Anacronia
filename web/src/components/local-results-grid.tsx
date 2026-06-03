@@ -266,7 +266,10 @@ function FavoriteFilter({
       })}
       scroll={false}
     >
-      <Bookmark data-icon="inline-start" />
+      <Bookmark
+        className={favoriteOnly ? "fill-current text-white" : undefined}
+        data-icon="inline-start"
+      />
       Favorites
     </Link>
   );

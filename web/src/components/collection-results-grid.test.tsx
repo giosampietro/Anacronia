@@ -244,6 +244,34 @@ describe("CollectionResultsGrid", () => {
     expect(html).not.toContain("Unfavorite selected");
   });
 
+  it("fills the active Favorites filter bookmark in selection mode", () => {
+    const html = normalizeServerHtml(renderToString(
+      <CollectionResultsGrid
+        apiBaseUrl="http://127.0.0.1:18670"
+        closeImageHref="/?search_set=snake-study&view=images"
+        closeObjectHref="/?search_set=snake-study"
+        collectionFilterText=""
+        collectionDisplayName="Snake Study"
+        favoriteOnly
+        imageAssets={imageAssets}
+        localQueryText=""
+        objects={objects}
+        providerFacets={[{ provider: "met", objectCount: 1, imageCount: 2 }]}
+        providerFilter="all"
+        resultCounts={{ objects: 1, images: 2 }}
+        searchSetSlug="snake-study"
+        initialSelectedIds={["image:8"]}
+        initialSelectionMode
+        viewMode="images"
+      />,
+    ));
+
+    expect(html).toContain("aria-current=\"page\"");
+    expect(html).toContain("fill-current text-white");
+    expect(html).toContain("Favorites");
+    expect(html).toContain("Cancel");
+  });
+
   it("keeps object favorite bookmarks and carousel counts visible together", () => {
     const html = normalizeServerHtml(renderToString(
       <CollectionResultsGrid
