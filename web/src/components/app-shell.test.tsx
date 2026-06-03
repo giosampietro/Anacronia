@@ -1,9 +1,15 @@
 import { renderToString } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { AppShell } from "./app-shell";
 import type { OperationalDashboardView } from "@/lib/dashboard";
 import type { StatusRow } from "@/lib/status";
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({
+    push: vi.fn(),
+  }),
+}));
 
 const rows: StatusRow[] = [
   {

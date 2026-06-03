@@ -1,9 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { FolderClosed, FolderOpen, ListFilter, Search } from "lucide-react";
 
+import { CollectionRenameDialog } from "@/components/collection-rename-dialog";
 import type { DashboardSearchSetView } from "@/lib/dashboard";
 import type { WorkspaceMode } from "@/lib/workspace";
 import { createSearchSetHref, filterSearchSets } from "@/lib/workspace";
@@ -43,17 +45,119 @@ export function SidebarCollectionFilter({
   searchSets,
   workspaceMode,
 }: SidebarCollectionFilterProps) {
+  const router = useRouter();
   const [filterText, setFilterText] = useState(initialFilterText);
   const [openedSearchSetSlug, setOpenedSearchSetSlug] = useState<string | null>(
     activeSearchSetSlug,
   );
+  const [renamingSearchSet, setRenamingSearchSet] =
+    useState<DashboardSearchSetView | null>(null);
+  const pendingTitleNavigation = useRef<
+    ReturnType<typeof globalThis.setTimeout> | null
+  >(null);
+  const suppressTitleNavigation = useRef(false);
+  const suppressTitleNavigationReset = useRef<
+    ReturnType<typeof globalThis.setTimeout> | null
+  >(null);
   const filteredSearchSets = useMemo(
     () => filterSearchSets(searchSets, filterText),
     [filterText, searchSets],
   );
 
+  function clearPendingTitleNavigation() {
+    if (pendingTitleNavigation.current !== null) {
+      globalThis.clearTimeout(pendingTitleNavigation.current);
+      pendingTitleNavigation.current = null;
+    }
+  }
+
+  function clearSuppressedTitleNavigationReset() {
+    if (suppressTitleNavigationReset.current !== null) {
+      globalThis.clearTimeout(suppressTitleNavigationReset.current);
+      suppressTitleNavigationReset.current = null;
+    }
+  }
+
+  useEffect(
+    () => () => {
+      clearPendingTitleNavigation();
+      clearSuppressedTitleNavigationReset();
+    },
+    [],
+  );
+
   function openSearchSet(slug: string) {
     setOpenedSearchSetSlug(slug);
+  }
+
+  function handleTitleClick({
+    event,
+    href,
+    slug,
+  }: {
+    event: MouseEvent<HTMLSpanElement>;
+    href: string;
+    slug: string;
+  }) {
+    event.preventDefault();
+    event.stopPropagation();
+    clearPendingTitleNavigation();
+    if (suppressTitleNavigation.current) {
+      return;
+    }
+
+    pendingTitleNavigation.current = globalThis.setTimeout(() => {
+      pendingTitleNavigation.current = null;
+      if (suppressTitleNavigation.current) {
+        return;
+      }
+      openSearchSet(slug);
+      router.push(href);
+    }, 250);
+  }
+
+  function handleTitleDoubleClick({
+    event,
+    searchSet,
+  }: {
+    event: MouseEvent<HTMLSpanElement>;
+    searchSet: DashboardSearchSetView;
+  }) {
+    event.preventDefault();
+    event.stopPropagation();
+    clearPendingTitleNavigation();
+    clearSuppressedTitleNavigationReset();
+    suppressTitleNavigation.current = true;
+    suppressTitleNavigationReset.current = globalThis.setTimeout(() => {
+      suppressTitleNavigation.current = false;
+      suppressTitleNavigationReset.current = null;
+    }, 1000);
+    setRenamingSearchSet(searchSet);
+  }
+
+  async function renameSearchSet(nextName: string): Promise<string | null> {
+    if (renamingSearchSet === null) {
+      return "Collection not found.";
+    }
+
+    const response = await fetch(
+      `/api/search-sets/${encodeURIComponent(renamingSearchSet.slug)}`,
+      {
+        body: JSON.stringify({ display_name: nextName }),
+        headers: { "content-type": "application/json" },
+        method: "PATCH",
+      },
+    );
+
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => null)) as {
+        detail?: string;
+      } | null;
+      return payload?.detail ?? "Could not rename Collection.";
+    }
+
+    window.location.reload();
+    return null;
   }
 
   return (
@@ -82,6 +186,7 @@ export function SidebarCollectionFilter({
         ) : (
           filteredSearchSets.map((searchSet) => {
             const collectionName = formatCollectionDisplayName(searchSet.displayName);
+            const collectionHref = createSearchSetHref(searchSet.slug, filterText);
             const isActive =
               workspaceMode === "search-set" &&
               searchSet.slug === activeSearchSetSlug;
@@ -99,9 +204,7 @@ export function SidebarCollectionFilter({
                   )}
                   isActive={isActive}
                   onClick={() => openSearchSet(searchSet.slug)}
-                  render={
-                    <Link href={createSearchSetHref(searchSet.slug, filterText)} />
-                  }
+                  render={<Link href={collectionHref} />}
                   tooltip={collectionName}
                 >
                   {isOpen ? (
@@ -110,7 +213,20 @@ export function SidebarCollectionFilter({
                     <FolderClosed className="text-sidebar-foreground/65" />
                   )}
                   <span className="min-w-0 flex-1 truncate group-data-[collapsible=icon]:hidden">
-                    {collectionName}
+                    <span
+                      onClick={(event) =>
+                        handleTitleClick({
+                          event,
+                          href: collectionHref,
+                          slug: searchSet.slug,
+                        })
+                      }
+                      onDoubleClick={(event) =>
+                        handleTitleDoubleClick({ event, searchSet })
+                      }
+                    >
+                      {collectionName}
+                    </span>
                   </span>
                   <span
                     className="ml-auto flex shrink-0 items-center gap-1 font-mono text-[11px] font-normal tabular-nums text-sidebar-foreground/55 group-data-[collapsible=icon]:hidden"
@@ -139,6 +255,19 @@ export function SidebarCollectionFilter({
           })
         )}
       </SidebarMenu>
+
+      {renamingSearchSet === null ? null : (
+        <CollectionRenameDialog
+          collectionName={formatCollectionDisplayName(renamingSearchSet.displayName)}
+          onOpenChange={(open) => {
+            if (!open) {
+              setRenamingSearchSet(null);
+            }
+          }}
+          onRename={renameSearchSet}
+          open
+        />
+      )}
     </>
   );
 }

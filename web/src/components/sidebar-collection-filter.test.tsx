@@ -1,9 +1,15 @@
 import { renderToString } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { SidebarCollectionFilter } from "./sidebar-collection-filter";
 import { SidebarProvider } from "./ui/sidebar";
 import type { DashboardSearchSetView } from "@/lib/dashboard";
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({
+    push: vi.fn(),
+  }),
+}));
 
 const snakeStudy: DashboardSearchSetView = {
   displayName: "sNaKe STUDY",

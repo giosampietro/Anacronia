@@ -50,10 +50,12 @@ from anacronia.met_ingest import (
 )
 from anacronia.met_provider import HttpMetCandidateClient, fetch_bytes_url
 from anacronia.search_sets import (
+    DuplicateSearchSetNameError,
     SearchSet,
     create_or_continue_search_set,
     get_search_set,
     list_search_sets,
+    rename_search_set,
     slugify_search_set_name,
 )
 from anacronia.storage import initialize_storage
@@ -105,6 +107,10 @@ BatchTarget = Literal[5, 10, 20, 30, 100, 500, 1000]
 class SearchSetRequest(BaseModel):
     display_name: str
     terms_text: str
+
+
+class RenameSearchSetRequest(BaseModel):
+    display_name: str
 
 
 class DiscoverMetCandidatesRequest(BaseModel):
@@ -564,6 +570,22 @@ def create_app(
     @app.get("/search-sets")
     def get_search_sets() -> list[dict[str, object]]:
         return [serialize_search_set(search_set) for search_set in list_search_sets(database_path=resolved_database_path)]
+
+    @app.patch("/search-sets/{slug}")
+    def rename_collection(slug: str, request: RenameSearchSetRequest) -> dict[str, object]:
+        try:
+            search_set = rename_search_set(
+                database_path=resolved_database_path,
+                slug=slug,
+                display_name=request.display_name,
+            )
+        except DuplicateSearchSetNameError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        except LookupError as error:
+            raise HTTPException(status_code=404, detail="Collection not found.") from error
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        return serialize_search_set(search_set)
 
     @app.get("/dashboard")
     def get_dashboard() -> dict[str, object]:

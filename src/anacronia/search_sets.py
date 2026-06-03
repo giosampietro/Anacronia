@@ -19,6 +19,14 @@ class SearchSet:
     terms: list[SearchSetTerm]
 
 
+class DuplicateSearchSetNameError(ValueError):
+    pass
+
+
+def normalize_search_set_display_name(display_name: str) -> str:
+    return " ".join(display_name.casefold().split())
+
+
 def parse_search_terms(terms_text: str) -> list[str]:
     terms: list[str] = []
     seen_normalized_terms: set[str] = set()
@@ -125,6 +133,59 @@ def list_search_sets(*, database_path: Path) -> list[SearchSet]:
         ).fetchall()
 
     return [get_search_set(database_path=database_path, slug=row[0]) for row in rows]
+
+
+def rename_search_set(
+    *,
+    database_path: Path,
+    slug: str,
+    display_name: str,
+) -> SearchSet:
+    next_display_name = display_name.strip()
+    if not next_display_name:
+        raise ValueError("Collection title is required.")
+    next_slug = slugify_search_set_name(next_display_name)
+    normalized_next_display_name = normalize_search_set_display_name(
+        next_display_name
+    )
+
+    with sqlite3.connect(database_path) as connection:
+        ensure_search_set_schema(connection)
+        existing_rows = connection.execute(
+            """
+            SELECT slug, display_name
+            FROM search_sets
+            WHERE slug <> ?
+            """,
+            (slug,),
+        ).fetchall()
+        duplicate_row = next(
+            (
+                row
+                for row in existing_rows
+                if row[0] == next_slug
+                or normalize_search_set_display_name(row[1])
+                == normalized_next_display_name
+            ),
+            None,
+        )
+        if duplicate_row is not None:
+            raise DuplicateSearchSetNameError(
+                "A Collection with this name already exists."
+            )
+
+        cursor = connection.execute(
+            """
+            UPDATE search_sets
+            SET display_name = ?
+            WHERE slug = ?
+            """,
+            (next_display_name, slug),
+        )
+        if cursor.rowcount == 0:
+            raise LookupError(f"Collection not found: {slug}")
+
+    return get_search_set(database_path=database_path, slug=slug)
 
 
 def deactivate_search_set_term(

@@ -226,6 +226,99 @@ def test_api_lists_search_sets(tmp_path):
     ]
 
 
+def test_api_renames_collection_display_name_without_changing_slug_or_terms(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    client = TestClient(create_app(database_path=storage.database_path))
+    client.post(
+        "/search-sets",
+        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda"},
+    )
+
+    response = client.patch(
+        "/search-sets/snake-studies",
+        json={"display_name": "Intaglio Rings"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "display_name": "Intaglio Rings",
+        "slug": "snake-studies",
+        "terms": [
+            {"term": "snake", "active": True},
+            {"term": "anaconda", "active": True},
+        ],
+    }
+    assert client.get("/search-sets").json() == [
+        {
+            "display_name": "Intaglio Rings",
+            "slug": "snake-studies",
+            "terms": [
+                {"term": "snake", "active": True},
+                {"term": "anaconda", "active": True},
+            ],
+        }
+    ]
+
+
+def test_api_rejects_collection_rename_that_would_match_existing_slug(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    client = TestClient(create_app(database_path=storage.database_path))
+    client.post(
+        "/search-sets",
+        json={"display_name": "Snake Studies", "terms_text": "snake"},
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Masks", "terms_text": "mask"},
+    )
+
+    response = client.patch(
+        "/search-sets/snake-studies",
+        json={"display_name": "Masks"},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "A Collection with this name already exists."
+    assert client.get("/search-sets").json()[0]["display_name"] == "Snake Studies"
+
+
+def test_api_rejects_collection_rename_that_would_match_existing_display_name(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    client = TestClient(create_app(database_path=storage.database_path))
+    client.post(
+        "/search-sets",
+        json={"display_name": "Masks", "terms_text": "mask"},
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Snake Studies", "terms_text": "snake"},
+    )
+    client.patch(
+        "/search-sets/masks",
+        json={"display_name": "Display Only"},
+    )
+
+    response = client.patch(
+        "/search-sets/snake-studies",
+        json={"display_name": " display   only "},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "A Collection with this name already exists."
+    assert client.get("/search-sets").json() == [
+        {
+            "display_name": "Display Only",
+            "slug": "masks",
+            "terms": [{"term": "mask", "active": True}],
+        },
+        {
+            "display_name": "Snake Studies",
+            "slug": "snake-studies",
+            "terms": [{"term": "snake", "active": True}],
+        },
+    ]
+
+
 def test_api_does_not_expose_term_deactivation(tmp_path):
     storage = initialize_storage(project_root=tmp_path)
     client = TestClient(create_app(database_path=storage.database_path))
