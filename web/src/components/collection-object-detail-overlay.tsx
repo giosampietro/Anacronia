@@ -12,6 +12,8 @@ import {
   ChevronRight,
   Database,
   ExternalLink,
+  FolderMinus,
+  Heart,
   ImageIcon,
   Info,
   SearchCheck,
@@ -38,10 +40,14 @@ type CollectionObjectDetailOverlayProps = {
   apiBaseUrl: string;
   closeHref: string;
   collectionLabels?: string[];
+  curationActionsDisabled?: boolean;
+  deleteEndpoint?: string;
   detail: CollectionObjectDetail;
+  detailKind?: "image" | "object";
   initialImageAssetId?: number | null;
   nextObjectHref?: string | null;
   previousObjectHref?: string | null;
+  removeFromCollectionEndpoint?: string;
   returnFocusId: string;
 };
 
@@ -627,21 +633,38 @@ export function CollectionObjectDetailOverlay({
   apiBaseUrl,
   closeHref,
   collectionLabels = [],
+  curationActionsDisabled = false,
+  deleteEndpoint,
   detail,
+  detailKind = "object",
   initialImageAssetId = null,
   nextObjectHref = null,
   previousObjectHref = null,
+  removeFromCollectionEndpoint,
   returnFocusId,
 }: CollectionObjectDetailOverlayProps) {
   const router = useRouter();
   const images = detail.images;
   const initialActiveImageIndex = imageIndexForAssetId(images, initialImageAssetId);
   const [activeImageIndex, setActiveImageIndex] = useState(initialActiveImageIndex);
+  const [objectFavorite, setObjectFavorite] = useState(detail.object.is_favorite);
+  const [imageFavoritesById, setImageFavoritesById] = useState(
+    () =>
+      new Map(
+        images.map((image) => [image.image_asset_id, image.is_favorite] as const),
+      ),
+  );
   const closeRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const activeImage = images[Math.min(activeImageIndex, Math.max(images.length - 1, 0))];
+  const activeImageFavorite =
+    activeImage === undefined
+      ? false
+      : imageFavoritesById.get(activeImage.image_asset_id) ?? activeImage.is_favorite;
   const hasMultipleImages = images.length > 1;
   const displayRightsStatement = rightsStatement(detail.object);
+  const actionNoun = detailKind === "image" ? "image" : "object";
+  const activeFavorite = detailKind === "image" ? activeImageFavorite : objectFavorite;
 
   const closeOverlay = useCallback(() => {
     document.getElementById(returnFocusId)?.focus();
@@ -670,6 +693,92 @@ export function CollectionObjectDetailOverlay({
     },
     [router],
   );
+
+  async function runDetailCurationAction(
+    endpoint: string | undefined,
+    action: "delete" | "remove",
+  ) {
+    if (endpoint === undefined || curationActionsDisabled) {
+      return;
+    }
+    if (detailKind === "image" && activeImage === undefined) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      action === "remove"
+        ? `Remove this ${actionNoun} from this Collection?`
+        : `Delete this ${actionNoun}?`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    const selection =
+      detailKind === "image" && activeImage !== undefined
+        ? {
+            image_asset_ids: [activeImage.image_asset_id],
+            objects: [],
+          }
+        : {
+            image_asset_ids: [],
+            objects: [
+              {
+                provider: detail.object.provider,
+                object_id: detail.object.object_id,
+              },
+            ],
+          };
+    const response = await fetch(endpoint, {
+      body: JSON.stringify({ selection }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    });
+
+    if (response.ok) {
+      router.push(closeHref);
+      router.refresh();
+    }
+  }
+
+  async function toggleDetailFavorite() {
+    if (detailKind === "image") {
+      if (activeImage === undefined) {
+        return;
+      }
+
+      const nextFavorite = !activeImageFavorite;
+      const response = await fetch(
+        `/api/image-assets/${activeImage.image_asset_id}/favorite`,
+        {
+          method: nextFavorite ? "PUT" : "DELETE",
+        },
+      );
+
+      if (response.ok) {
+        setImageFavoritesById((currentFavorites) => {
+          const nextFavorites = new Map(currentFavorites);
+          nextFavorites.set(activeImage.image_asset_id, nextFavorite);
+          return nextFavorites;
+        });
+        router.refresh();
+      }
+      return;
+    }
+
+    const nextFavorite = !objectFavorite;
+    const response = await fetch(
+      `/api/objects/${encodeURIComponent(detail.object.provider)}/${detail.object.object_id}/favorite`,
+      {
+        method: nextFavorite ? "PUT" : "DELETE",
+      },
+    );
+
+    if (response.ok) {
+      setObjectFavorite(nextFavorite);
+      router.refresh();
+    }
+  }
 
   useEffect(() => {
     closeRef.current?.focus();
@@ -817,9 +926,40 @@ export function CollectionObjectDetailOverlay({
                 Source image
               </a>
             ) : null}
-            <Button disabled type="button" variant="destructive">
+            <Button
+              aria-pressed={activeFavorite}
+              disabled={detailKind === "image" && activeImage === undefined}
+              onClick={toggleDetailFavorite}
+              type="button"
+              variant="outline"
+            >
+              <Heart
+                className={activeFavorite ? "fill-current" : undefined}
+                data-icon="inline-start"
+              />
+              {activeFavorite ? "Unfavorite" : "Favorite"} {actionNoun}
+            </Button>
+            {removeFromCollectionEndpoint !== undefined ? (
+              <Button
+                disabled={curationActionsDisabled}
+                onClick={() =>
+                  runDetailCurationAction(removeFromCollectionEndpoint, "remove")
+                }
+                type="button"
+                variant="outline"
+              >
+                <FolderMinus data-icon="inline-start" />
+                Remove {actionNoun}
+              </Button>
+            ) : null}
+            <Button
+              disabled={curationActionsDisabled || deleteEndpoint === undefined}
+              onClick={() => runDetailCurationAction(deleteEndpoint, "delete")}
+              type="button"
+              variant="destructive"
+            >
               <Trash2 data-icon="inline-start" />
-              Delete object
+              Delete {actionNoun}
             </Button>
           </div>
           <Button

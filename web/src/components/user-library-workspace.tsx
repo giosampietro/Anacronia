@@ -8,7 +8,12 @@ import {
   type LibraryObjectSummary,
 } from "@/lib/collection-objects";
 import { formatCollectionDisplayName } from "@/lib/collection-display";
-import { createGridStateHref, type GridViewMode, type ObjectRouteRef } from "@/lib/grid-view";
+import {
+  createGridStateHref,
+  type GridViewMode,
+  type LibraryCollectionFilter,
+  type ObjectRouteRef,
+} from "@/lib/grid-view";
 import {
   createLibraryImageAssetTileId,
   createLibraryObjectTileId,
@@ -20,9 +25,12 @@ import {
 
 type UserLibraryWorkspaceProps = {
   apiBaseUrl: string;
+  curationActionsDisabled?: boolean;
+  favoriteOnly?: boolean;
   imageAssets: LibraryImageAssetSummary[];
   initialSelectedIds?: string[];
   initialSelectionMode?: boolean;
+  libraryCollectionFilter?: LibraryCollectionFilter;
   localQueryText: string;
   objects: LibraryObjectSummary[];
   providerFacets: CollectionProviderFacet[];
@@ -56,9 +64,12 @@ function collectionListLabel(item: { collections: { display_name: string }[] }):
 
 export function UserLibraryWorkspace({
   apiBaseUrl,
+  curationActionsDisabled = false,
+  favoriteOnly = false,
   imageAssets,
   initialSelectedIds = [],
   initialSelectionMode = false,
+  libraryCollectionFilter = "all",
   localQueryText,
   objects,
   providerFacets,
@@ -69,6 +80,7 @@ export function UserLibraryWorkspace({
   viewMode,
 }: UserLibraryWorkspaceProps) {
   const closeHref = createGridStateHref({
+    libraryCollectionFilter,
     localQueryText,
     provider: providerFilter,
     viewMode,
@@ -81,9 +93,20 @@ export function UserLibraryWorkspace({
         apiBaseUrl={apiBaseUrl}
         closeImageHref={closeHref}
         closeObjectHref={closeHref}
+        curationActionsDisabled={curationActionsDisabled}
+        deleteEndpoint="/api/curation/delete"
+        exportEndpoint="/api/library/exports"
+        favoriteOnly={favoriteOnly}
         hasLocalMaterial={resultCounts.images > 0}
+        libraryCollectionFilter={libraryCollectionFilter}
         imageAssetHref={(imageAsset) =>
-          createLibraryImageAssetHref(imageAsset, localQueryText, providerFilter)
+          createLibraryImageAssetHref(
+            imageAsset,
+            localQueryText,
+            providerFilter,
+            favoriteOnly,
+            libraryCollectionFilter,
+          )
         }
         imageAssetTileId={(imageAsset) =>
           createLibraryImageAssetTileId(imageAsset.image_asset_id)
@@ -103,6 +126,8 @@ export function UserLibraryWorkspace({
             localQueryText,
             providerFilter,
             viewMode,
+            favoriteOnly,
+            libraryCollectionFilter,
           )
         }
         objectTileId={(libraryObject) =>

@@ -5,7 +5,11 @@ import sqlite3
 import pytest
 
 from anacronia.collection_runs import discover_met_candidates
-from anacronia.exports import NoExportableAssetsError, export_collection
+from anacronia.exports import (
+    NoExportableAssetsError,
+    export_collection,
+    export_user_library,
+)
 from anacronia.met_ingest import ingest_met_run
 from anacronia.search_sets import create_or_continue_search_set
 from anacronia.storage import initialize_storage
@@ -107,6 +111,7 @@ def test_exports_collection_jsonl_rows_with_descriptors_and_semantic_text(tmp_pa
     assert rows[0]["image_asset"]["source_image_url"] == "https://images.metmuseum.org/40-primary.jpg"
     assert rows[0]["image_asset"]["standard_path"].endswith("/primary-standard-1024.jpg")
     assert rows[0]["image_asset"]["thumb_path"].endswith("/primary-thumb-256.jpg")
+    assert rows[0]["image_asset"]["is_favorite"] is False
     assert rows[0]["museum_object"] == {
         "title": "Coiled Snake Bowl",
         "object_name": "Bowl",
@@ -114,6 +119,7 @@ def test_exports_collection_jsonl_rows_with_descriptors_and_semantic_text(tmp_pa
         "object_url": "https://www.metmuseum.org/art/collection/search/40",
         "rights_and_reproduction": "Public domain",
         "metadata_date": "2026-01-02",
+        "is_favorite": False,
     }
     assert rows[0]["matches"] == [
         {
@@ -262,6 +268,49 @@ def test_exports_complete_package_with_relative_manifest_paths_and_copied_images
     assert (result.export_path / rows[0]["image_asset"]["standard_path"]).is_file()
     assert (result.export_path / rows[0]["image_asset"]["thumb_path"]).is_file()
     assert not (result.export_path / "raw-api").exists()
+
+
+def test_exports_user_library_csv_and_package_formats(tmp_path):
+    storage = build_exportable_collection(tmp_path)
+    selected_image_asset_id = get_image_asset_ids(storage.database_path)[0]
+
+    csv_result = export_user_library(
+        database_path=storage.database_path,
+        data_root=storage.data_root,
+        export_format="csv",
+        selected_image_asset_ids=[selected_image_asset_id],
+        timestamp="260530-1234Z",
+    )
+    package_result = export_user_library(
+        database_path=storage.database_path,
+        data_root=storage.data_root,
+        export_format="package",
+        selected_image_asset_ids=[selected_image_asset_id],
+        timestamp="260530-1235Z",
+    )
+
+    assert csv_result.row_count == 1
+    csv_path = csv_result.export_path / "metadata.csv"
+    with csv_path.open(encoding="utf-8", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    assert rows[0]["collection_slug"] == "user-library"
+    assert rows[0]["collection_title"] == "My Library"
+    assert rows[0]["provider"] == "met"
+    assert rows[0]["object_id"] == "40"
+
+    assert package_result.row_count == 1
+    assert package_result.export_path == (
+        storage.data_root / "exports" / "user-library" / "package-260530-1235Z"
+    )
+    manifest_rows = [
+        json.loads(line)
+        for line in (package_result.export_path / "manifest.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert manifest_rows[0]["collection"]["scope"] == "user-library"
+    assert (package_result.export_path / manifest_rows[0]["image_asset"]["standard_path"]).is_file()
+    assert (package_result.export_path / manifest_rows[0]["image_asset"]["thumb_path"]).is_file()
 
 
 def test_exports_use_short_format_prefixed_unique_folder_names(tmp_path):

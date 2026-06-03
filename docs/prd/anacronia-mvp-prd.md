@@ -116,7 +116,7 @@ The MVP will not try to become the future visual atlas. It will provide the oper
 98. As a collection builder, I want future full-resolution export workflows possible, so that I can later package provider full-res images for already collected assets.
 99. As a future analyst, I want AI/OpenCV/ML outputs stored as separate Analysis Results, so that generated data never overwrites provider metadata.
 100. As a future analyst, I want Image Assets to support many Analysis Results, so that multiple analysis pipelines can coexist.
-101. As a future user, I want unwanted Image Assets to be globally excludable or deletable later, so that manual curation can remove material I do not want.
+101. As a future user, I want unwanted Museum Objects and Image Assets to be removable from individual Collections or deletable from local Anacronia data later, so that manual curation can remove material I do not want.
 102. As an MVP user, I do not want destructive deletion exposed yet, so that the first version avoids dangerous data loss.
 103. As a developer, I want a Provider Adapter interface, so that Met, Europeana, V&A, and future sources can share collection workflows.
 104. As a developer, I want provider-specific metadata preserved, so that Anacronia does not flatten away useful fields.
@@ -133,6 +133,33 @@ The MVP will not try to become the future visual atlas. It will provide the oper
 115. As a developer, I want Homebrew support when available but not an unexplained hard dependency, so that Mac setup can handle different users.
 116. As a future project maintainer, I want a terminal-based MVP install with strong documentation, so that the GitHub project is usable before a packaged installer exists.
 117. As a future project maintainer, I want installer/desktop packaging left as future work, so that MVP development does not get blocked by packaging.
+118. As a collection curator, I want to favorite selected Museum Objects or Image Assets, so that important material is easy to return to.
+119. As a collection curator, I want favorites to be global, so that the same Object or Image appears favorited in every Collection and in User Library.
+120. As a collection curator, I want to filter favorites in User Library, so that I can quickly review the best material across all local data.
+121. As a collection curator, I want to filter favorites inside a Collection, so that I can review favorited material that belongs to the current Collection only.
+122. As a collection curator, I want to remove selected Museum Objects from the current Collection, so that the Collection no longer contains unwanted objects.
+123. As a collection curator, I want removing a Museum Object from a Collection to remove all of that object's Image Assets from that Collection, so that object-level curation is predictable.
+124. As a collection curator, I want to remove selected Image Assets from the current Collection, so that sibling Image Assets can remain when only one image is unwanted.
+125. As a collection curator, I want removed material to remain in User Library and other Collections, so that Collection cleanup does not destroy local data.
+126. As a collection curator, I want removed material not to be automatically added again by future Provider Searches for that Collection, so that manual cleanup is respected.
+127. As a collection curator, I want to delete selected Museum Objects or Image Assets, so that unwanted local material can be removed from User Library, all Collections, the database, and local files.
+128. As a collection curator, I want delete to leave exports untouched, so that exported packages remain stable.
+129. As a collection curator, I want delete not to create a global never-import-again rule, so that future searches can import the same provider material again if it still matches.
+130. As a collection curator, I want orphan Objects and Images with no Collection membership to remain visible in User Library as `No Collection`, so that local material never becomes invisible just because it was removed from Collections.
+131. As a collection curator, I want orphan Objects and Images to support the same User Library actions as other local material, so that they can be favorited, exported, selected, or deleted.
+132. As a collection curator, I want the selection toolbar action order to be Export, Remove from Collection, Delete, so that selection mode only contains actions that operate on the selected visible material.
+133. As a collection curator, I want `Remove from Collection` hidden in User Library, so that actions only appear where they make sense.
+134. As a collection curator, I want User Library to provide a `No Collection` filter, so that I can review orphan local material directly.
+135. As a collection curator, I want changing local search, Provider filter, Object/Image view, scope, or active Collection to clear selection, so that hidden selected items are not accidentally acted on.
+136. As a collection curator, I want `Select all` to select only currently visible loaded results, so that bulk actions do not affect unseen material.
+137. As a collection curator, I want Collection detail views and counts to reflect current Collection Membership, so that removed Image Assets do not remain in Collection carousels or counters.
+138. As a collection curator, I want User Library detail views and counts to include all active local material, including `No Collection` material, so that User Library stays complete.
+139. As a collection curator, I want exports to include favorite state, so that downstream analysis can use my curation marks.
+140. As a collection curator, I want delete confirmations to warn when material is shared or favorited, so that destructive scope is clear.
+141. As a developer, I want explicit Collection Membership backfilled from current Run/match-derived visibility, so that existing data keeps the same visible results after the curation model is added.
+142. As a developer, I want Collection Exclusions and Favorites keyed by provider identity, so that delete/re-import does not break curation intent.
+143. As a developer, I want deleted Objects and Images marked inactive/deleted while local files are removed, so that Run history can remain auditable.
+144. As a developer, I want re-import after delete to reactivate or update the old inactive provider-identity row, so that duplicate active rows are avoided.
 
 ## Implementation Decisions
 
@@ -209,7 +236,25 @@ The MVP will not try to become the future visual atlas. It will provide the oper
 - Check disk availability before and during Provider Searches.
 - Use UI/log status for completion and pauses; macOS notifications are future work.
 - Do not expose destructive deletion from the MVP UI.
-- Design the model to support future global user-driven exclusion or deletion of unwanted Image Assets.
+- Design the model to support future curation actions for Museum Objects and Image Assets.
+- Future selection toolbar actions should include Export, Remove from Collection, and Delete in that order.
+- Favorite should remain available from normal grid tiles, detail views, keyboard shortcuts, and Favorite filters, but not from the selection toolbar.
+- Future curation actions should use Lucide `Bookmark`, `Download`, `FolderMinus`, and `Trash2` icons where those actions appear.
+- Future `Remove from Collection` should be Collection-scoped and should create a Collection Exclusion so future Provider Searches for the same Collection do not download, import, reactivate, or automatically add the same Object or Image through that Collection again.
+- Future `Delete` should remove selected local material globally from User Library and all Collections, remove database rows and local files where no active material needs them, leave exports untouched, and not create a global never-import-again rule.
+- Future orphan Museum Objects and Image Assets should remain visible in User Library as `No Collection`.
+- Future favorites should be global and filterable in User Library and Collection views.
+- Future User Library should provide a visible `No Collection` filter.
+- Future selection state should clear when local search, Provider filter, Object/Image view, scope, or active Collection changes.
+- Future `Select all` should apply only to currently visible loaded results.
+- Future Collection detail views, Collection object image counts, and Collection exports should reflect current Collection Membership.
+- Future User Library detail views, User Library object image counts, and User Library exports should include all active local material, including `No Collection` material.
+- Future exports should include favorite state.
+- Favorite export workflow should be `Favorites` filter, then `Select`, then `Export`, so the visible grid stays the source of truth.
+- Future Collection Membership should be explicit and backfilled from current Run/match-derived visibility.
+- Future Collection Exclusions and Favorites should use provider identity keys.
+- Future Provider Searches should skip Collection Exclusions before download/import/reactivation for that Collection and should create Collection Membership for matched imported material only when no Collection Exclusion applies.
+- Future deletes should mark local Objects and Images inactive/deleted, delete local files, keep Run history and matches for audit, and allow later re-import to reactivate/update the old inactive provider-identity row.
 - Store future AI/OpenCV/ML outputs as separate Analysis Results rather than provider metadata.
 - Build provider-specific Descriptor mappings instead of assuming universal `tags`.
 - Store each Descriptor value with descriptor type and provider source field.

@@ -1,13 +1,15 @@
 "use client";
 
-import type { MouseEvent, ReactNode } from "react";
-import { useMemo, useState } from "react";
+import type { FocusEvent, MouseEvent, ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
-  ArrowRightFromLine,
+  Bookmark,
   Check,
   CircleAlert,
   CircleCheck,
   Download,
+  FolderMinus,
   Images,
   Trash2,
 } from "lucide-react";
@@ -15,6 +17,7 @@ import {
 import { ImageGridThumbnail } from "@/components/image-grid-thumbnail";
 import { ObjectDetailPendingLink } from "@/components/object-detail-pending-link";
 import { AspectRatio } from "@/components/ui/aspect-ratio";
+import { VirtualizedImageGrid } from "@/components/virtualized-image-grid";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -44,6 +47,7 @@ import {
 import { formatCollectionDisplayName } from "@/lib/collection-display";
 import {
   createObjectRouteKey,
+  parseObjectRouteKey,
   type GridViewMode,
   type ObjectRouteRef,
 } from "@/lib/grid-view";
@@ -56,6 +60,7 @@ import {
   exportSuccessLabel,
   type CollectionExportFormat,
 } from "@/lib/export-workflow";
+import { selectionActionSummary } from "@/lib/selection-action-summary";
 import {
   IMAGE_GRID_BADGE_CLASS_NAME,
   IMAGE_GRID_CAROUSEL_INDICATOR_CLASS_NAME,
@@ -72,6 +77,8 @@ type LocalResultSelectionSurfaceProps = {
   apiBaseUrl: string;
   closeImageHref: string;
   closeObjectHref: string;
+  curationActionsDisabled?: boolean;
+  deleteEndpoint?: string;
   emptyState?: ReactNode;
   exportEndpoint?: string;
   imageAssetHref: (imageAsset: LibraryImageAssetSummary) => string;
@@ -88,10 +95,25 @@ type LocalResultSelectionSurfaceProps = {
   resolvedImageAssetId?: number | null;
   resolvedObject?: ObjectRouteRef | null;
   scopeDisplayName: string;
+  removeFromCollectionEndpoint?: string;
   viewMode: GridViewMode;
 };
 
-type SelectionDialogKind = "delete" | "export";
+type SelectionDialogKind = "delete" | "export" | "remove";
+
+type CollectionCurationObjectSelection = {
+  provider: string;
+  object_id: number;
+};
+
+type CollectionCurationSelection = {
+  image_asset_ids: number[];
+  objects: CollectionCurationObjectSelection[];
+};
+
+type CollectionCurationRequest = {
+  selection: CollectionCurationSelection;
+};
 
 type SelectionExportResponse = {
   format: CollectionExportFormat;
@@ -105,6 +127,94 @@ type SelectionExportStatus =
   | { format: CollectionExportFormat; state: "pending" }
   | { result: SelectionExportResponse; state: "success" }
   | { message: string; state: "error" };
+
+type SelectionCurationStatus =
+  | { state: "idle" }
+  | { state: "pending" }
+  | { message: string; state: "error" };
+
+type GridShortcutTarget = {
+  href: string;
+  id: string;
+  kind: "image" | "object";
+  selectionId: string;
+};
+
+function parseImageSelectionId(value: string): number | null {
+  if (!value.startsWith("image:")) {
+    return null;
+  }
+
+  const imageAssetId = Number.parseInt(value.slice("image:".length), 10);
+  return Number.isFinite(imageAssetId) ? imageAssetId : null;
+}
+
+function isEditableShortcutTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  return (
+    target.isContentEditable ||
+    target.closest("[contenteditable='true']") !== null ||
+    target.matches("input, textarea, select")
+  );
+}
+
+function gridShortcutTargetData(kind: "image" | "object") {
+  return {
+    "data-grid-shortcut-keys": "b v",
+    "data-grid-shortcut-target": kind,
+  };
+}
+
+function parseObjectSelectionId(
+  value: string,
+): CollectionCurationObjectSelection | null {
+  if (!value.startsWith("object:")) {
+    return null;
+  }
+
+  const objectRouteRef = parseObjectRouteKey(value.slice("object:".length));
+  if (objectRouteRef === null) {
+    return null;
+  }
+
+  return {
+    provider: objectRouteRef.provider,
+    object_id: objectRouteRef.objectId,
+  };
+}
+
+function createSelectedCollectionCurationRequest({
+  selectedIds,
+  viewMode,
+}: {
+  selectedIds: string[];
+  viewMode: GridViewMode;
+}): CollectionCurationRequest {
+  if (viewMode === "images") {
+    return {
+      selection: {
+        image_asset_ids: selectedIds.flatMap((selectedId) => {
+          const imageAssetId = parseImageSelectionId(selectedId);
+          return imageAssetId === null ? [] : [imageAssetId];
+        }),
+        objects: [],
+      },
+    };
+  }
+
+  return {
+    selection: {
+      image_asset_ids: [],
+      objects: selectedIds.flatMap((selectedId) => {
+        const selectedObject = parseObjectSelectionId(selectedId);
+        return selectedObject === null ? [] : [selectedObject];
+      }),
+    },
+  };
+}
 
 function selectionExportErrorMessage(payload: unknown): string {
   if (
@@ -173,7 +283,71 @@ function selectionNoun(viewMode: GridViewMode, count: number): string {
   return count === 1 ? singular : `${singular}s`;
 }
 
+function FavoriteTileButton({
+  floating = true,
+  isFavorite,
+  label,
+  onToggle,
+}: {
+  floating?: boolean;
+  isFavorite: boolean;
+  label: string;
+  onToggle: () => void;
+}) {
+  return (
+    <Button
+      aria-label={label}
+      className={cn(
+        "z-10 rounded-full bg-transparent text-white hover:bg-white/12 hover:text-white focus-visible:bg-white/12",
+        floating && "absolute left-1.5 top-1.5",
+        isFavorite && "[&_svg]:fill-current",
+      )}
+      onClick={onToggle}
+      size="icon-sm"
+      title={label}
+      type="button"
+      variant="ghost"
+    >
+      <Bookmark />
+    </Button>
+  );
+}
+
+function ObjectTileMarkers({
+  favoriteLabel,
+  imageCount,
+  isFavorite,
+  onToggleFavorite,
+}: {
+  favoriteLabel: string;
+  imageCount: number;
+  isFavorite: boolean;
+  onToggleFavorite: () => void;
+}) {
+  return (
+    <>
+      <FavoriteTileButton
+        isFavorite={isFavorite}
+        label={favoriteLabel}
+        onToggle={onToggleFavorite}
+      />
+      {imageCount > 1 ? (
+        <span
+          aria-label={`${imageCount} images`}
+          className={IMAGE_GRID_CAROUSEL_INDICATOR_CLASS_NAME}
+        >
+          <Images data-icon="inline-start" />
+          {imageCount}
+        </span>
+      ) : null}
+    </>
+  );
+}
+
 function SelectionToolbar({
+  canDelete,
+  canRemoveFromCollection,
+  curationActionsDisabled,
   onCancel,
   onOpenSelectionDialog,
   onToggleVisible,
@@ -184,6 +358,9 @@ function SelectionToolbar({
   visibleCount,
   visibleSelectionComplete,
 }: {
+  canDelete: boolean;
+  canRemoveFromCollection: boolean;
+  curationActionsDisabled: boolean;
   onCancel: () => void;
   onOpenSelectionDialog: (dialogKind: SelectionDialogKind) => void;
   onToggleVisible: () => void;
@@ -217,19 +394,34 @@ function SelectionToolbar({
       <div className="flex min-w-0 items-center gap-2">
         <Button
           aria-label="Export selected"
-          disabled={selectedTotalCount === 0}
+          disabled={selectedTotalCount === 0 || curationActionsDisabled}
           onClick={() => onOpenSelectionDialog("export")}
           size="icon-sm"
+          title="Export selected"
           type="button"
           variant="ghost"
         >
-          <ArrowRightFromLine />
+          <Download />
         </Button>
+        {canRemoveFromCollection ? (
+          <Button
+            aria-label="Remove from collection"
+            disabled={selectedTotalCount === 0 || curationActionsDisabled}
+            onClick={() => onOpenSelectionDialog("remove")}
+            size="icon-sm"
+            title="Remove from collection"
+            type="button"
+            variant="ghost"
+          >
+            <FolderMinus />
+          </Button>
+        ) : null}
         <Button
           aria-label="Delete selected"
-          disabled={selectedTotalCount === 0}
+          disabled={selectedTotalCount === 0 || curationActionsDisabled || !canDelete}
           onClick={() => onOpenSelectionDialog("delete")}
           size="icon-sm"
+          title="Delete selected"
           type="button"
           variant="ghost"
         >
@@ -258,19 +450,29 @@ function SelectionToolbar({
 }
 
 function SelectionActionDialog({
+  deleteEndpoint,
   dialogKind,
   exportEndpoint,
+  imageAssets,
+  onActionComplete,
   onClose,
   open,
+  objects,
+  removeFromCollectionEndpoint,
   scopeDisplayName,
   selectedCount,
   selectedIds,
   viewMode,
 }: {
+  deleteEndpoint?: string;
   dialogKind: SelectionDialogKind;
   exportEndpoint?: string;
+  imageAssets: LibraryImageAssetSummary[];
+  onActionComplete: () => void;
   onClose: () => void;
+  objects: LocalResultObjectSummary[];
   open: boolean;
+  removeFromCollectionEndpoint?: string;
   scopeDisplayName: string;
   selectedCount: number;
   selectedIds: string[];
@@ -279,14 +481,33 @@ function SelectionActionDialog({
   const [exportStatus, setExportStatus] = useState<SelectionExportStatus>({
     state: "idle",
   });
+  const [curationStatus, setCurationStatus] = useState<SelectionCurationStatus>({
+    state: "idle",
+  });
   const noun = selectionNoun(viewMode, selectedCount);
   const scopeLabel = formatCollectionDisplayName(scopeDisplayName);
   const canExport = exportEndpoint !== undefined;
-  const deleteActionLabel = `Delete ${noun}`;
+  const curationEndpoint =
+    dialogKind === "remove"
+      ? removeFromCollectionEndpoint
+      : dialogKind === "delete"
+        ? deleteEndpoint
+        : undefined;
+  const canRunCurationAction = curationEndpoint !== undefined;
+  const curationSummary =
+    dialogKind === "remove" || dialogKind === "delete"
+      ? selectionActionSummary({
+          action: dialogKind,
+          imageAssets,
+          objects,
+          scopeDisplayName,
+          selectedIds,
+          viewMode,
+        })
+      : null;
+  const curationActionLabel = curationSummary?.confirmLabel ?? `Delete ${noun}`;
   const title =
-    dialogKind === "delete"
-      ? `Delete ${selectedCount} ${noun}?`
-      : `Export ${selectedCount} ${noun}`;
+    curationSummary?.title ?? `Export ${selectedCount} ${noun}`;
 
   function closeDialog() {
     onClose();
@@ -337,6 +558,45 @@ function SelectionActionDialog({
     }
   }
 
+  async function runCurationAction() {
+    if (curationEndpoint === undefined) {
+      return;
+    }
+
+    setCurationStatus({ state: "pending" });
+    try {
+      const response = await fetch(curationEndpoint, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(
+          createSelectedCollectionCurationRequest({
+            selectedIds,
+            viewMode,
+          }),
+        ),
+      });
+      const payload = (await response.json().catch(() => null)) as unknown;
+
+      if (!response.ok) {
+        setCurationStatus({
+          message: selectionExportErrorMessage(payload),
+          state: "error",
+        });
+        return;
+      }
+
+      onActionComplete();
+    } catch {
+      setCurationStatus({
+        message:
+          dialogKind === "remove"
+            ? "Remove from collection failed."
+            : "Delete failed.",
+        state: "error",
+      });
+    }
+  }
+
   return (
     <Dialog
       open={open}
@@ -350,25 +610,38 @@ function SelectionActionDialog({
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
-            {dialogKind === "delete"
-              ? "This prototype does not delete data. It shows the decision point before a destructive action."
+            {curationSummary !== null
+              ? curationSummary.description
               : canExport
                 ? `Export selected ${noun} from ${scopeLabel}.`
                 : `Selected export from ${scopeLabel} is reserved for the shared result-set workflow.`}
           </DialogDescription>
         </DialogHeader>
 
-        {dialogKind === "delete" ? (
+        {dialogKind === "delete" || dialogKind === "remove" ? (
           <div className="grid gap-4 text-sm">
-            <p>
-              The selected {noun} would be removed from {scopeLabel}. We still need
-              to triage whether delete means removing from this collection only, or
-              deleting from all collections and the user library.
-            </p>
-            <div className="rounded-lg border bg-muted/40 p-3 text-muted-foreground">
-              Open product question: collection-scoped removal vs global library
-              deletion.
-            </div>
+            {canRunCurationAction ? (
+              curationSummary?.bodyLines.map((line) => (
+                <p key={line}>{line}</p>
+              ))
+            ) : (
+              <Alert>
+                <CircleAlert />
+                <AlertTitle>Action not available</AlertTitle>
+                <AlertDescription>
+                  This action is not wired for the current scope.
+                </AlertDescription>
+              </Alert>
+            )}
+            {curationStatus.state === "error" ? (
+              <Alert variant="destructive">
+                <CircleAlert />
+                <AlertTitle>
+                  {dialogKind === "remove" ? "Remove failed" : "Delete failed"}
+                </AlertTitle>
+                <AlertDescription>{curationStatus.message}</AlertDescription>
+              </Alert>
+            ) : null}
           </div>
         ) : canExport ? (
           <div className="grid gap-4 text-sm">
@@ -459,13 +732,27 @@ function SelectionActionDialog({
         )}
 
         <DialogFooter>
-          {dialogKind === "delete" ? (
+          {dialogKind === "delete" || dialogKind === "remove" ? (
             <>
               <Button onClick={closeDialog} type="button" variant="outline">
                 Cancel
               </Button>
-              <Button onClick={closeDialog} type="button" variant="destructive">
-                {deleteActionLabel}
+              <Button
+                disabled={
+                  !canRunCurationAction || curationStatus.state === "pending"
+                }
+                onClick={runCurationAction}
+                type="button"
+                variant={dialogKind === "delete" ? "destructive" : "default"}
+              >
+                {curationStatus.state === "pending" ? (
+                  <>
+                    <Spinner />
+                    {dialogKind === "remove" ? "Removing..." : "Deleting..."}
+                  </>
+                ) : (
+                  curationActionLabel
+                )}
               </Button>
             </>
           ) : (
@@ -488,6 +775,8 @@ export function LocalResultSelectionSurface({
   apiBaseUrl,
   closeImageHref,
   closeObjectHref,
+  curationActionsDisabled = false,
+  deleteEndpoint,
   emptyState,
   exportEndpoint,
   imageAssetHref,
@@ -504,8 +793,10 @@ export function LocalResultSelectionSurface({
   resolvedImageAssetId = null,
   resolvedObject = null,
   scopeDisplayName,
+  removeFromCollectionEndpoint,
   viewMode,
 }: LocalResultSelectionSurfaceProps) {
+  const router = useRouter();
   const [selectionMode, setSelectionMode] = useState(initialSelectionMode);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(
     () => new Set(uniqueSelectedIds(initialSelectedIds)),
@@ -517,6 +808,8 @@ export function LocalResultSelectionSurface({
     useState<SelectionDialogKind>("export");
   const [selectionDialogOpen, setSelectionDialogOpen] = useState(false);
   const [selectionDialogSession, setSelectionDialogSession] = useState(0);
+  const [shortcutTarget, setShortcutTarget] =
+    useState<GridShortcutTarget | null>(null);
   const visibleIds = useMemo(
     () =>
       viewMode === "objects"
@@ -529,6 +822,86 @@ export function LocalResultSelectionSurface({
   const visibleSelectionComplete =
     visibleIds.length > 0 && selectedVisibleCount === visibleIds.length;
 
+  const toggleObjectFavorite = useCallback(
+    async (collectionObject: LocalResultObjectSummary) => {
+      await fetch(
+        `/api/objects/${encodeURIComponent(collectionObject.provider)}/${collectionObject.object_id}/favorite`,
+        { method: collectionObject.is_favorite ? "DELETE" : "PUT" },
+      );
+      router.refresh();
+    },
+    [router],
+  );
+
+  const toggleImageFavorite = useCallback(
+    async (imageAsset: LibraryImageAssetSummary) => {
+      await fetch(`/api/image-assets/${imageAsset.image_asset_id}/favorite`, {
+        method: imageAsset.is_favorite ? "DELETE" : "PUT",
+      });
+      router.refresh();
+    },
+    [router],
+  );
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (
+        shortcutTarget === null ||
+        event.defaultPrevented ||
+        event.repeat ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.shiftKey ||
+        selectionDialogOpen ||
+        isEditableShortcutTarget(event.target) ||
+        document.querySelector("[aria-modal='true'], [role='dialog']") !== null
+      ) {
+        return;
+      }
+
+      const shortcutKey = event.key.toLowerCase();
+      if (shortcutKey === "b") {
+        event.preventDefault();
+        if (shortcutTarget.kind === "image") {
+          const imageAsset = imageAssets.find(
+            (candidate) =>
+              imageSelectionId(candidate) === shortcutTarget.selectionId,
+          );
+          if (imageAsset) {
+            void toggleImageFavorite(imageAsset);
+          }
+          return;
+        }
+
+        const collectionObject = objects.find(
+          (candidate) =>
+            objectSelectionId(candidate) === shortcutTarget.selectionId,
+        );
+        if (collectionObject) {
+          void toggleObjectFavorite(collectionObject);
+        }
+        return;
+      }
+
+      if (shortcutKey === "v") {
+        event.preventDefault();
+        router.push(shortcutTarget.href, { scroll: false });
+      }
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [
+    imageAssets,
+    objects,
+    router,
+    selectionDialogOpen,
+    shortcutTarget,
+    toggleImageFavorite,
+    toggleObjectFavorite,
+  ]);
+
   function resetSelection() {
     setSelectionMode(false);
     setSelectedIds(new Set());
@@ -536,10 +909,35 @@ export function LocalResultSelectionSurface({
     setSelectionDialogOpen(false);
   }
 
+  function completeCurationAction() {
+    resetSelection();
+    router.refresh();
+  }
+
   function openSelectionDialog(dialogKind: SelectionDialogKind) {
     setSelectionDialogKind(dialogKind);
     setSelectionDialogSession((currentSession) => currentSession + 1);
     setSelectionDialogOpen(true);
+  }
+
+  function activateShortcutTarget(target: GridShortcutTarget) {
+    setShortcutTarget(target);
+  }
+
+  function clearShortcutTarget(targetId: string) {
+    setShortcutTarget((currentTarget) =>
+      currentTarget?.id === targetId ? null : currentTarget,
+    );
+  }
+
+  function handleShortcutBlur(
+    event: FocusEvent<HTMLElement>,
+    targetId: string,
+  ) {
+    const relatedTarget = event.relatedTarget;
+    if (!(relatedTarget instanceof Node) || !event.currentTarget.contains(relatedTarget)) {
+      clearShortcutTarget(targetId);
+    }
   }
 
   function toggleVisibleSelection() {
@@ -591,6 +989,9 @@ export function LocalResultSelectionSurface({
   return (
     <div className="grid gap-3">
       <SelectionToolbar
+        canDelete={deleteEndpoint !== undefined}
+        canRemoveFromCollection={removeFromCollectionEndpoint !== undefined}
+        curationActionsDisabled={curationActionsDisabled}
         onCancel={resetSelection}
         onOpenSelectionDialog={openSelectionDialog}
         onToggleVisible={toggleVisibleSelection}
@@ -603,8 +1004,10 @@ export function LocalResultSelectionSurface({
       />
       {visibleIds.length === 0 ? emptyState : null}
       {visibleIds.length > 0 ? viewMode === "objects" ? (
-        <div className={cn(IMAGE_GRID_CLASS_NAME, "content-start items-start")}>
-          {objects.map((collectionObject) => {
+        <VirtualizedImageGrid
+          className={cn(IMAGE_GRID_CLASS_NAME, "content-start items-start")}
+          items={objects}
+          renderItem={(collectionObject) => {
             const collectionObjectProviderLabel = objectProviderDisplayLabel(
               collectionObject.provider,
             );
@@ -612,8 +1015,10 @@ export function LocalResultSelectionSurface({
             const selectionId = objectSelectionId(collectionObject);
             const isSelected = selectedIds.has(selectionId);
             const href = objectHref(collectionObject);
+            const shortcutTargetId = `object:${selectionId}`;
             const thumbSrc = imageUrl(apiBaseUrl, collectionObject.cover_thumb_url);
             const title = collectionObject.title || "Untitled object";
+            const favoriteLabel = `${collectionObject.is_favorite ? "Unfavorite" : "Favorite"} ${title}`;
             const objectAlt =
               collectionObject.title ||
               `${collectionObjectProviderLabel} object ${collectionObject.object_id}`;
@@ -632,7 +1037,7 @@ export function LocalResultSelectionSurface({
                     className="pointer-events-none absolute inset-0 z-[8] rounded-lg border-2 border-white"
                   />
                 ) : null}
-                {collectionObject.has_sibling_images ? (
+                {collectionObject.has_sibling_images && selectionMode ? (
                   <span
                     aria-label={`${collectionObject.image_count} images`}
                     className={IMAGE_GRID_CAROUSEL_INDICATOR_CLASS_NAME}
@@ -651,15 +1056,14 @@ export function LocalResultSelectionSurface({
                   >
                     {isSelected ? <Check className="size-4" /> : null}
                   </span>
-                ) : (
+                ) : null}
+                <div className={IMAGE_GRID_OVERLAY_CLASS_NAME}>
                   <Badge
                     className={IMAGE_GRID_PROVIDER_BADGE_CLASS_NAME}
                     variant="secondary"
                   >
                     {collectionObjectProviderLabel}
                   </Badge>
-                )}
-                <div className={IMAGE_GRID_OVERLAY_CLASS_NAME}>
                   <p className="mt-1 line-clamp-2 text-xs font-medium leading-tight">
                     {title}
                   </p>
@@ -681,32 +1085,63 @@ export function LocalResultSelectionSurface({
                 {tileContents}
               </a>
             ) : (
-              <ObjectDetailPendingLink
-                ariaLabel={`Open ${collectionObjectProviderLabel} object ${collectionObject.object_id}`}
-                className={cn(IMAGE_GRID_TILE_CLASS_NAME, "self-start")}
-                closeHref={closeObjectHref}
-                href={href}
-                id={tileId}
+              <div
+                className="relative self-start"
+                {...gridShortcutTargetData("object")}
                 key={`${collectionObject.provider}-${collectionObject.object_id}-${tileStateKey}`}
-                preview={{
-                  alt: objectAlt,
-                  collectionLabel: objectCollectionLabel(collectionObject),
-                  height: collectionObject.cover_original_height,
-                  imageCount: collectionObject.image_count,
-                  providerLabel: collectionObjectProviderLabel,
-                  src: thumbSrc,
-                  title,
-                  width: collectionObject.cover_original_width,
-                }}
+                onBlur={(event) => handleShortcutBlur(event, shortcutTargetId)}
+                onFocus={() =>
+                  activateShortcutTarget({
+                    href,
+                    id: shortcutTargetId,
+                    kind: "object",
+                    selectionId,
+                  })
+                }
+                onMouseEnter={() =>
+                  activateShortcutTarget({
+                    href,
+                    id: shortcutTargetId,
+                    kind: "object",
+                    selectionId,
+                  })
+                }
+                onMouseLeave={() => clearShortcutTarget(shortcutTargetId)}
               >
-                {tileContents}
-              </ObjectDetailPendingLink>
+                <ObjectDetailPendingLink
+                  ariaLabel={`Open ${collectionObjectProviderLabel} object ${collectionObject.object_id}`}
+                  className={IMAGE_GRID_TILE_CLASS_NAME}
+                  closeHref={closeObjectHref}
+                  href={href}
+                  id={tileId}
+                  preview={{
+                    alt: objectAlt,
+                    collectionLabel: objectCollectionLabel(collectionObject),
+                    height: collectionObject.cover_original_height,
+                    imageCount: collectionObject.image_count,
+                    providerLabel: collectionObjectProviderLabel,
+                    src: thumbSrc,
+                    title,
+                    width: collectionObject.cover_original_width,
+                  }}
+                >
+                  {tileContents}
+                </ObjectDetailPendingLink>
+                <ObjectTileMarkers
+                  favoriteLabel={favoriteLabel}
+                  imageCount={collectionObject.image_count}
+                  isFavorite={collectionObject.is_favorite}
+                  onToggleFavorite={() => toggleObjectFavorite(collectionObject)}
+                />
+              </div>
             );
-          })}
-        </div>
+          }}
+        />
       ) : (
-        <div className={cn(IMAGE_GRID_CLASS_NAME, "content-start items-start")}>
-          {imageAssets.map((imageAsset) => {
+        <VirtualizedImageGrid
+          className={cn(IMAGE_GRID_CLASS_NAME, "content-start items-start")}
+          items={imageAssets}
+          renderItem={(imageAsset) => {
             const imageAssetProviderLabel = objectProviderDisplayLabel(
               imageAsset.provider,
             );
@@ -714,9 +1149,11 @@ export function LocalResultSelectionSurface({
             const selectionId = imageSelectionId(imageAsset);
             const isSelected = selectedIds.has(selectionId);
             const href = imageAssetHref(imageAsset);
+            const shortcutTargetId = `image:${selectionId}`;
             const thumbSrc = imageUrl(apiBaseUrl, imageAsset.thumb_url);
             const title = imageAsset.title || "Untitled object";
             const imageAssetLabel = `Image Asset ${imageAsset.image_asset_id}`;
+            const favoriteLabel = `${imageAsset.is_favorite ? "Unfavorite" : "Favorite"} ${imageAssetLabel}`;
             const imageAssetAlt =
               imageAsset.title ||
               `${imageAssetProviderLabel} ${imageAssetLabel}`;
@@ -741,34 +1178,24 @@ export function LocalResultSelectionSurface({
                   >
                     {isSelected ? <Check className="size-4" /> : null}
                   </span>
-                ) : imageTopBadgeLabel ? (
-                  <div className="absolute inset-x-2 top-2 flex translate-y-1 items-start justify-between gap-2 opacity-0 transition-all duration-200 group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100">
-                    <Badge
-                      className={cn(
-                        "min-w-0 max-w-[70%] truncate",
-                        IMAGE_GRID_BADGE_CLASS_NAME,
-                      )}
-                      variant="secondary"
-                    >
-                      {imageTopBadgeLabel(imageAsset)}
-                    </Badge>
-                  </div>
-                ) : (
+                ) : null}
+                <div className={IMAGE_GRID_OVERLAY_CLASS_NAME}>
                   <Badge
                     className={IMAGE_GRID_PROVIDER_BADGE_CLASS_NAME}
                     variant="secondary"
                   >
                     {imageAssetProviderLabel}
                   </Badge>
-                )}
-                <div className={IMAGE_GRID_OVERLAY_CLASS_NAME}>
                   {imageTopBadgeLabel ? (
                     <>
                       <Badge
-                        className={IMAGE_GRID_BADGE_CLASS_NAME}
+                        className={cn(
+                          "mt-1 max-w-full truncate",
+                          IMAGE_GRID_BADGE_CLASS_NAME,
+                        )}
                         variant="secondary"
                       >
-                        {imageAssetProviderLabel}
+                        {imageTopBadgeLabel(imageAsset)}
                       </Badge>
                       {imageCollectionsLabel ? (
                         <p className="sr-only">
@@ -799,36 +1226,69 @@ export function LocalResultSelectionSurface({
                 {tileContents}
               </a>
             ) : (
-              <ObjectDetailPendingLink
-                ariaLabel={`Open ${imageAssetProviderLabel} ${imageAssetLabel}`}
-                className={cn(IMAGE_GRID_TILE_CLASS_NAME, "self-start")}
-                closeHref={closeImageHref}
-                href={href}
-                id={tileId}
+              <div
+                className="relative self-start"
+                {...gridShortcutTargetData("image")}
                 key={`${imageAsset.image_asset_id}-${tileStateKey}`}
-                preview={{
-                  alt: imageAssetAlt,
-                  collectionLabel: imageTopBadgeLabel?.(imageAsset),
-                  height: imageAsset.original_height,
-                  imageCount: imageAsset.image_count,
-                  providerLabel: imageAssetProviderLabel,
-                  src: thumbSrc,
-                  title,
-                  width: imageAsset.original_width,
-                }}
+                onBlur={(event) => handleShortcutBlur(event, shortcutTargetId)}
+                onFocus={() =>
+                  activateShortcutTarget({
+                    href,
+                    id: shortcutTargetId,
+                    kind: "image",
+                    selectionId,
+                  })
+                }
+                onMouseEnter={() =>
+                  activateShortcutTarget({
+                    href,
+                    id: shortcutTargetId,
+                    kind: "image",
+                    selectionId,
+                  })
+                }
+                onMouseLeave={() => clearShortcutTarget(shortcutTargetId)}
               >
-                {tileContents}
-              </ObjectDetailPendingLink>
+                <ObjectDetailPendingLink
+                  ariaLabel={`Open ${imageAssetProviderLabel} ${imageAssetLabel}`}
+                  className={IMAGE_GRID_TILE_CLASS_NAME}
+                  closeHref={closeImageHref}
+                  href={href}
+                  id={tileId}
+                  preview={{
+                    alt: imageAssetAlt,
+                    collectionLabel: imageTopBadgeLabel?.(imageAsset),
+                    height: imageAsset.original_height,
+                    imageCount: imageAsset.image_count,
+                    providerLabel: imageAssetProviderLabel,
+                    src: thumbSrc,
+                    title,
+                    width: imageAsset.original_width,
+                  }}
+                >
+                  {tileContents}
+                </ObjectDetailPendingLink>
+                <FavoriteTileButton
+                  isFavorite={imageAsset.is_favorite}
+                  label={favoriteLabel}
+                  onToggle={() => toggleImageFavorite(imageAsset)}
+                />
+              </div>
             );
-          })}
-        </div>
+          }}
+        />
       ) : null}
       <SelectionActionDialog
+        deleteEndpoint={deleteEndpoint}
         dialogKind={selectionDialogKind}
         exportEndpoint={exportEndpoint}
+        imageAssets={imageAssets}
         key={selectionDialogSession}
+        onActionComplete={completeCurationAction}
         onClose={() => setSelectionDialogOpen(false)}
+        objects={objects}
         open={selectionDialogOpen}
+        removeFromCollectionEndpoint={removeFromCollectionEndpoint}
         scopeDisplayName={scopeDisplayName}
         selectedCount={selectedTotalCount}
         selectedIds={Array.from(selectedIds)}

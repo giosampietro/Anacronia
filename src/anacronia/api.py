@@ -12,6 +12,16 @@ from anacronia.collection_runs import (
     MetCandidateClient,
     discover_met_candidates,
 )
+from anacronia.curation import (
+    CollectionCurationBusyError,
+    CollectionFileCleanupError,
+    delete_image_asset_from_anacronia,
+    delete_object_from_anacronia,
+    remove_image_asset_from_collection,
+    remove_object_from_collection,
+    set_image_asset_favorite,
+    set_object_favorite,
+)
 from anacronia.collection_objects import (
     CollectionLocalResultSet,
     CollectionObjectDetail,
@@ -41,6 +51,7 @@ from anacronia.exports import (
     CollectionExportResult,
     NoExportableAssetsError,
     export_collection,
+    export_user_library,
 )
 from anacronia.met_ingest import (
     DEFAULT_MAX_IMAGES_PER_OBJECT,
@@ -135,6 +146,10 @@ class CollectionExportSelection(BaseModel):
 class CollectionExportRequest(BaseModel):
     format: ExportFormat
     selection: CollectionExportSelection | None = None
+
+
+class CollectionCurationRequest(BaseModel):
+    selection: CollectionExportSelection = Field(default_factory=CollectionExportSelection)
 
 
 def serialize_search_set(search_set: SearchSet) -> dict[str, object]:
@@ -254,6 +269,7 @@ def serialize_collection_object_summary(
         "cover_original_height": collection_object.cover_original_height,
         "cover_thumb_url": f"/image-assets/{collection_object.cover_image_asset_id}/thumb",
         "has_sibling_images": collection_object.image_count > 1,
+        "is_favorite": collection_object.is_favorite,
     }
 
 
@@ -281,6 +297,7 @@ def serialize_collection_object_metadata(
         "is_public_domain": collection_object.is_public_domain,
         "rights_and_reproduction": collection_object.rights_and_reproduction,
         "metadata_date": collection_object.metadata_date,
+        "is_favorite": collection_object.is_favorite,
     }
 
 
@@ -294,6 +311,7 @@ def serialize_collection_object_image(image: CollectionObjectImage) -> dict[str,
         "original_height": image.original_height,
         "thumb_url": f"/image-assets/{image.image_asset_id}/thumb",
         "standard_url": f"/image-assets/{image.image_asset_id}/standard",
+        "is_favorite": image.is_favorite,
     }
 
 
@@ -340,6 +358,7 @@ def serialize_library_object_summary(
         "cover_original_height": library_object.cover_original_height,
         "cover_thumb_url": f"/image-assets/{library_object.cover_image_asset_id}/thumb",
         "has_sibling_images": library_object.image_count > 1,
+        "is_favorite": library_object.is_favorite,
         "collections": [
             serialize_library_image_asset_collection(collection)
             for collection in library_object.collections
@@ -365,6 +384,7 @@ def serialize_library_image_asset_summary(
         "has_sibling_images": image_asset.image_count > 1,
         "thumb_url": f"/image-assets/{image_asset.image_asset_id}/thumb",
         "standard_url": f"/image-assets/{image_asset.image_asset_id}/standard",
+        "is_favorite": image_asset.is_favorite,
         "collections": [
             serialize_library_image_asset_collection(collection)
             for collection in image_asset.collections
@@ -597,6 +617,8 @@ def create_app(
         q: str = "",
         provider: str = "all",
         view: LocalResultSetView = "images",
+        favorite: bool = False,
+        collection: str = "all",
         limit: GridPageLimit = None,
         offset: GridPageOffset = 0,
     ) -> dict[str, object]:
@@ -605,6 +627,8 @@ def create_app(
             query_text=q,
             provider=provider,
             view=view,
+            favorite_only=favorite,
+            collection=collection,
         )
         if view == "objects":
             objects, pagination = paginate_grid_items(
@@ -631,6 +655,8 @@ def create_app(
     @app.get("/library/image-assets")
     def get_library_image_assets(
         filter: str = "",
+        favorite: bool = False,
+        collection: str = "all",
         limit: GridPageLimit = None,
         offset: GridPageOffset = 0,
     ) -> dict[str, object]:
@@ -638,6 +664,8 @@ def create_app(
             list_library_image_assets(
                 database_path=resolved_database_path,
                 filter_text=filter,
+                favorite_only=favorite,
+                collection=collection,
             ),
             limit=limit,
             offset=offset,
@@ -653,6 +681,8 @@ def create_app(
     @app.get("/library/objects")
     def get_library_objects(
         filter: str = "",
+        favorite: bool = False,
+        collection: str = "all",
         limit: GridPageLimit = None,
         offset: GridPageOffset = 0,
     ) -> dict[str, object]:
@@ -660,6 +690,8 @@ def create_app(
             list_library_objects(
                 database_path=resolved_database_path,
                 filter_text=filter,
+                favorite_only=favorite,
+                collection=collection,
             ),
             limit=limit,
             offset=offset,
@@ -683,9 +715,38 @@ def create_app(
             raise HTTPException(status_code=404, detail="Library object not found.")
         return serialize_collection_object_detail(detail)
 
+    @app.put("/objects/{provider}/{object_id}/favorite")
+    def favorite_object(provider: str, object_id: int) -> dict[str, object]:
+        set_object_favorite(
+            database_path=resolved_database_path,
+            provider=provider,
+            object_id=object_id,
+            is_favorite=True,
+        )
+        return {
+            "provider": provider,
+            "object_id": object_id,
+            "is_favorite": True,
+        }
+
+    @app.delete("/objects/{provider}/{object_id}/favorite")
+    def unfavorite_object(provider: str, object_id: int) -> dict[str, object]:
+        set_object_favorite(
+            database_path=resolved_database_path,
+            provider=provider,
+            object_id=object_id,
+            is_favorite=False,
+        )
+        return {
+            "provider": provider,
+            "object_id": object_id,
+            "is_favorite": False,
+        }
+
     @app.get("/search-sets/{slug}/objects")
     def get_collection_objects(
         slug: str,
+        favorite: bool = False,
         limit: GridPageLimit = None,
         offset: GridPageOffset = 0,
     ) -> dict[str, object]:
@@ -693,6 +754,7 @@ def create_app(
             list_collection_objects(
                 database_path=resolved_database_path,
                 search_set_slug=slug,
+                favorite_only=favorite,
             ),
             limit=limit,
             offset=offset,
@@ -711,6 +773,7 @@ def create_app(
         q: str = "",
         provider: str = "all",
         view: LocalResultSetView = "objects",
+        favorite: bool = False,
         limit: GridPageLimit = None,
         offset: GridPageOffset = 0,
     ) -> dict[str, object]:
@@ -720,6 +783,7 @@ def create_app(
             query_text=q,
             provider=provider,
             view=view,
+            favorite_only=favorite,
         )
         if view == "objects":
             objects, pagination = paginate_grid_items(
@@ -746,6 +810,7 @@ def create_app(
     @app.get("/search-sets/{slug}/image-assets")
     def get_collection_image_assets(
         slug: str,
+        favorite: bool = False,
         limit: GridPageLimit = None,
         offset: GridPageOffset = 0,
     ) -> dict[str, object]:
@@ -753,6 +818,7 @@ def create_app(
             list_collection_image_assets(
                 database_path=resolved_database_path,
                 search_set_slug=slug,
+                favorite_only=favorite,
             ),
             limit=limit,
             offset=offset,
@@ -776,6 +842,41 @@ def create_app(
         if detail is None:
             raise HTTPException(status_code=404, detail="Collection object not found.")
         return serialize_collection_object_detail(detail)
+
+    @app.post("/search-sets/{slug}/remove-from-collection")
+    def remove_selection_from_collection(
+        slug: str,
+        request: CollectionCurationRequest,
+    ) -> dict[str, object]:
+        try:
+            removed_objects = sum(
+                1
+                for selected_object in request.selection.objects
+                if remove_object_from_collection(
+                    database_path=resolved_database_path,
+                    search_set_slug=slug,
+                    provider=selected_object.provider,
+                    object_id=selected_object.object_id,
+                )
+            )
+            removed_image_assets = sum(
+                1
+                for image_asset_id in request.selection.image_asset_ids
+                if remove_image_asset_from_collection(
+                    database_path=resolved_database_path,
+                    search_set_slug=slug,
+                    image_asset_id=image_asset_id,
+                )
+            )
+        except CollectionCurationBusyError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        except CollectionFileCleanupError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+
+        return {
+            "removed_objects": removed_objects,
+            "removed_image_assets": removed_image_assets,
+        }
 
     @app.post("/search-sets/{slug}/exports")
     def export_search_set(slug: str, request: CollectionExportRequest) -> dict[str, object]:
@@ -822,6 +923,113 @@ def create_app(
                 },
             ) from error
         return serialize_collection_export_result(result)
+
+    @app.post("/library/exports")
+    def export_library(request: CollectionExportRequest) -> dict[str, object]:
+        dashboard = get_operational_dashboard(database_path=resolved_database_path)
+        if dashboard.worker_status.active_collect_job_id is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="User Library export is unavailable while a Provider Search is active.",
+            )
+        selected_image_asset_ids = (
+            request.selection.image_asset_ids if request.selection is not None else None
+        )
+        selected_objects = (
+            [
+                (selected_object.provider, selected_object.object_id)
+                for selected_object in request.selection.objects
+            ]
+            if request.selection is not None
+            else None
+        )
+        try:
+            result = export_user_library(
+                database_path=resolved_database_path,
+                data_root=resolved_data_root,
+                export_format=request.format,
+                selected_image_asset_ids=selected_image_asset_ids,
+                selected_objects=selected_objects,
+            )
+        except NoExportableAssetsError as error:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": "User Library has no exportable Image Assets.",
+                    "skipped_image_asset_count": len(error.skipped_image_assets),
+                    "skipped_image_assets": [
+                        {
+                            "image_asset_id": skipped.image_asset_id,
+                            "provider": skipped.provider,
+                            "object_id": skipped.object_id,
+                            "source_image_url": skipped.source_image_url,
+                            "reason": skipped.reason,
+                        }
+                        for skipped in error.skipped_image_assets
+                    ],
+                },
+            ) from error
+        return serialize_collection_export_result(result)
+
+    @app.put("/image-assets/{image_asset_id}/favorite")
+    def favorite_image_asset(image_asset_id: int) -> dict[str, object]:
+        is_favorite = set_image_asset_favorite(
+            database_path=resolved_database_path,
+            image_asset_id=image_asset_id,
+            is_favorite=True,
+        )
+        if is_favorite is None:
+            raise HTTPException(status_code=404, detail="Image Asset not found.")
+        return {
+            "image_asset_id": image_asset_id,
+            "is_favorite": True,
+        }
+
+    @app.delete("/image-assets/{image_asset_id}/favorite")
+    def unfavorite_image_asset(image_asset_id: int) -> dict[str, object]:
+        is_favorite = set_image_asset_favorite(
+            database_path=resolved_database_path,
+            image_asset_id=image_asset_id,
+            is_favorite=False,
+        )
+        if is_favorite is None:
+            raise HTTPException(status_code=404, detail="Image Asset not found.")
+        return {
+            "image_asset_id": image_asset_id,
+            "is_favorite": False,
+        }
+
+    @app.post("/curation/delete")
+    def delete_selection_from_anacronia(
+        request: CollectionCurationRequest,
+    ) -> dict[str, object]:
+        try:
+            deleted_objects = sum(
+                1
+                for selected_object in request.selection.objects
+                if delete_object_from_anacronia(
+                    database_path=resolved_database_path,
+                    provider=selected_object.provider,
+                    object_id=selected_object.object_id,
+                )
+            )
+            deleted_image_assets = sum(
+                1
+                for image_asset_id in request.selection.image_asset_ids
+                if delete_image_asset_from_anacronia(
+                    database_path=resolved_database_path,
+                    image_asset_id=image_asset_id,
+                )
+            )
+        except CollectionCurationBusyError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        except CollectionFileCleanupError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+
+        return {
+            "deleted_objects": deleted_objects,
+            "deleted_image_assets": deleted_image_assets,
+        }
 
     @app.get("/image-assets/{image_asset_id}/{derivative}")
     def get_image_asset_derivative(image_asset_id: int, derivative: str) -> FileResponse:

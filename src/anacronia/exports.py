@@ -10,6 +10,7 @@ import sqlite3
 from typing import Literal
 
 from anacronia.collection_runs import ensure_collection_run_schema
+from anacronia.curation import ensure_collection_memberships
 from anacronia.met_ingest import ensure_met_ingest_schema
 
 
@@ -47,6 +48,7 @@ class NoExportableAssetsError(RuntimeError):
 class ExportCollection:
     slug: str
     title: str
+    scope: str = "collection"
 
 
 @dataclass(frozen=True)
@@ -67,6 +69,8 @@ class ExportImageAsset:
     object_url: str
     rights_and_reproduction: str
     metadata_date: str
+    object_is_favorite: bool
+    image_is_favorite: bool
 
 
 @dataclass(frozen=True)
@@ -107,6 +111,7 @@ def export_collection(
     with sqlite3.connect(database_path) as connection:
         ensure_collection_run_schema(connection)
         ensure_met_ingest_schema(connection)
+        ensure_collection_memberships(connection)
         collection = get_export_collection(connection=connection, search_set_slug=search_set_slug)
         image_assets = list_collection_image_assets(
             connection=connection,
@@ -137,6 +142,78 @@ def export_collection(
     export_path = unique_export_path(
         data_root=data_root,
         search_set_slug=search_set_slug,
+        export_format=export_format,
+        timestamp=timestamp,
+    )
+    export_path.mkdir(parents=True, exist_ok=False)
+
+    if export_format in {"jsonl", "package"}:
+        write_jsonl_manifest(path=export_path / "manifest.jsonl", rows=rows)
+    if export_format in {"csv", "package"}:
+        write_csv_metadata(path=export_path / "metadata.csv", rows=rows)
+    if export_format == "package":
+        copy_package_images(export_path=export_path, image_copies=package_image_copies)
+    if skipped_image_assets:
+        write_export_warnings(
+            path=export_path / "export-warnings.json",
+            skipped_image_assets=skipped_image_assets,
+        )
+
+    return CollectionExportResult(
+        export_format=export_format,
+        export_path=export_path,
+        row_count=len(rows),
+        skipped_image_assets=skipped_image_assets,
+    )
+
+
+def export_user_library(
+    *,
+    database_path: Path,
+    data_root: Path,
+    export_format: ExportFormat,
+    selected_image_asset_ids: list[int] | None = None,
+    selected_objects: list[tuple[str, int]] | None = None,
+    timestamp: str | None = None,
+) -> CollectionExportResult:
+    if export_format not in {"jsonl", "csv", "package"}:
+        raise ValueError(f"Unsupported export format: {export_format}")
+
+    with sqlite3.connect(database_path) as connection:
+        ensure_collection_run_schema(connection)
+        ensure_met_ingest_schema(connection)
+        ensure_collection_memberships(connection)
+        collection = ExportCollection(
+            slug="user-library",
+            title="My Library",
+            scope="user-library",
+        )
+        image_assets = list_user_library_image_assets(connection=connection)
+        if selected_image_asset_ids is not None or selected_objects is not None:
+            selected_ids = set(selected_image_asset_ids or [])
+            selected_object_refs = set(selected_objects or [])
+            image_assets = [
+                image_asset
+                for image_asset in image_assets
+                if image_asset.image_asset_id in selected_ids
+                or (image_asset.provider, image_asset.object_id) in selected_object_refs
+            ]
+        rows_and_skips = build_export_rows(
+            connection=connection,
+            collection=collection,
+            image_assets=image_assets,
+            path_mode="relative" if export_format == "package" else "absolute",
+        )
+
+    rows = rows_and_skips[0]
+    skipped_image_assets = rows_and_skips[1]
+    package_image_copies = rows_and_skips[2]
+    if not rows:
+        raise NoExportableAssetsError(skipped_image_assets=skipped_image_assets)
+
+    export_path = unique_export_path(
+        data_root=data_root,
+        search_set_slug="user-library",
         export_format=export_format,
         timestamp=timestamp,
     )
@@ -208,6 +285,7 @@ def list_collection_image_assets(
     connection: sqlite3.Connection,
     search_set_slug: str,
 ) -> list[ExportImageAsset]:
+    ensure_collection_memberships(connection)
     rows = connection.execute(
         """
         SELECT DISTINCT
@@ -226,24 +304,43 @@ def list_collection_image_assets(
           museum_objects.artist_display_name,
           museum_objects.object_url,
           museum_objects.rights_and_reproduction,
-          museum_objects.metadata_date
+          museum_objects.metadata_date,
+          EXISTS (
+            SELECT 1
+            FROM object_favorites
+            WHERE
+              object_favorites.provider = image_assets.provider
+              AND object_favorites.object_id = image_assets.object_id
+          ) AS object_is_favorite,
+          EXISTS (
+            SELECT 1
+            FROM image_asset_favorites
+            WHERE
+              image_asset_favorites.provider = image_assets.provider
+              AND image_asset_favorites.object_id = image_assets.object_id
+              AND image_asset_favorites.source_image_url = image_assets.source_image_url
+          ) AS image_is_favorite
         FROM image_assets
         JOIN museum_objects
           ON museum_objects.provider = image_assets.provider
           AND museum_objects.object_id = image_assets.object_id
-        JOIN object_matches
-          ON object_matches.provider = image_assets.provider
-          AND object_matches.object_id = image_assets.object_id
-        JOIN collection_runs
-          ON collection_runs.id = object_matches.run_id
-        JOIN provider_collections
-          ON provider_collections.id = collection_runs.provider_collection_id
         JOIN search_sets
-          ON search_sets.id = provider_collections.search_set_id
+          ON search_sets.slug = ?
+        JOIN collection_object_memberships
+          ON collection_object_memberships.search_set_id = search_sets.id
+          AND collection_object_memberships.provider = image_assets.provider
+          AND collection_object_memberships.object_id = image_assets.object_id
+          AND collection_object_memberships.active = 1
+        JOIN collection_image_asset_memberships
+          ON collection_image_asset_memberships.search_set_id = search_sets.id
+          AND collection_image_asset_memberships.provider = image_assets.provider
+          AND collection_image_asset_memberships.object_id = image_assets.object_id
+          AND collection_image_asset_memberships.source_image_url = image_assets.source_image_url
+          AND collection_image_asset_memberships.active = 1
         WHERE
-          search_sets.slug = ?
-          AND image_assets.provider = provider_collections.provider
-          AND image_assets.imported = 1
+          image_assets.imported = 1
+          AND image_assets.active = 1
+          AND museum_objects.active = 1
         ORDER BY image_assets.id
         """,
         (search_set_slug,),
@@ -267,6 +364,84 @@ def list_collection_image_assets(
             object_url=row[13],
             rights_and_reproduction=row[14],
             metadata_date=row[15],
+            object_is_favorite=bool(row[16]),
+            image_is_favorite=bool(row[17]),
+        )
+        for row in rows
+    ]
+
+
+def list_user_library_image_assets(
+    *,
+    connection: sqlite3.Connection,
+) -> list[ExportImageAsset]:
+    ensure_collection_memberships(connection)
+    rows = connection.execute(
+        """
+        SELECT DISTINCT
+          image_assets.id,
+          image_assets.provider,
+          image_assets.object_id,
+          image_assets.source_image_url,
+          image_assets.image_role,
+          image_assets.image_index,
+          image_assets.original_width,
+          image_assets.original_height,
+          image_assets.standard_path,
+          image_assets.thumb_path,
+          museum_objects.title,
+          museum_objects.object_name,
+          museum_objects.artist_display_name,
+          museum_objects.object_url,
+          museum_objects.rights_and_reproduction,
+          museum_objects.metadata_date,
+          EXISTS (
+            SELECT 1
+            FROM object_favorites
+            WHERE
+              object_favorites.provider = image_assets.provider
+              AND object_favorites.object_id = image_assets.object_id
+          ) AS object_is_favorite,
+          EXISTS (
+            SELECT 1
+            FROM image_asset_favorites
+            WHERE
+              image_asset_favorites.provider = image_assets.provider
+              AND image_asset_favorites.object_id = image_assets.object_id
+              AND image_asset_favorites.source_image_url = image_assets.source_image_url
+          ) AS image_is_favorite
+        FROM image_assets
+        JOIN museum_objects
+          ON museum_objects.provider = image_assets.provider
+          AND museum_objects.object_id = image_assets.object_id
+        WHERE
+          image_assets.imported = 1
+          AND image_assets.active = 1
+          AND museum_objects.active = 1
+        ORDER BY image_assets.id
+        """
+    ).fetchall()
+
+    return [
+        ExportImageAsset(
+            image_asset_id=int(row[0]),
+            provider=row[1],
+            object_id=int(row[2]),
+            source_image_url=row[3],
+            image_role=row[4],
+            image_index=row[5],
+            original_width=int(row[6]),
+            original_height=int(row[7]),
+            standard_path=Path(row[8]),
+            thumb_path=Path(row[9]),
+            title=row[10],
+            object_name=row[11],
+            artist_display_name=row[12],
+            object_url=row[13],
+            rights_and_reproduction=row[14],
+            metadata_date=row[15],
+            object_is_favorite=bool(row[16]),
+            image_is_favorite=bool(row[17]),
         )
         for row in rows
     ]
@@ -297,12 +472,19 @@ def build_export_rows(
             )
             continue
 
-        matches = get_export_matches(
-            connection=connection,
-            collection_slug=collection.slug,
-            provider=image_asset.provider,
-            object_id=image_asset.object_id,
-        )
+        if collection.scope == "user-library":
+            matches = get_user_library_export_matches(
+                connection=connection,
+                provider=image_asset.provider,
+                object_id=image_asset.object_id,
+            )
+        else:
+            matches = get_export_matches(
+                connection=connection,
+                collection_slug=collection.slug,
+                provider=image_asset.provider,
+                object_id=image_asset.object_id,
+            )
         descriptors = get_export_descriptors(
             connection=connection,
             provider=image_asset.provider,
@@ -330,7 +512,7 @@ def build_export_rows(
                 "collection": {
                     "slug": collection.slug,
                     "title": collection.title,
-                    "scope": "collection",
+                    "scope": collection.scope,
                 },
                 "image_asset": {
                     "image_asset_id": image_asset.image_asset_id,
@@ -343,6 +525,7 @@ def build_export_rows(
                     "original_height": image_asset.original_height,
                     "standard_path": standard_path,
                     "thumb_path": thumb_path,
+                    "is_favorite": image_asset.image_is_favorite,
                 },
                 "museum_object": {
                     "title": image_asset.title,
@@ -351,6 +534,7 @@ def build_export_rows(
                     "object_url": image_asset.object_url,
                     "rights_and_reproduction": image_asset.rights_and_reproduction,
                     "metadata_date": image_asset.metadata_date,
+                    "is_favorite": image_asset.object_is_favorite,
                 },
                 "matches": [
                     {
@@ -420,6 +604,37 @@ def get_export_matches(
         ORDER BY object_matches.search_term
         """,
         (collection_slug, provider, object_id),
+    ).fetchall()
+
+    return [
+        ExportMatch(
+            search_term=row[0],
+            verified=bool(row[1]),
+            matched_fields=json.loads(row[2]),
+        )
+        for row in rows
+    ]
+
+
+def get_user_library_export_matches(
+    *,
+    connection: sqlite3.Connection,
+    provider: str,
+    object_id: int,
+) -> list[ExportMatch]:
+    rows = connection.execute(
+        """
+        SELECT DISTINCT
+          object_matches.search_term,
+          object_matches.verified,
+          object_matches.matched_fields_json
+        FROM object_matches
+        WHERE
+          object_matches.provider = ?
+          AND object_matches.object_id = ?
+        ORDER BY object_matches.search_term
+        """,
+        (provider, object_id),
     ).fetchall()
 
     return [

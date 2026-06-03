@@ -1,6 +1,7 @@
 import type { WorkspaceMode } from "./workspace";
 
 export type GridViewMode = "objects" | "images";
+export type LibraryCollectionFilter = "all" | "none";
 
 export type ObjectRouteRef = {
   objectId: number;
@@ -56,8 +57,10 @@ export function parseObjectRouteKey(value: string | undefined): ObjectRouteRef |
 
 export function createGridStateHref({
   collectionFilterText = "",
+  favoriteOnly = false,
   filterText,
   imageAssetId,
+  libraryCollectionFilter = "all",
   localQueryText = "",
   object,
   provider = "all",
@@ -66,8 +69,10 @@ export function createGridStateHref({
   workspaceMode,
 }: {
   collectionFilterText?: string;
+  favoriteOnly?: boolean;
   filterText?: string;
   imageAssetId?: number;
+  libraryCollectionFilter?: LibraryCollectionFilter;
   localQueryText?: string;
   object?: ObjectRouteRef;
   provider?: string;
@@ -94,11 +99,17 @@ export function createGridStateHref({
   if (collectionFilterText.trim() !== "") {
     params.set("collection_filter", collectionFilterText.trim());
   }
+  if (workspaceMode === "user-library" && libraryCollectionFilter === "none") {
+    params.set("collection", "none");
+  }
   if (localQueryText.trim() !== "") {
     params.set("q", localQueryText.trim());
   }
   if (provider.trim() !== "" && provider !== "all") {
     params.set("provider", provider.trim());
+  }
+  if (favoriteOnly) {
+    params.set("favorite", "true");
   }
   if (filterText !== undefined && filterText.trim() !== "") {
     params.set("filter", filterText.trim());
