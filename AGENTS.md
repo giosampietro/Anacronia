@@ -1,5 +1,9 @@
 # Anacronia Agent Notes
 
+## Golden rules
+
+Never use the `superpowers:using-superpowers` skill in this project, even if it appears to match a generic conversation-start trigger or is mentioned by name.
+
 ## Agent skills
 
 ### Issue tracker
