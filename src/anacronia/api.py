@@ -14,7 +14,9 @@ from anacronia.collection_runs import (
 )
 from anacronia.curation import (
     CollectionCurationBusyError,
+    CollectionDeleteSummary,
     CollectionFileCleanupError,
+    delete_collection_from_anacronia,
     delete_image_asset_from_anacronia,
     delete_object_from_anacronia,
     remove_image_asset_from_collection,
@@ -163,6 +165,21 @@ def serialize_search_set(search_set: SearchSet) -> dict[str, object]:
             }
             for term in search_set.terms
         ],
+    }
+
+
+def serialize_collection_delete_summary(
+    summary: CollectionDeleteSummary,
+) -> dict[str, object]:
+    return {
+        "collection_slug": summary.collection_slug,
+        "deleted": summary.deleted,
+        "deleted_objects": summary.deleted_objects,
+        "deleted_image_assets": summary.deleted_image_assets,
+        "preserved_shared_objects": summary.preserved_shared_objects,
+        "preserved_shared_image_assets": summary.preserved_shared_image_assets,
+        "preserved_favorite_objects": summary.preserved_favorite_objects,
+        "preserved_favorite_image_assets": summary.preserved_favorite_image_assets,
     }
 
 
@@ -606,6 +623,21 @@ def create_app(
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
         return serialize_search_set(search_set)
+
+    @app.delete("/search-sets/{slug}")
+    def delete_collection(slug: str) -> dict[str, object]:
+        try:
+            summary = delete_collection_from_anacronia(
+                database_path=resolved_database_path,
+                search_set_slug=slug,
+            )
+        except CollectionCurationBusyError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        except CollectionFileCleanupError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        if not summary.deleted:
+            raise HTTPException(status_code=404, detail="Collection not found.")
+        return serialize_collection_delete_summary(summary)
 
     @app.get("/dashboard")
     def get_dashboard() -> dict[str, object]:

@@ -304,6 +304,9 @@ To avoid repeated UI churn:
 
 Deleting a Collection:
 
+- Is available from the sidebar Collection row right-click context menu.
+- Uses menu items `Rename`, disabled `Pin`, and `Delete`.
+- Opens a `Delete Collection` confirmation after choosing `Delete`.
 - Deletes the Collection, Provider Sources, Runs, matches, and Collection Exclusions for that Collection.
 - Deletes non-favorite exclusive material.
 - Preserves shared material in other Collections.

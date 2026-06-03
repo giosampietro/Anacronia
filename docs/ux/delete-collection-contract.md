@@ -8,6 +8,7 @@ Draft for review.
 
 - Domain docs: `CONTEXT.md`
 - PRD/spec: `docs/prd/anacronia-mvp-prd.md`
+- PRD issue: `https://github.com/giosampietro/Anacronia/issues/140`
 - Existing UX contract: `docs/ux/start-new-collection-contract.md`
 - Current storage model: provider/object-based raw records and image derivative paths, not Collection folders
 - Constraint: Museum Objects and Image Assets may belong to more than one Collection without duplicating local files
@@ -15,8 +16,8 @@ Draft for review.
 ## Workflow Boundary
 
 - User goal: remove an unwanted Collection from Anacronia and delete local data that belongs only to that Collection.
-- Entry point: sidebar Collection card menu.
-- Success outcome: the Collection disappears from the UI and database; exclusive local material is permanently deleted from disk; shared material remains.
+- Entry point: sidebar Collection row right-click menu.
+- Success outcome: the Collection disappears from the UI and database; non-favorite exclusive local derivative files are deleted from disk; shared material remains; favorite-exclusive material remains in User Library as `No Collection`.
 - Out of scope: macOS Trash integration, undo/restore, backup/restore, repairing manually deleted folders, deleting exports, deleting individual objects/images, deleting active searches.
 
 ## Domain Language
@@ -26,12 +27,13 @@ Draft for review.
 
 ## Entry Point
 
-Deletion is available only from the sidebar Collection card.
+Deletion is available only from the sidebar Collection row.
 
-- Each Collection card has a three-dots menu.
-- The menu contains `Delete Collection`.
+- Each Collection row has a custom shadcn right-click context menu.
+- The menu contains `Rename`, disabled `Pin`, and `Delete`.
 - Delete is not a primary workspace button.
 - Delete is not hidden in app-wide settings.
+- Delete Collection is not available from selection toolbars or object/image detail overlays.
 
 If the Collection has a running or stopping search:
 
@@ -43,7 +45,7 @@ Stopped and paused/error searches are parked resumable jobs, not active searches
 
 ## Confirmation
 
-Clicking `Delete Collection` opens a confirmation dialog.
+Clicking `Delete` opens a confirmation dialog.
 
 Rules:
 
@@ -56,13 +58,13 @@ Rules:
 Impact summary:
 
 - If the Collection has downloaded material, show a concrete summary:
-  - `This will remove 42 objects and 88 images from this Collection. Shared files used by other Collections will stay.`
+  - `This will remove 42 objects and 88 images from this Collection. Shared material used by other Collections will stay. Favorites that only belong to this Collection will remain in My Library as No Collection. Local files for non-favorite exclusive material will be deleted. Exports will not be deleted. There is no undo.`
 - If the Collection has no downloaded images, use simpler copy:
   - `This Collection has no downloaded images. It will be removed permanently.`
 
 ## Deletion Behavior
 
-Deleting a Collection permanently removes:
+Deleting a Collection removes:
 
 - the Collection record
 - Collection terms
@@ -71,15 +73,17 @@ Deleting a Collection permanently removes:
 - matches and run-specific technical traces
 - skipped references and failed-candidate records that belong only to those runs
 - Collection membership links for Museum Objects and Image Assets
-- local raw records, descriptors, image asset records, and image files only when no other Collection still uses them
-- empty provider/object folders left behind by exclusive deleted files, where safe
+- Collection Exclusions belonging to the deleted Collection
+- local derivative image files for non-favorite exclusive material
 
 Deleting a Collection never removes:
 
 - exported files
 - objects/images still used by another Collection
 - shared raw records, descriptors, or image files needed by another Collection
+- favorited exclusive material retained in User Library
 - unrelated provider data
+- Collection Exclusions belonging to other Collections
 
 ## Shared Material Rule
 
@@ -96,9 +100,11 @@ If material is shared:
 
 If material is not shared:
 
-- remove it completely from Anacronia
-- leave no user-facing or database trace
-- remove local files from disk permanently
+- preserve it when the Museum Object or Image Asset is favorited
+- show preserved favorite-exclusive material in User Library as `No Collection`
+- mark non-favorite exclusive Museum Objects and Image Assets inactive/deleted
+- remove local derivative files for non-favorite exclusive Image Assets
+- keep database rows needed for audit integrity, provider identity stability, and future re-import
 
 ## Progress and Failure
 
@@ -128,7 +134,7 @@ Deletion is permanent in the MVP.
 - No macOS Trash integration.
 - No undo.
 - No deleted-Collection history.
-- No visible audit trail.
+- Deleted non-favorite exclusive material follows the active/deleted lifecycle for audit integrity and future re-import.
 
 Rationale:
 
@@ -141,20 +147,24 @@ Rationale:
 
 - Repair/reconcile state if the user manually deletes data folders outside Anacronia.
 - Optional backup/export-before-delete workflow.
-- Individual object/image deletion or exclusion.
 - Restore/undo model, if Anacronia later becomes a packaged desktop app.
 - Clearer shared-material inspection for advanced users.
+- Implement pinned Collections.
+- Implement Reveal in Finder.
 
 ## Acceptance Checks
 
-- A Collection can be deleted from its sidebar three-dots menu.
+- A Collection can be deleted from its sidebar right-click context menu.
+- The context menu shows `Rename`, disabled `Pin`, and `Delete`.
 - A Collection with a searching/stopping search shows disabled `Delete Collection`.
 - A stopped or paused/error Collection can be deleted after confirmation.
 - Confirmation warns there is no undo.
 - Confirmation shows the Collection title.
 - Confirmation shows material counts or the zero-image message.
 - Successful deletion removes the Collection and navigates to `User Library`.
-- Exclusive files and records are permanently removed.
+- Non-favorite exclusive local derivative files are permanently removed.
+- Non-favorite exclusive database rows follow the active/deleted lifecycle.
+- Favorite-exclusive material remains in User Library as `No Collection`.
 - Shared files and records remain visible in other Collections.
 - Exports remain untouched.
 - Failed deletion leaves the Collection visible and can be retried.

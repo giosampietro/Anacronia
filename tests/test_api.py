@@ -260,6 +260,105 @@ def test_api_renames_collection_display_name_without_changing_slug_or_terms(tmp_
     ]
 
 
+def test_api_deletes_empty_collection_and_removes_it_from_dashboard(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    client = TestClient(create_app(database_path=storage.database_path))
+    client.post(
+        "/search-sets",
+        json={"display_name": "Snake Studies", "terms_text": "snake"},
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Bowl Study", "terms_text": "bowl"},
+    )
+
+    response = client.delete("/search-sets/snake-studies")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "collection_slug": "snake-studies",
+        "deleted": True,
+        "deleted_objects": 0,
+        "deleted_image_assets": 0,
+        "preserved_shared_objects": 0,
+        "preserved_shared_image_assets": 0,
+        "preserved_favorite_objects": 0,
+        "preserved_favorite_image_assets": 0,
+    }
+    assert [
+        search_set["slug"]
+        for search_set in client.get("/dashboard").json()["search_sets"]
+    ] == ["bowl-study"]
+
+
+def test_api_deletes_collection_with_exclusive_material_and_removes_local_files(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            met_candidate_client=FakeMetGridCandidateClient(),
+            met_record_client=FakeMetGridRecordClient(),
+            download_image_bytes=lambda _url: ppm_image_bytes(width=1600, height=800),
+        )
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Snake Study", "terms_text": "snake"},
+    )
+    run_response = client.post(
+        "/search-sets/snake-study/provider-collections/met/runs",
+        json={"candidate_offset": 0, "candidate_limit": 2},
+    )
+    client.post(f"/provider-collections/met/runs/{run_response.json()['run_id']}/ingest")
+    selected_image_asset = client.get(
+        "/search-sets/snake-study/local-result-set?view=images"
+    ).json()["image_assets"][0]
+    assert client.get(selected_image_asset["standard_url"]).status_code == 200
+
+    response = client.delete("/search-sets/snake-study")
+
+    assert response.status_code == 200
+    assert response.json()["deleted"] is True
+    assert response.json()["deleted_objects"] == 2
+    assert response.json()["deleted_image_assets"] == 4
+    assert client.get(selected_image_asset["standard_url"]).status_code == 404
+    assert client.get("/dashboard").json()["search_sets"] == []
+    assert client.get("/library/local-result-set?view=images").json()["image_assets"] == []
+
+
+def test_api_rejects_delete_collection_while_provider_search_is_running(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            met_candidate_client=FakeMetGridCandidateClient(),
+            met_record_client=FakeMetGridRecordClient(),
+        )
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Snake Study", "terms_text": "snake"},
+    )
+    client.post(
+        "/search-sets/snake-study/provider-collections/met/runs",
+        json={"candidate_offset": 0, "candidate_limit": 2},
+    )
+    client.post(
+        "/search-sets/snake-study/provider-collections/met/collects",
+        json={"batch_target": 10},
+    )
+
+    response = client.delete("/search-sets/snake-study")
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Provider Search is running for this Collection."
+    assert [
+        search_set["slug"]
+        for search_set in client.get("/dashboard").json()["search_sets"]
+    ] == ["snake-study"]
+
+
 def test_api_rejects_collection_rename_that_would_match_existing_slug(tmp_path):
     storage = initialize_storage(project_root=tmp_path)
     client = TestClient(create_app(database_path=storage.database_path))

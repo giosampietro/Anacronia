@@ -29,3 +29,25 @@ export async function PATCH(
     status: response.status,
   });
 }
+
+export async function DELETE(
+  _request: Request,
+  context: { params: Promise<{ slug: string }> },
+): Promise<Response> {
+  const { slug } = await context.params;
+  const apiPort = getPort("ANACRONIA_API_PORT", DEFAULT_API_PORT);
+  const response = await fetch(
+    `http://127.0.0.1:${apiPort}/search-sets/${encodeURIComponent(slug)}`,
+    {
+      method: "DELETE",
+    },
+  );
+  const payload = await response.text();
+
+  return new Response(payload, {
+    headers: {
+      "content-type": response.headers.get("content-type") ?? "application/json",
+    },
+    status: response.status,
+  });
+}

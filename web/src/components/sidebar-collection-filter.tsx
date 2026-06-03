@@ -8,8 +8,29 @@ import { FolderClosed, FolderOpen, ListFilter, Search } from "lucide-react";
 import { CollectionRenameDialog } from "@/components/collection-rename-dialog";
 import type { DashboardSearchSetView } from "@/lib/dashboard";
 import type { WorkspaceMode } from "@/lib/workspace";
-import { createSearchSetHref, filterSearchSets } from "@/lib/workspace";
+import {
+  createSearchSetHref,
+  createUserLibraryHref,
+  filterSearchSets,
+} from "@/lib/workspace";
 import { Spinner } from "@/components/ui/spinner";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import {
   Empty,
   EmptyHeader,
@@ -32,10 +53,88 @@ type SidebarCollectionFilterProps = {
   workspaceMode: WorkspaceMode;
 };
 
+type CollectionDeleteDialogProps = {
+  deleteError: string | null;
+  isDeleting: boolean;
+  onDelete: () => void;
+  onOpenChange: (open: boolean) => void;
+  open: boolean;
+  searchSet: DashboardSearchSetView;
+};
+
+type CollectionDeleteDialogBodyProps = {
+  deleteError: string | null;
+  isDeleting: boolean;
+  onDelete: () => void;
+  searchSet: DashboardSearchSetView;
+};
+
 function isCollectionSearchActive(searchSet: DashboardSearchSetView): boolean {
   return searchSet.providerCollections.some(
     (providerCollection) =>
       providerCollection.status === "running" || providerCollection.status === "stopping",
+  );
+}
+
+export function CollectionDeleteDialog({
+  deleteError,
+  isDeleting,
+  onDelete,
+  onOpenChange,
+  open,
+  searchSet,
+}: CollectionDeleteDialogProps) {
+  return (
+    <AlertDialog onOpenChange={onOpenChange} open={open}>
+      <AlertDialogContent>
+        <CollectionDeleteDialogBody
+          deleteError={deleteError}
+          isDeleting={isDeleting}
+          onDelete={onDelete}
+          searchSet={searchSet}
+        />
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
+export function CollectionDeleteDialogBody({
+  deleteError,
+  isDeleting,
+  onDelete,
+  searchSet,
+}: CollectionDeleteDialogBodyProps) {
+  const collectionName = formatCollectionDisplayName(searchSet.displayName);
+
+  return (
+    <>
+      <AlertDialogHeader>
+        <AlertDialogTitle>{`Delete "${collectionName}"?`}</AlertDialogTitle>
+        <AlertDialogDescription>
+          {searchSet.importedImageCount > 0
+            ? `This will remove ${searchSet.importedObjectCount} objects and ${searchSet.importedImageCount} images from this Collection. Shared material used by other Collections will stay. Favorites that only belong to this Collection will remain in My Library as No Collection. Local files for non-favorite exclusive material will be deleted. Exports will not be deleted. There is no undo.`
+            : "This Collection has no downloaded images. It will be removed permanently. There is no undo."}
+        </AlertDialogDescription>
+      </AlertDialogHeader>
+      {deleteError === null ? null : (
+        <p className="rounded-xl border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {deleteError}
+        </p>
+      )}
+      <AlertDialogFooter>
+        <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+        <AlertDialogAction
+          disabled={isDeleting}
+          onClick={(event) => {
+            event.preventDefault();
+            onDelete();
+          }}
+          variant="destructive"
+        >
+          Delete Collection
+        </AlertDialogAction>
+      </AlertDialogFooter>
+    </>
   );
 }
 
@@ -52,6 +151,10 @@ export function SidebarCollectionFilter({
   );
   const [renamingSearchSet, setRenamingSearchSet] =
     useState<DashboardSearchSetView | null>(null);
+  const [deletingSearchSet, setDeletingSearchSet] =
+    useState<DashboardSearchSetView | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const pendingTitleNavigation = useRef<
     ReturnType<typeof globalThis.setTimeout> | null
   >(null);
@@ -160,6 +263,31 @@ export function SidebarCollectionFilter({
     return null;
   }
 
+  async function deleteSearchSet() {
+    if (deletingSearchSet === null) {
+      return;
+    }
+
+    setIsDeleting(true);
+    setDeleteError(null);
+    const response = await fetch(
+      `/api/search-sets/${encodeURIComponent(deletingSearchSet.slug)}`,
+      { method: "DELETE" },
+    );
+    setIsDeleting(false);
+
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => null)) as {
+        detail?: string;
+      } | null;
+      setDeleteError(payload?.detail ?? "Could not delete Collection.");
+      return;
+    }
+
+    setDeletingSearchSet(null);
+    router.push(createUserLibraryHref(filterText));
+  }
+
   return (
     <>
       <div className="relative group-data-[collapsible=icon]:hidden">
@@ -196,60 +324,81 @@ export function SidebarCollectionFilter({
 
             return (
               <SidebarMenuItem key={searchSet.slug}>
-                <SidebarMenuButton
-                  aria-expanded={isOpen}
-                  className={cn(
-                    "h-8 gap-2 rounded-md px-2 text-[13px] font-normal",
-                    isOpen && "bg-sidebar-accent text-sidebar-accent-foreground",
-                  )}
-                  isActive={isActive}
-                  onClick={() => openSearchSet(searchSet.slug)}
-                  render={<Link href={collectionHref} />}
-                  tooltip={collectionName}
-                >
-                  {isOpen ? (
-                    <FolderOpen className="text-sidebar-foreground/75" />
-                  ) : (
-                    <FolderClosed className="text-sidebar-foreground/65" />
-                  )}
-                  <span className="min-w-0 flex-1 truncate group-data-[collapsible=icon]:hidden">
-                    <span
-                      onClick={(event) =>
-                        handleTitleClick({
-                          event,
-                          href: collectionHref,
-                          slug: searchSet.slug,
-                        })
-                      }
-                      onDoubleClick={(event) =>
-                        handleTitleDoubleClick({ event, searchSet })
-                      }
+                <ContextMenu>
+                  <ContextMenuTrigger render={<div />}>
+                    <SidebarMenuButton
+                      aria-expanded={isOpen}
+                      className={cn(
+                        "h-8 gap-2 rounded-md px-2 text-[13px] font-normal",
+                        isOpen && "bg-sidebar-accent text-sidebar-accent-foreground",
+                      )}
+                      isActive={isActive}
+                      onClick={() => openSearchSet(searchSet.slug)}
+                      render={<Link href={collectionHref} />}
+                      tooltip={collectionName}
                     >
-                      {collectionName}
-                    </span>
-                  </span>
-                  <span
-                    className="ml-auto flex shrink-0 items-center gap-1 font-mono text-[11px] font-normal tabular-nums text-sidebar-foreground/55 group-data-[collapsible=icon]:hidden"
-                  >
-                    {searchActive ? (
-                      <Spinner
-                        aria-label={`${collectionName} search in progress`}
-                        className="size-3"
-                      />
+                      {isOpen ? (
+                        <FolderOpen className="text-sidebar-foreground/75" />
+                      ) : (
+                        <FolderClosed className="text-sidebar-foreground/65" />
+                      )}
+                      <span className="min-w-0 flex-1 truncate group-data-[collapsible=icon]:hidden">
+                        <span
+                          onClick={(event) =>
+                            handleTitleClick({
+                              event,
+                              href: collectionHref,
+                              slug: searchSet.slug,
+                            })
+                          }
+                          onDoubleClick={(event) =>
+                            handleTitleDoubleClick({ event, searchSet })
+                          }
+                        >
+                          {collectionName}
+                        </span>
+                      </span>
+                      <span
+                        className="ml-auto flex shrink-0 items-center gap-1 font-mono text-[11px] font-normal tabular-nums text-sidebar-foreground/55 group-data-[collapsible=icon]:hidden"
+                      >
+                        {searchActive ? (
+                          <Spinner
+                            aria-label={`${collectionName} search in progress`}
+                            className="size-3"
+                          />
+                        ) : null}
+                        <span
+                          aria-label={`${searchSet.importedImageCount} images`}
+                          title={`${searchSet.importedImageCount} images`}
+                        >
+                          {searchSet.importedImageCount}
+                        </span>
+                      </span>
+                    </SidebarMenuButton>
+                    {isOpen ? (
+                      <p className="ml-8 mr-2 pb-1 pr-2 text-xs leading-5 text-sidebar-foreground/55 group-data-[collapsible=icon]:hidden">
+                        {termSummary}
+                      </p>
                     ) : null}
-                    <span
-                      aria-label={`${searchSet.importedImageCount} images`}
-                      title={`${searchSet.importedImageCount} images`}
+                  </ContextMenuTrigger>
+                  <ContextMenuContent aria-label={`${collectionName} actions`}>
+                    <ContextMenuItem onClick={() => setRenamingSearchSet(searchSet)}>
+                      Rename
+                    </ContextMenuItem>
+                    <ContextMenuItem disabled>Pin</ContextMenuItem>
+                    <ContextMenuSeparator />
+                    <ContextMenuItem
+                      disabled={searchActive}
+                      onClick={() => {
+                        setDeleteError(null);
+                        setDeletingSearchSet(searchSet);
+                      }}
+                      variant="destructive"
                     >
-                      {searchSet.importedImageCount}
-                    </span>
-                  </span>
-                </SidebarMenuButton>
-                {isOpen ? (
-                  <p className="ml-8 mr-2 pb-1 pr-2 text-xs leading-5 text-sidebar-foreground/55 group-data-[collapsible=icon]:hidden">
-                    {termSummary}
-                  </p>
-                ) : null}
+                      Delete
+                    </ContextMenuItem>
+                  </ContextMenuContent>
+                </ContextMenu>
               </SidebarMenuItem>
             );
           })
@@ -266,6 +415,23 @@ export function SidebarCollectionFilter({
           }}
           onRename={renameSearchSet}
           open
+        />
+      )}
+      {deletingSearchSet === null ? null : (
+        <CollectionDeleteDialog
+          deleteError={deleteError}
+          isDeleting={isDeleting}
+          onDelete={() => {
+            void deleteSearchSet();
+          }}
+          onOpenChange={(open) => {
+            if (!open && !isDeleting) {
+              setDeletingSearchSet(null);
+              setDeleteError(null);
+            }
+          }}
+          open
+          searchSet={deletingSearchSet}
         />
       )}
     </>
