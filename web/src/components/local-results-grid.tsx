@@ -269,6 +269,7 @@ function FavoriteFilter({
       <Bookmark
         className={favoriteOnly ? "fill-current text-white" : undefined}
         data-icon="inline-start"
+        fill={favoriteOnly ? "currentColor" : "none"}
       />
       Favorites
     </Link>

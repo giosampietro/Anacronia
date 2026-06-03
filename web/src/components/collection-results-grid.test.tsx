@@ -267,6 +267,7 @@ describe("CollectionResultsGrid", () => {
     ));
 
     expect(html).toContain("aria-current=\"page\"");
+    expect(html).toContain("fill=\"currentColor\"");
     expect(html).toContain("fill-current text-white");
     expect(html).toContain("Favorites");
     expect(html).toContain("Cancel");
