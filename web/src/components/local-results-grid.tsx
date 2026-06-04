@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Database, Search } from "lucide-react";
+import { Bookmark, Database, Search } from "lucide-react";
 
 import { LocalResultSelectionSurface } from "@/components/local-result-selection-surface";
 import { LocalResultSetSearchForm } from "@/components/collection-result-set-search-form";
@@ -26,7 +26,12 @@ import {
   type LibraryImageAssetSummary,
   type LibraryObjectSummary,
 } from "@/lib/collection-objects";
-import { createGridStateHref, type GridViewMode, type ObjectRouteRef } from "@/lib/grid-view";
+import {
+  createGridStateHref,
+  type GridViewMode,
+  type LibraryCollectionFilter,
+  type ObjectRouteRef,
+} from "@/lib/grid-view";
 import type { WorkspaceMode } from "@/lib/workspace";
 
 type LocalResultObjectSummary = CollectionObjectSummary | LibraryObjectSummary;
@@ -36,8 +41,13 @@ type LocalResultsGridProps = {
   closeImageHref: string;
   closeObjectHref: string;
   collectionFilterText?: string;
+  curationActionsDisabled?: boolean;
+  deleteEndpoint?: string;
   exportEndpoint?: string;
+  favoriteOnly?: boolean;
   hasLocalMaterial?: boolean;
+  libraryCollectionFilter?: LibraryCollectionFilter;
+  noCollectionCounts?: CollectionResultCounts;
   imageAssetHref: (imageAsset: LibraryImageAssetSummary) => string;
   imageAssetTileId: (imageAsset: LibraryImageAssetSummary) => string;
   imageAssets: LibraryImageAssetSummary[];
@@ -58,6 +68,7 @@ type LocalResultsGridProps = {
   scopeDisplayName: string;
   searchAriaLabel: string;
   searchSetSlug?: string;
+  removeFromCollectionEndpoint?: string;
   viewMode: GridViewMode;
   workspaceMode: WorkspaceMode;
 };
@@ -80,6 +91,8 @@ function viewCountLabel(viewMode: GridViewMode, counts: CollectionResultCounts):
 
 function ProjectionControls({
   collectionFilterText,
+  favoriteOnly,
+  libraryCollectionFilter,
   localQueryText,
   providerFilter,
   resultCounts,
@@ -88,6 +101,8 @@ function ProjectionControls({
   workspaceMode,
 }: {
   collectionFilterText: string;
+  favoriteOnly: boolean;
+  libraryCollectionFilter: LibraryCollectionFilter;
   localQueryText: string;
   providerFilter: string;
   resultCounts: CollectionResultCounts;
@@ -97,6 +112,8 @@ function ProjectionControls({
 }) {
   const objectHref = createGridStateHref({
     collectionFilterText,
+    favoriteOnly,
+    libraryCollectionFilter,
     localQueryText,
     provider: providerFilter,
     searchSetSlug,
@@ -105,6 +122,8 @@ function ProjectionControls({
   });
   const imageHref = createGridStateHref({
     collectionFilterText,
+    favoriteOnly,
+    libraryCollectionFilter,
     localQueryText,
     provider: providerFilter,
     searchSetSlug,
@@ -127,6 +146,8 @@ function ProjectionControls({
 
 function ProviderFacets({
   collectionFilterText,
+  favoriteOnly,
+  libraryCollectionFilter,
   localQueryText,
   providerFacets,
   providerFilter,
@@ -136,6 +157,8 @@ function ProviderFacets({
   workspaceMode,
 }: {
   collectionFilterText: string;
+  favoriteOnly: boolean;
+  libraryCollectionFilter: LibraryCollectionFilter;
   localQueryText: string;
   providerFacets: CollectionProviderFacet[];
   providerFilter: string;
@@ -156,6 +179,8 @@ function ProviderFacets({
         })}
         href={createGridStateHref({
           collectionFilterText,
+          favoriteOnly,
+          libraryCollectionFilter,
           localQueryText,
           provider: "all",
           searchSetSlug,
@@ -182,6 +207,8 @@ function ProviderFacets({
             })}
             href={createGridStateHref({
               collectionFilterText,
+              favoriteOnly,
+              libraryCollectionFilter,
               localQueryText,
               provider: facet.provider,
               searchSetSlug,
@@ -202,14 +229,112 @@ function ProviderFacets({
   );
 }
 
+function FavoriteFilter({
+  collectionFilterText,
+  favoriteOnly,
+  libraryCollectionFilter,
+  localQueryText,
+  providerFilter,
+  searchSetSlug,
+  viewMode,
+  workspaceMode,
+}: {
+  collectionFilterText: string;
+  favoriteOnly: boolean;
+  libraryCollectionFilter: LibraryCollectionFilter;
+  localQueryText: string;
+  providerFilter: string;
+  searchSetSlug?: string;
+  viewMode: GridViewMode;
+  workspaceMode: WorkspaceMode;
+}) {
+  return (
+    <Link
+      aria-current={favoriteOnly ? "page" : undefined}
+      className={buttonVariants({
+        size: "sm",
+        variant: favoriteOnly ? "secondary" : "outline",
+      })}
+      href={createGridStateHref({
+        collectionFilterText,
+        favoriteOnly: !favoriteOnly,
+        libraryCollectionFilter,
+        localQueryText,
+        provider: providerFilter,
+        searchSetSlug,
+        viewMode,
+        workspaceMode,
+      })}
+      scroll={false}
+    >
+      <Bookmark
+        className={favoriteOnly ? "fill-current text-white" : undefined}
+        data-icon="inline-start"
+        fill={favoriteOnly ? "currentColor" : "none"}
+      />
+      Favorites
+    </Link>
+  );
+}
+
+function NoCollectionFilter({
+  collectionFilterText,
+  favoriteOnly,
+  libraryCollectionFilter,
+  localQueryText,
+  noCollectionCount,
+  providerFilter,
+  viewMode,
+}: {
+  collectionFilterText: string;
+  favoriteOnly: boolean;
+  libraryCollectionFilter: LibraryCollectionFilter;
+  localQueryText: string;
+  noCollectionCount: number;
+  providerFilter: string;
+  viewMode: GridViewMode;
+}) {
+  const isActive = libraryCollectionFilter === "none";
+
+  return (
+    <Link
+      aria-current={isActive ? "page" : undefined}
+      className={buttonVariants({
+        size: "sm",
+        variant: isActive ? "secondary" : "outline",
+      })}
+      href={createGridStateHref({
+        collectionFilterText,
+        favoriteOnly,
+        libraryCollectionFilter: isActive ? "all" : "none",
+        localQueryText,
+        provider: providerFilter,
+        viewMode,
+        workspaceMode: "user-library",
+      })}
+      scroll={false}
+    >
+      <Database data-icon="inline-start" />
+      No Collection
+      <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+        {noCollectionCount}
+      </span>
+    </Link>
+  );
+}
+
 function EmptyResults({
+  favoriteOnly,
   hasLocalMaterial,
+  libraryCollectionFilter,
   localQueryText,
   providerFilter,
   viewMode,
   workspaceMode,
 }: {
+  favoriteOnly: boolean;
   hasLocalMaterial: boolean;
+  libraryCollectionFilter: LibraryCollectionFilter;
   localQueryText: string;
   providerFilter: string;
   viewMode: GridViewMode;
@@ -217,7 +342,49 @@ function EmptyResults({
 }) {
   const noun = viewNoun(viewMode);
   const trimmedQuery = localQueryText.trim();
-  const hasActiveFilter = trimmedQuery !== "" || providerFilter !== "all";
+  const hasNoCollectionFilter =
+    workspaceMode === "user-library" && libraryCollectionFilter === "none";
+  const hasActiveFilter =
+    trimmedQuery !== "" ||
+    providerFilter !== "all" ||
+    favoriteOnly ||
+    hasNoCollectionFilter;
+  const title = (() => {
+    if (hasNoCollectionFilter && favoriteOnly) {
+      return `No favorite ${noun} without a Collection`;
+    }
+    if (hasNoCollectionFilter) {
+      return `No ${noun} without a Collection`;
+    }
+    if (favoriteOnly) {
+      return `No favorite ${noun}`;
+    }
+
+    return hasLocalMaterial && hasActiveFilter
+      ? `No matching ${noun}`
+      : `No ${noun} yet`;
+  })();
+  const description = (() => {
+    if (hasLocalMaterial && trimmedQuery !== "") {
+      return `No ${noun.toLowerCase()} matched "${trimmedQuery}".`;
+    }
+    if (hasNoCollectionFilter && favoriteOnly) {
+      return `Bookmarked ${noun.toLowerCase()} outside Collections will appear here.`;
+    }
+    if (hasNoCollectionFilter) {
+      return `Everything in My Library currently belongs to at least one Collection.`;
+    }
+    if (favoriteOnly) {
+      return `Bookmarked ${noun.toLowerCase()} will appear here.`;
+    }
+    if (hasLocalMaterial) {
+      return `No ${noun.toLowerCase()} matched this Provider.`;
+    }
+
+    return workspaceMode === "user-library"
+      ? "Start a Collection search to add local Image Assets to My Library."
+      : "Start search to add local Museum Objects and Image Assets to this Collection.";
+  })();
 
   return (
     <Empty className="border">
@@ -225,20 +392,8 @@ function EmptyResults({
         <EmptyMedia variant="icon">
           {hasLocalMaterial && hasActiveFilter ? <Search /> : <Database />}
         </EmptyMedia>
-        <EmptyTitle>
-          {hasLocalMaterial && hasActiveFilter
-            ? `No matching ${noun}`
-            : `No ${noun} yet`}
-        </EmptyTitle>
-        <EmptyDescription>
-          {hasLocalMaterial && trimmedQuery !== ""
-            ? `No ${noun.toLowerCase()} matched "${trimmedQuery}".`
-            : hasLocalMaterial
-              ? `No ${noun.toLowerCase()} matched this Provider.`
-              : workspaceMode === "user-library"
-                ? "Start a Collection search to add local Image Assets to My Library."
-                : "Start search to add local Museum Objects and Image Assets to this Collection."}
-        </EmptyDescription>
+        <EmptyTitle>{title}</EmptyTitle>
+        <EmptyDescription>{description}</EmptyDescription>
       </EmptyHeader>
     </Empty>
   );
@@ -249,8 +404,13 @@ export function LocalResultsGrid({
   closeImageHref,
   closeObjectHref,
   collectionFilterText = "",
+  curationActionsDisabled = false,
+  deleteEndpoint,
   exportEndpoint,
+  favoriteOnly = false,
   hasLocalMaterial = false,
+  libraryCollectionFilter = "all",
+  noCollectionCounts,
   imageAssetHref,
   imageAssetTileId,
   imageAssets,
@@ -271,13 +431,32 @@ export function LocalResultsGrid({
   scopeDisplayName,
   searchAriaLabel,
   searchSetSlug,
+  removeFromCollectionEndpoint,
   viewMode,
   workspaceMode,
 }: LocalResultsGridProps) {
   const shownCount = viewMode === "objects" ? objects.length : imageAssets.length;
+  const deleteCompletionHref =
+    workspaceMode === "user-library" && libraryCollectionFilter === "none"
+      ? createGridStateHref({
+          collectionFilterText,
+          favoriteOnly,
+          libraryCollectionFilter: "all",
+          localQueryText,
+          provider: providerFilter,
+          viewMode,
+          workspaceMode: "user-library",
+        })
+      : undefined;
+  const noCollectionCount =
+    noCollectionCounts === undefined
+      ? viewCountLabel(viewMode, resultCounts)
+      : viewCountLabel(viewMode, noCollectionCounts);
   const emptyState = (
     <EmptyResults
+      favoriteOnly={favoriteOnly}
       hasLocalMaterial={hasLocalMaterial}
+      libraryCollectionFilter={libraryCollectionFilter}
       localQueryText={localQueryText}
       providerFilter={providerFilter}
       viewMode={viewMode}
@@ -292,6 +471,8 @@ export function LocalResultsGrid({
           <LocalResultSetSearchForm
             ariaLabel={searchAriaLabel}
             collectionFilterText={collectionFilterText}
+            favoriteOnly={favoriteOnly}
+            libraryCollectionFilter={libraryCollectionFilter}
             localQueryText={localQueryText}
             providerFilter={providerFilter}
             searchSetSlug={searchSetSlug}
@@ -300,6 +481,8 @@ export function LocalResultsGrid({
           />
           <ProjectionControls
             collectionFilterText={collectionFilterText}
+            favoriteOnly={favoriteOnly}
+            libraryCollectionFilter={libraryCollectionFilter}
             localQueryText={localQueryText}
             providerFilter={providerFilter}
             resultCounts={resultCounts}
@@ -309,6 +492,8 @@ export function LocalResultsGrid({
           />
           <ProviderFacets
             collectionFilterText={collectionFilterText}
+            favoriteOnly={favoriteOnly}
+            libraryCollectionFilter={libraryCollectionFilter}
             localQueryText={localQueryText}
             providerFacets={providerFacets}
             providerFilter={providerFilter}
@@ -317,6 +502,27 @@ export function LocalResultsGrid({
             viewMode={viewMode}
             workspaceMode={workspaceMode}
           />
+          <FavoriteFilter
+            collectionFilterText={collectionFilterText}
+            favoriteOnly={favoriteOnly}
+            libraryCollectionFilter={libraryCollectionFilter}
+            localQueryText={localQueryText}
+            providerFilter={providerFilter}
+            searchSetSlug={searchSetSlug}
+            viewMode={viewMode}
+            workspaceMode={workspaceMode}
+          />
+          {workspaceMode === "user-library" ? (
+            <NoCollectionFilter
+              collectionFilterText={collectionFilterText}
+              favoriteOnly={favoriteOnly}
+              libraryCollectionFilter={libraryCollectionFilter}
+              localQueryText={localQueryText}
+              noCollectionCount={noCollectionCount}
+              providerFilter={providerFilter}
+              viewMode={viewMode}
+            />
+          ) : null}
         </div>
       </CardHeader>
       <CardContent>
@@ -324,6 +530,9 @@ export function LocalResultsGrid({
             apiBaseUrl={apiBaseUrl}
             closeImageHref={closeImageHref}
             closeObjectHref={closeObjectHref}
+            curationActionsDisabled={curationActionsDisabled}
+            deleteCompletionHref={deleteCompletionHref}
+            deleteEndpoint={deleteEndpoint}
             emptyState={shownCount === 0 ? emptyState : undefined}
             exportEndpoint={exportEndpoint}
             imageAssetHref={imageAssetHref}
@@ -333,7 +542,7 @@ export function LocalResultsGrid({
             imageTopBadgeLabel={imageTopBadgeLabel}
             initialSelectedIds={initialSelectedIds}
             initialSelectionMode={initialSelectionMode}
-            key={`${workspaceMode}:${searchSetSlug ?? "library"}:${viewMode}`}
+            key={`${workspaceMode}:${searchSetSlug ?? "library"}:${viewMode}:${providerFilter}:${localQueryText}:${collectionFilterText}:${favoriteOnly ? "favorite" : "all"}:${libraryCollectionFilter}`}
             objectCollectionLabel={objectCollectionLabel}
             objectHref={objectHref}
             objectTileId={objectTileId}
@@ -341,6 +550,7 @@ export function LocalResultsGrid({
             resolvedImageAssetId={resolvedImageAssetId}
             resolvedObject={resolvedObject}
             scopeDisplayName={scopeDisplayName}
+            removeFromCollectionEndpoint={removeFromCollectionEndpoint}
             viewMode={viewMode}
           />
       </CardContent>

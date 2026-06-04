@@ -4,6 +4,7 @@ from pathlib import Path
 import sqlite3
 
 from anacronia.collection_runs import ensure_collection_run_schema
+from anacronia.curation import ensure_collection_memberships
 from anacronia.met_ingest import ensure_met_ingest_schema
 from anacronia.search_sets import normalize_search_term
 
@@ -19,6 +20,7 @@ class CollectionObjectSummary:
     cover_image_asset_id: int
     cover_original_width: int
     cover_original_height: int
+    is_favorite: bool
 
 
 @dataclass(frozen=True)
@@ -43,6 +45,7 @@ class CollectionObjectMetadata:
     is_public_domain: bool
     rights_and_reproduction: str
     metadata_date: str
+    is_favorite: bool
 
 
 @dataclass(frozen=True)
@@ -53,6 +56,7 @@ class CollectionObjectImage:
     image_index: int | None
     original_width: int
     original_height: int
+    is_favorite: bool
 
 
 @dataclass(frozen=True)
@@ -87,6 +91,7 @@ class LibraryObjectSummary:
     cover_image_asset_id: int
     cover_original_width: int
     cover_original_height: int
+    is_favorite: bool
     collections: list[LibraryImageAssetCollection]
 
 
@@ -103,6 +108,7 @@ class LibraryImageAssetSummary:
     original_width: int
     original_height: int
     image_count: int
+    is_favorite: bool
     collections: list[LibraryImageAssetCollection]
 
 
@@ -195,20 +201,25 @@ def normalized_provider_filter(provider: str) -> str:
     return "" if provider_filter == "all" else provider_filter
 
 
+def normalized_library_collection_filter(collection: str) -> str:
+    collection_filter = collection.strip().lower()
+    return "none" if collection_filter == "none" else "all"
+
+
 def list_collection_objects(
     *,
     database_path: Path,
     search_set_slug: str,
     query_text: str = "",
     provider: str = "",
+    favorite_only: bool = False,
 ) -> list[CollectionObjectSummary]:
     normalized_query = normalized_local_query(query_text)
     query_pattern = local_query_like_pattern(query_text)
     provider_filter = normalized_provider_filter(provider)
 
     with sqlite3.connect(database_path) as connection:
-        ensure_collection_run_schema(connection)
-        ensure_met_ingest_schema(connection)
+        ensure_collection_memberships(connection)
         rows = connection.execute(
             """
             WITH collection_image_assets AS (
@@ -227,19 +238,23 @@ def list_collection_objects(
               JOIN museum_objects
                 ON museum_objects.provider = image_assets.provider
                 AND museum_objects.object_id = image_assets.object_id
-              JOIN object_matches
-                ON object_matches.provider = image_assets.provider
-                AND object_matches.object_id = image_assets.object_id
-              JOIN collection_runs
-                ON collection_runs.id = object_matches.run_id
-              JOIN provider_collections
-                ON provider_collections.id = collection_runs.provider_collection_id
               JOIN search_sets
-                ON search_sets.id = provider_collections.search_set_id
+                ON search_sets.slug = ?
+              JOIN collection_object_memberships
+                ON collection_object_memberships.search_set_id = search_sets.id
+                AND collection_object_memberships.provider = image_assets.provider
+                AND collection_object_memberships.object_id = image_assets.object_id
+                AND collection_object_memberships.active = 1
+              JOIN collection_image_asset_memberships
+                ON collection_image_asset_memberships.search_set_id = search_sets.id
+                AND collection_image_asset_memberships.provider = image_assets.provider
+                AND collection_image_asset_memberships.object_id = image_assets.object_id
+                AND collection_image_asset_memberships.source_image_url = image_assets.source_image_url
+                AND collection_image_asset_memberships.active = 1
               WHERE
-                search_sets.slug = ?
-                AND image_assets.provider = provider_collections.provider
-                AND image_assets.imported = 1
+                image_assets.imported = 1
+                AND image_assets.active = 1
+                AND museum_objects.active = 1
                 AND (? = '' OR image_assets.provider = ?)
                 AND (
                   ? = ''
@@ -301,8 +316,24 @@ def list_collection_objects(
                   cover.id
                 LIMIT 1
               ) AS cover_original_height,
+              EXISTS (
+                SELECT 1
+                FROM object_favorites
+                WHERE
+                  object_favorites.provider = collection_image_assets.provider
+                  AND object_favorites.object_id = collection_image_assets.object_id
+              ) AS is_favorite,
               MAX(collection_image_assets.id) AS latest_image_asset_id
             FROM collection_image_assets
+            WHERE
+              ? = 0
+              OR EXISTS (
+                SELECT 1
+                FROM object_favorites
+                WHERE
+                  object_favorites.provider = collection_image_assets.provider
+                  AND object_favorites.object_id = collection_image_assets.object_id
+              )
             GROUP BY
               collection_image_assets.provider,
               collection_image_assets.object_id,
@@ -322,6 +353,7 @@ def list_collection_objects(
                 query_pattern,
                 query_pattern,
                 query_pattern,
+                1 if favorite_only else 0,
             ),
         ).fetchall()
 
@@ -336,6 +368,7 @@ def list_collection_objects(
             cover_image_asset_id=int(row[6]),
             cover_original_width=int(row[7]),
             cover_original_height=int(row[8]),
+            is_favorite=bool(row[9]),
         )
         for row in rows
     ]
@@ -345,10 +378,12 @@ def list_library_image_assets(
     *,
     database_path: Path,
     filter_text: str = "",
+    favorite_only: bool = False,
+    collection: str = "all",
 ) -> list[LibraryImageAssetSummary]:
+    collection_filter = normalized_library_collection_filter(collection)
     with sqlite3.connect(database_path) as connection:
-        ensure_collection_run_schema(connection)
-        ensure_met_ingest_schema(connection)
+        ensure_collection_memberships(connection)
         rows = connection.execute(
             """
             SELECT DISTINCT
@@ -369,7 +404,16 @@ def list_library_image_assets(
                   sibling_image_assets.provider = image_assets.provider
                   AND sibling_image_assets.object_id = image_assets.object_id
                   AND sibling_image_assets.imported = 1
+                  AND sibling_image_assets.active = 1
               ) AS image_count,
+              EXISTS (
+                SELECT 1
+                FROM image_asset_favorites
+                WHERE
+                  image_asset_favorites.provider = image_assets.provider
+                  AND image_asset_favorites.object_id = image_assets.object_id
+                  AND image_asset_favorites.source_image_url = image_assets.source_image_url
+              ) AS is_favorite,
               search_sets.id AS search_set_id,
               search_sets.slug,
               search_sets.display_name
@@ -377,19 +421,38 @@ def list_library_image_assets(
             JOIN museum_objects
               ON museum_objects.provider = image_assets.provider
               AND museum_objects.object_id = image_assets.object_id
-            LEFT JOIN object_matches
-              ON object_matches.provider = image_assets.provider
-              AND object_matches.object_id = image_assets.object_id
-            LEFT JOIN collection_runs
-              ON collection_runs.id = object_matches.run_id
-            LEFT JOIN provider_collections
-              ON provider_collections.id = collection_runs.provider_collection_id
-              AND provider_collections.provider = image_assets.provider
+            LEFT JOIN collection_image_asset_memberships
+              ON collection_image_asset_memberships.provider = image_assets.provider
+              AND collection_image_asset_memberships.object_id = image_assets.object_id
+              AND collection_image_asset_memberships.source_image_url = image_assets.source_image_url
+              AND collection_image_asset_memberships.active = 1
+            LEFT JOIN collection_object_memberships
+              ON collection_object_memberships.search_set_id = collection_image_asset_memberships.search_set_id
+              AND collection_object_memberships.provider = image_assets.provider
+              AND collection_object_memberships.object_id = image_assets.object_id
+              AND collection_object_memberships.active = 1
             LEFT JOIN search_sets
-              ON search_sets.id = provider_collections.search_set_id
-            WHERE image_assets.imported = 1
+              ON search_sets.id = collection_image_asset_memberships.search_set_id
+              AND collection_object_memberships.id IS NOT NULL
+            WHERE
+              image_assets.imported = 1
+              AND image_assets.active = 1
+              AND museum_objects.active = 1
+              AND (
+                ? = 0
+                OR EXISTS (
+                  SELECT 1
+                  FROM image_asset_favorites
+                  WHERE
+                    image_asset_favorites.provider = image_assets.provider
+                    AND image_asset_favorites.object_id = image_assets.object_id
+                    AND image_asset_favorites.source_image_url = image_assets.source_image_url
+                )
+              )
             ORDER BY image_assets.id DESC, search_set_id
             """
+            ,
+            (1 if favorite_only else 0,),
         ).fetchall()
 
     image_assets: dict[int, LibraryImageAssetSummary] = {}
@@ -409,18 +472,19 @@ def list_library_image_assets(
                 original_width=int(row[8]),
                 original_height=int(row[9]),
                 image_count=int(row[10]),
+                is_favorite=bool(row[11]),
                 collections=[],
             )
             seen_collections[image_asset_id] = set()
 
-        collection_slug = row[12]
+        collection_slug = row[13]
         if collection_slug is None or collection_slug in seen_collections[image_asset_id]:
             continue
 
         image_assets[image_asset_id].collections.append(
             LibraryImageAssetCollection(
                 slug=collection_slug,
-                display_name=row[13],
+                display_name=row[14],
             )
         )
         seen_collections[image_asset_id].add(collection_slug)
@@ -428,6 +492,10 @@ def list_library_image_assets(
     return [
         image_asset
         for image_asset in image_assets.values()
+        if (
+            collection_filter == "all"
+            or (collection_filter == "none" and not image_asset.collections)
+        )
         if library_image_asset_matches_filter(
             image_asset=image_asset,
             filter_text=filter_text,
@@ -441,14 +509,14 @@ def list_collection_image_assets(
     search_set_slug: str,
     query_text: str = "",
     provider: str = "",
+    favorite_only: bool = False,
 ) -> list[LibraryImageAssetSummary]:
     normalized_query = normalized_local_query(query_text)
     query_pattern = local_query_like_pattern(query_text)
     provider_filter = normalized_provider_filter(provider)
 
     with sqlite3.connect(database_path) as connection:
-        ensure_collection_run_schema(connection)
-        ensure_met_ingest_schema(connection)
+        ensure_collection_memberships(connection)
         rows = connection.execute(
             """
             SELECT DISTINCT
@@ -465,31 +533,66 @@ def list_collection_image_assets(
               (
                 SELECT COUNT(*)
                 FROM image_assets AS sibling_image_assets
+                JOIN collection_image_asset_memberships AS sibling_image_memberships
+                  ON sibling_image_memberships.provider = sibling_image_assets.provider
+                  AND sibling_image_memberships.object_id = sibling_image_assets.object_id
+                  AND sibling_image_memberships.source_image_url = sibling_image_assets.source_image_url
+                  AND sibling_image_memberships.search_set_id = search_sets.id
+                  AND sibling_image_memberships.active = 1
+                JOIN collection_object_memberships AS sibling_object_memberships
+                  ON sibling_object_memberships.provider = sibling_image_assets.provider
+                  AND sibling_object_memberships.object_id = sibling_image_assets.object_id
+                  AND sibling_object_memberships.search_set_id = search_sets.id
+                  AND sibling_object_memberships.active = 1
                 WHERE
                   sibling_image_assets.provider = image_assets.provider
                   AND sibling_image_assets.object_id = image_assets.object_id
                   AND sibling_image_assets.imported = 1
+                  AND sibling_image_assets.active = 1
               ) AS image_count,
+              EXISTS (
+                SELECT 1
+                FROM image_asset_favorites
+                WHERE
+                  image_asset_favorites.provider = image_assets.provider
+                  AND image_asset_favorites.object_id = image_assets.object_id
+                  AND image_asset_favorites.source_image_url = image_assets.source_image_url
+              ) AS is_favorite,
               search_sets.slug,
               search_sets.display_name
             FROM image_assets
             JOIN museum_objects
               ON museum_objects.provider = image_assets.provider
               AND museum_objects.object_id = image_assets.object_id
-            JOIN object_matches
-              ON object_matches.provider = image_assets.provider
-              AND object_matches.object_id = image_assets.object_id
-            JOIN collection_runs
-              ON collection_runs.id = object_matches.run_id
-            JOIN provider_collections
-              ON provider_collections.id = collection_runs.provider_collection_id
-              AND provider_collections.provider = image_assets.provider
             JOIN search_sets
-              ON search_sets.id = provider_collections.search_set_id
+              ON search_sets.slug = ?
+            JOIN collection_object_memberships
+              ON collection_object_memberships.search_set_id = search_sets.id
+              AND collection_object_memberships.provider = image_assets.provider
+              AND collection_object_memberships.object_id = image_assets.object_id
+              AND collection_object_memberships.active = 1
+            JOIN collection_image_asset_memberships
+              ON collection_image_asset_memberships.search_set_id = search_sets.id
+              AND collection_image_asset_memberships.provider = image_assets.provider
+              AND collection_image_asset_memberships.object_id = image_assets.object_id
+              AND collection_image_asset_memberships.source_image_url = image_assets.source_image_url
+              AND collection_image_asset_memberships.active = 1
             WHERE
-              search_sets.slug = ?
-              AND image_assets.imported = 1
+              image_assets.imported = 1
+              AND image_assets.active = 1
+              AND museum_objects.active = 1
               AND (? = '' OR image_assets.provider = ?)
+              AND (
+                ? = 0
+                OR EXISTS (
+                  SELECT 1
+                  FROM image_asset_favorites
+                  WHERE
+                    image_asset_favorites.provider = image_assets.provider
+                    AND image_asset_favorites.object_id = image_assets.object_id
+                    AND image_asset_favorites.source_image_url = image_assets.source_image_url
+                )
+              )
               AND (
                 ? = ''
                 OR LOWER(image_assets.provider) LIKE ?
@@ -512,6 +615,7 @@ def list_collection_image_assets(
                 search_set_slug,
                 provider_filter,
                 provider_filter,
+                1 if favorite_only else 0,
                 normalized_query,
                 query_pattern,
                 query_pattern,
@@ -535,10 +639,11 @@ def list_collection_image_assets(
             original_width=int(row[8]),
             original_height=int(row[9]),
             image_count=int(row[10]),
+            is_favorite=bool(row[11]),
             collections=[
                 LibraryImageAssetCollection(
-                    slug=row[11],
-                    display_name=row[12],
+                    slug=row[12],
+                    display_name=row[13],
                 )
             ],
         )
@@ -577,6 +682,7 @@ def get_collection_local_result_set(
     query_text: str = "",
     provider: str = "all",
     view: str = "objects",
+    favorite_only: bool = False,
 ) -> CollectionLocalResultSet:
     query = normalized_local_query(query_text)
     provider_filter = normalized_provider_filter(provider)
@@ -585,11 +691,13 @@ def get_collection_local_result_set(
         database_path=database_path,
         search_set_slug=search_set_slug,
         query_text=query,
+        favorite_only=favorite_only,
     )
     all_query_image_assets = list_collection_image_assets(
         database_path=database_path,
         search_set_slug=search_set_slug,
         query_text=query,
+        favorite_only=favorite_only,
     )
 
     if provider_filter:
@@ -627,6 +735,8 @@ def get_library_local_result_set(
     query_text: str = "",
     provider: str = "all",
     view: str = "images",
+    favorite_only: bool = False,
+    collection: str = "all",
 ) -> LibraryLocalResultSet:
     query = normalized_local_query(query_text)
     provider_filter = normalized_provider_filter(provider)
@@ -634,10 +744,14 @@ def get_library_local_result_set(
     all_query_objects = list_library_objects(
         database_path=database_path,
         filter_text=query,
+        favorite_only=favorite_only,
+        collection=collection,
     )
     all_query_image_assets = list_library_image_assets(
         database_path=database_path,
         filter_text=query,
+        favorite_only=favorite_only,
+        collection=collection,
     )
 
     if provider_filter:
@@ -673,10 +787,12 @@ def list_library_objects(
     *,
     database_path: Path,
     filter_text: str = "",
+    favorite_only: bool = False,
+    collection: str = "all",
 ) -> list[LibraryObjectSummary]:
+    collection_filter = normalized_library_collection_filter(collection)
     with sqlite3.connect(database_path) as connection:
-        ensure_collection_run_schema(connection)
-        ensure_met_ingest_schema(connection)
+        ensure_collection_memberships(connection)
         object_rows = connection.execute(
             """
             WITH imported_image_assets AS (
@@ -689,7 +805,7 @@ def list_library_objects(
                 original_width,
                 original_height
               FROM image_assets
-              WHERE imported = 1
+              WHERE imported = 1 AND active = 1
             )
             SELECT
               imported_image_assets.provider,
@@ -734,19 +850,32 @@ def list_library_objects(
                   cover.id
                 LIMIT 1
               ) AS cover_original_height,
+              EXISTS (
+                SELECT 1
+                FROM object_favorites
+                WHERE
+                  object_favorites.provider = imported_image_assets.provider
+                  AND object_favorites.object_id = imported_image_assets.object_id
+              ) AS is_favorite,
               MAX(imported_image_assets.id) AS latest_image_asset_id
             FROM imported_image_assets
             JOIN museum_objects
               ON museum_objects.provider = imported_image_assets.provider
               AND museum_objects.object_id = imported_image_assets.object_id
+            WHERE museum_objects.active = 1
             GROUP BY
               imported_image_assets.provider,
               imported_image_assets.object_id,
               museum_objects.title,
               museum_objects.object_name,
               museum_objects.artist_display_name
+            HAVING
+              ? = 0
+              OR is_favorite = 1
             ORDER BY latest_image_asset_id DESC
             """
+            ,
+            (1 if favorite_only else 0,),
         ).fetchall()
         collection_rows = connection.execute(
             """
@@ -756,17 +885,19 @@ def list_library_objects(
               search_sets.slug,
               search_sets.display_name
             FROM image_assets
-            JOIN object_matches
-              ON object_matches.provider = image_assets.provider
-              AND object_matches.object_id = image_assets.object_id
-            JOIN collection_runs
-              ON collection_runs.id = object_matches.run_id
-            JOIN provider_collections
-              ON provider_collections.id = collection_runs.provider_collection_id
-              AND provider_collections.provider = image_assets.provider
+            JOIN collection_image_asset_memberships
+              ON collection_image_asset_memberships.provider = image_assets.provider
+              AND collection_image_asset_memberships.object_id = image_assets.object_id
+              AND collection_image_asset_memberships.source_image_url = image_assets.source_image_url
+              AND collection_image_asset_memberships.active = 1
+            JOIN collection_object_memberships
+              ON collection_object_memberships.search_set_id = collection_image_asset_memberships.search_set_id
+              AND collection_object_memberships.provider = image_assets.provider
+              AND collection_object_memberships.object_id = image_assets.object_id
+              AND collection_object_memberships.active = 1
             JOIN search_sets
-              ON search_sets.id = provider_collections.search_set_id
-            WHERE image_assets.imported = 1
+              ON search_sets.id = collection_image_asset_memberships.search_set_id
+            WHERE image_assets.imported = 1 AND image_assets.active = 1
             ORDER BY
               image_assets.provider,
               image_assets.object_id,
@@ -795,6 +926,7 @@ def list_library_objects(
             cover_image_asset_id=int(row[6]),
             cover_original_width=int(row[7]),
             cover_original_height=int(row[8]),
+            is_favorite=bool(row[9]),
             collections=collections_by_object.get((row[0], int(row[1])), []),
         )
         for row in object_rows
@@ -803,6 +935,10 @@ def list_library_objects(
     return [
         library_object
         for library_object in library_objects
+        if (
+            collection_filter == "all"
+            or (collection_filter == "none" and not library_object.collections)
+        )
         if library_object_matches_filter(
             library_object=library_object,
             filter_text=filter_text,
@@ -827,6 +963,7 @@ def library_image_asset_matches_filter(
             image_asset.object_name,
             image_asset.artist_display_name,
             image_asset.image_role,
+            "No Collection" if not image_asset.collections else "",
             *(
                 f"{collection.display_name} {collection.slug}"
                 for collection in image_asset.collections
@@ -852,6 +989,7 @@ def library_object_matches_filter(
             library_object.title,
             library_object.object_name,
             library_object.artist_display_name,
+            "No Collection" if not library_object.collections else "",
             *(
                 f"{collection.display_name} {collection.slug}"
                 for collection in library_object.collections
@@ -869,8 +1007,7 @@ def get_collection_object_detail(
     object_id: int,
 ) -> CollectionObjectDetail | None:
     with sqlite3.connect(database_path) as connection:
-        ensure_collection_run_schema(connection)
-        ensure_met_ingest_schema(connection)
+        ensure_collection_memberships(connection)
         object_row = connection.execute(
             """
             SELECT DISTINCT
@@ -883,26 +1020,37 @@ def get_collection_object_detail(
               museum_objects.is_public_domain,
               museum_objects.rights_and_reproduction,
               museum_objects.metadata_date,
-              museum_objects.raw_record_path
+              museum_objects.raw_record_path,
+              EXISTS (
+                SELECT 1
+                FROM object_favorites
+                WHERE
+                  object_favorites.provider = museum_objects.provider
+                  AND object_favorites.object_id = museum_objects.object_id
+              ) AS is_favorite
             FROM museum_objects
+            JOIN search_sets
+              ON search_sets.slug = ?
+            JOIN collection_object_memberships
+              ON collection_object_memberships.search_set_id = search_sets.id
+              AND collection_object_memberships.provider = museum_objects.provider
+              AND collection_object_memberships.object_id = museum_objects.object_id
+              AND collection_object_memberships.active = 1
             JOIN image_assets
               ON image_assets.provider = museum_objects.provider
               AND image_assets.object_id = museum_objects.object_id
-            JOIN object_matches
-              ON object_matches.provider = museum_objects.provider
-              AND object_matches.object_id = museum_objects.object_id
-            JOIN collection_runs
-              ON collection_runs.id = object_matches.run_id
-            JOIN provider_collections
-              ON provider_collections.id = collection_runs.provider_collection_id
-            JOIN search_sets
-              ON search_sets.id = provider_collections.search_set_id
+            JOIN collection_image_asset_memberships
+              ON collection_image_asset_memberships.search_set_id = search_sets.id
+              AND collection_image_asset_memberships.provider = image_assets.provider
+              AND collection_image_asset_memberships.object_id = image_assets.object_id
+              AND collection_image_asset_memberships.source_image_url = image_assets.source_image_url
+              AND collection_image_asset_memberships.active = 1
             WHERE
-              search_sets.slug = ?
-              AND museum_objects.provider = ?
+              museum_objects.provider = ?
               AND museum_objects.object_id = ?
-              AND image_assets.provider = provider_collections.provider
+              AND museum_objects.active = 1
               AND image_assets.imported = 1
+              AND image_assets.active = 1
             """,
             (search_set_slug, provider, object_id),
         ).fetchone()
@@ -918,23 +1066,34 @@ def get_collection_object_detail(
               image_assets.image_role,
               image_assets.image_index,
               image_assets.original_width,
-              image_assets.original_height
+              image_assets.original_height,
+              EXISTS (
+                SELECT 1
+                FROM image_asset_favorites
+                WHERE
+                  image_asset_favorites.provider = image_assets.provider
+                  AND image_asset_favorites.object_id = image_assets.object_id
+                  AND image_asset_favorites.source_image_url = image_assets.source_image_url
+              ) AS is_favorite
             FROM image_assets
-            JOIN object_matches
-              ON object_matches.provider = image_assets.provider
-              AND object_matches.object_id = image_assets.object_id
-            JOIN collection_runs
-              ON collection_runs.id = object_matches.run_id
-            JOIN provider_collections
-              ON provider_collections.id = collection_runs.provider_collection_id
             JOIN search_sets
-              ON search_sets.id = provider_collections.search_set_id
+              ON search_sets.slug = ?
+            JOIN collection_object_memberships
+              ON collection_object_memberships.search_set_id = search_sets.id
+              AND collection_object_memberships.provider = image_assets.provider
+              AND collection_object_memberships.object_id = image_assets.object_id
+              AND collection_object_memberships.active = 1
+            JOIN collection_image_asset_memberships
+              ON collection_image_asset_memberships.search_set_id = search_sets.id
+              AND collection_image_asset_memberships.provider = image_assets.provider
+              AND collection_image_asset_memberships.object_id = image_assets.object_id
+              AND collection_image_asset_memberships.source_image_url = image_assets.source_image_url
+              AND collection_image_asset_memberships.active = 1
             WHERE
-              search_sets.slug = ?
-              AND image_assets.provider = ?
+              image_assets.provider = ?
               AND image_assets.object_id = ?
-              AND image_assets.provider = provider_collections.provider
               AND image_assets.imported = 1
+              AND image_assets.active = 1
             ORDER BY
               CASE WHEN image_assets.image_role = 'primary' THEN 0 ELSE 1 END,
               COALESCE(image_assets.image_index, 0),
@@ -1001,6 +1160,7 @@ def get_collection_object_detail(
             is_public_domain=bool(object_row[6]),
             rights_and_reproduction=object_row[7],
             metadata_date=object_row[8],
+            is_favorite=bool(object_row[10]),
         ),
         images=[
             CollectionObjectImage(
@@ -1010,6 +1170,7 @@ def get_collection_object_detail(
                 image_index=row[3],
                 original_width=int(row[4]),
                 original_height=int(row[5]),
+                is_favorite=bool(row[6]),
             )
             for row in image_rows
         ],
@@ -1054,7 +1215,14 @@ def get_library_object_detail(
               museum_objects.is_public_domain,
               museum_objects.rights_and_reproduction,
               museum_objects.metadata_date,
-              museum_objects.raw_record_path
+              museum_objects.raw_record_path,
+              EXISTS (
+                SELECT 1
+                FROM object_favorites
+                WHERE
+                  object_favorites.provider = museum_objects.provider
+                  AND object_favorites.object_id = museum_objects.object_id
+              ) AS is_favorite
             FROM museum_objects
             JOIN image_assets
               ON image_assets.provider = museum_objects.provider
@@ -1062,7 +1230,9 @@ def get_library_object_detail(
             WHERE
               museum_objects.provider = ?
               AND museum_objects.object_id = ?
+              AND museum_objects.active = 1
               AND image_assets.imported = 1
+              AND image_assets.active = 1
             """,
             (provider, object_id),
         ).fetchone()
@@ -1078,12 +1248,21 @@ def get_library_object_detail(
               image_assets.image_role,
               image_assets.image_index,
               image_assets.original_width,
-              image_assets.original_height
+              image_assets.original_height,
+              EXISTS (
+                SELECT 1
+                FROM image_asset_favorites
+                WHERE
+                  image_asset_favorites.provider = image_assets.provider
+                  AND image_asset_favorites.object_id = image_assets.object_id
+                  AND image_asset_favorites.source_image_url = image_assets.source_image_url
+              ) AS is_favorite
             FROM image_assets
             WHERE
               image_assets.provider = ?
               AND image_assets.object_id = ?
               AND image_assets.imported = 1
+              AND image_assets.active = 1
             ORDER BY
               CASE WHEN image_assets.image_role = 'primary' THEN 0 ELSE 1 END,
               COALESCE(image_assets.image_index, 0),
@@ -1143,6 +1322,7 @@ def get_library_object_detail(
             is_public_domain=bool(object_row[6]),
             rights_and_reproduction=object_row[7],
             metadata_date=object_row[8],
+            is_favorite=bool(object_row[10]),
         ),
         images=[
             CollectionObjectImage(
@@ -1152,6 +1332,7 @@ def get_library_object_detail(
                 image_index=row[3],
                 original_width=int(row[4]),
                 original_height=int(row[5]),
+                is_favorite=bool(row[6]),
             )
             for row in image_rows
         ],

@@ -3,6 +3,7 @@ from pathlib import Path
 import sqlite3
 
 from anacronia.collection_runs import DEFAULT_BATCH_TARGET, ensure_collection_run_schema
+from anacronia.curation import ensure_collection_memberships
 from anacronia.met_ingest import ensure_met_ingest_schema
 from anacronia.search_sets import SearchSetTerm
 from anacronia.worker import (
@@ -55,6 +56,7 @@ def get_operational_dashboard(*, database_path: Path) -> OperationalDashboard:
     with sqlite3.connect(database_path) as connection:
         ensure_met_ingest_schema(connection)
         ensure_worker_schema(connection)
+        ensure_collection_memberships(connection)
         search_sets = get_dashboard_search_sets(connection=connection)
         provider_focus = get_dashboard_provider_focus(connection=connection)
 
@@ -270,16 +272,25 @@ def count_imported_images_for_provider_collection(
         SELECT COUNT(*)
         FROM (
           SELECT DISTINCT image_assets.object_id, image_assets.source_image_url
-          FROM image_assets
-          JOIN object_matches
-            ON object_matches.provider = image_assets.provider
-            AND object_matches.object_id = image_assets.object_id
-          JOIN collection_runs
-            ON collection_runs.id = object_matches.run_id
+          FROM provider_collections
+          JOIN collection_object_memberships
+            ON collection_object_memberships.search_set_id = provider_collections.search_set_id
+            AND collection_object_memberships.provider = provider_collections.provider
+            AND collection_object_memberships.active = 1
+          JOIN collection_image_asset_memberships
+            ON collection_image_asset_memberships.search_set_id = provider_collections.search_set_id
+            AND collection_image_asset_memberships.provider = collection_object_memberships.provider
+            AND collection_image_asset_memberships.object_id = collection_object_memberships.object_id
+            AND collection_image_asset_memberships.active = 1
+          JOIN image_assets
+            ON image_assets.provider = collection_image_asset_memberships.provider
+            AND image_assets.object_id = collection_image_asset_memberships.object_id
+            AND image_assets.source_image_url = collection_image_asset_memberships.source_image_url
           WHERE
-            collection_runs.provider_collection_id = ?
-            AND image_assets.provider = ?
+            provider_collections.id = ?
+            AND provider_collections.provider = ?
             AND image_assets.imported = 1
+            AND image_assets.active = 1
         )
         """,
         (provider_collection_id, provider),
@@ -299,16 +310,25 @@ def count_imported_objects_for_provider_collection(
         SELECT COUNT(*)
         FROM (
           SELECT DISTINCT image_assets.object_id
-          FROM image_assets
-          JOIN object_matches
-            ON object_matches.provider = image_assets.provider
-            AND object_matches.object_id = image_assets.object_id
-          JOIN collection_runs
-            ON collection_runs.id = object_matches.run_id
+          FROM provider_collections
+          JOIN collection_object_memberships
+            ON collection_object_memberships.search_set_id = provider_collections.search_set_id
+            AND collection_object_memberships.provider = provider_collections.provider
+            AND collection_object_memberships.active = 1
+          JOIN collection_image_asset_memberships
+            ON collection_image_asset_memberships.search_set_id = provider_collections.search_set_id
+            AND collection_image_asset_memberships.provider = collection_object_memberships.provider
+            AND collection_image_asset_memberships.object_id = collection_object_memberships.object_id
+            AND collection_image_asset_memberships.active = 1
+          JOIN image_assets
+            ON image_assets.provider = collection_image_asset_memberships.provider
+            AND image_assets.object_id = collection_image_asset_memberships.object_id
+            AND image_assets.source_image_url = collection_image_asset_memberships.source_image_url
           WHERE
-            collection_runs.provider_collection_id = ?
-            AND image_assets.provider = ?
+            provider_collections.id = ?
+            AND provider_collections.provider = ?
             AND image_assets.imported = 1
+            AND image_assets.active = 1
         )
         """,
         (provider_collection_id, provider),
@@ -352,7 +372,7 @@ def count_imported_images_for_provider(
         """
         SELECT COUNT(*)
         FROM image_assets
-        WHERE provider = ? AND imported = 1
+        WHERE provider = ? AND imported = 1 AND active = 1
         """,
         (provider,),
     ).fetchone()

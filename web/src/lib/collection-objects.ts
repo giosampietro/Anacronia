@@ -10,6 +10,7 @@ export type CollectionObjectSummary = {
   cover_original_height: number;
   cover_thumb_url: string;
   has_sibling_images: boolean;
+  is_favorite: boolean;
 };
 
 export type CollectionResultCounts = {
@@ -47,6 +48,7 @@ export type LibraryImageAssetSummary = {
   has_sibling_images: boolean;
   thumb_url: string;
   standard_url: string;
+  is_favorite: boolean;
   collections: LibraryImageAssetCollection[];
 };
 
@@ -59,6 +61,7 @@ export type CollectionObjectImage = {
   original_height: number;
   thumb_url: string;
   standard_url: string;
+  is_favorite: boolean;
 };
 
 export type CollectionObjectMatch = {
@@ -96,6 +99,7 @@ export type CollectionObjectDetail = {
     is_public_domain: boolean;
     rights_and_reproduction: string;
     metadata_date: string;
+    is_favorite: boolean;
   };
   images: CollectionObjectImage[];
   matches: CollectionObjectMatch[];

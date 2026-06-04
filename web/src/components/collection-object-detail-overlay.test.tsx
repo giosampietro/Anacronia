@@ -1,13 +1,97 @@
 import { renderToString } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
+import type { CollectionObjectDetail } from "@/lib/collection-objects";
 import { CollectionObjectDetailOverlay } from "./collection-object-detail-overlay";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
     push: vi.fn(),
+    refresh: vi.fn(),
   }),
 }));
+
+function createDetail(
+  overrides: Partial<CollectionObjectDetail> = {},
+): CollectionObjectDetail {
+  const detail: CollectionObjectDetail = {
+    object: {
+      provider: "met",
+      object_id: 40,
+      title: "Coiled Snake Bowl",
+      object_name: "Bowl",
+      artist_display_name: "Known maker",
+      artist_display_bio: "American, 1900-1970",
+      artist_nationality: "",
+      department: "Greek and Roman Art",
+      object_date: "ca. 1890",
+      medium: "Terracotta",
+      dimensions: "H. 4 in. (10.2 cm)",
+      classification: "Ceramics",
+      credit_line: "Gift of Anacronia",
+      accession_number: "40.1",
+      repository: "Metropolitan Museum of Art, New York, NY",
+      tags: ["Snake"],
+      object_url: "https://www.metmuseum.org/art/collection/search/40",
+      is_public_domain: true,
+      rights_and_reproduction: "",
+      metadata_date: "2026-01-02",
+      is_favorite: false,
+    },
+    images: [
+      {
+        image_asset_id: 7,
+        source_image_url: "https://images.metmuseum.org/40-primary.jpg",
+        image_role: "primary",
+        image_index: null,
+        original_width: 1600,
+        original_height: 800,
+        thumb_url: "/image-assets/7/thumb",
+        standard_url: "/image-assets/7/standard",
+        is_favorite: false,
+      },
+      {
+        image_asset_id: 8,
+        source_image_url: "https://images.metmuseum.org/40-detail-a.jpg",
+        image_role: "additional",
+        image_index: 1,
+        original_width: 1600,
+        original_height: 800,
+        thumb_url: "/image-assets/8/thumb",
+        standard_url: "/image-assets/8/standard",
+        is_favorite: false,
+      },
+    ],
+    matches: [
+      {
+        search_term: "snake",
+        verified: true,
+        matched_fields: ["tags", "title"],
+      },
+    ],
+    skipped_image_references: [
+      {
+        source_image_url: "https://images.metmuseum.org/40-skipped.jpg",
+        image_role: "additional",
+        image_index: 3,
+        reason: "beyond_max_images_per_object",
+      },
+    ],
+  };
+
+  return {
+    ...detail,
+    ...overrides,
+    object: {
+      ...detail.object,
+      ...overrides.object,
+    },
+    images: overrides.images ?? detail.images,
+    matches: overrides.matches ?? detail.matches,
+    skipped_image_references:
+      overrides.skipped_image_references ?? detail.skipped_image_references,
+  };
+}
 
 describe("CollectionObjectDetailOverlay", () => {
   it("renders carousel images, source metadata, matches, and skipped image notes", () => {
@@ -18,67 +102,7 @@ describe("CollectionObjectDetailOverlay", () => {
         collectionLabels={["sNaKe STUDIES"]}
         initialImageAssetId={8}
         returnFocusId="collection-object-met-40"
-        detail={{
-          object: {
-            provider: "met",
-            object_id: 40,
-            title: "Coiled Snake Bowl",
-            object_name: "Bowl",
-            artist_display_name: "Known maker",
-            artist_display_bio: "American, 1900-1970",
-            artist_nationality: "",
-            department: "Greek and Roman Art",
-            object_date: "ca. 1890",
-            medium: "Terracotta",
-            dimensions: "H. 4 in. (10.2 cm)",
-            classification: "Ceramics",
-            credit_line: "Gift of Anacronia",
-            accession_number: "40.1",
-            repository: "Metropolitan Museum of Art, New York, NY",
-            tags: ["Snake"],
-            object_url: "https://www.metmuseum.org/art/collection/search/40",
-            is_public_domain: true,
-            rights_and_reproduction: "",
-            metadata_date: "2026-01-02",
-          },
-          images: [
-            {
-              image_asset_id: 7,
-              source_image_url: "https://images.metmuseum.org/40-primary.jpg",
-              image_role: "primary",
-              image_index: null,
-              original_width: 1600,
-              original_height: 800,
-              thumb_url: "/image-assets/7/thumb",
-              standard_url: "/image-assets/7/standard",
-            },
-            {
-              image_asset_id: 8,
-              source_image_url: "https://images.metmuseum.org/40-detail-a.jpg",
-              image_role: "additional",
-              image_index: 1,
-              original_width: 1600,
-              original_height: 800,
-              thumb_url: "/image-assets/8/thumb",
-              standard_url: "/image-assets/8/standard",
-            },
-          ],
-          matches: [
-            {
-              search_term: "snake",
-              verified: true,
-              matched_fields: ["tags", "title"],
-            },
-          ],
-          skipped_image_references: [
-            {
-              source_image_url: "https://images.metmuseum.org/40-skipped.jpg",
-              image_role: "additional",
-              image_index: 3,
-              reason: "beyond_max_images_per_object",
-            },
-          ],
-        }}
+        detail={createDetail()}
       />,
     );
     const normalizedHtml = html.replace(/<!-- -->/g, "");
@@ -114,6 +138,7 @@ describe("CollectionObjectDetailOverlay", () => {
     expect(normalizedHtml).toContain("tags, title");
     expect(normalizedHtml).toContain("Previous image");
     expect(normalizedHtml).toContain("Next image");
+    expect(normalizedHtml).toContain("Favorite object");
     expect(normalizedHtml).toContain("Delete object");
     expect(normalizedHtml).toContain("1 related provider image was not imported");
     expect(normalizedHtml).toContain("Open provider record");
@@ -121,5 +146,27 @@ describe("CollectionObjectDetailOverlay", () => {
     expect(normalizedHtml).toContain("Provider metadata");
     expect(normalizedHtml).toContain("Provider image references");
     expect(normalizedHtml).toContain("https://images.metmuseum.org/40-skipped.jpg");
+  });
+
+  it("renders the active image favorite action on image detail", () => {
+    const detail = createDetail({
+      images: createDetail().images.map((image) =>
+        image.image_asset_id === 8 ? { ...image, is_favorite: true } : image,
+      ),
+    });
+
+    const html = renderToString(
+      <CollectionObjectDetailOverlay
+        apiBaseUrl="http://127.0.0.1:18670"
+        closeHref="/?search_set=snake&view=images"
+        detail={detail}
+        detailKind="image"
+        initialImageAssetId={8}
+        returnFocusId="collection-image-8"
+      />,
+    ).replace(/<!-- -->/g, "");
+
+    expect(html).toContain("Unfavorite image");
+    expect(html).not.toContain("Favorite object");
   });
 });

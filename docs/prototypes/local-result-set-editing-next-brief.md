@@ -1,5 +1,11 @@
 # Next Prototype Brief: Local Result Set Editing Actions
 
+## Status
+
+Superseded for action vocabulary by `docs/ux/curation-actions-contract.md`.
+
+Keep this brief as historical context for why the curation contract exists. New prototype work should use the curation contract as the source of truth.
+
 ## Purpose
 
 The Search + Select prototype is frozen. The next disposable prototype should answer what the enabled export and delete/trash actions actually mean before production implements mutation or export behavior.

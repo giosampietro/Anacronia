@@ -19,7 +19,7 @@ Draft for production handoff from PR #91. The Search + Select prototype is froze
 - Constraints:
   - User-facing language is `Collection`, not `Search Set`.
   - `search_set` remains a prototype/current-route URL key; production may rename it, but must preserve the state separation it represents.
-  - Deletion/removal/exclusion semantics are unresolved and must not be implemented from this contract.
+- Deletion/removal/favorite semantics are defined in `docs/ux/curation-actions-contract.md` and must not be implemented from this contract alone.
 
 ## Workflow Boundary
 
@@ -46,7 +46,7 @@ Draft for production handoff from PR #91. The Search + Select prototype is froze
 
 ## Objects and Scope
 
-- Primary object: Local Result Set, defined by scope, query, Provider facet, Object/Image projection, and pagination.
+- Primary object: Local Result Set, defined by scope, query, Provider facet, Object/Image projection, and the currently loaded result set.
 - Related objects:
   - Collection: the current research intent and local working dataset.
   - User Library: cross-Collection view over locally collected material.
@@ -70,9 +70,9 @@ Draft for production handoff from PR #91. The Search + Select prototype is froze
 | `scope` | `collection`, `library` | `collection` when a Collection is active | Defines whether the result set is one Collection or the User Library. Changing scope clears selection and closes detail/action dialogs. |
 | `search_set` | Collection slug | Current Collection slug | Prototype/current-route key for the active Collection. User-facing UI must call this a Collection. Changing it clears selection and closes detail/action dialogs. |
 | `collection_filter` | free text | empty | Filters the sidebar Collection list only. It must not affect result counts, grid contents, or selection. |
-| `q` | free text | empty | Local result search. Submitting the search updates `q`, clears `detail`, and preserves selection state only for identities still in the same scope and view. |
+| `q` | free text | empty | Local result search. Submitting the search updates `q`, clears `detail`, and clears selection. |
 | `view` | `objects`, `images` | current workspace default, prototype fallback `objects` | Switches between Museum Object and Image Asset projection. Changing view clears selection because the selected identity type changes. |
-| `provider` | `all` or a Provider key | `all` | Filters the current projection by Provider. Changing provider clears `detail` and preserves selection state for hidden selected identities in the same scope/view. |
+| `provider` | `all` or a Provider key | `all` | Filters the current projection by Provider. Changing provider clears `detail` and clears selection. |
 | `detail` | selected result identity | empty | Opens the production pending detail overlay. Selection mode tile clicks must not set `detail`. |
 
 Prototype-only URL state:
@@ -111,13 +111,11 @@ Result counts:
 
 Selection counts:
 
-- `selected visible`: selected identities currently visible under the active `q`, `provider`, `view`, and pagination.
-- `selected total`: all selected identities in the current scope and view, including identities hidden by query, Provider facet, or pagination.
+- `selected`: selected identities currently visible under the active `q`, `provider`, `view`, and currently loaded result set.
 - Default compact copy:
-  - If all selected identities are visible: `{n} selected`.
-  - If hidden selected identities exist: `{visible} shown selected / {total} total selected`.
-- Export/delete action enablement should use `selected total > 0`.
-- Thumbnail checkmarks and selected borders represent `selected visible`.
+  - `{n} selected`.
+- Export/delete action enablement should use `selected > 0`.
+- Thumbnail checkmarks and selected borders represent selected identities.
 
 ## States
 
@@ -150,7 +148,7 @@ Selection counts:
 | Submit local search | Enter in search input or Search button | Updates `q`, clears `detail`, recomputes counts/grid | Local query over canonical fields and Descriptors | `Search` |
 | Filter sidebar Collections | Type in sidebar filter | Narrows Collection navigation only | Collection list | `Filter Collections` |
 | Switch Object/Image projection | Click Object/Image control | Changes `view`, clears selection/detail, recomputes Provider counts | Local result set projection | `Objects`, `Images` |
-| Switch Provider | Click Provider facet | Changes `provider`, clears detail, preserves same-view selected identities as selected total | Provider membership for result identities | `All Providers`, Provider display name |
+| Switch Provider | Click Provider facet | Changes `provider`, clears detail, clears selection | Provider membership for result identities | `All Providers`, Provider display name |
 | Open detail | Click tile outside selection mode | Opens Object or Image pending detail overlay | Result identity and preview data | Tile accessible label `Open {title}` |
 | Enter selection mode | Click `Select` | Shows selection affordances and action icons | Visible result identities | `Select` |
 | Toggle one item | Click tile/check control in selection mode | Selects or deselects one visible identity and updates anchor | Current visible identity | Tile accessible label `Select {title}` / `Deselect {title}` |
@@ -158,20 +156,21 @@ Selection counts:
 | Select all visible | Click `Select all` | Adds all currently visible identities to selection and updates selection count | Current visible grid order | `Select all` |
 | Deselect all visible | Click `Deselect all` | Removes all currently visible identities from selection | Current visible grid order | `Deselect all` |
 | Cancel selection | Click `Cancel` | Exits selection mode, clears selection and anchor | Selection state | `Cancel` |
-| Open export placeholder | Click enabled export icon | Opens export decision placeholder dialog | Selected total identities | Icon-only button, accessible label `Export selected` |
-| Open delete placeholder | Click enabled trash icon | Opens delete/remove/exclude decision placeholder dialog | Selected total identities | Icon-only button, accessible label `Delete selected` |
+| Open export placeholder | Click enabled export icon | Opens export decision placeholder dialog | Selected identities | Icon-only button, accessible label `Export selected` |
+| Open delete placeholder | Click enabled trash icon | Opens delete/remove/exclude decision placeholder dialog | Selected identities | Icon-only button, accessible label `Delete selected` |
 
 ## Selection Behavior
 
 - Selection mode is explicit. The default grid never shows selection check controls.
 - Normal click in selection mode toggles one visible identity. Command-click and Control-click are not needed because normal click already provides individual multi-select.
-- Shift-click selects a range in the current visible grid order after `q`, Provider, view, and pagination are applied. Both endpoints are included.
+- Shift-click selects a range in the current visible grid order after `q`, Provider, and view are applied. Both endpoints are included.
 - If there is no anchor, Shift-click behaves like normal click and sets the anchor.
 - If the anchor is no longer visible, Shift-click behaves like normal click and sets a new anchor.
-- Query and Provider changes preserve selected identities in the same scope and view, but hidden selected identities must be visible in the compact selected-visible/selected-total language.
+- Query and Provider changes clear selection.
 - View changes clear selection because Object and Image selections have different identity types and future action semantics.
 - Scope or Collection changes clear selection.
 - New Provider Search results arriving while selection mode is active are not automatically selected. Counts and grid update; new visible thumbnails show unchecked controls.
+- No visible pagination is planned for the current curation UX. Existing API `limit`/`offset` support may remain as backend plumbing for performance. If the UI later adds `Load more` or infinite scroll, loading more must not clear existing selection, selected identities must remain visible/accountable, and bulk actions must never include unseen unloaded results.
 
 ## Navigation and Layout
 
@@ -195,7 +194,7 @@ Selection counts:
   - total Objects and Images in active scope
   - shown Objects and Images after `q` and Provider
   - Provider facet counts computed before current Provider filter
-  - selected visible and selected total
+  - selected count
 - Provider/API dependencies:
   - Production should query local storage, not live provider APIs, for this workflow.
   - Search should use canonical fields and Descriptors, not arbitrary raw provider JSON.
@@ -239,7 +238,7 @@ Keep these interaction details:
 - Shift-click range selects across the current visible grid order.
 - Check controls are round; unselected state has no square icon inside.
 - Selected thumbnails use an inset white border that does not change grid gutters.
-- Export/trash icons are icon-only and disabled until selected total is greater than zero.
+- Export/trash icons are icon-only and disabled until selected count is greater than zero.
 - Tile click outside selection mode opens the production pending detail overlay.
 
 Reuse these production components/classes:
@@ -276,15 +275,14 @@ Reuse these production components/classes:
 | Select mode and checkbox tile selection | Default hides selection; Select mode shows round controls | Yes |
 | Select all / Deselect all | Acts on currently visible identities and flips based on visible selection completeness | Yes |
 | Shift-click range selection | Selects inclusive visible range from anchor to clicked identity | Yes |
-| Disabled/enabled export/delete | Disabled at zero selected total, enabled once selected total exists | Yes |
+| Disabled/enabled export/delete | Disabled at zero selected count, enabled once selected count exists | Yes |
 | Placeholder dialogs | Dialogs preview future export/delete decisions and perform no mutation | Yes |
 | New Provider Search results | New identities are not auto-selected while selection mode is active | Yes |
 
 ## Open Decisions
 
 - Exact production route parameter names. Prototype uses `search_set`; user-facing language should be `Collection`.
-- Whether selected-visible/selected-total status appears always in selection mode or only when hidden selected identities exist.
-- Delete/remove/exclude semantics. See `docs/prototypes/local-result-set-editing-next-brief.md`.
+- Detailed curation actions. See `docs/ux/curation-actions-contract.md`.
 - Final export selected behavior. See `docs/prototypes/local-result-set-editing-next-brief.md`.
 
 ## Implementation Handoff
@@ -297,6 +295,6 @@ Reuse these production components/classes:
   - `q` and `collection_filter` are independent.
   - Object/Image and Provider counts do not duplicate elsewhere.
   - selection mode matches the frozen prototype.
-  - query/provider changes expose selected-visible vs selected-total accurately.
+  - query/provider changes clear selection.
   - Provider Search updates never auto-select new identities.
   - export/delete dialogs do not mutate data until the editing/removal contract exists.

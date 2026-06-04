@@ -1,7 +1,11 @@
 import { renderToString } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
-import { SidebarCollectionFilter } from "./sidebar-collection-filter";
+import {
+  CollectionDeleteDialogBody,
+  SidebarCollectionFilter,
+} from "./sidebar-collection-filter";
+import { AlertDialog } from "./ui/alert-dialog";
 import { SidebarProvider } from "./ui/sidebar";
 import type { DashboardSearchSetView } from "@/lib/dashboard";
 
@@ -97,6 +101,7 @@ describe("SidebarCollectionFilter", () => {
     expect(html).not.toContain("sNaKe STUDY");
     expect(html).toContain("snake");
     expect(html).toContain("5 images");
+    expect(html).toContain("data-slot=\"context-menu-trigger\"");
     expect(html).not.toContain("lucide-database");
     expect(html).not.toContain("More actions for Snake Study");
   });
@@ -160,5 +165,28 @@ describe("SidebarCollectionFilter", () => {
     expect(html).not.toContain("search in progress");
     expect(html).not.toContain("lucide-loader");
     expect(html).toContain("5 images");
+  });
+
+  it("renders Delete Collection confirmation copy for downloaded material", () => {
+    const html = renderToString(
+      <AlertDialog open>
+        <CollectionDeleteDialogBody
+          deleteError={null}
+          isDeleting={false}
+          onDelete={() => undefined}
+          searchSet={snakeStudy}
+        />
+      </AlertDialog>,
+    );
+
+    expect(html).toContain("Delete &quot;");
+    expect(html).toContain("Snake Study");
+    expect(html).toContain("This will remove 2 objects and 5 images from this Collection.");
+    expect(html).toContain("Shared material used by other Collections will stay.");
+    expect(html).toContain("remain in My Library as No Collection");
+    expect(html).toContain("Local files for non-favorite exclusive material will be deleted.");
+    expect(html).toContain("Exports will not be deleted.");
+    expect(html).toContain("There is no undo.");
+    expect(html).toContain("Delete Collection");
   });
 });

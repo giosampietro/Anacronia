@@ -65,6 +65,10 @@ describe("AppShell", () => {
 
     expect(html).toContain("INTAGLIO RINGS");
     expect(html).toContain("aria-label=\"Workspace\"");
+    expect(html).toContain("sticky top-0 z-40");
+    expect(html).toContain("border-b bg-background px-4 py-2");
+    expect(html).not.toContain("bg-background/80");
+    expect(html).not.toContain("backdrop-blur");
     expect(html).not.toContain("aria-label=\"Primary grid view controls\"");
     expect(html).not.toContain("aria-label=\"Collection counts\"");
     expect(html).not.toContain("12 objects");

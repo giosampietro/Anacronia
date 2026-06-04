@@ -10,7 +10,11 @@ import {
   InputGroupButton,
   InputGroupInput,
 } from "@/components/ui/input-group";
-import { createGridStateHref, type GridViewMode } from "@/lib/grid-view";
+import {
+  createGridStateHref,
+  type GridViewMode,
+  type LibraryCollectionFilter,
+} from "@/lib/grid-view";
 import type { WorkspaceMode } from "@/lib/workspace";
 
 type CollectionResultSetSearchFormProps = {
@@ -24,6 +28,8 @@ type CollectionResultSetSearchFormProps = {
 type LocalResultSetSearchFormProps = {
   ariaLabel: string;
   collectionFilterText?: string;
+  favoriteOnly?: boolean;
+  libraryCollectionFilter?: LibraryCollectionFilter;
   localQueryText: string;
   providerFilter: string;
   searchSetSlug?: string;
@@ -34,6 +40,8 @@ type LocalResultSetSearchFormProps = {
 export function LocalResultSetSearchForm({
   ariaLabel,
   collectionFilterText = "",
+  favoriteOnly = false,
+  libraryCollectionFilter = "all",
   localQueryText,
   providerFilter,
   searchSetSlug,
@@ -47,6 +55,8 @@ export function LocalResultSetSearchForm({
   function createHref(queryText: string): string {
     return createGridStateHref({
       collectionFilterText,
+      favoriteOnly,
+      libraryCollectionFilter,
       localQueryText: queryText,
       provider: providerFilter,
       searchSetSlug,
@@ -96,6 +106,10 @@ export function LocalResultSetSearchForm({
       ) : null}
       {providerFilter !== "all" ? (
         <input name="provider" type="hidden" value={providerFilter} />
+      ) : null}
+      {favoriteOnly ? <input name="favorite" type="hidden" value="true" /> : null}
+      {workspaceMode === "user-library" && libraryCollectionFilter === "none" ? (
+        <input name="collection" type="hidden" value="none" />
       ) : null}
       <InputGroup>
         <InputGroupAddon>

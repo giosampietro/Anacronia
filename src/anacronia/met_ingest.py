@@ -6,6 +6,7 @@ from typing import Callable, Protocol
 from urllib.error import HTTPError
 
 from anacronia.collection_runs import ensure_collection_run_schema
+from anacronia.curation import get_collection_import_exclusions
 from anacronia.image_pipeline import ProcessedMetImageAsset, process_met_image_asset
 from anacronia.search_sets import normalize_search_term
 from anacronia.storage import met_raw_object_path
@@ -216,10 +217,39 @@ def ingest_met_run(
             run_id=run_id,
             start_run_position=start_run_position,
         )
+        search_set_id = get_search_set_id_for_run(
+            connection=connection,
+            run_id=run_id,
+        )
 
     for candidate in run_candidates:
         object_id = candidate["object_id"]
         run_position = int(candidate["run_position"])
+        with sqlite3.connect(database_path) as connection:
+            ensure_met_ingest_schema(connection)
+            import_exclusions = get_collection_import_exclusions(
+                connection=connection,
+                search_set_id=search_set_id,
+                provider=MET_PROVIDER,
+                object_id=object_id,
+            )
+            if import_exclusions.object_excluded:
+                skipped_candidate = SkippedMetCandidate(
+                    object_id=object_id,
+                    reason="collection_object_excluded",
+                )
+                skipped_candidates.append(skipped_candidate)
+                record_met_skipped_candidate_row(
+                    connection=connection,
+                    run_id=run_id,
+                    candidate=skipped_candidate,
+                )
+                if on_candidate_processed is not None:
+                    on_candidate_processed(run_position)
+                if should_stop is not None and should_stop():
+                    break
+                continue
+
         try:
             record = met_client.fetch_object_record(object_id)
         except HTTPError as error:
@@ -264,6 +294,23 @@ def ingest_met_run(
             record=record,
             max_images_per_object=max_images_per_object,
         )
+        excluded_image_source_urls = import_exclusions.image_source_urls
+        if excluded_image_source_urls:
+            filtered_image_references: list[MetImageReference] = []
+            for image_reference in image_references:
+                if image_reference.source_image_url in excluded_image_source_urls:
+                    skipped_image_references.append(
+                        SkippedMetImageReference(
+                            object_id=image_reference.object_id,
+                            source_image_url=image_reference.source_image_url,
+                            image_role=image_reference.image_role,
+                            image_index=image_reference.image_index,
+                            reason="collection_image_excluded",
+                        )
+                    )
+                    continue
+                filtered_image_references.append(image_reference)
+            image_references = filtered_image_references
 
         processed_image_assets: list[ProcessedMetImageAsset] = []
         for image_reference in image_references:
@@ -351,8 +398,24 @@ def ingest_met_run(
                 object_id=object_id,
                 descriptors=extract_met_descriptors(record),
             )
-        imported_object_ids.append(object_id)
-        imported_image_count += len(processed_image_assets)
+            usable_image_count = 0
+            for image_asset in processed_image_assets:
+                if image_asset.source_image_url in excluded_image_source_urls:
+                    record_met_skipped_image_reference(
+                        connection=connection,
+                        reference=SkippedMetImageReference(
+                            object_id=image_asset.object_id,
+                            source_image_url=image_asset.source_image_url,
+                            image_role=image_asset.image_role,
+                            image_index=image_asset.image_index,
+                            reason="collection_image_excluded",
+                        ),
+                    )
+                    continue
+                usable_image_count += 1
+        if usable_image_count > 0:
+            imported_object_ids.append(object_id)
+        imported_image_count += usable_image_count
         if on_candidate_processed is not None:
             on_candidate_processed(run_position)
         if should_stop is not None and should_stop():
@@ -391,23 +454,36 @@ def record_met_skipped_candidate(
 ) -> None:
     with sqlite3.connect(database_path) as connection:
         ensure_met_ingest_schema(connection)
-        connection.execute(
-            """
-            INSERT OR IGNORE INTO skipped_candidates (
-              run_id,
-              provider,
-              object_id,
-              reason
-            )
-            VALUES (?, ?, ?, ?)
-            """,
-            (
-                run_id,
-                MET_PROVIDER,
-                candidate.object_id,
-                candidate.reason,
-            ),
+        record_met_skipped_candidate_row(
+            connection=connection,
+            run_id=run_id,
+            candidate=candidate,
         )
+
+
+def record_met_skipped_candidate_row(
+    *,
+    connection: sqlite3.Connection,
+    run_id: int,
+    candidate: SkippedMetCandidate,
+) -> None:
+    connection.execute(
+        """
+        INSERT OR IGNORE INTO skipped_candidates (
+          run_id,
+          provider,
+          object_id,
+          reason
+        )
+        VALUES (?, ?, ?, ?)
+        """,
+        (
+            run_id,
+            MET_PROVIDER,
+            candidate.object_id,
+            candidate.reason,
+        ),
+    )
 
 
 def get_met_museum_objects(*, database_path: Path) -> list[MetMuseumObject]:
@@ -649,6 +725,26 @@ def get_run_candidates_for_ingest(
     ]
 
 
+def get_search_set_id_for_run(
+    *,
+    connection: sqlite3.Connection,
+    run_id: int,
+) -> int:
+    row = connection.execute(
+        """
+        SELECT provider_collections.search_set_id
+        FROM collection_runs
+        JOIN provider_collections
+          ON provider_collections.id = collection_runs.provider_collection_id
+        WHERE collection_runs.id = ?
+        """,
+        (run_id,),
+    ).fetchone()
+    if row is None:
+        raise ValueError(f"Unknown Run: {run_id}")
+    return int(row[0])
+
+
 def write_met_raw_record(*, data_root: Path, record: dict[str, object]) -> Path:
     object_id = int(record["objectID"])
     raw_record_path = met_raw_object_path(data_root=data_root, object_id=object_id)
@@ -676,9 +772,11 @@ def upsert_met_museum_object(
           is_public_domain,
           rights_and_reproduction,
           metadata_date,
-          raw_record_path
+          raw_record_path,
+          active,
+          deleted_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(provider, object_id) DO UPDATE SET
           title = excluded.title,
           object_name = excluded.object_name,
@@ -687,7 +785,9 @@ def upsert_met_museum_object(
           is_public_domain = excluded.is_public_domain,
           rights_and_reproduction = excluded.rights_and_reproduction,
           metadata_date = excluded.metadata_date,
-          raw_record_path = excluded.raw_record_path
+          raw_record_path = excluded.raw_record_path,
+          active = 1,
+          deleted_at = NULL
         """,
         (
             MET_PROVIDER,
@@ -700,6 +800,8 @@ def upsert_met_museum_object(
             string_value(record.get("rightsAndReproduction")),
             string_value(record.get("metadataDate")),
             str(raw_record_path),
+            1,
+            None,
         ),
     )
 
@@ -753,9 +855,11 @@ def record_met_image_asset(
           original_height,
           standard_path,
           thumb_path,
-          imported
+          imported,
+          active,
+          deleted_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(provider, object_id, source_image_url) DO UPDATE SET
           image_role = excluded.image_role,
           image_index = excluded.image_index,
@@ -764,7 +868,9 @@ def record_met_image_asset(
           original_height = excluded.original_height,
           standard_path = excluded.standard_path,
           thumb_path = excluded.thumb_path,
-          imported = excluded.imported
+          imported = excluded.imported,
+          active = 1,
+          deleted_at = NULL
         """,
         (
             MET_PROVIDER,
@@ -778,6 +884,8 @@ def record_met_image_asset(
             str(image_asset.standard_path),
             str(image_asset.thumb_path),
             int(image_asset.imported),
+            1,
+            None,
         ),
     )
 
@@ -947,9 +1055,19 @@ def ensure_met_ingest_schema(connection: sqlite3.Connection) -> None:
           rights_and_reproduction TEXT NOT NULL,
           metadata_date TEXT NOT NULL,
           raw_record_path TEXT NOT NULL,
+          active INTEGER NOT NULL DEFAULT 1,
+          deleted_at TEXT,
           UNIQUE (provider, object_id)
         )
         """
+    )
+    ensure_table_columns(
+        connection=connection,
+        table_name="museum_objects",
+        columns={
+            "active": "INTEGER NOT NULL DEFAULT 1",
+            "deleted_at": "TEXT",
+        },
     )
     connection.execute(
         """
@@ -981,6 +1099,35 @@ def ensure_met_ingest_schema(connection: sqlite3.Connection) -> None:
     )
     connection.execute(
         """
+        CREATE TABLE IF NOT EXISTS collection_object_exclusions (
+          id INTEGER PRIMARY KEY,
+          search_set_id INTEGER NOT NULL,
+          provider TEXT NOT NULL,
+          object_id INTEGER NOT NULL,
+          reason TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (search_set_id) REFERENCES search_sets(id),
+          UNIQUE (search_set_id, provider, object_id)
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS collection_image_asset_exclusions (
+          id INTEGER PRIMARY KEY,
+          search_set_id INTEGER NOT NULL,
+          provider TEXT NOT NULL,
+          object_id INTEGER NOT NULL,
+          source_image_url TEXT NOT NULL,
+          reason TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (search_set_id) REFERENCES search_sets(id),
+          UNIQUE (search_set_id, provider, object_id, source_image_url)
+        )
+        """
+    )
+    connection.execute(
+        """
         CREATE TABLE IF NOT EXISTS image_assets (
           id INTEGER PRIMARY KEY,
           provider TEXT NOT NULL,
@@ -994,9 +1141,19 @@ def ensure_met_ingest_schema(connection: sqlite3.Connection) -> None:
           standard_path TEXT NOT NULL,
           thumb_path TEXT NOT NULL,
           imported INTEGER NOT NULL,
+          active INTEGER NOT NULL DEFAULT 1,
+          deleted_at TEXT,
           UNIQUE (provider, object_id, source_image_url)
         )
         """
+    )
+    ensure_table_columns(
+        connection=connection,
+        table_name="image_assets",
+        columns={
+            "active": "INTEGER NOT NULL DEFAULT 1",
+            "deleted_at": "TEXT",
+        },
     )
     connection.execute(
         """
@@ -1032,3 +1189,20 @@ def ensure_met_ingest_schema(connection: sqlite3.Connection) -> None:
         )
         """
     )
+
+
+def ensure_table_columns(
+    *,
+    connection: sqlite3.Connection,
+    table_name: str,
+    columns: dict[str, str],
+) -> None:
+    existing_columns = {
+        row[1]
+        for row in connection.execute(f"PRAGMA table_info({table_name})").fetchall()
+    }
+    for column_name, definition in columns.items():
+        if column_name not in existing_columns:
+            connection.execute(
+                f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}"
+            )

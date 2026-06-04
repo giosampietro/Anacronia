@@ -78,6 +78,38 @@ describe("grid view URL helpers", () => {
     );
   });
 
+  it("serializes the favorite-only grid filter", () => {
+    expect(
+      createGridStateHref({
+        favoriteOnly: true,
+        searchSetSlug: "snake-study",
+        viewMode: "objects",
+        workspaceMode: "search-set",
+      }),
+    ).toBe("/?search_set=snake-study&favorite=true");
+  });
+
+  it("serializes the User Library No Collection filter", () => {
+    expect(
+      createGridStateHref({
+        libraryCollectionFilter: "none",
+        viewMode: "images",
+        workspaceMode: "user-library",
+      }),
+    ).toBe("/?mode=user-library&collection=none");
+    expect(
+      createGridStateHref({
+        libraryCollectionFilter: "none",
+        localQueryText: "snake",
+        provider: "met",
+        viewMode: "objects",
+        workspaceMode: "user-library",
+      }),
+    ).toBe(
+      "/?mode=user-library&view=objects&collection=none&q=snake&provider=met",
+    );
+  });
+
   it("serializes exactly one detail selector", () => {
     expect(
       createGridStateHref({

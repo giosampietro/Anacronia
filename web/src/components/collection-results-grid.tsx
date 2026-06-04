@@ -27,6 +27,8 @@ type CollectionResultsGridProps = {
   closeObjectHref: string;
   collectionDisplayName: string;
   collectionFilterText: string;
+  curationActionsDisabled?: boolean;
+  favoriteOnly?: boolean;
   hasLocalMaterial?: boolean;
   imageAssets: LibraryImageAssetSummary[];
   initialSelectedIds?: string[];
@@ -48,6 +50,8 @@ export function CollectionResultsGrid({
   closeObjectHref,
   collectionDisplayName,
   collectionFilterText,
+  curationActionsDisabled = false,
+  favoriteOnly = false,
   hasLocalMaterial = false,
   imageAssets,
   initialSelectedIds = [],
@@ -68,11 +72,15 @@ export function CollectionResultsGrid({
       closeImageHref={closeImageHref}
       closeObjectHref={closeObjectHref}
       collectionFilterText={collectionFilterText}
+      curationActionsDisabled={curationActionsDisabled}
+      deleteEndpoint="/api/curation/delete"
       exportEndpoint={`/api/search-sets/${encodeURIComponent(searchSetSlug)}/exports`}
+      favoriteOnly={favoriteOnly}
       hasLocalMaterial={hasLocalMaterial}
       imageAssetHref={(imageAsset) =>
         createGridStateHref({
           collectionFilterText,
+          favoriteOnly,
           imageAssetId: imageAsset.image_asset_id,
           localQueryText,
           provider: providerFilter,
@@ -94,6 +102,7 @@ export function CollectionResultsGrid({
       objectHref={(collectionObject: LocalResultObjectSummary) =>
         createGridStateHref({
           collectionFilterText,
+          favoriteOnly,
           localQueryText,
           object: {
             objectId: collectionObject.object_id,
@@ -120,6 +129,7 @@ export function CollectionResultsGrid({
       scopeDisplayName={collectionDisplayName}
       searchAriaLabel="Search local Collection results"
       searchSetSlug={searchSetSlug}
+      removeFromCollectionEndpoint={`/api/search-sets/${encodeURIComponent(searchSetSlug)}/remove-from-collection`}
       viewMode={viewMode}
       workspaceMode="search-set"
     />

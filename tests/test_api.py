@@ -260,6 +260,105 @@ def test_api_renames_collection_display_name_without_changing_slug_or_terms(tmp_
     ]
 
 
+def test_api_deletes_empty_collection_and_removes_it_from_dashboard(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    client = TestClient(create_app(database_path=storage.database_path))
+    client.post(
+        "/search-sets",
+        json={"display_name": "Snake Studies", "terms_text": "snake"},
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Bowl Study", "terms_text": "bowl"},
+    )
+
+    response = client.delete("/search-sets/snake-studies")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "collection_slug": "snake-studies",
+        "deleted": True,
+        "deleted_objects": 0,
+        "deleted_image_assets": 0,
+        "preserved_shared_objects": 0,
+        "preserved_shared_image_assets": 0,
+        "preserved_favorite_objects": 0,
+        "preserved_favorite_image_assets": 0,
+    }
+    assert [
+        search_set["slug"]
+        for search_set in client.get("/dashboard").json()["search_sets"]
+    ] == ["bowl-study"]
+
+
+def test_api_deletes_collection_with_exclusive_material_and_removes_local_files(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            met_candidate_client=FakeMetGridCandidateClient(),
+            met_record_client=FakeMetGridRecordClient(),
+            download_image_bytes=lambda _url: ppm_image_bytes(width=1600, height=800),
+        )
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Snake Study", "terms_text": "snake"},
+    )
+    run_response = client.post(
+        "/search-sets/snake-study/provider-collections/met/runs",
+        json={"candidate_offset": 0, "candidate_limit": 2},
+    )
+    client.post(f"/provider-collections/met/runs/{run_response.json()['run_id']}/ingest")
+    selected_image_asset = client.get(
+        "/search-sets/snake-study/local-result-set?view=images"
+    ).json()["image_assets"][0]
+    assert client.get(selected_image_asset["standard_url"]).status_code == 200
+
+    response = client.delete("/search-sets/snake-study")
+
+    assert response.status_code == 200
+    assert response.json()["deleted"] is True
+    assert response.json()["deleted_objects"] == 2
+    assert response.json()["deleted_image_assets"] == 4
+    assert client.get(selected_image_asset["standard_url"]).status_code == 404
+    assert client.get("/dashboard").json()["search_sets"] == []
+    assert client.get("/library/local-result-set?view=images").json()["image_assets"] == []
+
+
+def test_api_rejects_delete_collection_while_provider_search_is_running(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            met_candidate_client=FakeMetGridCandidateClient(),
+            met_record_client=FakeMetGridRecordClient(),
+        )
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Snake Study", "terms_text": "snake"},
+    )
+    client.post(
+        "/search-sets/snake-study/provider-collections/met/runs",
+        json={"candidate_offset": 0, "candidate_limit": 2},
+    )
+    client.post(
+        "/search-sets/snake-study/provider-collections/met/collects",
+        json={"batch_target": 10},
+    )
+
+    response = client.delete("/search-sets/snake-study")
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Provider Search is running for this Collection."
+    assert [
+        search_set["slug"]
+        for search_set in client.get("/dashboard").json()["search_sets"]
+    ] == ["snake-study"]
+
+
 def test_api_rejects_collection_rename_that_would_match_existing_slug(tmp_path):
     storage = initialize_storage(project_root=tmp_path)
     client = TestClient(create_app(database_path=storage.database_path))
@@ -892,6 +991,7 @@ def test_api_returns_collection_objects_newest_first(tmp_path):
         "cover_original_height": 800,
         "cover_thumb_url": f"/image-assets/{objects[0]['cover_image_asset_id']}/thumb",
         "has_sibling_images": True,
+        "is_favorite": False,
     }
     assert objects[1]["image_count"] == 1
     assert objects[1]["has_sibling_images"] is False
@@ -974,6 +1074,7 @@ def test_api_returns_collection_image_assets_newest_first(tmp_path):
         "has_sibling_images": True,
         "thumb_url": f"/image-assets/{image_assets[0]['image_asset_id']}/thumb",
         "standard_url": f"/image-assets/{image_assets[0]['image_asset_id']}/standard",
+        "is_favorite": False,
         "collections": [{"slug": "snake-study", "display_name": "Snake Study"}],
     }
     assert response.json()["pagination"] == {
@@ -1141,6 +1242,7 @@ def test_api_returns_user_library_image_assets_once_with_collection_membership(t
         "has_sibling_images": True,
         "thumb_url": f"/image-assets/{image_assets[0]['image_asset_id']}/thumb",
         "standard_url": f"/image-assets/{image_assets[0]['image_asset_id']}/standard",
+        "is_favorite": False,
         "collections": [
             {"slug": "snake-study", "display_name": "Snake Study"},
             {"slug": "bowl-study", "display_name": "Bowl Study"},
@@ -1212,6 +1314,7 @@ def test_api_returns_user_library_objects_once_with_collection_membership(tmp_pa
         "cover_original_height": 800,
         "cover_thumb_url": f"/image-assets/{objects[0]['cover_image_asset_id']}/thumb",
         "has_sibling_images": True,
+        "is_favorite": False,
         "collections": [
             {"slug": "bowl-study", "display_name": "Bowl Study"},
             {"slug": "snake-study", "display_name": "Snake Study"},
@@ -1223,6 +1326,518 @@ def test_api_returns_user_library_objects_once_with_collection_membership(tmp_pa
 
     assert filtered_response.status_code == 200
     assert [museum_object["object_id"] for museum_object in filtered_response.json()["objects"]] == [40]
+
+
+def test_api_object_favorites_are_global_and_filterable(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+
+    class SharedLibraryCandidateClient:
+        def search_object_ids(self, term: str) -> list[int]:
+            return {
+                "snake": [20, 40],
+                "bowl": [40],
+            }[term]
+
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            met_candidate_client=SharedLibraryCandidateClient(),
+            met_record_client=FakeMetGridRecordClient(),
+            download_image_bytes=lambda _url: ppm_image_bytes(width=1600, height=800),
+        )
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Snake Study", "terms_text": "snake"},
+    )
+    snake_run_response = client.post(
+        "/search-sets/snake-study/provider-collections/met/runs",
+        json={"candidate_offset": 0, "candidate_limit": 2},
+    )
+    client.post(f"/provider-collections/met/runs/{snake_run_response.json()['run_id']}/ingest")
+    client.post(
+        "/search-sets",
+        json={"display_name": "Bowl Study", "terms_text": "bowl"},
+    )
+    bowl_run_response = client.post(
+        "/search-sets/bowl-study/provider-collections/met/runs",
+        json={"candidate_offset": 0, "candidate_limit": 1},
+    )
+    client.post(f"/provider-collections/met/runs/{bowl_run_response.json()['run_id']}/ingest")
+
+    favorite_response = client.put("/objects/met/40/favorite")
+
+    assert favorite_response.status_code == 200
+    assert favorite_response.json() == {
+        "provider": "met",
+        "object_id": 40,
+        "is_favorite": True,
+    }
+    snake_objects = client.get("/search-sets/snake-study/objects").json()["objects"]
+    bowl_objects = client.get("/search-sets/bowl-study/objects").json()["objects"]
+    library_objects = client.get("/library/objects").json()["objects"]
+    assert [
+        (museum_object["object_id"], museum_object["is_favorite"])
+        for museum_object in snake_objects
+    ] == [(40, True), (20, False)]
+    assert [
+        (museum_object["object_id"], museum_object["is_favorite"])
+        for museum_object in bowl_objects
+    ] == [(40, True)]
+    assert [
+        (museum_object["object_id"], museum_object["is_favorite"])
+        for museum_object in library_objects
+    ] == [(40, True), (20, False)]
+
+    favorite_only = client.get("/library/objects?favorite=true").json()["objects"]
+    collection_favorite_only = client.get(
+        "/search-sets/snake-study/local-result-set?view=objects&favorite=true"
+    ).json()
+
+    assert [museum_object["object_id"] for museum_object in favorite_only] == [40]
+    assert [museum_object["object_id"] for museum_object in collection_favorite_only["objects"]] == [
+        40
+    ]
+    assert collection_favorite_only["counts"] == {"objects": 1, "images": 0}
+
+    unfavorite_response = client.delete("/objects/met/40/favorite")
+
+    assert unfavorite_response.status_code == 200
+    assert unfavorite_response.json() == {
+        "provider": "met",
+        "object_id": 40,
+        "is_favorite": False,
+    }
+    assert client.get("/library/objects?favorite=true").json()["objects"] == []
+
+
+def test_api_image_favorites_are_separate_filterable_and_exported(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+
+    class SharedLibraryCandidateClient:
+        def search_object_ids(self, term: str) -> list[int]:
+            return {
+                "snake": [20, 40],
+                "bowl": [40],
+            }[term]
+
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            met_candidate_client=SharedLibraryCandidateClient(),
+            met_record_client=FakeMetGridRecordClient(),
+            download_image_bytes=lambda _url: ppm_image_bytes(width=1600, height=800),
+        )
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Snake Study", "terms_text": "snake"},
+    )
+    snake_run_response = client.post(
+        "/search-sets/snake-study/provider-collections/met/runs",
+        json={"candidate_offset": 0, "candidate_limit": 2},
+    )
+    client.post(f"/provider-collections/met/runs/{snake_run_response.json()['run_id']}/ingest")
+    client.post(
+        "/search-sets",
+        json={"display_name": "Bowl Study", "terms_text": "bowl"},
+    )
+    bowl_run_response = client.post(
+        "/search-sets/bowl-study/provider-collections/met/runs",
+        json={"candidate_offset": 0, "candidate_limit": 1},
+    )
+    client.post(f"/provider-collections/met/runs/{bowl_run_response.json()['run_id']}/ingest")
+    selected_image_asset = client.get(
+        "/search-sets/snake-study/image-assets"
+    ).json()["image_assets"][0]
+
+    favorite_response = client.put(
+        f"/image-assets/{selected_image_asset['image_asset_id']}/favorite"
+    )
+
+    assert favorite_response.status_code == 200
+    assert favorite_response.json() == {
+        "image_asset_id": selected_image_asset["image_asset_id"],
+        "is_favorite": True,
+    }
+    assert client.get("/search-sets/snake-study/objects").json()["objects"][0][
+        "is_favorite"
+    ] is False
+    snake_image_assets = client.get("/search-sets/snake-study/image-assets").json()[
+        "image_assets"
+    ]
+    bowl_image_assets = client.get("/search-sets/bowl-study/image-assets").json()[
+        "image_assets"
+    ]
+    library_image_assets = client.get("/library/image-assets").json()["image_assets"]
+    assert [
+        (image_asset["image_asset_id"], image_asset["is_favorite"])
+        for image_asset in snake_image_assets
+    ] == [
+        (selected_image_asset["image_asset_id"], True),
+        (snake_image_assets[1]["image_asset_id"], False),
+        (snake_image_assets[2]["image_asset_id"], False),
+        (snake_image_assets[3]["image_asset_id"], False),
+    ]
+    assert [
+        image_asset["is_favorite"]
+        for image_asset in bowl_image_assets
+        if image_asset["image_asset_id"] == selected_image_asset["image_asset_id"]
+    ] == [True]
+    assert [
+        image_asset["image_asset_id"]
+        for image_asset in library_image_assets
+        if image_asset["is_favorite"]
+    ] == [selected_image_asset["image_asset_id"]]
+
+    collection_favorite_only = client.get(
+        "/search-sets/snake-study/local-result-set?view=images&favorite=true"
+    ).json()
+    library_favorite_only = client.get(
+        "/library/local-result-set?view=images&favorite=true"
+    ).json()
+
+    assert [
+        image_asset["image_asset_id"]
+        for image_asset in collection_favorite_only["image_assets"]
+    ] == [selected_image_asset["image_asset_id"]]
+    assert [
+        image_asset["image_asset_id"]
+        for image_asset in library_favorite_only["image_assets"]
+    ] == [selected_image_asset["image_asset_id"]]
+
+    export_response = client.post(
+        "/search-sets/snake-study/exports",
+        json={"format": "jsonl"},
+    )
+    rows = [
+        json.loads(line)
+        for line in (Path(export_response.json()["export_path"]) / "manifest.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    selected_row = next(
+        row
+        for row in rows
+        if row["image_asset"]["image_asset_id"] == selected_image_asset["image_asset_id"]
+    )
+    assert selected_row["image_asset"]["is_favorite"] is True
+    assert selected_row["museum_object"]["is_favorite"] is False
+
+    unfavorite_response = client.delete(
+        f"/image-assets/{selected_image_asset['image_asset_id']}/favorite"
+    )
+
+    assert unfavorite_response.status_code == 200
+    assert unfavorite_response.json() == {
+        "image_asset_id": selected_image_asset["image_asset_id"],
+        "is_favorite": False,
+    }
+    assert client.get("/library/image-assets?favorite=true").json()["image_assets"] == []
+
+
+def test_api_object_detail_includes_object_and_image_favorite_state(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            met_candidate_client=FakeMetGridCandidateClient(),
+            met_record_client=FakeMetGridRecordClient(),
+            download_image_bytes=lambda _url: ppm_image_bytes(width=1600, height=800),
+        )
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Snake Study", "terms_text": "snake"},
+    )
+    run_response = client.post(
+        "/search-sets/snake-study/provider-collections/met/runs",
+        json={"candidate_offset": 0, "candidate_limit": 2},
+    )
+    client.post(f"/provider-collections/met/runs/{run_response.json()['run_id']}/ingest")
+    selected_image_asset = client.get(
+        "/search-sets/snake-study/local-result-set?view=images"
+    ).json()["image_assets"][0]
+
+    client.put("/objects/met/40/favorite")
+    client.put(f"/image-assets/{selected_image_asset['image_asset_id']}/favorite")
+
+    collection_detail = client.get("/search-sets/snake-study/objects/met/40").json()
+    library_detail = client.get("/library/objects/met/40").json()
+
+    assert collection_detail["object"]["is_favorite"] is True
+    assert library_detail["object"]["is_favorite"] is True
+    assert [
+        image["is_favorite"]
+        for image in collection_detail["images"]
+        if image["image_asset_id"] == selected_image_asset["image_asset_id"]
+    ] == [True]
+    assert [
+        image["is_favorite"]
+        for image in library_detail["images"]
+        if image["image_asset_id"] == selected_image_asset["image_asset_id"]
+    ] == [True]
+
+
+def test_api_removes_selected_object_from_collection_without_deleting_library(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            met_candidate_client=FakeMetGridCandidateClient(),
+            met_record_client=FakeMetGridRecordClient(),
+            download_image_bytes=lambda _url: ppm_image_bytes(width=1600, height=800),
+        )
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Snake Study", "terms_text": "snake"},
+    )
+    run_response = client.post(
+        "/search-sets/snake-study/provider-collections/met/runs",
+        json={"candidate_offset": 0, "candidate_limit": 2},
+    )
+    client.post(f"/provider-collections/met/runs/{run_response.json()['run_id']}/ingest")
+
+    response = client.post(
+        "/search-sets/snake-study/remove-from-collection",
+        json={
+            "selection": {
+                "objects": [{"provider": "met", "object_id": 40}],
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "removed_objects": 1,
+        "removed_image_assets": 0,
+    }
+    collection_objects = client.get(
+        "/search-sets/snake-study/local-result-set?view=objects"
+    ).json()["objects"]
+    library_objects = client.get("/library/local-result-set?view=objects").json()[
+        "objects"
+    ]
+    assert [museum_object["object_id"] for museum_object in collection_objects] == [20]
+    assert [museum_object["object_id"] for museum_object in library_objects] == [40, 20]
+
+
+def test_api_filters_user_library_to_no_collection_material(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            met_candidate_client=FakeMetGridCandidateClient(),
+            met_record_client=FakeMetGridRecordClient(),
+            download_image_bytes=lambda _url: ppm_image_bytes(width=1600, height=800),
+        )
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Snake Study", "terms_text": "snake"},
+    )
+    run_response = client.post(
+        "/search-sets/snake-study/provider-collections/met/runs",
+        json={"candidate_offset": 0, "candidate_limit": 2},
+    )
+    client.post(f"/provider-collections/met/runs/{run_response.json()['run_id']}/ingest")
+    client.put("/objects/met/40/favorite")
+    client.post(
+        "/search-sets/snake-study/remove-from-collection",
+        json={
+            "selection": {
+                "objects": [{"provider": "met", "object_id": 40}],
+            },
+        },
+    )
+
+    orphan_objects = client.get(
+        "/library/local-result-set?view=objects&collection=none"
+    ).json()
+    orphan_images = client.get(
+        "/library/local-result-set?view=images&collection=none"
+    ).json()
+    favorite_orphan_objects = client.get(
+        "/library/local-result-set?view=objects&collection=none&favorite=true"
+    ).json()
+    all_library_objects = client.get("/library/local-result-set?view=objects").json()
+
+    assert [museum_object["object_id"] for museum_object in orphan_objects["objects"]] == [
+        40
+    ]
+    assert orphan_objects["counts"] == {"objects": 1, "images": 3}
+    assert [image_asset["object_id"] for image_asset in orphan_images["image_assets"]] == [
+        40,
+        40,
+        40,
+    ]
+    assert orphan_images["counts"] == {"objects": 1, "images": 3}
+    assert [
+        museum_object["object_id"]
+        for museum_object in favorite_orphan_objects["objects"]
+    ] == [40]
+    assert [museum_object["object_id"] for museum_object in all_library_objects["objects"]] == [
+        40,
+        20,
+    ]
+
+
+def test_api_exports_selected_user_library_orphan_object(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            met_candidate_client=FakeMetGridCandidateClient(),
+            met_record_client=FakeMetGridRecordClient(),
+            download_image_bytes=lambda _url: ppm_image_bytes(width=1600, height=800),
+        )
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Snake Study", "terms_text": "snake"},
+    )
+    run_response = client.post(
+        "/search-sets/snake-study/provider-collections/met/runs",
+        json={"candidate_offset": 0, "candidate_limit": 2},
+    )
+    client.post(f"/provider-collections/met/runs/{run_response.json()['run_id']}/ingest")
+    client.put("/objects/met/40/favorite")
+    selected_image_asset = client.get(
+        "/search-sets/snake-study/local-result-set?view=images"
+    ).json()["image_assets"][0]
+    client.put(f"/image-assets/{selected_image_asset['image_asset_id']}/favorite")
+    client.post(
+        "/search-sets/snake-study/remove-from-collection",
+        json={
+            "selection": {
+                "objects": [{"provider": "met", "object_id": 40}],
+            },
+        },
+    )
+
+    response = client.post(
+        "/library/exports",
+        json={
+            "format": "jsonl",
+            "selection": {
+                "objects": [{"provider": "met", "object_id": 40}],
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["format"] == "jsonl"
+    assert payload["row_count"] == 3
+    rows = [
+        json.loads(line)
+        for line in (Path(payload["export_path"]) / "manifest.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert {row["image_asset"]["object_id"] for row in rows} == {40}
+    assert {row["collection"]["scope"] for row in rows} == {"user-library"}
+    assert {row["collection"]["slug"] for row in rows} == {"user-library"}
+    assert {row["museum_object"]["is_favorite"] for row in rows} == {True}
+    assert any(row["image_asset"]["is_favorite"] for row in rows)
+
+
+def test_api_deletes_selected_image_asset_globally_and_removes_local_files(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            met_candidate_client=FakeMetGridCandidateClient(),
+            met_record_client=FakeMetGridRecordClient(),
+            download_image_bytes=lambda _url: ppm_image_bytes(width=1600, height=800),
+        )
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Snake Study", "terms_text": "snake"},
+    )
+    run_response = client.post(
+        "/search-sets/snake-study/provider-collections/met/runs",
+        json={"candidate_offset": 0, "candidate_limit": 2},
+    )
+    client.post(f"/provider-collections/met/runs/{run_response.json()['run_id']}/ingest")
+    selected_image_asset = client.get(
+        "/search-sets/snake-study/local-result-set?view=images"
+    ).json()["image_assets"][0]
+    assert client.get(selected_image_asset["standard_url"]).status_code == 200
+    assert client.get(selected_image_asset["thumb_url"]).status_code == 200
+
+    response = client.post(
+        "/curation/delete",
+        json={
+            "selection": {
+                "image_asset_ids": [selected_image_asset["image_asset_id"]],
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "deleted_objects": 0,
+        "deleted_image_assets": 1,
+    }
+    assert client.get(selected_image_asset["standard_url"]).status_code == 404
+    assert client.get(selected_image_asset["thumb_url"]).status_code == 404
+    collection_image_assets = client.get(
+        "/search-sets/snake-study/local-result-set?view=images"
+    ).json()["image_assets"]
+    library_image_assets = client.get("/library/local-result-set?view=images").json()[
+        "image_assets"
+    ]
+    assert selected_image_asset["image_asset_id"] not in {
+        image_asset["image_asset_id"] for image_asset in collection_image_assets
+    }
+    assert selected_image_asset["image_asset_id"] not in {
+        image_asset["image_asset_id"] for image_asset in library_image_assets
+    }
+
+
+def test_api_reports_retryable_delete_file_cleanup_failure(tmp_path, monkeypatch):
+    from anacronia import api as api_module
+    from anacronia.curation import CollectionFileCleanupError
+
+    storage = initialize_storage(project_root=tmp_path)
+
+    def fail_delete_image_asset(**_kwargs):
+        raise CollectionFileCleanupError(
+            path=Path("/tmp/anacronia-busy-image.ppm"),
+            original_error=PermissionError("file busy"),
+        )
+
+    monkeypatch.setattr(
+        api_module,
+        "delete_image_asset_from_anacronia",
+        fail_delete_image_asset,
+    )
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            met_candidate_client=FakeMetGridCandidateClient(),
+            met_record_client=FakeMetGridRecordClient(),
+        )
+    )
+
+    response = client.post(
+        "/curation/delete",
+        json={"selection": {"image_asset_ids": [123]}},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"].startswith("Could not delete local file")
 
 
 def test_api_returns_user_library_object_detail_without_collection_slug(tmp_path):
@@ -1538,12 +2153,14 @@ def test_api_returns_collection_object_detail_for_overlay(tmp_path):
         "is_public_domain": True,
         "rights_and_reproduction": "Public domain",
         "metadata_date": "2026-01-02",
+        "is_favorite": False,
     }
     assert [image["image_role"] for image in detail["images"]] == [
         "primary",
         "additional",
         "additional",
     ]
+    assert {image["is_favorite"] for image in detail["images"]} == {False}
     assert detail["images"][0]["thumb_url"] == f"/image-assets/{detail['images'][0]['image_asset_id']}/thumb"
     assert detail["images"][0]["standard_url"] == f"/image-assets/{detail['images'][0]['image_asset_id']}/standard"
     assert detail["matches"] == [

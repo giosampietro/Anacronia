@@ -18,6 +18,7 @@ describe("image grid style", () => {
     expect(IMAGE_GRID_CLASS_NAME).not.toContain("grid-cols-8");
 
     expect(IMAGE_GRID_TILE_CLASS_NAME).toContain("rounded-lg");
+    expect(IMAGE_GRID_TILE_CLASS_NAME).toContain("isolate");
     expect(IMAGE_GRID_TILE_CLASS_NAME).not.toContain("rounded-2xl");
 
     expect(IMAGE_GRID_BADGE_CLASS_NAME).toContain("rounded-lg");
@@ -25,11 +26,10 @@ describe("image grid style", () => {
     expect(IMAGE_GRID_CAROUSEL_INDICATOR_CLASS_NAME).toContain("text-white");
     expect(IMAGE_GRID_CAROUSEL_INDICATOR_CLASS_NAME).not.toContain("bg-");
     expect(IMAGE_GRID_CAROUSEL_INDICATOR_CLASS_NAME).not.toContain("rounded");
-    expect(IMAGE_GRID_PROVIDER_BADGE_CLASS_NAME).toContain("absolute left-1.5 top-1.5");
-    expect(IMAGE_GRID_PROVIDER_BADGE_CLASS_NAME).toContain("bg-background/88");
-    expect(IMAGE_GRID_PROVIDER_BADGE_CLASS_NAME).toContain("text-foreground");
-    expect(IMAGE_GRID_PROVIDER_BADGE_CLASS_NAME).toContain("group-hover:opacity-100");
-    expect(IMAGE_GRID_PROVIDER_BADGE_CLASS_NAME).toContain("group-focus:opacity-100");
+    expect(IMAGE_GRID_CAROUSEL_INDICATOR_CLASS_NAME).not.toContain("shadow");
+    expect(IMAGE_GRID_PROVIDER_BADGE_CLASS_NAME).not.toContain("absolute");
+    expect(IMAGE_GRID_PROVIDER_BADGE_CLASS_NAME).not.toContain("backdrop-blur");
+    expect(IMAGE_GRID_PROVIDER_BADGE_CLASS_NAME).toContain("mb-1");
     expect(IMAGE_GRID_OVERLAY_CLASS_NAME).toContain("rounded-md");
     expect(IMAGE_GRID_OVERLAY_CLASS_NAME).toContain("group-focus:opacity-100");
     expect(IMAGE_GRID_OVERLAY_CLASS_NAME).not.toContain("bg-gradient-to-t");
