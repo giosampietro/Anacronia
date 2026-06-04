@@ -14,6 +14,7 @@ from anacronia.collection_runs import (
 )
 from anacronia.curation import (
     CollectionCurationBusyError,
+    CollectionDatabaseDeleteError,
     CollectionDeleteSummary,
     CollectionFileCleanupError,
     delete_collection_from_anacronia,
@@ -632,6 +633,8 @@ def create_app(
                 search_set_slug=slug,
             )
         except CollectionCurationBusyError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        except CollectionDatabaseDeleteError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
         except CollectionFileCleanupError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error

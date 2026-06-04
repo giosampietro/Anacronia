@@ -359,6 +359,53 @@ def test_api_rejects_delete_collection_while_provider_search_is_running(tmp_path
     ] == ["snake-study"]
 
 
+def test_api_reports_retryable_delete_collection_database_failure(tmp_path, monkeypatch):
+    import sqlite3
+
+    from anacronia import api as api_module
+    from anacronia.curation import CollectionDatabaseDeleteError
+
+    storage = initialize_storage(project_root=tmp_path)
+    original_delete_collection = api_module.delete_collection_from_anacronia
+    failed_once = False
+
+    def fail_once_delete_collection(**kwargs):
+        nonlocal failed_once
+        if not failed_once:
+            failed_once = True
+            raise CollectionDatabaseDeleteError(
+                search_set_slug=kwargs["search_set_slug"],
+                original_error=sqlite3.OperationalError("simulated database failure"),
+            )
+        return original_delete_collection(**kwargs)
+
+    monkeypatch.setattr(
+        api_module,
+        "delete_collection_from_anacronia",
+        fail_once_delete_collection,
+    )
+    client = TestClient(create_app(database_path=storage.database_path))
+    client.post(
+        "/search-sets",
+        json={"display_name": "Snake Study", "terms_text": "snake"},
+    )
+
+    failed_response = client.delete("/search-sets/snake-study")
+
+    assert failed_response.status_code == 409
+    assert failed_response.json()["detail"].startswith("Could not delete Collection")
+    assert [
+        search_set["slug"]
+        for search_set in client.get("/dashboard").json()["search_sets"]
+    ] == ["snake-study"]
+
+    retry_response = client.delete("/search-sets/snake-study")
+
+    assert retry_response.status_code == 200
+    assert retry_response.json()["deleted"] is True
+    assert client.get("/dashboard").json()["search_sets"] == []
+
+
 def test_api_rejects_collection_rename_that_would_match_existing_slug(tmp_path):
     storage = initialize_storage(project_root=tmp_path)
     client = TestClient(create_app(database_path=storage.database_path))

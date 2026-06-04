@@ -15,6 +15,7 @@ from anacronia.curation import (
     add_collection_object_exclusion,
     backfill_collection_memberships,
     CollectionCurationBusyError,
+    CollectionDatabaseDeleteError,
     CollectionFileCleanupError,
     delete_collection_from_anacronia,
     delete_image_asset_from_anacronia,
@@ -226,6 +227,24 @@ def collection_row_exists(database_path, slug: str) -> bool:
             ).fetchone()
             is not None
         )
+
+
+def install_search_set_delete_failure(database_path) -> None:
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            """
+            CREATE TRIGGER fail_search_set_delete
+            BEFORE DELETE ON search_sets
+            BEGIN
+              SELECT RAISE(ABORT, 'simulated database failure');
+            END
+            """
+        )
+
+
+def remove_search_set_delete_failure(database_path) -> None:
+    with sqlite3.connect(database_path) as connection:
+        connection.execute("DROP TRIGGER fail_search_set_delete")
 
 
 def test_provider_import_exclusions_are_read_through_curation_boundary(tmp_path):
@@ -1178,6 +1197,245 @@ def test_delete_collection_file_cleanup_failure_keeps_collection_retryable(tmp_p
 
     assert summary.deleted is True
     assert collection_row_exists(storage.database_path, "snake-study") is False
+
+
+def test_delete_collection_database_failure_rolls_back_and_preserves_files_for_retry(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    ingest_collection(
+        database_path=storage.database_path,
+        data_root=storage.data_root,
+        display_name="Snake Study",
+        terms_text="snake",
+        candidate_limit=2,
+    )
+    backfill_collection_memberships(database_path=storage.database_path)
+    initial_state = visible_collection_state(storage.database_path, "snake-study")
+    with sqlite3.connect(storage.database_path) as connection:
+        file_paths = [
+            Path(path)
+            for row in connection.execute(
+                """
+                SELECT standard_path, thumb_path
+                FROM image_assets
+                ORDER BY id
+                """
+            ).fetchall()
+            for path in row
+        ]
+        active_rows_before = connection.execute(
+            """
+            SELECT
+              (SELECT COUNT(*) FROM museum_objects WHERE active = 1 AND deleted_at IS NULL),
+              (SELECT COUNT(*) FROM image_assets WHERE active = 1 AND deleted_at IS NULL),
+              (SELECT COUNT(*) FROM collection_object_memberships WHERE active = 1),
+              (SELECT COUNT(*) FROM collection_image_asset_memberships WHERE active = 1)
+            """
+        ).fetchone()
+
+    install_search_set_delete_failure(storage.database_path)
+
+    try:
+        delete_collection_from_anacronia(
+            database_path=storage.database_path,
+            search_set_slug="snake-study",
+        )
+    except CollectionDatabaseDeleteError as error:
+        assert str(error).startswith("Could not delete Collection")
+    else:
+        raise AssertionError("delete_collection_from_anacronia should report database failure")
+
+    assert collection_row_exists(storage.database_path, "snake-study") is True
+    assert visible_collection_state(storage.database_path, "snake-study") == initial_state
+    assert all(path.is_file() for path in file_paths)
+    with sqlite3.connect(storage.database_path) as connection:
+        active_rows_after = connection.execute(
+            """
+            SELECT
+              (SELECT COUNT(*) FROM museum_objects WHERE active = 1 AND deleted_at IS NULL),
+              (SELECT COUNT(*) FROM image_assets WHERE active = 1 AND deleted_at IS NULL),
+              (SELECT COUNT(*) FROM collection_object_memberships WHERE active = 1),
+              (SELECT COUNT(*) FROM collection_image_asset_memberships WHERE active = 1)
+            """
+        ).fetchone()
+    assert active_rows_after == active_rows_before
+
+    remove_search_set_delete_failure(storage.database_path)
+    summary = delete_collection_from_anacronia(
+        database_path=storage.database_path,
+        search_set_slug="snake-study",
+    )
+
+    assert summary.deleted is True
+    assert collection_row_exists(storage.database_path, "snake-study") is False
+    assert list_library_objects(database_path=storage.database_path) == []
+    assert list_library_image_assets(database_path=storage.database_path) == []
+    assert all(not path.exists() for path in file_paths)
+
+
+def test_delete_collection_database_failure_preserves_shared_favorite_and_exclusion_state(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    ingest_collection(
+        database_path=storage.database_path,
+        data_root=storage.data_root,
+        display_name="Snake Study",
+        terms_text="snake",
+        candidate_limit=2,
+    )
+    ingest_collection(
+        database_path=storage.database_path,
+        data_root=storage.data_root,
+        display_name="Bowl Study",
+        terms_text="bowl",
+        candidate_limit=1,
+    )
+    backfill_collection_memberships(database_path=storage.database_path)
+    set_object_favorite(
+        database_path=storage.database_path,
+        provider="met",
+        object_id=20,
+        is_favorite=True,
+    )
+    favorite_detail_image = [
+        image_asset
+        for image_asset in list_library_image_assets(database_path=storage.database_path)
+        if image_asset.object_id == 40
+        and image_asset.image_role == "additional"
+        and image_asset.image_index == 2
+    ][0]
+    set_image_asset_favorite(
+        database_path=storage.database_path,
+        image_asset_id=favorite_detail_image.image_asset_id,
+        is_favorite=True,
+    )
+    add_collection_object_exclusion(
+        database_path=storage.database_path,
+        search_set_slug="snake-study",
+        provider="met",
+        object_id=20,
+        reason="removed_from_collection",
+    )
+    add_collection_object_exclusion(
+        database_path=storage.database_path,
+        search_set_slug="bowl-study",
+        provider="met",
+        object_id=40,
+        reason="removed_from_collection",
+    )
+    initial_snake_state = visible_collection_state(storage.database_path, "snake-study")
+    initial_bowl_state = visible_collection_state(storage.database_path, "bowl-study")
+    with sqlite3.connect(storage.database_path) as connection:
+        favorite_counts_before = connection.execute(
+            """
+            SELECT
+              (SELECT COUNT(*) FROM object_favorites),
+              (SELECT COUNT(*) FROM image_asset_favorites)
+            """
+        ).fetchone()
+        exclusion_rows_before = connection.execute(
+            """
+            SELECT search_sets.slug, collection_object_exclusions.object_id
+            FROM collection_object_exclusions
+            JOIN search_sets
+              ON search_sets.id = collection_object_exclusions.search_set_id
+            ORDER BY search_sets.slug, collection_object_exclusions.object_id
+            """
+        ).fetchall()
+        active_rows_before = connection.execute(
+            """
+            SELECT
+              (SELECT COUNT(*) FROM museum_objects WHERE active = 1 AND deleted_at IS NULL),
+              (SELECT COUNT(*) FROM image_assets WHERE active = 1 AND deleted_at IS NULL)
+            """
+        ).fetchone()
+
+    install_search_set_delete_failure(storage.database_path)
+
+    try:
+        delete_collection_from_anacronia(
+            database_path=storage.database_path,
+            search_set_slug="snake-study",
+        )
+    except CollectionDatabaseDeleteError as error:
+        assert str(error).startswith("Could not delete Collection")
+    else:
+        raise AssertionError("delete_collection_from_anacronia should report database failure")
+
+    assert collection_row_exists(storage.database_path, "snake-study") is True
+    assert collection_row_exists(storage.database_path, "bowl-study") is True
+    assert visible_collection_state(storage.database_path, "snake-study") == initial_snake_state
+    assert visible_collection_state(storage.database_path, "bowl-study") == initial_bowl_state
+    assert list_library_objects(
+        database_path=storage.database_path,
+        collection="none",
+    ) == []
+    with sqlite3.connect(storage.database_path) as connection:
+        favorite_counts_after = connection.execute(
+            """
+            SELECT
+              (SELECT COUNT(*) FROM object_favorites),
+              (SELECT COUNT(*) FROM image_asset_favorites)
+            """
+        ).fetchone()
+        exclusion_rows_after = connection.execute(
+            """
+            SELECT search_sets.slug, collection_object_exclusions.object_id
+            FROM collection_object_exclusions
+            JOIN search_sets
+              ON search_sets.id = collection_object_exclusions.search_set_id
+            ORDER BY search_sets.slug, collection_object_exclusions.object_id
+            """
+        ).fetchall()
+        active_rows_after = connection.execute(
+            """
+            SELECT
+              (SELECT COUNT(*) FROM museum_objects WHERE active = 1 AND deleted_at IS NULL),
+              (SELECT COUNT(*) FROM image_assets WHERE active = 1 AND deleted_at IS NULL)
+            """
+        ).fetchone()
+    assert favorite_counts_after == favorite_counts_before
+    assert exclusion_rows_after == exclusion_rows_before
+    assert active_rows_after == active_rows_before
+
+    remove_search_set_delete_failure(storage.database_path)
+    summary = delete_collection_from_anacronia(
+        database_path=storage.database_path,
+        search_set_slug="snake-study",
+    )
+
+    assert summary.deleted is True
+    assert collection_row_exists(storage.database_path, "snake-study") is False
+    assert [
+        museum_object.object_id
+        for museum_object in list_collection_objects(
+            database_path=storage.database_path,
+            search_set_slug="bowl-study",
+        )
+    ] == [40]
+    assert [
+        (museum_object.object_id, museum_object.image_count, museum_object.is_favorite)
+        for museum_object in list_library_objects(
+            database_path=storage.database_path,
+            collection="none",
+        )
+    ] == [(20, 1, True)]
+    assert [
+        (image_asset.object_id, image_asset.image_role, image_asset.image_index)
+        for image_asset in list_library_image_assets(
+            database_path=storage.database_path,
+            favorite_only=True,
+        )
+    ] == [(40, "additional", 2)]
+    with sqlite3.connect(storage.database_path) as connection:
+        exclusion_rows = connection.execute(
+            """
+            SELECT search_sets.slug, collection_object_exclusions.object_id
+            FROM collection_object_exclusions
+            JOIN search_sets
+              ON search_sets.id = collection_object_exclusions.search_set_id
+            ORDER BY search_sets.slug, collection_object_exclusions.object_id
+            """
+        ).fetchall()
+    assert exclusion_rows == [("bowl-study", 40)]
 
 
 def test_object_exclusion_prevents_import_and_does_not_count_batch_target(tmp_path):
