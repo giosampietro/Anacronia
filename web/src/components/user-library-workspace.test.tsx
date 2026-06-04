@@ -243,6 +243,32 @@ describe("UserLibraryWorkspace", () => {
     expect(html).not.toContain("No Image Assets yet");
   });
 
+  it("renders a No Collection empty state when every orphan Image Asset was deleted", () => {
+    const html = renderToString(
+      <UserLibraryWorkspace
+        apiBaseUrl="http://127.0.0.1:18670"
+        imageAssets={[]}
+        libraryCollectionFilter="none"
+        localQueryText=""
+        objects={[]}
+        providerFacets={[]}
+        providerFilter="all"
+        resultCounts={{ objects: 0, images: 0 }}
+        viewMode="images"
+      />,
+    );
+
+    expect(html).toContain("No Image Assets without a Collection");
+    expect(html).toContain(
+      "Everything in My Library currently belongs to at least one Collection.",
+    );
+    expect(html).toContain("No Collection");
+    expect(html).not.toContain("No Image Assets yet");
+    expect(html).not.toContain(
+      "Start a Collection search to add local Image Assets to My Library.",
+    );
+  });
+
   it("does not server-render every thumbnail in large library grids", () => {
     const largeImageAssets = Array.from({ length: 1000 }, (_, index) =>
       createImageAsset(index + 1),

@@ -318,13 +318,17 @@ function NoCollectionFilter({
 }
 
 function EmptyResults({
+  favoriteOnly,
   hasLocalMaterial,
+  libraryCollectionFilter,
   localQueryText,
   providerFilter,
   viewMode,
   workspaceMode,
 }: {
+  favoriteOnly: boolean;
   hasLocalMaterial: boolean;
+  libraryCollectionFilter: LibraryCollectionFilter;
   localQueryText: string;
   providerFilter: string;
   viewMode: GridViewMode;
@@ -332,7 +336,49 @@ function EmptyResults({
 }) {
   const noun = viewNoun(viewMode);
   const trimmedQuery = localQueryText.trim();
-  const hasActiveFilter = trimmedQuery !== "" || providerFilter !== "all";
+  const hasNoCollectionFilter =
+    workspaceMode === "user-library" && libraryCollectionFilter === "none";
+  const hasActiveFilter =
+    trimmedQuery !== "" ||
+    providerFilter !== "all" ||
+    favoriteOnly ||
+    hasNoCollectionFilter;
+  const title = (() => {
+    if (hasNoCollectionFilter && favoriteOnly) {
+      return `No favorite ${noun} without a Collection`;
+    }
+    if (hasNoCollectionFilter) {
+      return `No ${noun} without a Collection`;
+    }
+    if (favoriteOnly) {
+      return `No favorite ${noun}`;
+    }
+
+    return hasLocalMaterial && hasActiveFilter
+      ? `No matching ${noun}`
+      : `No ${noun} yet`;
+  })();
+  const description = (() => {
+    if (hasLocalMaterial && trimmedQuery !== "") {
+      return `No ${noun.toLowerCase()} matched "${trimmedQuery}".`;
+    }
+    if (hasNoCollectionFilter && favoriteOnly) {
+      return `Bookmarked ${noun.toLowerCase()} outside Collections will appear here.`;
+    }
+    if (hasNoCollectionFilter) {
+      return `Everything in My Library currently belongs to at least one Collection.`;
+    }
+    if (favoriteOnly) {
+      return `Bookmarked ${noun.toLowerCase()} will appear here.`;
+    }
+    if (hasLocalMaterial) {
+      return `No ${noun.toLowerCase()} matched this Provider.`;
+    }
+
+    return workspaceMode === "user-library"
+      ? "Start a Collection search to add local Image Assets to My Library."
+      : "Start search to add local Museum Objects and Image Assets to this Collection.";
+  })();
 
   return (
     <Empty className="border">
@@ -340,20 +386,8 @@ function EmptyResults({
         <EmptyMedia variant="icon">
           {hasLocalMaterial && hasActiveFilter ? <Search /> : <Database />}
         </EmptyMedia>
-        <EmptyTitle>
-          {hasLocalMaterial && hasActiveFilter
-            ? `No matching ${noun}`
-            : `No ${noun} yet`}
-        </EmptyTitle>
-        <EmptyDescription>
-          {hasLocalMaterial && trimmedQuery !== ""
-            ? `No ${noun.toLowerCase()} matched "${trimmedQuery}".`
-            : hasLocalMaterial
-              ? `No ${noun.toLowerCase()} matched this Provider.`
-              : workspaceMode === "user-library"
-                ? "Start a Collection search to add local Image Assets to My Library."
-                : "Start search to add local Museum Objects and Image Assets to this Collection."}
-        </EmptyDescription>
+        <EmptyTitle>{title}</EmptyTitle>
+        <EmptyDescription>{description}</EmptyDescription>
       </EmptyHeader>
     </Empty>
   );
@@ -397,7 +431,9 @@ export function LocalResultsGrid({
   const shownCount = viewMode === "objects" ? objects.length : imageAssets.length;
   const emptyState = (
     <EmptyResults
+      favoriteOnly={favoriteOnly}
       hasLocalMaterial={hasLocalMaterial}
+      libraryCollectionFilter={libraryCollectionFilter}
       localQueryText={localQueryText}
       providerFilter={providerFilter}
       viewMode={viewMode}
