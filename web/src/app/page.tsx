@@ -303,6 +303,7 @@ async function getLibraryLocalResultSet(
   providerFilter: string,
   favoriteOnly: boolean,
   libraryCollectionFilter: LibraryCollectionFilter,
+  limit?: number,
 ): Promise<LibraryLocalResultSetView> {
   const params = new URLSearchParams({ view: viewMode });
   if (queryText.trim() !== "") {
@@ -316,6 +317,9 @@ async function getLibraryLocalResultSet(
   }
   if (libraryCollectionFilter === "none") {
     params.set("collection", "none");
+  }
+  if (limit !== undefined) {
+    params.set("limit", String(limit));
   }
 
   try {
@@ -946,6 +950,22 @@ export default async function Home({ searchParams }: HomeProps) {
           libraryCollectionFilter,
         )
       : emptyLibraryLocalResultSet(gridViewMode);
+  const libraryNoCollectionCounts =
+    workspaceMode === "user-library"
+      ? libraryCollectionFilter === "none"
+        ? libraryLocalResultSet.counts
+        : (
+            await getLibraryLocalResultSet(
+              apiPort,
+              gridViewMode,
+              localQueryText,
+              providerFilter,
+              favoriteOnly,
+              "none",
+              1,
+            )
+          ).counts
+      : { objects: 0, images: 0 };
   const libraryObjects = libraryLocalResultSet.objects;
   const libraryImageAssets = libraryLocalResultSet.imageAssets;
   const activeImageAssets =
@@ -1052,6 +1072,21 @@ export default async function Home({ searchParams }: HomeProps) {
             workspaceMode: "search-set",
           })
         : "/";
+  const userLibraryUnscopedHref = createGridStateHref({
+    favoriteOnly,
+    libraryCollectionFilter: "all",
+    localQueryText,
+    provider: providerFilter,
+    viewMode: gridViewMode,
+    workspaceMode: "user-library",
+  });
+  const selectedDetailDeleteCompletionHref =
+    workspaceMode === "user-library" &&
+    libraryCollectionFilter === "none" &&
+    ((selectedDetailKind === "image" && libraryImageAssets.length === 1) ||
+      (selectedDetailKind !== "image" && libraryObjects.length === 1))
+      ? userLibraryUnscopedHref
+      : undefined;
   const selectedObjectReturnFocusId =
     selectedDetailObjectRoute === null
       ? ""
@@ -1266,6 +1301,7 @@ export default async function Home({ searchParams }: HomeProps) {
             imageAssets={libraryImageAssets}
             libraryCollectionFilter={libraryCollectionFilter}
             localQueryText={localQueryText}
+            noCollectionCounts={libraryNoCollectionCounts}
             objects={libraryObjects}
             providerFacets={libraryLocalResultSet.providerFacets}
             providerFilter={providerFilter}
@@ -1367,6 +1403,7 @@ export default async function Home({ searchParams }: HomeProps) {
             closeHref={selectedDetailCloseHref}
             collectionLabels={selectedObjectCollectionLabels}
             curationActionsDisabled={curationActionsDisabled}
+            deleteCompletionHref={selectedDetailDeleteCompletionHref}
             deleteEndpoint="/api/curation/delete"
             detail={selectedObjectDetail}
             detailKind={selectedDetailKind ?? "object"}

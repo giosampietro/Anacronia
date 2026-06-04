@@ -32,6 +32,7 @@ type UserLibraryWorkspaceProps = {
   initialSelectionMode?: boolean;
   libraryCollectionFilter?: LibraryCollectionFilter;
   localQueryText: string;
+  noCollectionCounts?: CollectionResultCounts;
   objects: LibraryObjectSummary[];
   providerFacets: CollectionProviderFacet[];
   providerFilter: string;
@@ -71,6 +72,7 @@ export function UserLibraryWorkspace({
   initialSelectionMode = false,
   libraryCollectionFilter = "all",
   localQueryText,
+  noCollectionCounts,
   objects,
   providerFacets,
   providerFilter,
@@ -99,6 +101,7 @@ export function UserLibraryWorkspace({
         favoriteOnly={favoriteOnly}
         hasLocalMaterial={resultCounts.images > 0}
         libraryCollectionFilter={libraryCollectionFilter}
+        noCollectionCounts={noCollectionCounts}
         imageAssetHref={(imageAsset) =>
           createLibraryImageAssetHref(
             imageAsset,

@@ -113,6 +113,10 @@ function createImageAsset(index: number): LibraryImageAssetSummary {
   };
 }
 
+function normalizeServerHtml(html: string): string {
+  return html.replaceAll("<!-- -->", "");
+}
+
 describe("UserLibraryWorkspace", () => {
   it("renders image mode as one tile per Image Asset without sibling carousel badges", () => {
     const html = renderToString(
@@ -204,6 +208,40 @@ describe("UserLibraryWorkspace", () => {
     expect(html).toContain("aria-current=\"page\"");
     expect(html).toContain("/?mode=user-library&amp;collection=none&amp;q=snake");
     expect(html).toContain("/?mode=user-library&amp;image=9&amp;collection=none&amp;q=snake");
+  });
+
+  it("renders the No Collection badge from the active view count", () => {
+    const imageHtml = normalizeServerHtml(renderToString(
+      <UserLibraryWorkspace
+        apiBaseUrl="http://127.0.0.1:18670"
+        imageAssets={imageAssets}
+        localQueryText=""
+        noCollectionCounts={{ objects: 17, images: 23 }}
+        objects={objects}
+        providerFacets={[{ provider: "met", objectCount: 2, imageCount: 2 }]}
+        providerFilter="all"
+        resultCounts={{ objects: 2, images: 2 }}
+        viewMode="images"
+      />,
+    ));
+    const objectHtml = normalizeServerHtml(renderToString(
+      <UserLibraryWorkspace
+        apiBaseUrl="http://127.0.0.1:18670"
+        imageAssets={imageAssets}
+        localQueryText=""
+        noCollectionCounts={{ objects: 17, images: 23 }}
+        objects={objects}
+        providerFacets={[{ provider: "met", objectCount: 2, imageCount: 2 }]}
+        providerFilter="all"
+        resultCounts={{ objects: 2, images: 2 }}
+        viewMode="objects"
+      />,
+    ));
+
+    expect(imageHtml).toContain("No Collection");
+    expect(imageHtml).toContain(">23</span>");
+    expect(objectHtml).toContain("No Collection");
+    expect(objectHtml).toContain(">17</span>");
   });
 
   it("renders the true empty library state only when no Image Assets exist", () => {

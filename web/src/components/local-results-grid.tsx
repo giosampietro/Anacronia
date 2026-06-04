@@ -47,6 +47,7 @@ type LocalResultsGridProps = {
   favoriteOnly?: boolean;
   hasLocalMaterial?: boolean;
   libraryCollectionFilter?: LibraryCollectionFilter;
+  noCollectionCounts?: CollectionResultCounts;
   imageAssetHref: (imageAsset: LibraryImageAssetSummary) => string;
   imageAssetTileId: (imageAsset: LibraryImageAssetSummary) => string;
   imageAssets: LibraryImageAssetSummary[];
@@ -281,6 +282,7 @@ function NoCollectionFilter({
   favoriteOnly,
   libraryCollectionFilter,
   localQueryText,
+  noCollectionCount,
   providerFilter,
   viewMode,
 }: {
@@ -288,6 +290,7 @@ function NoCollectionFilter({
   favoriteOnly: boolean;
   libraryCollectionFilter: LibraryCollectionFilter;
   localQueryText: string;
+  noCollectionCount: number;
   providerFilter: string;
   viewMode: GridViewMode;
 }) {
@@ -313,6 +316,9 @@ function NoCollectionFilter({
     >
       <Database data-icon="inline-start" />
       No Collection
+      <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+        {noCollectionCount}
+      </span>
     </Link>
   );
 }
@@ -404,6 +410,7 @@ export function LocalResultsGrid({
   favoriteOnly = false,
   hasLocalMaterial = false,
   libraryCollectionFilter = "all",
+  noCollectionCounts,
   imageAssetHref,
   imageAssetTileId,
   imageAssets,
@@ -429,6 +436,22 @@ export function LocalResultsGrid({
   workspaceMode,
 }: LocalResultsGridProps) {
   const shownCount = viewMode === "objects" ? objects.length : imageAssets.length;
+  const deleteCompletionHref =
+    workspaceMode === "user-library" && libraryCollectionFilter === "none"
+      ? createGridStateHref({
+          collectionFilterText,
+          favoriteOnly,
+          libraryCollectionFilter: "all",
+          localQueryText,
+          provider: providerFilter,
+          viewMode,
+          workspaceMode: "user-library",
+        })
+      : undefined;
+  const noCollectionCount =
+    noCollectionCounts === undefined
+      ? viewCountLabel(viewMode, resultCounts)
+      : viewCountLabel(viewMode, noCollectionCounts);
   const emptyState = (
     <EmptyResults
       favoriteOnly={favoriteOnly}
@@ -495,6 +518,7 @@ export function LocalResultsGrid({
               favoriteOnly={favoriteOnly}
               libraryCollectionFilter={libraryCollectionFilter}
               localQueryText={localQueryText}
+              noCollectionCount={noCollectionCount}
               providerFilter={providerFilter}
               viewMode={viewMode}
             />
@@ -507,6 +531,7 @@ export function LocalResultsGrid({
             closeImageHref={closeImageHref}
             closeObjectHref={closeObjectHref}
             curationActionsDisabled={curationActionsDisabled}
+            deleteCompletionHref={deleteCompletionHref}
             deleteEndpoint={deleteEndpoint}
             emptyState={shownCount === 0 ? emptyState : undefined}
             exportEndpoint={exportEndpoint}

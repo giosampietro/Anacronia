@@ -41,6 +41,7 @@ type CollectionObjectDetailOverlayProps = {
   closeHref: string;
   collectionLabels?: string[];
   curationActionsDisabled?: boolean;
+  deleteCompletionHref?: string;
   deleteEndpoint?: string;
   detail: CollectionObjectDetail;
   detailKind?: "image" | "object";
@@ -634,6 +635,7 @@ export function CollectionObjectDetailOverlay({
   closeHref,
   collectionLabels = [],
   curationActionsDisabled = false,
+  deleteCompletionHref,
   deleteEndpoint,
   detail,
   detailKind = "object",
@@ -736,7 +738,7 @@ export function CollectionObjectDetailOverlay({
     });
 
     if (response.ok) {
-      router.push(closeHref);
+      router.push(action === "delete" && deleteCompletionHref ? deleteCompletionHref : closeHref);
       router.refresh();
     }
   }

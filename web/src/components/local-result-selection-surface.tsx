@@ -78,6 +78,7 @@ type LocalResultSelectionSurfaceProps = {
   closeImageHref: string;
   closeObjectHref: string;
   curationActionsDisabled?: boolean;
+  deleteCompletionHref?: string;
   deleteEndpoint?: string;
   emptyState?: ReactNode;
   exportEndpoint?: string;
@@ -776,6 +777,7 @@ export function LocalResultSelectionSurface({
   closeImageHref,
   closeObjectHref,
   curationActionsDisabled = false,
+  deleteCompletionHref,
   deleteEndpoint,
   emptyState,
   exportEndpoint,
@@ -910,8 +912,18 @@ export function LocalResultSelectionSurface({
   }
 
   function completeCurationAction() {
+    const shouldRedirectAfterDelete =
+      selectionDialogKind === "delete" &&
+      deleteCompletionHref !== undefined &&
+      visibleIds.length > 0 &&
+      selectedVisibleCount === visibleIds.length;
+
     resetSelection();
-    router.refresh();
+    if (shouldRedirectAfterDelete) {
+      router.push(deleteCompletionHref, { scroll: false });
+    } else {
+      router.refresh();
+    }
   }
 
   function openSelectionDialog(dialogKind: SelectionDialogKind) {
