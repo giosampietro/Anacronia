@@ -52,6 +52,13 @@ class CollectionFileCleanupError(RuntimeError):
         super().__init__(f"Could not delete local file {path}: {original_error}")
 
 
+class CollectionDatabaseDeleteError(RuntimeError):
+    def __init__(self, *, search_set_slug: str, original_error: sqlite3.Error) -> None:
+        self.search_set_slug = search_set_slug
+        self.original_error = original_error
+        super().__init__(f"Could not delete Collection. Please retry: {original_error}")
+
+
 def ensure_curation_schema(connection: sqlite3.Connection) -> None:
     # Lazy import keeps provider ingest modules able to depend on curation.
     from anacronia.met_ingest import ensure_met_ingest_schema
@@ -465,48 +472,59 @@ def delete_collection_from_anacronia(
     database_path: Path,
     search_set_slug: str,
 ) -> CollectionDeleteSummary:
-    with sqlite3.connect(database_path) as connection:
-        ensure_curation_schema(connection)
-        search_set_row = connection.execute(
-            "SELECT id FROM search_sets WHERE slug = ?",
-            (search_set_slug,),
-        ).fetchone()
-        if search_set_row is None:
-            return CollectionDeleteSummary(
-                collection_slug=search_set_slug,
-                deleted=False,
+    try:
+        with sqlite3.connect(database_path) as connection:
+            ensure_curation_schema(connection)
+            search_set_row = connection.execute(
+                "SELECT id FROM search_sets WHERE slug = ?",
+                (search_set_slug,),
+            ).fetchone()
+            if search_set_row is None:
+                return CollectionDeleteSummary(
+                    collection_slug=search_set_slug,
+                    deleted=False,
+                )
+            search_set_id = int(search_set_row[0])
+            ensure_collection_has_no_active_provider_search(
+                connection=connection,
+                search_set_id=search_set_id,
             )
-        search_set_id = int(search_set_row[0])
-        ensure_collection_has_no_active_provider_search(
-            connection=connection,
-            search_set_id=search_set_id,
-        )
-        plan = _plan_collection_material_deletion(
-            connection=connection,
-            search_set_id=search_set_id,
-        )
-        for path_text in plan["file_paths"]:
-            delete_local_file(path_text)
-        _apply_collection_material_deletion(
-            connection=connection,
-            image_asset_ids=plan["deleted_image_asset_ids"],
-            objects=plan["deleted_objects"],
-        )
-        _delete_collection_scoped_rows(
-            connection=connection,
-            search_set_id=search_set_id,
-        )
+            plan = _plan_collection_material_deletion(
+                connection=connection,
+                search_set_id=search_set_id,
+            )
+            _apply_collection_material_deletion(
+                connection=connection,
+                image_asset_ids=plan["deleted_image_asset_ids"],
+                objects=plan["deleted_objects"],
+            )
+            _delete_collection_scoped_rows(
+                connection=connection,
+                search_set_id=search_set_id,
+            )
+            summary = CollectionDeleteSummary(
+                collection_slug=search_set_slug,
+                deleted=True,
+                deleted_objects=len(plan["deleted_objects"]),
+                deleted_image_assets=len(plan["deleted_image_asset_ids"]),
+                preserved_shared_objects=len(plan["preserved_shared_objects"]),
+                preserved_shared_image_assets=len(
+                    plan["preserved_shared_image_asset_ids"]
+                ),
+                preserved_favorite_objects=len(plan["preserved_favorite_objects"]),
+                preserved_favorite_image_assets=len(
+                    plan["preserved_favorite_image_asset_ids"]
+                ),
+            )
+            for path_text in plan["file_paths"]:
+                delete_local_file(path_text)
+    except sqlite3.Error as error:
+        raise CollectionDatabaseDeleteError(
+            search_set_slug=search_set_slug,
+            original_error=error,
+        ) from error
 
-    return CollectionDeleteSummary(
-        collection_slug=search_set_slug,
-        deleted=True,
-        deleted_objects=len(plan["deleted_objects"]),
-        deleted_image_assets=len(plan["deleted_image_asset_ids"]),
-        preserved_shared_objects=len(plan["preserved_shared_objects"]),
-        preserved_shared_image_assets=len(plan["preserved_shared_image_asset_ids"]),
-        preserved_favorite_objects=len(plan["preserved_favorite_objects"]),
-        preserved_favorite_image_assets=len(plan["preserved_favorite_image_asset_ids"]),
-    )
+    return summary
 
 
 def _plan_collection_material_deletion(
