@@ -43,6 +43,24 @@ export type ProviderSearchAction = {
   disabled: boolean;
 };
 
+export function providerSearchActionAvailable({
+  actionKind,
+  collectAvailable,
+}: {
+  actionKind: ProviderSearchAction["kind"];
+  collectAvailable: boolean;
+}): boolean {
+  if (actionKind === "stop") {
+    return true;
+  }
+
+  if (actionKind === "start" || actionKind === "resume") {
+    return collectAvailable;
+  }
+
+  return false;
+}
+
 export function providerSearchAction(status: string): ProviderSearchAction {
   if (status === "running") {
     return {

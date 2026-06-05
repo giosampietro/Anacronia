@@ -4,7 +4,16 @@ import { useFormStatus } from "react-dom";
 import { Play, RotateCcw, Square } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import {
+  Popover,
+  PopoverContent,
+  PopoverDescription,
+  PopoverHeader,
+  PopoverTitle,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Spinner } from "@/components/ui/spinner";
+import { cn } from "@/lib/utils";
 
 type ProviderSearchActionButtonProps = {
   actionKind: "start" | "stop" | "resume";
@@ -46,6 +55,42 @@ export function ProviderSearchActionButton({
 }: ProviderSearchActionButtonProps) {
   const { pending } = useFormStatus();
   const displayLabel = pending ? pendingLabel(actionKind, label) : label;
+
+  if (disabled) {
+    return (
+      <Popover>
+        <PopoverTrigger
+          nativeButton
+          render={
+            <Button
+              aria-busy={false}
+              aria-disabled="true"
+              className={cn(
+                "cursor-not-allowed bg-muted text-muted-foreground hover:bg-muted hover:text-muted-foreground",
+                variant === "outline" && "border-border bg-background",
+              )}
+              data-disabled="true"
+              size="sm"
+              title={`${label} unavailable`}
+              type="button"
+              variant={variant}
+            />
+          }
+        >
+          {idleIcon(actionKind, label)}
+          {label}
+        </PopoverTrigger>
+        <PopoverContent align="end" className="w-80" side="top">
+          <PopoverHeader>
+            <PopoverTitle>A search is already running</PopoverTitle>
+            <PopoverDescription>
+              Let this one finish or stop it before searching this Collection.
+            </PopoverDescription>
+          </PopoverHeader>
+        </PopoverContent>
+      </Popover>
+    );
+  }
 
   return (
     <Button

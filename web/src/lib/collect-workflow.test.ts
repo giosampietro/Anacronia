@@ -6,6 +6,7 @@ import {
   collectNoticeFromCode,
   providerSearchStatusClassName,
   providerSearchAction,
+  providerSearchActionAvailable,
 } from "./collect-workflow";
 
 describe("collect workflow", () => {
@@ -80,6 +81,27 @@ describe("collect workflow", () => {
       showBatchTarget: false,
       disabled: true,
     });
+  });
+
+  it("keeps only stop available while another Provider Search is active", () => {
+    expect(
+      providerSearchActionAvailable({
+        actionKind: "start",
+        collectAvailable: false,
+      }),
+    ).toBe(false);
+    expect(
+      providerSearchActionAvailable({
+        actionKind: "resume",
+        collectAvailable: false,
+      }),
+    ).toBe(false);
+    expect(
+      providerSearchActionAvailable({
+        actionKind: "stop",
+        collectAvailable: false,
+      }),
+    ).toBe(true);
   });
 });
 

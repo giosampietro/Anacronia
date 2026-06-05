@@ -4,7 +4,6 @@ import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/app-shell";
 import { DashboardAutoRefresh } from "@/components/dashboard-auto-refresh";
-import { BatchTargetControl } from "@/components/batch-target-control";
 import { CollectionObjectDetailOverlay } from "@/components/collection-object-detail-overlay";
 import { CollectionResultsGrid } from "@/components/collection-results-grid";
 import {
@@ -14,7 +13,7 @@ import {
 import {
   ObjectDetailErrorOverlay,
 } from "@/components/object-detail-pending-link";
-import { ProviderSearchActionButton } from "@/components/provider-search-action-button";
+import { ProviderSourceActionRow } from "@/components/provider-source-action-row";
 import { UserLibraryWorkspace } from "@/components/user-library-workspace";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -64,13 +63,13 @@ import {
   COLLECT_BUSY_NOTICE,
   canStartCollect,
   collectNoticeFromCode,
+  providerSearchActionAvailable,
   providerSearchStatusClassName,
   providerSearchAction,
   type ProviderSearchAction,
 } from "@/lib/collect-workflow";
 import { createStatusRows } from "@/lib/status";
 import type { ApiHealth } from "@/lib/status";
-import { cn } from "@/lib/utils";
 import {
   createGridStateHref,
   createGridViewMode,
@@ -706,50 +705,6 @@ function isSubmittableProviderSearchAction(
   return action.kind === "start" || action.kind === "stop" || action.kind === "resume";
 }
 
-function ProviderSourceActionRow({
-  action,
-  actionAvailable,
-  batchTarget,
-  formAction,
-  idPrefix,
-  searchSetSlug,
-}: {
-  action: SubmittableProviderSearchAction;
-  actionAvailable: boolean;
-  batchTarget: number;
-  formAction: (formData: FormData) => Promise<void>;
-  idPrefix: string;
-  searchSetSlug: string;
-}) {
-  return (
-    <form action={formAction} className="border-t px-5 pt-5">
-      <input name="slug" type="hidden" value={searchSetSlug} />
-      <div
-        className={cn(
-          "flex justify-end gap-3",
-          action.showBatchTarget &&
-            "grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end",
-        )}
-      >
-        {action.showBatchTarget ? (
-          <BatchTargetControl
-            defaultBatchTarget={batchTarget}
-            idPrefix={idPrefix}
-          />
-        ) : null}
-        <div className="flex justify-end">
-          <ProviderSearchActionButton
-            actionKind={action.kind}
-            disabled={!actionAvailable}
-            label={action.label}
-            variant={action.kind === "stop" ? "outline" : "default"}
-          />
-        </div>
-      </div>
-    </form>
-  );
-}
-
 function ProviderSourceControls({
   collectAvailable,
   providerCollections,
@@ -801,9 +756,10 @@ function ProviderSourceControls({
         const submittableAction = isSubmittableProviderSearchAction(action) ? action : null;
         const actionAvailable =
           submittableAction !== null &&
-          (submittableAction.kind === "stop" ||
-            submittableAction.kind === "resume" ||
-            (submittableAction.kind === "start" && collectAvailable));
+          providerSearchActionAvailable({
+            actionKind: submittableAction.kind,
+            collectAvailable,
+          });
         const formAction =
           submittableAction?.kind === "resume"
             ? resumeMetCollect
