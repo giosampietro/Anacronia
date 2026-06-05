@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "Local-first museum image collection builder."
 readme = "README.md"
 requires-python = ">=3.12"
+authors = [{ name = "Giorgio Olivero / Gio Sampietro" }]
 dependencies = [
   "fastapi>=0.115,<1",
   "pillow>=10,<13",

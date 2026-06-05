@@ -126,6 +126,26 @@ describe("AppShell", () => {
     expect(html).not.toContain("lucide-hard-drive");
   });
 
+  it("renders the project attribution in the sidebar footer", () => {
+    const html = renderToString(
+      <AppShell
+        activeSearchSetSlug="intaglio"
+        appVersionStamp={{ display: "v0.1.60", title: "App version v0.1.60" }}
+        collectAvailable
+        contentHeaderImageCount={38}
+        contentHeaderObjectCount={12}
+        dashboardView={dashboardView}
+        filterText=""
+        rows={rows}
+        workspaceMode="search-set"
+      >
+        <div>Grid</div>
+      </AppShell>,
+    );
+
+    expect(html).toContain("Made in Anacronia by Gio Sampietro");
+  });
+
   it("keeps New Collection in place when another search is active", () => {
     const html = renderToString(
       <AppShell
