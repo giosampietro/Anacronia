@@ -144,6 +144,10 @@ describe("AppShell", () => {
     );
 
     expect(html).toContain("aria-haspopup=\"dialog\"");
+    expect(html).toContain("aria-disabled=\"true\"");
+    expect(html).toContain("data-disabled=\"true\"");
+    expect(html).toContain("cursor-not-allowed");
+    expect(html).not.toContain("aria-disabled:pointer-events-none");
     expect(html).not.toContain("mode=new-search-set");
     expect(html).not.toContain("View search");
   });

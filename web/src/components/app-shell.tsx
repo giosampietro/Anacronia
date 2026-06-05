@@ -229,7 +229,13 @@ function NewCollectionSidebarItem({
         <PopoverTrigger
           nativeButton
           render={
-            <SidebarMenuButton isActive={workspaceMode === "new-search-set"} />
+            <SidebarMenuButton
+              aria-disabled="true"
+              className="cursor-not-allowed text-sidebar-foreground/60 hover:bg-transparent hover:text-sidebar-foreground/60 active:bg-transparent active:text-sidebar-foreground/60 data-open:bg-sidebar-accent/40 data-open:text-sidebar-foreground/75"
+              data-disabled="true"
+              isActive={false}
+              title="New Collection unavailable"
+            />
           }
         >
           <Plus />
