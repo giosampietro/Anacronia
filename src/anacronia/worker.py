@@ -96,6 +96,7 @@ def start_collect_job(
     clamped_max_images_per_object = clamp_max_images_per_object(max_images_per_object)
 
     with sqlite3.connect(database_path) as connection:
+        connection.execute("BEGIN IMMEDIATE")
         ensure_worker_schema(connection)
         if get_active_collect_job(connection=connection) is not None:
             raise CollectLockError("Another collect job is already active.")
@@ -282,6 +283,7 @@ def resume_collect_job(
     batch_target: int | None = None,
 ) -> CollectJob:
     with sqlite3.connect(database_path) as connection:
+        connection.execute("BEGIN IMMEDIATE")
         ensure_worker_schema(connection)
         job = get_collect_job_for_update(connection=connection, job_id=job_id)
         active_job = get_active_collect_job(connection=connection)

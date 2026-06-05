@@ -26,6 +26,7 @@ import {
   isDuplicateCollectionName,
   type ExistingCollectionIdentity,
 } from "@/lib/new-collection";
+import { announceProviderSearchRefresh } from "@/lib/dashboard-refresh";
 
 export type NewCollectionServerError = "duplicate_name";
 
@@ -101,6 +102,7 @@ function StartSearchButton({ disabled }: { disabled: boolean }) {
     <Button
       aria-busy={pending}
       disabled={disabled || pending}
+      onClick={() => announceProviderSearchRefresh()}
       size="lg"
       type="submit"
     >

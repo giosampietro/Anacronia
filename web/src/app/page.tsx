@@ -60,7 +60,7 @@ import {
   getActionFormDataValue,
 } from "@/lib/action-form-data";
 import {
-  COLLECT_BUSY_NOTICE,
+  COLLECT_STATE_CHANGED_NOTICE,
   canStartCollect,
   collectNoticeFromCode,
   providerSearchActionAvailable,
@@ -87,6 +87,9 @@ import {
   createLibraryImageAssetHref,
   createLibraryObjectHref,
 } from "@/lib/user-library-grid";
+import {
+  deleteCreatedCollectionAfterFailedInitialCollect,
+} from "@/lib/new-collection";
 import {
   createWorkspaceMode,
   getFirstParam,
@@ -449,12 +452,13 @@ async function createSearchSetAndCollectFromMet(formData: FormData) {
   "use server";
 
   const apiPort = getPort("ANACRONIA_API_PORT", DEFAULT_API_PORT);
+  const apiBaseUrl = `http://127.0.0.1:${apiPort}`;
   const displayName = getActionFormDataString(formData, "display_name");
   const termsText = getActionFormDataString(formData, "terms_text");
   const batchTarget = normalizeBatchTarget(
     getActionFormDataValue(formData, "batch_target"),
   );
-  const searchSetResponse = await fetch(`http://127.0.0.1:${apiPort}/search-sets`, {
+  const searchSetResponse = await fetch(`${apiBaseUrl}/search-sets`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -474,7 +478,7 @@ async function createSearchSetAndCollectFromMet(formData: FormData) {
   }
 
   const searchSet = (await searchSetResponse.json()) as { slug: string };
-  const collectResponse = await fetch(`http://127.0.0.1:${apiPort}/search-sets/${searchSet.slug}/provider-collections/met/collects`, {
+  const collectResponse = await fetch(`${apiBaseUrl}/search-sets/${searchSet.slug}/provider-collections/met/collects`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -484,7 +488,11 @@ async function createSearchSetAndCollectFromMet(formData: FormData) {
 
   revalidatePath("/");
   if (!collectResponse.ok) {
-    redirect(`/?search_set=${searchSet.slug}&collect_notice=${COLLECT_BUSY_NOTICE}`);
+    await deleteCreatedCollectionAfterFailedInitialCollect({
+      apiBaseUrl,
+      slug: searchSet.slug,
+    });
+    redirect(`/?search_set=${searchSet.slug}&collect_notice=${COLLECT_STATE_CHANGED_NOTICE}`);
   }
   redirect(`/?search_set=${searchSet.slug}`);
 }
@@ -508,7 +516,7 @@ async function startMetCollect(formData: FormData) {
 
   revalidatePath("/");
   if (!response.ok) {
-    redirect(`/?search_set=${slug}&collect_notice=${COLLECT_BUSY_NOTICE}`);
+    redirect(`/?search_set=${slug}&collect_notice=${COLLECT_STATE_CHANGED_NOTICE}`);
   }
   redirect(`/?search_set=${slug}`);
 }
@@ -532,7 +540,7 @@ async function resumeMetCollect(formData: FormData) {
 
   revalidatePath("/");
   if (!response.ok) {
-    redirect(`/?search_set=${slug}&collect_notice=${COLLECT_BUSY_NOTICE}`);
+    redirect(`/?search_set=${slug}&collect_notice=${COLLECT_STATE_CHANGED_NOTICE}`);
   }
   redirect(`/?search_set=${slug}`);
 }
@@ -549,7 +557,7 @@ async function stopMetCollect(formData: FormData) {
 
   revalidatePath("/");
   if (!response.ok) {
-    redirect(`/?search_set=${slug}&collect_notice=${COLLECT_BUSY_NOTICE}`);
+    redirect(`/?search_set=${slug}&collect_notice=${COLLECT_STATE_CHANGED_NOTICE}`);
   }
   redirect(`/?search_set=${slug}`);
 }
@@ -1243,6 +1251,14 @@ export default async function Home({ searchParams }: HomeProps) {
     >
       <DashboardAutoRefresh enabled={shouldAutoRefreshDashboard(dashboardView.workerStatus)} />
       <div className="min-w-0 px-5 py-6 md:px-8 lg:px-10 lg:py-9">
+        {collectNotice ? (
+          <div className="mx-auto mb-5 max-w-7xl">
+            <Alert>
+              <CircleAlert />
+              <AlertDescription>{collectNotice}</AlertDescription>
+            </Alert>
+          </div>
+        ) : null}
         {workspaceMode === "new-search-set" ? (
           <NewSearchSetWorkspace
             collectAvailable={collectAvailable}
@@ -1290,13 +1306,6 @@ export default async function Home({ searchParams }: HomeProps) {
                     </Badge>
                   ))}
                 </div>
-
-                {collectNotice ? (
-                  <Alert>
-                    <CircleAlert />
-                    <AlertDescription>{collectNotice}</AlertDescription>
-                  </Alert>
-                ) : null}
               </div>
 
               <ProviderSourceControls

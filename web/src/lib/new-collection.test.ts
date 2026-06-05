@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   canStartNewCollectionSearch,
+  deleteCreatedCollectionAfterFailedInitialCollect,
   isDuplicateCollectionName,
 } from "./new-collection";
 
@@ -28,5 +29,25 @@ describe("new Collection form state", () => {
         existingCollections,
       ),
     ).toBe(false);
+  });
+
+  it("deletes a newly created Collection after its initial Provider Search fails", async () => {
+    const requests: { input: string | URL | Request; init?: RequestInit }[] = [];
+
+    await deleteCreatedCollectionAfterFailedInitialCollect({
+      apiBaseUrl: "http://127.0.0.1:18670",
+      fetcher: async (input, init) => {
+        requests.push({ input, init });
+        return new Response(null, { status: 200 });
+      },
+      slug: "snake-studies",
+    });
+
+    expect(requests).toEqual([
+      {
+        input: "http://127.0.0.1:18670/search-sets/snake-studies",
+        init: { method: "DELETE" },
+      },
+    ]);
   });
 });

@@ -10,6 +10,7 @@ from anacronia.collection_runs import (
     CandidateRun,
     DEFAULT_BATCH_TARGET,
     MetCandidateClient,
+    discard_candidate_run,
     discover_met_candidates,
 )
 from anacronia.curation import (
@@ -583,6 +584,9 @@ def create_app(
 
     @app.post("/search-sets")
     def create_search_set(request: SearchSetRequest) -> dict[str, object]:
+        if get_worker_status(database_path=resolved_database_path).active_collect_job_id is not None:
+            raise HTTPException(status_code=409, detail="Another search is already active.")
+
         slug = slugify_search_set_name(request.display_name)
         if slug:
             try:
@@ -1144,7 +1148,8 @@ def create_app(
                 available_disk_bytes=shutil.disk_usage(resolved_data_root).free,
             )
         except CollectLockError as error:
-            raise HTTPException(status_code=409, detail=str(error)) from error
+            discard_candidate_run(database_path=resolved_database_path, run_id=run.run_id)
+            raise HTTPException(status_code=409, detail="Another search is already active.") from error
 
         return {
             "run_id": run.run_id,

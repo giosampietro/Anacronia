@@ -3,6 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
+import { startProviderSearchFreshnessCoordinator } from "@/lib/dashboard-refresh";
+
 export function DashboardAutoRefresh({
   enabled,
   intervalMs = 3000,
@@ -13,17 +15,11 @@ export function DashboardAutoRefresh({
   const router = useRouter();
 
   useEffect(() => {
-    if (!enabled) {
-      return;
-    }
-
-    const intervalId = window.setInterval(() => {
-      router.refresh();
-    }, intervalMs);
-
-    return () => {
-      window.clearInterval(intervalId);
-    };
+    return startProviderSearchFreshnessCoordinator({
+      autoRefreshActive: enabled,
+      intervalMs,
+      refresh: () => router.refresh(),
+    });
   }, [enabled, intervalMs, router]);
 
   return null;

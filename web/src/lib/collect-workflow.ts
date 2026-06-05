@@ -1,4 +1,5 @@
 export const COLLECT_BUSY_NOTICE = "collect-busy";
+export const COLLECT_STATE_CHANGED_NOTICE = "collect-state-changed";
 
 export function canStartCollect(workerStatus: string): boolean {
   return workerStatus !== "running" && workerStatus !== "stopping";
@@ -17,8 +18,15 @@ export function collectNoticeFromCode(
       providerCollection.status === "running" || providerCollection.status === "stopping",
   );
 
-  if (code === COLLECT_BUSY_NOTICE && activeCollectionOwnsBusySearch) {
+  if (
+    (code === COLLECT_BUSY_NOTICE || code === COLLECT_STATE_CHANGED_NOTICE) &&
+    activeCollectionOwnsBusySearch
+  ) {
     return null;
+  }
+
+  if (code === COLLECT_STATE_CHANGED_NOTICE) {
+    return "Provider Search changed in another tab. This view has been refreshed; actions now reflect the latest state.";
   }
 
   if (code === COLLECT_BUSY_NOTICE) {

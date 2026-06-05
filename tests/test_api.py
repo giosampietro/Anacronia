@@ -30,6 +30,23 @@ class FakeMetCandidateClient:
         }[term]
 
 
+class FakeMetCandidateClientThatMakesWorkerBusy:
+    def __init__(self, database_path: Path) -> None:
+        self.database_path = database_path
+
+    def search_object_ids(self, term: str) -> list[int]:
+        assert term == "snake"
+        start_collect_job(
+            database_path=self.database_path,
+            run_id=999,
+            candidate_offset=0,
+            candidate_limit=5,
+            candidate_progress_total=5,
+            available_disk_bytes=10_000_000,
+        )
+        return [10, 20]
+
+
 class FakeMetRecordClient:
     def fetch_object_record(self, object_id: int) -> dict[str, object]:
         return {
@@ -181,6 +198,31 @@ def test_api_starts_locked_collection_with_initial_met_provider_source(tmp_path)
         {"term": "snake", "active": True},
         {"term": "anaconda", "active": True},
     ]
+
+
+def test_api_rejects_new_collection_while_provider_search_is_active(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    client = TestClient(create_app(database_path=storage.database_path))
+    start_collect_job(
+        database_path=storage.database_path,
+        run_id=1,
+        candidate_offset=0,
+        candidate_limit=5,
+        candidate_progress_total=5,
+        available_disk_bytes=10_000_000,
+    )
+
+    response = client.post(
+        "/search-sets",
+        json={
+            "display_name": "Snake Studies",
+            "terms_text": "snake",
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Another search is already active."
+    assert client.get("/search-sets").json() == []
 
 
 def test_api_rejects_collection_without_title_or_terms(tmp_path):
@@ -901,6 +943,46 @@ def test_api_rejects_met_collect_before_discovery_when_collect_job_is_active(tmp
     assert met_client.queries == ["snake", "anaconda"]
     dashboard = client.get("/dashboard").json()
     assert dashboard["search_sets"][0]["provider_collections"][0]["latest_run_id"] == 1
+
+
+def test_api_rejects_met_collect_without_leaving_discovered_run_when_worker_becomes_active(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            met_candidate_client=FakeMetCandidateClientThatMakesWorkerBusy(
+                storage.database_path
+            ),
+        )
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Snake Studies", "terms_text": "snake"},
+    )
+
+    response = client.post(
+        "/search-sets/snake-studies/provider-collections/met/collects",
+        json={"batch_target": 10},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Another search is already active."
+    dashboard = client.get("/dashboard").json()
+    assert dashboard["search_sets"][0]["provider_collections"][0] == {
+        "provider": "met",
+        "latest_run_id": None,
+        "collect_status": "idle",
+        "pause_reason": "",
+        "candidate_offset": 0,
+        "candidate_limit": 0,
+        "batch_target": 10,
+        "candidate_progress_processed": 0,
+        "candidate_progress_total": 0,
+        "imported_object_count": 0,
+        "imported_image_count": 0,
+        "continue_candidate_offset": None,
+    }
 
 
 def test_api_ingests_met_records_for_a_candidate_run(tmp_path):

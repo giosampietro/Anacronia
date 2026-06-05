@@ -1,3 +1,5 @@
+import concurrent.futures
+import threading
 from urllib.error import HTTPError
 
 import pytest
@@ -101,6 +103,118 @@ def test_collect_job_lock_blocks_second_job_until_paused(tmp_path):
     assert canceled_job.status == "canceled"
     resumed_job = resume_collect_job(database_path=database_path, job_id=first_job.job_id)
     assert resumed_job.status == "running"
+
+
+def test_collect_job_lock_allows_only_one_concurrent_start(tmp_path):
+    database_path = tmp_path / "anacronia.sqlite"
+    worker_count = 8
+    start_line = threading.Barrier(worker_count)
+
+    assert get_worker_status(database_path=database_path).status == "idle"
+
+    def start_job(run_id: int) -> str:
+        start_line.wait()
+        try:
+            start_collect_job(
+                database_path=database_path,
+                run_id=run_id,
+                candidate_offset=0,
+                candidate_limit=5,
+                candidate_progress_total=5,
+                available_disk_bytes=10_000_000,
+            )
+        except CollectLockError:
+            return "locked"
+        return "running"
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=worker_count) as executor:
+        results = list(executor.map(start_job, range(1, worker_count + 1)))
+
+    assert results.count("running") == 1
+    assert results.count("locked") == worker_count - 1
+
+
+def test_collect_job_lock_allows_only_one_concurrent_resume(tmp_path):
+    database_path = tmp_path / "anacronia.sqlite"
+    worker_count = 2
+    start_line = threading.Barrier(worker_count)
+    first_job = pause_collect_job(
+        database_path=database_path,
+        job_id=start_collect_job(
+            database_path=database_path,
+            run_id=1,
+            candidate_offset=0,
+            candidate_limit=5,
+            candidate_progress_total=5,
+            available_disk_bytes=10_000_000,
+        ).job_id,
+    )
+    second_job = pause_collect_job(
+        database_path=database_path,
+        job_id=start_collect_job(
+            database_path=database_path,
+            run_id=2,
+            candidate_offset=0,
+            candidate_limit=5,
+            candidate_progress_total=5,
+            available_disk_bytes=10_000_000,
+        ).job_id,
+    )
+
+    def resume_job(job_id: int) -> str:
+        start_line.wait()
+        try:
+            resume_collect_job(database_path=database_path, job_id=job_id)
+        except CollectLockError:
+            return "locked"
+        return "running"
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=worker_count) as executor:
+        results = list(executor.map(resume_job, [first_job.job_id, second_job.job_id]))
+
+    assert results.count("running") == 1
+    assert results.count("locked") == 1
+
+
+def test_collect_job_lock_allows_only_one_concurrent_start_or_resume(tmp_path):
+    database_path = tmp_path / "anacronia.sqlite"
+    worker_count = 2
+    start_line = threading.Barrier(worker_count)
+    paused_job = pause_collect_job(
+        database_path=database_path,
+        job_id=start_collect_job(
+            database_path=database_path,
+            run_id=1,
+            candidate_offset=0,
+            candidate_limit=5,
+            candidate_progress_total=5,
+            available_disk_bytes=10_000_000,
+        ).job_id,
+    )
+
+    def start_or_resume(action: str) -> str:
+        start_line.wait()
+        try:
+            if action == "start":
+                start_collect_job(
+                    database_path=database_path,
+                    run_id=2,
+                    candidate_offset=0,
+                    candidate_limit=5,
+                    candidate_progress_total=5,
+                    available_disk_bytes=10_000_000,
+                )
+            else:
+                resume_collect_job(database_path=database_path, job_id=paused_job.job_id)
+        except CollectLockError:
+            return "locked"
+        return "running"
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=worker_count) as executor:
+        results = list(executor.map(start_or_resume, ["start", "resume"]))
+
+    assert results.count("running") == 1
+    assert results.count("locked") == 1
 
 
 def test_completed_collect_job_releases_lock_and_worker_returns_idle(tmp_path):

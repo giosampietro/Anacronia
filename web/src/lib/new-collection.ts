@@ -43,3 +43,22 @@ export function canStartNewCollectionSearch(
     !isDuplicateCollectionName(displayName, existingCollections)
   );
 }
+
+type CollectionCleanupFetch = (
+  input: string | URL | Request,
+  init?: RequestInit,
+) => Promise<Response>;
+
+export async function deleteCreatedCollectionAfterFailedInitialCollect({
+  apiBaseUrl,
+  fetcher = fetch,
+  slug,
+}: {
+  apiBaseUrl: string;
+  fetcher?: CollectionCleanupFetch;
+  slug: string;
+}): Promise<void> {
+  await fetcher(`${apiBaseUrl}/search-sets/${encodeURIComponent(slug)}`, {
+    method: "DELETE",
+  });
+}

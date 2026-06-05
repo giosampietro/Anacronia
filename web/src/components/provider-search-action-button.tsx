@@ -13,6 +13,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Spinner } from "@/components/ui/spinner";
+import { announceProviderSearchRefresh } from "@/lib/dashboard-refresh";
 import { cn } from "@/lib/utils";
 
 type ProviderSearchActionButtonProps = {
@@ -96,6 +97,7 @@ export function ProviderSearchActionButton({
     <Button
       aria-busy={pending}
       disabled={disabled || pending}
+      onClick={() => announceProviderSearchRefresh()}
       size="sm"
       type="submit"
       variant={variant}

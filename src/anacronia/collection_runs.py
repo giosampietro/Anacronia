@@ -217,6 +217,19 @@ def get_candidate_run(*, database_path: Path, run_id: int) -> CandidateRun:
     )
 
 
+def discard_candidate_run(*, database_path: Path, run_id: int) -> None:
+    with sqlite3.connect(database_path) as connection:
+        ensure_collection_run_schema(connection)
+        connection.execute(
+            "DELETE FROM run_candidates WHERE run_id = ?",
+            (run_id,),
+        )
+        connection.execute(
+            "DELETE FROM collection_runs WHERE id = ?",
+            (run_id,),
+        )
+
+
 def ensure_collection_run_schema(connection: sqlite3.Connection) -> None:
     ensure_provider_collection_schema(connection)
     connection.execute(

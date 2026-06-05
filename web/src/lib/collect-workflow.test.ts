@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   COLLECT_BUSY_NOTICE,
+  COLLECT_STATE_CHANGED_NOTICE,
   canStartCollect,
   collectNoticeFromCode,
   providerSearchStatusClassName,
@@ -36,6 +37,17 @@ describe("collect workflow", () => {
     );
     expect(collectNoticeFromCode("unknown")).toBeNull();
     expect(collectNoticeFromCode(null)).toBeNull();
+  });
+
+  it("explains stale action failures as refreshed state changes", () => {
+    expect(collectNoticeFromCode(COLLECT_STATE_CHANGED_NOTICE)).toBe(
+      "Provider Search changed in another tab. This view has been refreshed; actions now reflect the latest state.",
+    );
+    expect(
+      collectNoticeFromCode(COLLECT_STATE_CHANGED_NOTICE, [
+        { status: "running" },
+      ]),
+    ).toBeNull();
   });
 
   it("chooses the Provider Search action from lifecycle state", () => {
