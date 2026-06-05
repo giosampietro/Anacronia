@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FolderClosed, FolderOpen, ListFilter, Search } from "lucide-react";
+import { FolderClosed, FolderOpen, ListFilter, Search, X } from "lucide-react";
 
 import { CollectionRenameDialog } from "@/components/collection-rename-dialog";
 import type { DashboardSearchSetView } from "@/lib/dashboard";
@@ -294,11 +294,21 @@ export function SidebarCollectionFilter({
         <ListFilter className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 opacity-50" />
         <SidebarInput
           aria-label="Filter Collections"
-          className="pl-8"
+          className="pl-8 pr-8"
           onChange={(event) => setFilterText(event.currentTarget.value)}
           placeholder="Filter by title or term"
           value={filterText}
         />
+        {filterText !== "" ? (
+          <button
+            aria-label="Clear Collection filter"
+            className="absolute right-1.5 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-3 focus-visible:ring-sidebar-ring focus-visible:outline-hidden"
+            onClick={() => setFilterText("")}
+            type="button"
+          >
+            <X className="size-3.5" />
+          </button>
+        ) : null}
       </div>
 
       <SidebarMenu className="mt-3 gap-0.5">
@@ -329,7 +339,7 @@ export function SidebarCollectionFilter({
                     <SidebarMenuButton
                       aria-expanded={isOpen}
                       className={cn(
-                        "h-8 gap-2 rounded-md px-2 text-[13px] font-normal",
+                        "h-8 gap-2 rounded-md px-2 text-[13px] font-normal group-data-[collapsible=icon]:justify-center",
                         isOpen && "bg-sidebar-accent text-sidebar-accent-foreground",
                       )}
                       isActive={isActive}

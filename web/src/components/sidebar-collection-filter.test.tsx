@@ -82,6 +82,32 @@ describe("SidebarCollectionFilter", () => {
     expect(html).not.toContain("Search Collections");
   });
 
+  it("shows a clear control only when the Collection filter has text", () => {
+    const filteredHtml = renderToString(
+      <SidebarProvider>
+        <SidebarCollectionFilter
+          activeSearchSetSlug="masks"
+          initialFilterText="snake"
+          searchSets={[snakeStudy, masks]}
+          workspaceMode="search-set"
+        />
+      </SidebarProvider>,
+    );
+    const unfilteredHtml = renderToString(
+      <SidebarProvider>
+        <SidebarCollectionFilter
+          activeSearchSetSlug="masks"
+          initialFilterText=""
+          searchSets={[snakeStudy, masks]}
+          workspaceMode="search-set"
+        />
+      </SidebarProvider>,
+    );
+
+    expect(filteredHtml).toContain("Clear Collection filter");
+    expect(unfilteredHtml).not.toContain("Clear Collection filter");
+  });
+
   it("renders active Collections as compact linked folders with keyword details", () => {
     const html = renderToString(
       <SidebarProvider>
@@ -165,6 +191,21 @@ describe("SidebarCollectionFilter", () => {
     expect(html).not.toContain("search in progress");
     expect(html).not.toContain("lucide-loader");
     expect(html).toContain("5 images");
+  });
+
+  it("centers Collection icons in the collapsed sidebar rail", () => {
+    const html = renderToString(
+      <SidebarProvider>
+        <SidebarCollectionFilter
+          activeSearchSetSlug="masks"
+          initialFilterText=""
+          searchSets={[snakeStudy, masks]}
+          workspaceMode="search-set"
+        />
+      </SidebarProvider>,
+    );
+
+    expect(html).toContain("group-data-[collapsible=icon]:justify-center");
   });
 
   it("renders Delete Collection confirmation copy for downloaded material", () => {
