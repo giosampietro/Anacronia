@@ -11,6 +11,7 @@ import {
   Plus,
 } from "lucide-react";
 
+import { APP_TOP_BAR_CONTROLS_ID } from "@/components/app-top-bar-portal";
 import { ThemeSwitch } from "@/components/theme-switch";
 import { SidebarCollectionFilter } from "@/components/sidebar-collection-filter";
 import { Badge } from "@/components/ui/badge";
@@ -402,6 +403,7 @@ export function AppShell({
     "--sidebar-width": "21rem",
     "--sidebar-width-mobile": "20rem",
   } as CSSProperties;
+  const showWorkspaceLabel = workspaceMode === "new-search-set";
 
   return (
     <SidebarProvider defaultOpen={defaultSidebarOpen} style={sidebarStyle}>
@@ -414,11 +416,11 @@ export function AppShell({
         rows={rows}
         workspaceMode={workspaceMode}
       />
-      <SidebarInset>
-        <header className="sticky top-0 z-40 flex min-h-12 shrink-0 items-center border-b bg-background px-4 py-2">
+      <SidebarInset className="min-w-0 overflow-x-hidden">
+        <header className="sticky top-0 z-40 flex min-h-12 shrink-0 items-center gap-1 border-b bg-background px-3 py-3">
           <div
             aria-label="Workspace"
-            className="flex min-w-0 items-center gap-3"
+            className="flex shrink-0 items-center gap-3"
           >
             <SidebarPreviewTrigger
               activeSearchSetSlug={activeSearchSetSlug}
@@ -429,14 +431,22 @@ export function AppShell({
               rows={rows}
               workspaceMode={workspaceMode}
             />
-            <Separator
-              className="data-vertical:h-4 data-vertical:self-auto"
-              orientation="vertical"
-            />
-            <span className="truncate text-sm font-semibold uppercase tracking-wide">
-              {workspaceLabel({ dashboardView, workspaceMode })}
-            </span>
+            {showWorkspaceLabel ? (
+              <>
+                <Separator
+                  className="data-vertical:h-4 data-vertical:self-auto"
+                  orientation="vertical"
+                />
+                <span className="truncate text-sm font-semibold uppercase tracking-wide">
+                  {workspaceLabel({ dashboardView, workspaceMode })}
+                </span>
+              </>
+            ) : null}
           </div>
+          <div
+            className="@container/topbar flex min-w-0 flex-1 items-center"
+            id={APP_TOP_BAR_CONTROLS_ID}
+          />
         </header>
         {children}
       </SidebarInset>

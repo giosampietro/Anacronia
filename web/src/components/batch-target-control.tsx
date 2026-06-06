@@ -11,12 +11,38 @@ import {
 type BatchTargetControlProps = {
   idPrefix: string;
   defaultBatchTarget?: number;
+  inline?: boolean;
 };
 
 export function BatchTargetControl({
   idPrefix,
   defaultBatchTarget = DEFAULT_BATCH_TARGET,
+  inline = false,
 }: BatchTargetControlProps) {
+  if (inline) {
+    return (
+      <div className="flex min-w-0 shrink-0 items-center gap-1.5 @max-[559px]/topbar:hidden">
+        <label className="sr-only" htmlFor={`${idPrefix}_batch_target`}>
+          Images to find
+        </label>
+        <NativeSelect
+          aria-label="Images to find"
+          className="w-24 @min-[900px]/topbar:w-28"
+          defaultValue={defaultBatchTarget}
+          id={`${idPrefix}_batch_target`}
+          name="batch_target"
+          size="sm"
+        >
+          {BATCH_TARGET_OPTIONS.map((option) => (
+            <NativeSelectOption key={option} value={option}>
+              {option} images
+            </NativeSelectOption>
+          ))}
+        </NativeSelect>
+      </div>
+    );
+  }
+
   return (
     <FieldGroup>
       <Field>

@@ -15,6 +15,7 @@ import {
   type GridViewMode,
   type LibraryCollectionFilter,
 } from "@/lib/grid-view";
+import { cn } from "@/lib/utils";
 import type { WorkspaceMode } from "@/lib/workspace";
 
 type CollectionResultSetSearchFormProps = {
@@ -27,10 +28,12 @@ type CollectionResultSetSearchFormProps = {
 
 type LocalResultSetSearchFormProps = {
   ariaLabel: string;
+  className?: string;
   collectionFilterText?: string;
   favoriteOnly?: boolean;
   libraryCollectionFilter?: LibraryCollectionFilter;
   localQueryText: string;
+  placeholder?: string;
   providerFilter: string;
   searchSetSlug?: string;
   viewMode: GridViewMode;
@@ -39,10 +42,12 @@ type LocalResultSetSearchFormProps = {
 
 export function LocalResultSetSearchForm({
   ariaLabel,
+  className,
   collectionFilterText = "",
   favoriteOnly = false,
   libraryCollectionFilter = "all",
   localQueryText,
+  placeholder = "",
   providerFilter,
   searchSetSlug,
   viewMode,
@@ -85,7 +90,7 @@ export function LocalResultSetSearchForm({
 
   return (
     <form
-      className="min-w-[min(100%,20rem)] flex-1"
+      className={cn("min-w-0 flex-1", className)}
       onSubmit={submitLocalQuery}
     >
       {workspaceMode === "user-library" ? (
@@ -120,7 +125,7 @@ export function LocalResultSetSearchForm({
           defaultValue={localQueryText}
           key={localQueryText}
           name="q"
-          placeholder=""
+          placeholder={placeholder}
         />
         <InputGroupAddon align="inline-end">
           {hasLocalQuery ? (
@@ -134,7 +139,11 @@ export function LocalResultSetSearchForm({
               <X />
             </InputGroupButton>
           ) : null}
-          <InputGroupButton disabled={isPending} type="submit">
+          <InputGroupButton
+            className="@max-[459px]/topbar:hidden"
+            disabled={isPending}
+            type="submit"
+          >
             Search
           </InputGroupButton>
         </InputGroupAddon>

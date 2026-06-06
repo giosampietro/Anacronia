@@ -43,7 +43,7 @@ function normalizeServerHtml(html: string): string {
 }
 
 describe("AppShell", () => {
-  it("keeps the Collection header focused while the Local Result Set owns grid controls", () => {
+  it("renders a shell header target for Collection result controls", () => {
     const html = normalizeServerHtml(renderToString(
       <AppShell
         activeSearchSetSlug="intaglio"
@@ -63,10 +63,11 @@ describe("AppShell", () => {
       </AppShell>,
     ));
 
-    expect(html).toContain("INTAGLIO RINGS");
     expect(html).toContain("aria-label=\"Workspace\"");
+    expect(html).toContain("id=\"app-shell-top-bar-controls\"");
     expect(html).toContain("sticky top-0 z-40");
-    expect(html).toContain("border-b bg-background px-4 py-2");
+    expect(html).toContain("border-b bg-background");
+    expect(html).not.toContain("INTAGLIO RINGS");
     expect(html).not.toContain("bg-background/80");
     expect(html).not.toContain("backdrop-blur");
     expect(html).not.toContain("aria-label=\"Primary grid view controls\"");
@@ -75,7 +76,7 @@ describe("AppShell", () => {
     expect(html).not.toContain("38 images");
   });
 
-  it("keeps the library header focused while the Local Result Set owns grid controls", () => {
+  it("renders a shell header target for library result controls", () => {
     const html = normalizeServerHtml(renderToString(
       <AppShell
         activeSearchSetSlug={null}
@@ -95,7 +96,8 @@ describe("AppShell", () => {
       </AppShell>,
     ));
 
-    expect(html).toContain("MY LIBRARY");
+    expect(html).toContain("id=\"app-shell-top-bar-controls\"");
+    expect(html).not.toContain("MY LIBRARY");
     expect(html).toContain(">My Library<");
     expect(html).not.toContain("aria-label=\"Primary grid view controls\"");
     expect(html).not.toContain("aria-label=\"Collection counts\"");

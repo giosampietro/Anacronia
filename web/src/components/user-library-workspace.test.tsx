@@ -132,14 +132,10 @@ describe("UserLibraryWorkspace", () => {
       />,
     );
 
-    expect(html).toContain("aria-label=\"Search local My Library results\"");
-    expect(html).toContain("name=\"q\"");
-    expect(html).toContain("placeholder=\"\"");
-    expect(html).toContain("data-slot=\"toggle-group\"");
-    expect(html).toContain("aria-label=\"Object and Image result views\"");
-    expect(html).toContain("All Providers");
-    expect(html).toContain("Select");
-    expect(html).toContain("Favorites");
+    expect(html).not.toContain("aria-label=\"Search local My Library results\"");
+    expect(html).not.toContain("data-slot=\"toggle-group\"");
+    expect(html).not.toContain("All Providers");
+    expect(html).not.toContain("Favorites");
     expect(html).toContain("lucide-bookmark");
     expect(html).not.toContain("lucide-heart");
     expect(html).toContain("Snake Study");
@@ -175,12 +171,12 @@ describe("UserLibraryWorkspace", () => {
       />,
     );
 
-    expect(html).toContain("value=\"snake\"");
-    expect(html).toContain("Clear local search");
-    expect(html).toContain("1 selected");
-    expect(html).toContain("Export selected");
+    expect(html).not.toContain("value=\"snake\"");
+    expect(html).not.toContain("Clear local search");
+    expect(html).not.toContain("1 selected");
+    expect(html).not.toContain("Export selected");
     expect(html).not.toContain("Remove from collection");
-    expect(html).toContain("Delete selected");
+    expect(html).not.toContain("Delete selected");
     expect(html).not.toContain("Favorite selected");
     expect(html).not.toContain("Unfavorite selected");
     expect(html).toContain("/?mode=user-library&amp;search_set=snake-study&amp;view=objects&amp;object=met%3A40&amp;q=snake&amp;provider=met");
@@ -189,7 +185,7 @@ describe("UserLibraryWorkspace", () => {
     expect(html).toContain("Coiled Snake Bowl");
   });
 
-  it("renders a visible No Collection filter and preserves it in User Library links", () => {
+  it("preserves the No Collection projection in User Library tile links", () => {
     const html = renderToString(
       <UserLibraryWorkspace
         apiBaseUrl="http://127.0.0.1:18670"
@@ -204,9 +200,6 @@ describe("UserLibraryWorkspace", () => {
       />,
     );
 
-    expect(html).toContain("No Collection");
-    expect(html).toContain("aria-current=\"page\"");
-    expect(html).toContain("/?mode=user-library&amp;collection=none&amp;q=snake");
     expect(html).toContain("/?mode=user-library&amp;image=9&amp;collection=none&amp;q=snake");
   });
 
@@ -238,10 +231,8 @@ describe("UserLibraryWorkspace", () => {
       />,
     ));
 
-    expect(imageHtml).toContain("No Collection");
-    expect(imageHtml).toContain(">23</span>");
-    expect(objectHtml).toContain("No Collection");
-    expect(objectHtml).toContain(">17</span>");
+    expect(imageHtml).not.toContain(">23</span>");
+    expect(objectHtml).not.toContain(">17</span>");
   });
 
   it("renders the true empty library state only when no Image Assets exist", () => {
@@ -300,7 +291,7 @@ describe("UserLibraryWorkspace", () => {
     expect(html).toContain(
       "Everything in My Library currently belongs to at least one Collection.",
     );
-    expect(html).toContain("No Collection");
+    expect(html).not.toContain("data-slot=\"toggle-group\"");
     expect(html).not.toContain("No Image Assets yet");
     expect(html).not.toContain(
       "Start a Collection search to add local Image Assets to My Library.",
@@ -328,7 +319,7 @@ describe("UserLibraryWorkspace", () => {
 
     const renderedImageCount = (html.match(/loading="lazy"/g) ?? []).length;
 
-    expect(html).toContain("1 selected");
+    expect(html).not.toContain("1 selected");
     expect(renderedImageCount).toBeGreaterThan(0);
     expect(renderedImageCount).toBeLessThan(200);
   });

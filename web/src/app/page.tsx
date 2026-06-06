@@ -16,26 +16,14 @@ import {
 import { ProviderSourceActionRow } from "@/components/provider-source-action-row";
 import { UserLibraryWorkspace } from "@/components/user-library-workspace";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import {
   Card,
-  CardAction,
-  CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
 import {
-  Item,
-  ItemContent,
-  ItemGroup,
-  ItemTitle,
-} from "@/components/ui/item";
-import { Spinner } from "@/components/ui/spinner";
-import {
-  Activity,
   CircleAlert,
-  CircleCheck,
 } from "lucide-react";
 
 import {
@@ -64,7 +52,6 @@ import {
   canStartCollect,
   collectNoticeFromCode,
   providerSearchActionAvailable,
-  providerSearchStatusClassName,
   providerSearchAction,
   type ProviderSearchAction,
 } from "@/lib/collect-workflow";
@@ -562,75 +549,6 @@ async function stopMetCollect(formData: FormData) {
   redirect(`/?search_set=${slug}`);
 }
 
-function statusVariant(state: string): "default" | "destructive" | "secondary" | "outline" {
-  if (state === "ok" || state === "running" || state === "stopping" || state === "completed") {
-    return "default";
-  }
-  if (state === "error") {
-    return "destructive";
-  }
-  if (state === "canceled") {
-    return "outline";
-  }
-  return "secondary";
-}
-
-function statusIcon(state: string) {
-  if (state === "ok" || state === "completed") {
-    return <CircleCheck data-icon="inline-start" />;
-  }
-  if (state === "error") {
-    return <CircleAlert data-icon="inline-start" />;
-  }
-  if (state === "running" || state === "stopping") {
-    return <Spinner data-icon="inline-start" />;
-  }
-  return <Activity data-icon="inline-start" />;
-}
-
-function statusLabel(state: string): string {
-  if (state === "no_more_results") {
-    return "No more results";
-  }
-  if (state === "running") {
-    return "searching";
-  }
-  if (state === "completed") {
-    return "ready";
-  }
-  if (state === "stopped" || state === "canceled") {
-    return "stopped";
-  }
-
-  return state;
-}
-
-function pauseReasonLabel(reason: string): string {
-  if (reason === "insufficient_disk") {
-    return "Paused: not enough disk space.";
-  }
-  if (reason === "repeated_provider_failures") {
-    return "Paused: repeated provider or download failures.";
-  }
-  if (reason.trim() !== "") {
-    return `Paused: ${reason.replaceAll("_", " ")}.`;
-  }
-
-  return "Paused.";
-}
-
-function CollectBusyNote({ collectAvailable }: { collectAvailable: boolean }) {
-  if (collectAvailable) {
-    return null;
-  }
-
-  return (
-    <p className="text-sm text-muted-foreground">
-      A search is already active. Collection actions will be available after it finishes.
-    </p>
-  );
-}
-
 function NewSearchSetWorkspace({
   collectAvailable,
   existingCollections,
@@ -666,43 +584,6 @@ function NewSearchSetWorkspace({
   );
 }
 
-function ProviderSourceMetrics({
-  importedImageCount,
-  importedObjectCount,
-}: {
-  importedImageCount: number;
-  importedObjectCount: number;
-}) {
-  return (
-    <ItemGroup className="gap-2">
-      <Item size="xs" variant="muted">
-        <ItemContent>
-          <ItemTitle className="font-normal text-muted-foreground">
-            Objects
-          </ItemTitle>
-        </ItemContent>
-        <ItemContent className="flex-none items-end">
-          <span className="text-sm font-semibold tabular-nums">
-            {importedObjectCount}
-          </span>
-        </ItemContent>
-      </Item>
-      <Item size="xs" variant="muted">
-        <ItemContent>
-          <ItemTitle className="font-normal text-muted-foreground">
-            Images
-          </ItemTitle>
-        </ItemContent>
-        <ItemContent className="flex-none items-end">
-          <span className="text-sm font-semibold tabular-nums">
-            {importedImageCount}
-          </span>
-        </ItemContent>
-      </Item>
-    </ItemGroup>
-  );
-}
-
 type SubmittableProviderSearchAction = ProviderSearchAction & {
   kind: "start" | "stop" | "resume";
 };
@@ -713,7 +594,7 @@ function isSubmittableProviderSearchAction(
   return action.kind === "start" || action.kind === "stop" || action.kind === "resume";
 }
 
-function ProviderSourceControls({
+function ProviderSourceHeaderControls({
   collectAvailable,
   providerCollections,
   searchSet,
@@ -724,41 +605,25 @@ function ProviderSourceControls({
 }) {
   if (providerCollections.length === 0) {
     return (
-      <section aria-label="Provider Sources" className="flex w-full flex-col gap-3">
-        <Card size="sm">
-          <CardHeader>
-            <div className="min-w-0">
-              <CardTitle>Met</CardTitle>
-              <CardDescription>Provider Source</CardDescription>
-            </div>
-            <CardAction>
-              <Badge variant="secondary">ready</Badge>
-            </CardAction>
-          </CardHeader>
-          <CardContent className="grid gap-3">
-            <ProviderSourceMetrics importedObjectCount={0} importedImageCount={0} />
-            <CollectBusyNote collectAvailable={collectAvailable} />
-          </CardContent>
-          <ProviderSourceActionRow
-            action={{
-              kind: "start",
-              label: "Start search",
-              showBatchTarget: true,
-              disabled: false,
-            }}
-            actionAvailable={collectAvailable}
-            batchTarget={DEFAULT_BATCH_TARGET}
-            formAction={startMetCollect}
-            idPrefix={`${searchSet.slug}_met`}
-            searchSetSlug={searchSet.slug}
-          />
-        </Card>
-      </section>
+      <ProviderSourceActionRow
+        action={{
+          kind: "start",
+          label: "Start search",
+          showBatchTarget: true,
+          disabled: false,
+        }}
+        actionAvailable={collectAvailable}
+        batchTarget={DEFAULT_BATCH_TARGET}
+        formAction={startMetCollect}
+        idPrefix={`${searchSet.slug}_met`}
+        inline
+        searchSetSlug={searchSet.slug}
+      />
     );
   }
 
   return (
-    <section aria-label="Provider Sources" className="flex w-full flex-col gap-3">
+    <>
       {providerCollections.map((providerCollection) => {
         const action = providerSearchAction(providerCollection.status);
         const submittableAction = isSubmittableProviderSearchAction(action) ? action : null;
@@ -775,52 +640,24 @@ function ProviderSourceControls({
               ? stopMetCollect
               : startMetCollect;
 
+        if (submittableAction === null) {
+          return null;
+        }
+
         return (
-          <Card key={`${searchSet.slug}-${providerCollection.provider}`} size="sm">
-            <CardHeader>
-              <div className="min-w-0">
-                <CardTitle>{providerCollection.providerLabel}</CardTitle>
-                <CardDescription>Provider Source</CardDescription>
-              </div>
-              <CardAction>
-                <Badge
-                  className={providerSearchStatusClassName(providerCollection.status)}
-                  variant={statusVariant(providerCollection.status)}
-                >
-                  {statusIcon(providerCollection.status)}
-                  {statusLabel(providerCollection.status)}
-                </Badge>
-              </CardAction>
-            </CardHeader>
-            <CardContent className="grid gap-3">
-              <ProviderSourceMetrics
-                importedObjectCount={providerCollection.importedObjectCount}
-                importedImageCount={providerCollection.importedImageCount}
-              />
-              {providerCollection.status === "paused" ? (
-                <p className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <CircleAlert className="size-4" />
-                  {pauseReasonLabel(providerCollection.pauseReason)}
-                </p>
-              ) : null}
-              {submittableAction !== null && !actionAvailable ? (
-                <CollectBusyNote collectAvailable={false} />
-              ) : null}
-            </CardContent>
-            {submittableAction === null ? null : (
-              <ProviderSourceActionRow
-                action={submittableAction}
-                actionAvailable={actionAvailable}
-                batchTarget={providerCollection.batchTarget}
-                formAction={formAction}
-                idPrefix={`${searchSet.slug}_${providerCollection.provider}`}
-                searchSetSlug={searchSet.slug}
-              />
-            )}
-          </Card>
+          <ProviderSourceActionRow
+            action={submittableAction}
+            actionAvailable={actionAvailable}
+            batchTarget={providerCollection.batchTarget}
+            formAction={formAction}
+            idPrefix={`${searchSet.slug}_${providerCollection.provider}`}
+            inline
+            key={`${searchSet.slug}-${providerCollection.provider}`}
+            searchSetSlug={searchSet.slug}
+          />
         );
       })}
-    </section>
+    </>
   );
 }
 
@@ -1294,27 +1131,6 @@ export default async function Home({ searchParams }: HomeProps) {
           />
         ) : (
           <div className="mx-auto flex max-w-7xl flex-col gap-7">
-            <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(320px,420px)] xl:items-start">
-              <div className="flex min-w-0 flex-col gap-5">
-                <div className="flex flex-wrap gap-2">
-                  {activeSearchSet.activeTerms.map((term) => (
-                    <Badge key={term}>{term}</Badge>
-                  ))}
-                  {activeSearchSet.inactiveTerms.map((term) => (
-                    <Badge key={term} variant="secondary">
-                      {term}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-
-              <ProviderSourceControls
-                collectAvailable={collectAvailable}
-                providerCollections={activeProviderCollections}
-                searchSet={activeSearchSet}
-              />
-            </section>
-
             <section>
               <CollectionResultsGrid
                 apiBaseUrl={apiBaseUrl}
@@ -1340,6 +1156,13 @@ export default async function Home({ searchParams }: HomeProps) {
                 collectionDisplayName={activeSearchSet.displayName}
                 curationActionsDisabled={curationActionsDisabled}
                 favoriteOnly={favoriteOnly}
+                headerActionControls={
+                  <ProviderSourceHeaderControls
+                    collectAvailable={collectAvailable}
+                    providerCollections={activeProviderCollections}
+                    searchSet={activeSearchSet}
+                  />
+                }
                 hasLocalMaterial={
                   activeSearchSet.importedObjectCount > 0 ||
                   activeSearchSet.importedImageCount > 0

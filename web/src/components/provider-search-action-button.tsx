@@ -20,6 +20,7 @@ type ProviderSearchActionButtonProps = {
   actionKind: "start" | "stop" | "resume";
   disabled: boolean;
   label: string;
+  labelClassName?: string;
   variant?: "default" | "outline";
 };
 
@@ -52,6 +53,7 @@ export function ProviderSearchActionButton({
   actionKind,
   disabled,
   label,
+  labelClassName,
   variant = "default",
 }: ProviderSearchActionButtonProps) {
   const { pending } = useFormStatus();
@@ -64,6 +66,7 @@ export function ProviderSearchActionButton({
           nativeButton
           render={
             <Button
+              aria-label={displayLabel}
               aria-busy={false}
               aria-disabled="true"
               className={cn(
@@ -79,7 +82,7 @@ export function ProviderSearchActionButton({
           }
         >
           {idleIcon(actionKind, label)}
-          {label}
+          <span className={labelClassName}>{label}</span>
         </PopoverTrigger>
         <PopoverContent align="end" className="w-80" side="top">
           <PopoverHeader>
@@ -95,6 +98,7 @@ export function ProviderSearchActionButton({
 
   return (
     <Button
+      aria-label={displayLabel}
       aria-busy={pending}
       disabled={disabled || pending}
       onClick={() => announceProviderSearchRefresh()}
@@ -103,7 +107,7 @@ export function ProviderSearchActionButton({
       variant={variant}
     >
       {pending ? <Spinner data-icon="inline-start" /> : idleIcon(actionKind, label)}
-      {displayLabel}
+      <span className={labelClassName}>{displayLabel}</span>
     </Button>
   );
 }

@@ -1,5 +1,7 @@
 "use client";
 
+import type { ReactNode } from "react";
+
 import { LocalResultsGrid } from "@/components/local-results-grid";
 import { formatCollectionDisplayName } from "@/lib/collection-display";
 import {
@@ -29,6 +31,7 @@ type CollectionResultsGridProps = {
   collectionFilterText: string;
   curationActionsDisabled?: boolean;
   favoriteOnly?: boolean;
+  headerActionControls?: ReactNode;
   hasLocalMaterial?: boolean;
   imageAssets: LibraryImageAssetSummary[];
   initialSelectedIds?: string[];
@@ -52,6 +55,7 @@ export function CollectionResultsGrid({
   collectionFilterText,
   curationActionsDisabled = false,
   favoriteOnly = false,
+  headerActionControls,
   hasLocalMaterial = false,
   imageAssets,
   initialSelectedIds = [],
@@ -76,6 +80,7 @@ export function CollectionResultsGrid({
       deleteEndpoint="/api/curation/delete"
       exportEndpoint={`/api/search-sets/${encodeURIComponent(searchSetSlug)}/exports`}
       favoriteOnly={favoriteOnly}
+      headerActionControls={headerActionControls}
       hasLocalMaterial={hasLocalMaterial}
       imageAssetHref={(imageAsset) =>
         createGridStateHref({

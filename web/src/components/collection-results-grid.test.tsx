@@ -98,35 +98,22 @@ describe("CollectionResultsGrid", () => {
 
     expect(html).not.toContain("Results");
     expect(html).not.toContain("Local Museum Objects in this Collection");
-    expect(html).toContain("aria-label=\"Search local Collection results\"");
-    expect(html).toContain("name=\"q\"");
-    expect(html).toContain("value=\"ceramics\"");
-    expect(html).toContain("placeholder=\"\"");
-    expect(html).toContain("Clear local search");
-    expect(html).toContain("name=\"collection_filter\"");
-    expect(html).toContain("value=\"venice\"");
+    expect(html).not.toContain("aria-label=\"Search local Collection results\"");
+    expect(html).not.toContain("name=\"q\"");
+    expect(html).not.toContain("value=\"ceramics\"");
+    expect(html).not.toContain("placeholder=\"Search Snake Study\"");
+    expect(html).not.toContain("Clear local search");
+    expect(html).not.toContain("name=\"collection_filter\"");
+    expect(html).not.toContain("value=\"venice\"");
     expect(html).not.toContain("action=\"/\"");
-    expect(html).toContain("data-slot=\"toggle-group\"");
-    expect(html).toContain("aria-label=\"Object and Image result views\"");
-    expect(html).toContain(
-      "href=\"/?search_set=snake-study&amp;view=images&amp;collection_filter=venice&amp;q=ceramics\"",
-    );
-    expect(html).toContain("Objects");
-    expect(html).toContain("1");
-    expect(html).toContain("Images");
-    expect(html).toContain("2");
-    expect(html).toContain("Cancel");
-    expect(html).toContain("Deselect all");
-    expect(html).toContain("1 selected");
-    expect(html).toContain("Export selected");
-    expect(html).toContain("Remove from collection");
-    expect(html).toContain("Delete selected");
-    expect(html.indexOf("Export selected")).toBeLessThan(
-      html.indexOf("Remove from collection"),
-    );
-    expect(html.indexOf("Remove from collection")).toBeLessThan(
-      html.indexOf("Delete selected"),
-    );
+    expect(html).not.toContain("data-slot=\"toggle-group\"");
+    expect(html).not.toContain("aria-label=\"Object and Image result views\"");
+    expect(html).not.toContain("Cancel");
+    expect(html).not.toContain("Deselect all");
+    expect(html).not.toContain("1 selected");
+    expect(html).not.toContain("Export selected");
+    expect(html).not.toContain("Remove from collection");
+    expect(html).not.toContain("Delete selected");
     expect(html).toContain("Deselect Coiled Snake Bowl");
     expect(html).not.toContain("Favorite selected");
     expect(html).not.toContain("Unfavorite selected");
@@ -168,25 +155,18 @@ describe("CollectionResultsGrid", () => {
 
     expect(html).not.toContain("Results");
     expect(html).not.toContain("Local Image Assets in this Collection");
-    expect(html).toContain("aria-label=\"Search local Collection results\"");
-    expect(html).toContain("placeholder=\"\"");
+    expect(html).not.toContain("aria-label=\"Search local Collection results\"");
+    expect(html).not.toContain("placeholder=\"Search Snake Study\"");
     expect(html).not.toContain("Clear local search");
-    expect(html).toContain("data-slot=\"toggle-group\"");
-    expect(html).toContain("aria-label=\"Object and Image result views\"");
-    expect(html).toContain("href=\"/?search_set=snake-study&amp;provider=met\"");
-    expect(html).toContain(
-      "href=\"/?search_set=snake-study&amp;view=images&amp;provider=met\"",
-    );
-    expect(html).toContain("aria-current=\"page\"");
-    expect(html).toContain("1 selected");
+    expect(html).not.toContain("data-slot=\"toggle-group\"");
+    expect(html).not.toContain("aria-label=\"Object and Image result views\"");
+    expect(html).not.toContain("1 selected");
     expect(html).toContain("Select Image Asset 9");
     expect(html).toContain("Deselect Image Asset 8");
     expect(html).toContain("rounded-full border border-white/90 bg-background/45");
     expect(html).toContain("border-primary bg-primary text-primary-foreground");
     expect(html).not.toContain("selected_image=");
     expect(html).not.toContain("select=1");
-    expect(html).toContain("Images");
-    expect(html).toContain("2");
     expect(html).not.toContain("2 shown");
     expect(html).toContain("image=9");
     expect(html).toContain("image=8");
@@ -238,8 +218,8 @@ describe("CollectionResultsGrid", () => {
       />,
     ));
 
-    expect(html).toContain("Export selected");
-    expect(html).toContain("Remove from collection");
+    expect(html).not.toContain("Export selected");
+    expect(html).not.toContain("Remove from collection");
     expect(html).not.toContain("Favorite selected");
     expect(html).not.toContain("Unfavorite selected");
   });
@@ -266,11 +246,10 @@ describe("CollectionResultsGrid", () => {
       />,
     ));
 
-    expect(html).toContain("aria-current=\"page\"");
-    expect(html).toContain("fill=\"currentColor\"");
-    expect(html).toContain("fill-current text-white");
-    expect(html).toContain("Favorites");
-    expect(html).toContain("Cancel");
+    expect(html).toContain("href=\"/?search_set=snake-study&amp;view=images&amp;image=9&amp;favorite=true\"");
+    expect(html).toContain("href=\"/?search_set=snake-study&amp;view=images&amp;image=8&amp;favorite=true\"");
+    expect(html).not.toContain("Favorites");
+    expect(html).not.toContain("Cancel");
   });
 
   it("keeps object favorite bookmarks and carousel counts visible together", () => {

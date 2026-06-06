@@ -14,6 +14,7 @@ import {
   Trash2,
 } from "lucide-react";
 
+import { AppTopBarPortal } from "@/components/app-top-bar-portal";
 import { ImageGridThumbnail } from "@/components/image-grid-thumbnail";
 import { ObjectDetailPendingLink } from "@/components/object-detail-pending-link";
 import { AspectRatio } from "@/components/ui/aspect-ratio";
@@ -82,6 +83,7 @@ type LocalResultSelectionSurfaceProps = {
   deleteEndpoint?: string;
   emptyState?: ReactNode;
   exportEndpoint?: string;
+  headerControls?: ReactNode;
   imageAssetHref: (imageAsset: LibraryImageAssetSummary) => string;
   imageAssetTileId: (imageAsset: LibraryImageAssetSummary) => string;
   imageAssets: LibraryImageAssetSummary[];
@@ -349,6 +351,7 @@ function SelectionToolbar({
   canDelete,
   canRemoveFromCollection,
   curationActionsDisabled,
+  inline = false,
   onCancel,
   onOpenSelectionDialog,
   onToggleVisible,
@@ -362,6 +365,7 @@ function SelectionToolbar({
   canDelete: boolean;
   canRemoveFromCollection: boolean;
   curationActionsDisabled: boolean;
+  inline?: boolean;
   onCancel: () => void;
   onOpenSelectionDialog: (dialogKind: SelectionDialogKind) => void;
   onToggleVisible: () => void;
@@ -373,6 +377,19 @@ function SelectionToolbar({
   visibleSelectionComplete: boolean;
 }) {
   if (!selectionMode) {
+    if (inline) {
+      return (
+        <Button
+          onClick={() => setSelectionMode(true)}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          Select
+        </Button>
+      );
+    }
+
     return (
       <div className="flex w-full justify-end">
         <Button
@@ -390,9 +407,12 @@ function SelectionToolbar({
   return (
     <div
       aria-label="Selection controls"
-      className="flex flex-wrap items-center justify-between gap-3"
+      className={cn(
+        "flex min-w-0 items-center",
+        inline ? "flex-nowrap gap-1.5" : "flex-wrap justify-between gap-3",
+      )}
     >
-      <div className="flex min-w-0 items-center gap-2">
+      <div className="flex min-w-0 items-center gap-1.5">
         <Button
           aria-label="Export selected"
           disabled={selectedTotalCount === 0 || curationActionsDisabled}
@@ -428,11 +448,16 @@ function SelectionToolbar({
         >
           <Trash2 />
         </Button>
-        <p className="text-sm text-muted-foreground">
+        <p
+          className={cn(
+            "text-sm text-muted-foreground",
+            inline && "hidden whitespace-nowrap @min-[760px]/topbar:block",
+          )}
+        >
           {selectionCountLabel({ selectedTotalCount, selectedVisibleCount })}
         </p>
       </div>
-      <div className="flex items-center gap-3">
+      <div className={cn("flex items-center", inline ? "gap-1.5" : "gap-3")}>
         <Button
           disabled={visibleCount === 0}
           onClick={onToggleVisible}
@@ -781,6 +806,7 @@ export function LocalResultSelectionSurface({
   deleteEndpoint,
   emptyState,
   exportEndpoint,
+  headerControls,
   imageAssetHref,
   imageAssetTileId,
   imageAssets,
@@ -998,22 +1024,25 @@ export function LocalResultSelectionSurface({
     setLastSelectionAnchorId(id);
   }
 
-  return (
-    <div className="grid gap-3">
-      <SelectionToolbar
-        canDelete={deleteEndpoint !== undefined}
-        canRemoveFromCollection={removeFromCollectionEndpoint !== undefined}
-        curationActionsDisabled={curationActionsDisabled}
-        onCancel={resetSelection}
-        onOpenSelectionDialog={openSelectionDialog}
-        onToggleVisible={toggleVisibleSelection}
-        selectedTotalCount={selectedTotalCount}
-        selectedVisibleCount={selectedVisibleCount}
-        selectionMode={selectionMode}
-        setSelectionMode={setSelectionMode}
-        visibleCount={visibleIds.length}
-        visibleSelectionComplete={visibleSelectionComplete}
-      />
+  const selectionToolbar = (
+    <SelectionToolbar
+      canDelete={deleteEndpoint !== undefined}
+      canRemoveFromCollection={removeFromCollectionEndpoint !== undefined}
+      curationActionsDisabled={curationActionsDisabled}
+      inline={headerControls !== undefined}
+      onCancel={resetSelection}
+      onOpenSelectionDialog={openSelectionDialog}
+      onToggleVisible={toggleVisibleSelection}
+      selectedTotalCount={selectedTotalCount}
+      selectedVisibleCount={selectedVisibleCount}
+      selectionMode={selectionMode}
+      setSelectionMode={setSelectionMode}
+      visibleCount={visibleIds.length}
+      visibleSelectionComplete={visibleSelectionComplete}
+    />
+  );
+  const resultSurface = (
+    <>
       {visibleIds.length === 0 ? emptyState : null}
       {visibleIds.length > 0 ? viewMode === "objects" ? (
         <VirtualizedImageGrid
@@ -1306,6 +1335,34 @@ export function LocalResultSelectionSurface({
         selectedIds={Array.from(selectedIds)}
         viewMode={viewMode}
       />
+    </>
+  );
+
+  if (headerControls !== undefined) {
+    return (
+      <>
+        <AppTopBarPortal>
+          <div className="flex min-w-0 flex-1 flex-nowrap items-center gap-1 overflow-hidden @min-[760px]/topbar:gap-1.5 @min-[960px]/topbar:gap-2">
+            <div
+              className={cn(
+                "flex min-w-0 flex-1 flex-nowrap items-center gap-1 overflow-hidden @min-[760px]/topbar:gap-1.5 @min-[960px]/topbar:gap-2",
+                selectionMode && "@max-[959px]/topbar:hidden",
+              )}
+            >
+              {headerControls}
+            </div>
+            <div className="ml-auto shrink-0">{selectionToolbar}</div>
+          </div>
+        </AppTopBarPortal>
+        <div className="grid gap-3">{resultSurface}</div>
+      </>
+    );
+  }
+
+  return (
+    <div className="grid gap-3">
+      {selectionToolbar}
+      {resultSurface}
     </div>
   );
 }

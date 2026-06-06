@@ -1,17 +1,24 @@
 "use client";
 
 import Link from "next/link";
-import { Bookmark, Database, Search } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useTransition, type ReactNode } from "react";
+import { Bookmark, Database, ListFilter, Search } from "lucide-react";
 
 import { LocalResultSelectionSurface } from "@/components/local-result-selection-surface";
 import { LocalResultSetSearchForm } from "@/components/collection-result-set-search-form";
 import { GridViewSwitch } from "@/components/grid-view-switch";
-import { buttonVariants } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import {
-  Card,
-  CardContent,
-  CardHeader,
-} from "@/components/ui/card";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Empty,
   EmptyDescription,
@@ -19,6 +26,19 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   type CollectionProviderFacet,
   type CollectionResultCounts,
@@ -32,6 +52,7 @@ import {
   type LibraryCollectionFilter,
   type ObjectRouteRef,
 } from "@/lib/grid-view";
+import { cn } from "@/lib/utils";
 import type { WorkspaceMode } from "@/lib/workspace";
 
 type LocalResultObjectSummary = CollectionObjectSummary | LibraryObjectSummary;
@@ -45,6 +66,7 @@ type LocalResultsGridProps = {
   deleteEndpoint?: string;
   exportEndpoint?: string;
   favoriteOnly?: boolean;
+  headerActionControls?: ReactNode;
   hasLocalMaterial?: boolean;
   libraryCollectionFilter?: LibraryCollectionFilter;
   noCollectionCounts?: CollectionResultCounts;
@@ -73,6 +95,8 @@ type LocalResultsGridProps = {
   workspaceMode: WorkspaceMode;
 };
 
+type HeaderControlDensity = "default" | "with-actions";
+
 function objectProviderDisplayLabel(provider: string): string {
   if (provider === "met") {
     return "Met";
@@ -89,6 +113,70 @@ function viewCountLabel(viewMode: GridViewMode, counts: CollectionResultCounts):
   return viewMode === "objects" ? counts.objects : counts.images;
 }
 
+type ProviderOption = {
+  count: number;
+  label: string;
+  provider: string;
+};
+
+function createProviderOptions({
+  providerFacets,
+  providerFilter,
+  resultCounts,
+  viewMode,
+}: {
+  providerFacets: CollectionProviderFacet[];
+  providerFilter: string;
+  resultCounts: CollectionResultCounts;
+  viewMode: GridViewMode;
+}): ProviderOption[] {
+  const facetOptions = providerFacets.map((facet) => ({
+    count: viewMode === "objects" ? facet.objectCount : facet.imageCount,
+    label: objectProviderDisplayLabel(facet.provider),
+    provider: facet.provider,
+  }));
+  const options = [
+    {
+      count: viewCountLabel(viewMode, resultCounts),
+      label: "All Providers",
+      provider: "all",
+    },
+    ...facetOptions,
+  ];
+
+  if (
+    providerFilter !== "all" &&
+    !options.some((option) => option.provider === providerFilter)
+  ) {
+    options.push({
+      count: viewCountLabel(viewMode, resultCounts),
+      label: objectProviderDisplayLabel(providerFilter),
+      provider: providerFilter,
+    });
+  }
+
+  return options;
+}
+
+function ProviderCount({
+  className,
+  count,
+}: {
+  className?: string;
+  count: number;
+}) {
+  return (
+    <span
+      className={cn(
+        "font-mono text-[11px] tabular-nums text-muted-foreground",
+        className,
+      )}
+    >
+      {count}
+    </span>
+  );
+}
+
 function ProjectionControls({
   collectionFilterText,
   favoriteOnly,
@@ -99,6 +187,7 @@ function ProjectionControls({
   searchSetSlug,
   viewMode,
   workspaceMode,
+  density,
 }: {
   collectionFilterText: string;
   favoriteOnly: boolean;
@@ -109,6 +198,7 @@ function ProjectionControls({
   searchSetSlug?: string;
   viewMode: GridViewMode;
   workspaceMode: WorkspaceMode;
+  density?: HeaderControlDensity;
 }) {
   const objectHref = createGridStateHref({
     collectionFilterText,
@@ -135,6 +225,11 @@ function ProjectionControls({
     <GridViewSwitch
       ariaLabel="Object and Image result views"
       className="shrink-0"
+      labelClassName={
+        density === "with-actions"
+          ? "@min-[960px]/topbar:inline"
+          : undefined
+      }
       imageCount={resultCounts.images}
       imageHref={imageHref}
       objectCount={resultCounts.objects}
@@ -155,6 +250,7 @@ function ProviderFacets({
   searchSetSlug,
   viewMode,
   workspaceMode,
+  density,
 }: {
   collectionFilterText: string;
   favoriteOnly: boolean;
@@ -166,66 +262,89 @@ function ProviderFacets({
   searchSetSlug?: string;
   viewMode: GridViewMode;
   workspaceMode: WorkspaceMode;
+  density?: HeaderControlDensity;
 }) {
-  const allCount = viewCountLabel(viewMode, resultCounts);
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const options = createProviderOptions({
+    providerFacets,
+    providerFilter,
+    resultCounts,
+    viewMode,
+  });
+  const value = options.some((option) => option.provider === providerFilter)
+    ? providerFilter
+    : "all";
 
   return (
-    <div aria-label="Provider filters" className="flex min-w-0 flex-wrap gap-1">
-      <Link
-        aria-current={providerFilter === "all" ? "page" : undefined}
-        className={buttonVariants({
-          size: "sm",
-          variant: providerFilter === "all" ? "secondary" : "outline",
-        })}
-        href={createGridStateHref({
-          collectionFilterText,
-          favoriteOnly,
-          libraryCollectionFilter,
-          localQueryText,
-          provider: "all",
-          searchSetSlug,
-          viewMode,
-          workspaceMode,
-        })}
-        scroll={false}
-      >
-        All Providers
-        <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
-          {allCount}
-        </span>
-      </Link>
-      {providerFacets.map((facet) => {
-        const isActive = providerFilter === facet.provider;
-        const count = viewMode === "objects" ? facet.objectCount : facet.imageCount;
+    <Select
+      disabled={isPending}
+      onValueChange={(nextProvider) => {
+        if (typeof nextProvider !== "string") {
+          return;
+        }
 
-        return (
-          <Link
-            aria-current={isActive ? "page" : undefined}
-            className={buttonVariants({
-              size: "sm",
-              variant: isActive ? "secondary" : "outline",
-            })}
-            href={createGridStateHref({
+        startTransition(() => {
+          router.replace(
+            createGridStateHref({
               collectionFilterText,
               favoriteOnly,
               libraryCollectionFilter,
               localQueryText,
-              provider: facet.provider,
+              provider: nextProvider,
               searchSetSlug,
               viewMode,
               workspaceMode,
-            })}
-            key={facet.provider}
-            scroll={false}
-          >
-            {objectProviderDisplayLabel(facet.provider)}
-            <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
-              {count}
-            </span>
-          </Link>
-        );
-      })}
-    </div>
+            }),
+            { scroll: false },
+          );
+        });
+      }}
+      value={value}
+    >
+      <SelectTrigger
+        aria-label="Provider"
+        className={cn(
+          "w-32 shrink-0 justify-between @min-[900px]/topbar:w-40 @min-[1060px]/topbar:w-44",
+          density === "with-actions"
+            ? "@max-[1039px]/topbar:hidden"
+            : "@max-[759px]/topbar:hidden",
+        )}
+        size="sm"
+      >
+        <SelectValue>
+          {(selectedProvider) => {
+            const option =
+              options.find((candidate) => candidate.provider === selectedProvider) ??
+              options[0];
+
+            return (
+              <>
+                <span className="truncate">{option.label}</span>
+                <ProviderCount
+                  className="hidden @min-[820px]/topbar:inline"
+                  count={option.count}
+                />
+              </>
+            );
+          }}
+        </SelectValue>
+      </SelectTrigger>
+      <SelectContent align="start" className="min-w-48">
+        <SelectGroup>
+          {options.map((option) => (
+            <SelectItem
+              key={option.provider}
+              label={option.label}
+              value={option.provider}
+            >
+              <span className="truncate">{option.label}</span>
+              <ProviderCount count={option.count} />
+            </SelectItem>
+          ))}
+        </SelectGroup>
+      </SelectContent>
+    </Select>
   );
 }
 
@@ -238,6 +357,7 @@ function FavoriteFilter({
   searchSetSlug,
   viewMode,
   workspaceMode,
+  density,
 }: {
   collectionFilterText: string;
   favoriteOnly: boolean;
@@ -247,33 +367,50 @@ function FavoriteFilter({
   searchSetSlug?: string;
   viewMode: GridViewMode;
   workspaceMode: WorkspaceMode;
+  density?: HeaderControlDensity;
 }) {
   return (
-    <Link
-      aria-current={favoriteOnly ? "page" : undefined}
-      className={buttonVariants({
-        size: "sm",
-        variant: favoriteOnly ? "secondary" : "outline",
-      })}
-      href={createGridStateHref({
-        collectionFilterText,
-        favoriteOnly: !favoriteOnly,
-        libraryCollectionFilter,
-        localQueryText,
-        provider: providerFilter,
-        searchSetSlug,
-        viewMode,
-        workspaceMode,
-      })}
-      scroll={false}
-    >
-      <Bookmark
-        className={favoriteOnly ? "fill-current text-white" : undefined}
-        data-icon="inline-start"
-        fill={favoriteOnly ? "currentColor" : "none"}
-      />
-      Favorites
-    </Link>
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Link
+            aria-current={favoriteOnly ? "page" : undefined}
+            aria-label="Favorites"
+            className={buttonVariants({
+              className: cn(
+                "px-2 @min-[960px]/topbar:px-3",
+                density === "with-actions"
+                  ? "@max-[1039px]/topbar:hidden @min-[1040px]/topbar:inline-flex"
+                  : "@max-[759px]/topbar:hidden @min-[760px]/topbar:inline-flex",
+              ),
+              size: "sm",
+              variant: favoriteOnly ? "secondary" : "outline",
+            })}
+            href={createGridStateHref({
+              collectionFilterText,
+              favoriteOnly: !favoriteOnly,
+              libraryCollectionFilter,
+              localQueryText,
+              provider: providerFilter,
+              searchSetSlug,
+              viewMode,
+              workspaceMode,
+            })}
+            scroll={false}
+          />
+        }
+      >
+        <Bookmark
+          className={favoriteOnly ? "fill-current text-white" : undefined}
+          data-icon="inline-start"
+          fill={favoriteOnly ? "currentColor" : "none"}
+        />
+        <span className="hidden @min-[960px]/topbar:inline">Favorites</span>
+      </TooltipTrigger>
+      <TooltipContent className="@min-[960px]/topbar:hidden" side="bottom">
+        Favorites
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -297,29 +434,195 @@ function NoCollectionFilter({
   const isActive = libraryCollectionFilter === "none";
 
   return (
-    <Link
-      aria-current={isActive ? "page" : undefined}
-      className={buttonVariants({
-        size: "sm",
-        variant: isActive ? "secondary" : "outline",
-      })}
-      href={createGridStateHref({
-        collectionFilterText,
-        favoriteOnly,
-        libraryCollectionFilter: isActive ? "all" : "none",
-        localQueryText,
-        provider: providerFilter,
-        viewMode,
-        workspaceMode: "user-library",
-      })}
-      scroll={false}
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Link
+            aria-current={isActive ? "page" : undefined}
+            aria-label="No Collection"
+            className={buttonVariants({
+              className:
+                "@max-[759px]/topbar:hidden px-2 @min-[760px]/topbar:inline-flex @min-[1120px]/topbar:px-3",
+              size: "sm",
+              variant: isActive ? "secondary" : "outline",
+            })}
+            href={createGridStateHref({
+              collectionFilterText,
+              favoriteOnly,
+              libraryCollectionFilter: isActive ? "all" : "none",
+              localQueryText,
+              provider: providerFilter,
+              viewMode,
+              workspaceMode: "user-library",
+            })}
+            scroll={false}
+          />
+        }
+      >
+        <Database data-icon="inline-start" />
+        <span className="hidden @min-[1120px]/topbar:inline">No Collection</span>
+        <ProviderCount
+          className="hidden @min-[1120px]/topbar:inline"
+          count={noCollectionCount}
+        />
+      </TooltipTrigger>
+      <TooltipContent className="@min-[1120px]/topbar:hidden" side="bottom">
+        No Collection
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+function MobileFiltersMenu({
+  collectionFilterText,
+  favoriteOnly,
+  libraryCollectionFilter,
+  localQueryText,
+  noCollectionCount,
+  providerFacets,
+  providerFilter,
+  resultCounts,
+  searchSetSlug,
+  viewMode,
+  workspaceMode,
+  density,
+}: {
+  collectionFilterText: string;
+  favoriteOnly: boolean;
+  libraryCollectionFilter: LibraryCollectionFilter;
+  localQueryText: string;
+  noCollectionCount: number;
+  providerFacets: CollectionProviderFacet[];
+  providerFilter: string;
+  resultCounts: CollectionResultCounts;
+  searchSetSlug?: string;
+  viewMode: GridViewMode;
+  workspaceMode: WorkspaceMode;
+  density?: HeaderControlDensity;
+}) {
+  const options = createProviderOptions({
+    providerFacets,
+    providerFilter,
+    resultCounts,
+    viewMode,
+  });
+  const noCollectionActive =
+    workspaceMode === "user-library" && libraryCollectionFilter === "none";
+  const activeFilterCount =
+    (providerFilter === "all" ? 0 : 1) +
+    (favoriteOnly ? 1 : 0) +
+    (noCollectionActive ? 1 : 0);
+
+  return (
+    <div
+      className={cn(
+        "shrink-0",
+        density === "with-actions"
+          ? "@min-[1040px]/topbar:hidden"
+          : "@min-[760px]/topbar:hidden",
+      )}
     >
-      <Database data-icon="inline-start" />
-      No Collection
-      <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
-        {noCollectionCount}
-      </span>
-    </Link>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <Button
+              aria-label="Filters"
+              size="sm"
+              variant={activeFilterCount > 0 ? "secondary" : "outline"}
+            />
+          }
+        >
+          <ListFilter data-icon="inline-start" />
+          <span className="@max-[459px]/topbar:hidden">Filters</span>
+          {activeFilterCount > 0 ? <ProviderCount count={activeFilterCount} /> : null}
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-60">
+          <DropdownMenuLabel>Provider</DropdownMenuLabel>
+          <DropdownMenuGroup>
+            {options.map((option) => (
+              <DropdownMenuItem
+                aria-current={
+                  providerFilter === option.provider ? "page" : undefined
+                }
+                key={option.provider}
+                render={
+                  <Link
+                    href={createGridStateHref({
+                      collectionFilterText,
+                      favoriteOnly,
+                      libraryCollectionFilter,
+                      localQueryText,
+                      provider: option.provider,
+                      searchSetSlug,
+                      viewMode,
+                      workspaceMode,
+                    })}
+                    scroll={false}
+                  />
+                }
+              >
+                <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                <ProviderCount count={option.count} />
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuGroup>
+          <DropdownMenuSeparator />
+          <DropdownMenuGroup>
+            <DropdownMenuItem
+              aria-current={favoriteOnly ? "page" : undefined}
+              render={
+                <Link
+                  href={createGridStateHref({
+                    collectionFilterText,
+                    favoriteOnly: !favoriteOnly,
+                    libraryCollectionFilter,
+                    localQueryText,
+                    provider: providerFilter,
+                    searchSetSlug,
+                    viewMode,
+                    workspaceMode,
+                  })}
+                  scroll={false}
+                />
+              }
+            >
+              <Bookmark
+                className={favoriteOnly ? "fill-current text-white" : undefined}
+                data-icon="inline-start"
+                fill={favoriteOnly ? "currentColor" : "none"}
+              />
+              <span className="min-w-0 flex-1 truncate">Favorites</span>
+              <span className="text-xs text-muted-foreground">
+                {favoriteOnly ? "On" : "Off"}
+              </span>
+            </DropdownMenuItem>
+            {workspaceMode === "user-library" ? (
+              <DropdownMenuItem
+                aria-current={noCollectionActive ? "page" : undefined}
+                render={
+                  <Link
+                    href={createGridStateHref({
+                      collectionFilterText,
+                      favoriteOnly,
+                      libraryCollectionFilter: noCollectionActive ? "all" : "none",
+                      localQueryText,
+                      provider: providerFilter,
+                      viewMode,
+                      workspaceMode: "user-library",
+                    })}
+                    scroll={false}
+                  />
+                }
+              >
+                <Database data-icon="inline-start" />
+                <span className="min-w-0 flex-1 truncate">No Collection</span>
+                <ProviderCount count={noCollectionCount} />
+              </DropdownMenuItem>
+            ) : null}
+          </DropdownMenuGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
   );
 }
 
@@ -408,6 +711,7 @@ export function LocalResultsGrid({
   deleteEndpoint,
   exportEndpoint,
   favoriteOnly = false,
+  headerActionControls,
   hasLocalMaterial = false,
   libraryCollectionFilter = "all",
   noCollectionCounts,
@@ -435,6 +739,8 @@ export function LocalResultsGrid({
   viewMode,
   workspaceMode,
 }: LocalResultsGridProps) {
+  const headerControlDensity: HeaderControlDensity =
+    headerActionControls === undefined ? "default" : "with-actions";
   const shownCount = viewMode === "objects" ? objects.length : imageAssets.length;
   const deleteCompletionHref =
     workspaceMode === "user-library" && libraryCollectionFilter === "none"
@@ -452,6 +758,8 @@ export function LocalResultsGrid({
     noCollectionCounts === undefined
       ? viewCountLabel(viewMode, resultCounts)
       : viewCountLabel(viewMode, noCollectionCounts);
+  const searchPlaceholder =
+    workspaceMode === "user-library" ? "Search Library" : `Search ${scopeDisplayName}`;
   const emptyState = (
     <EmptyResults
       favoriteOnly={favoriteOnly}
@@ -463,96 +771,122 @@ export function LocalResultsGrid({
       workspaceMode={workspaceMode}
     />
   );
+  const headerControls = (
+    <>
+      <LocalResultSetSearchForm
+        ariaLabel={searchAriaLabel}
+        className={cn(
+          "flex-none",
+          headerControlDensity === "with-actions"
+            ? "w-28 @min-[390px]/topbar:w-36 @min-[520px]/topbar:w-44 @min-[960px]/topbar:w-52 @min-[1180px]/topbar:w-60"
+            : "w-36 @min-[520px]/topbar:w-44 @min-[700px]/topbar:w-52 @min-[900px]/topbar:w-60 @min-[1120px]/topbar:w-72",
+        )}
+        collectionFilterText={collectionFilterText}
+        favoriteOnly={favoriteOnly}
+        libraryCollectionFilter={libraryCollectionFilter}
+        localQueryText={localQueryText}
+        placeholder={searchPlaceholder}
+        providerFilter={providerFilter}
+        searchSetSlug={searchSetSlug}
+        viewMode={viewMode}
+        workspaceMode={workspaceMode}
+      />
+      <ProjectionControls
+        collectionFilterText={collectionFilterText}
+        favoriteOnly={favoriteOnly}
+        libraryCollectionFilter={libraryCollectionFilter}
+        localQueryText={localQueryText}
+        providerFilter={providerFilter}
+        resultCounts={resultCounts}
+        searchSetSlug={searchSetSlug}
+        viewMode={viewMode}
+        workspaceMode={workspaceMode}
+        density={headerControlDensity}
+      />
+      <ProviderFacets
+        collectionFilterText={collectionFilterText}
+        favoriteOnly={favoriteOnly}
+        libraryCollectionFilter={libraryCollectionFilter}
+        localQueryText={localQueryText}
+        providerFacets={providerFacets}
+        providerFilter={providerFilter}
+        resultCounts={resultCounts}
+        searchSetSlug={searchSetSlug}
+        viewMode={viewMode}
+        workspaceMode={workspaceMode}
+        density={headerControlDensity}
+      />
+      <MobileFiltersMenu
+        collectionFilterText={collectionFilterText}
+        favoriteOnly={favoriteOnly}
+        libraryCollectionFilter={libraryCollectionFilter}
+        localQueryText={localQueryText}
+        noCollectionCount={noCollectionCount}
+        providerFacets={providerFacets}
+        providerFilter={providerFilter}
+        resultCounts={resultCounts}
+        searchSetSlug={searchSetSlug}
+        viewMode={viewMode}
+        workspaceMode={workspaceMode}
+        density={headerControlDensity}
+      />
+      <FavoriteFilter
+        collectionFilterText={collectionFilterText}
+        favoriteOnly={favoriteOnly}
+        libraryCollectionFilter={libraryCollectionFilter}
+        localQueryText={localQueryText}
+        providerFilter={providerFilter}
+        searchSetSlug={searchSetSlug}
+        viewMode={viewMode}
+        workspaceMode={workspaceMode}
+        density={headerControlDensity}
+      />
+      {headerActionControls}
+      {workspaceMode === "user-library" ? (
+        <NoCollectionFilter
+          collectionFilterText={collectionFilterText}
+          favoriteOnly={favoriteOnly}
+          libraryCollectionFilter={libraryCollectionFilter}
+          localQueryText={localQueryText}
+          noCollectionCount={noCollectionCount}
+          providerFilter={providerFilter}
+          viewMode={viewMode}
+        />
+      ) : null}
+    </>
+  );
 
   return (
     <Card className="min-w-0">
-      <CardHeader className="gap-4">
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <LocalResultSetSearchForm
-            ariaLabel={searchAriaLabel}
-            collectionFilterText={collectionFilterText}
-            favoriteOnly={favoriteOnly}
-            libraryCollectionFilter={libraryCollectionFilter}
-            localQueryText={localQueryText}
-            providerFilter={providerFilter}
-            searchSetSlug={searchSetSlug}
-            viewMode={viewMode}
-            workspaceMode={workspaceMode}
-          />
-          <ProjectionControls
-            collectionFilterText={collectionFilterText}
-            favoriteOnly={favoriteOnly}
-            libraryCollectionFilter={libraryCollectionFilter}
-            localQueryText={localQueryText}
-            providerFilter={providerFilter}
-            resultCounts={resultCounts}
-            searchSetSlug={searchSetSlug}
-            viewMode={viewMode}
-            workspaceMode={workspaceMode}
-          />
-          <ProviderFacets
-            collectionFilterText={collectionFilterText}
-            favoriteOnly={favoriteOnly}
-            libraryCollectionFilter={libraryCollectionFilter}
-            localQueryText={localQueryText}
-            providerFacets={providerFacets}
-            providerFilter={providerFilter}
-            resultCounts={resultCounts}
-            searchSetSlug={searchSetSlug}
-            viewMode={viewMode}
-            workspaceMode={workspaceMode}
-          />
-          <FavoriteFilter
-            collectionFilterText={collectionFilterText}
-            favoriteOnly={favoriteOnly}
-            libraryCollectionFilter={libraryCollectionFilter}
-            localQueryText={localQueryText}
-            providerFilter={providerFilter}
-            searchSetSlug={searchSetSlug}
-            viewMode={viewMode}
-            workspaceMode={workspaceMode}
-          />
-          {workspaceMode === "user-library" ? (
-            <NoCollectionFilter
-              collectionFilterText={collectionFilterText}
-              favoriteOnly={favoriteOnly}
-              libraryCollectionFilter={libraryCollectionFilter}
-              localQueryText={localQueryText}
-              noCollectionCount={noCollectionCount}
-              providerFilter={providerFilter}
-              viewMode={viewMode}
-            />
-          ) : null}
-        </div>
-      </CardHeader>
       <CardContent>
         <LocalResultSelectionSurface
-            apiBaseUrl={apiBaseUrl}
-            closeImageHref={closeImageHref}
-            closeObjectHref={closeObjectHref}
-            curationActionsDisabled={curationActionsDisabled}
-            deleteCompletionHref={deleteCompletionHref}
-            deleteEndpoint={deleteEndpoint}
-            emptyState={shownCount === 0 ? emptyState : undefined}
-            exportEndpoint={exportEndpoint}
-            imageAssetHref={imageAssetHref}
-            imageAssetTileId={imageAssetTileId}
-            imageAssets={imageAssets}
-            imageCollectionsLabel={imageCollectionsLabel}
-            imageTopBadgeLabel={imageTopBadgeLabel}
-            initialSelectedIds={initialSelectedIds}
-            initialSelectionMode={initialSelectionMode}
-            key={`${workspaceMode}:${searchSetSlug ?? "library"}:${viewMode}:${providerFilter}:${localQueryText}:${collectionFilterText}:${favoriteOnly ? "favorite" : "all"}:${libraryCollectionFilter}`}
-            objectCollectionLabel={objectCollectionLabel}
-            objectHref={objectHref}
-            objectTileId={objectTileId}
-            objects={objects}
-            resolvedImageAssetId={resolvedImageAssetId}
-            resolvedObject={resolvedObject}
-            scopeDisplayName={scopeDisplayName}
-            removeFromCollectionEndpoint={removeFromCollectionEndpoint}
-            viewMode={viewMode}
-          />
+          apiBaseUrl={apiBaseUrl}
+          closeImageHref={closeImageHref}
+          closeObjectHref={closeObjectHref}
+          curationActionsDisabled={curationActionsDisabled}
+          deleteCompletionHref={deleteCompletionHref}
+          deleteEndpoint={deleteEndpoint}
+          emptyState={shownCount === 0 ? emptyState : undefined}
+          exportEndpoint={exportEndpoint}
+          headerControls={headerControls}
+          imageAssetHref={imageAssetHref}
+          imageAssetTileId={imageAssetTileId}
+          imageAssets={imageAssets}
+          imageCollectionsLabel={imageCollectionsLabel}
+          imageTopBadgeLabel={imageTopBadgeLabel}
+          initialSelectedIds={initialSelectedIds}
+          initialSelectionMode={initialSelectionMode}
+          key={`${workspaceMode}:${searchSetSlug ?? "library"}:${viewMode}:${providerFilter}:${localQueryText}:${collectionFilterText}:${favoriteOnly ? "favorite" : "all"}:${libraryCollectionFilter}`}
+          objectCollectionLabel={objectCollectionLabel}
+          objectHref={objectHref}
+          objectTileId={objectTileId}
+          objects={objects}
+          resolvedImageAssetId={resolvedImageAssetId}
+          resolvedObject={resolvedObject}
+          scopeDisplayName={scopeDisplayName}
+          removeFromCollectionEndpoint={removeFromCollectionEndpoint}
+          viewMode={viewMode}
+        />
       </CardContent>
     </Card>
   );

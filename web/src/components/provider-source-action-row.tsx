@@ -13,6 +13,7 @@ type ProviderSourceActionRowProps = {
   batchTarget: number;
   formAction: (formData: FormData) => Promise<void>;
   idPrefix: string;
+  inline?: boolean;
   searchSetSlug: string;
 };
 
@@ -22,17 +23,25 @@ export function ProviderSourceActionRow({
   batchTarget,
   formAction,
   idPrefix,
+  inline = false,
   searchSetSlug,
 }: ProviderSourceActionRowProps) {
   const showBatchTarget = action.showBatchTarget && actionAvailable;
 
   return (
-    <form action={formAction} className="border-t px-5 pt-5">
+    <form
+      action={formAction}
+      className={cn(
+        inline
+          ? "flex min-w-0 shrink-0 items-center gap-1.5"
+          : "border-t px-5 pt-5",
+      )}
+    >
       <input name="slug" type="hidden" value={searchSetSlug} />
       <div
         className={cn(
-          "flex justify-end gap-3",
-          showBatchTarget &&
+          inline ? "flex min-w-0 shrink-0 items-center gap-1.5" : "flex justify-end gap-3",
+          showBatchTarget && !inline &&
             "grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end",
         )}
       >
@@ -40,13 +49,17 @@ export function ProviderSourceActionRow({
           <BatchTargetControl
             defaultBatchTarget={batchTarget}
             idPrefix={idPrefix}
+            inline={inline}
           />
         ) : null}
-        <div className="flex justify-end">
+        <div className="flex shrink-0 justify-end">
           <ProviderSearchActionButton
             actionKind={action.kind}
             disabled={!actionAvailable}
             label={action.label}
+            labelClassName={
+              inline ? "@max-[559px]/topbar:hidden" : undefined
+            }
             variant={action.kind === "stop" ? "outline" : "default"}
           />
         </div>
