@@ -107,7 +107,7 @@ def test_exports_collection_jsonl_rows_with_descriptors_and_semantic_text(tmp_pa
         "scope": "collection",
     }
     assert rows[0]["image_asset"]["provider"] == "met"
-    assert rows[0]["image_asset"]["object_id"] == 40
+    assert rows[0]["image_asset"]["object_id"] == "40"
     assert rows[0]["image_asset"]["source_image_url"] == "https://images.metmuseum.org/40-primary.jpg"
     assert rows[0]["image_asset"]["standard_path"].endswith("/primary-standard-1024.jpg")
     assert rows[0]["image_asset"]["thumb_path"].endswith("/primary-thumb-256.jpg")
@@ -183,7 +183,7 @@ def test_exports_selected_object_jsonl_rows_expand_to_object_image_assets(tmp_pa
         json.loads(line)
         for line in (result.export_path / "manifest.jsonl").read_text(encoding="utf-8").splitlines()
     ]
-    assert {row["image_asset"]["object_id"] for row in rows} == {40}
+    assert {row["image_asset"]["object_id"] for row in rows} == {"40"}
     assert {row["image_asset"]["source_image_url"] for row in rows} == {
         "https://images.metmuseum.org/40-primary.jpg",
         "https://images.metmuseum.org/40-detail-a.jpg",

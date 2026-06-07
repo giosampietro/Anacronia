@@ -31,7 +31,7 @@ export const COLLECTION_EXPORT_FORMAT_OPTIONS: Array<{
 
 export type CollectionExportObjectSelection = {
   provider: string;
-  object_id: number;
+  object_id: string;
 };
 
 export type SelectedCollectionExportRequest = {

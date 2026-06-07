@@ -6,13 +6,19 @@ import sqlite3
 from anacronia.collection_runs import ensure_collection_run_schema
 from anacronia.curation import ensure_collection_memberships
 from anacronia.met_ingest import ensure_met_ingest_schema
+from anacronia.provider_identity import (
+    ProviderObjectIdValue,
+    SourceObjectId,
+    normalize_source_object_id,
+    provider_object_id_value,
+)
 from anacronia.search_sets import normalize_search_term
 
 
 @dataclass(frozen=True)
 class CollectionObjectSummary:
     provider: str
-    object_id: int
+    object_id: ProviderObjectIdValue
     title: str
     object_name: str
     artist_display_name: str
@@ -26,7 +32,7 @@ class CollectionObjectSummary:
 @dataclass(frozen=True)
 class CollectionObjectMetadata:
     provider: str
-    object_id: int
+    object_id: ProviderObjectIdValue
     title: str
     object_name: str
     artist_display_name: str
@@ -83,7 +89,7 @@ class LibraryImageAssetCollection:
 @dataclass(frozen=True)
 class LibraryObjectSummary:
     provider: str
-    object_id: int
+    object_id: ProviderObjectIdValue
     title: str
     object_name: str
     artist_display_name: str
@@ -99,7 +105,7 @@ class LibraryObjectSummary:
 class LibraryImageAssetSummary:
     image_asset_id: int
     provider: str
-    object_id: int
+    object_id: ProviderObjectIdValue
     title: str
     object_name: str
     artist_display_name: str
@@ -360,7 +366,7 @@ def list_collection_objects(
     return [
         CollectionObjectSummary(
             provider=row[0],
-            object_id=int(row[1]),
+            object_id=provider_object_id_value(provider=row[0], value=row[1]),
             title=row[2],
             object_name=row[3],
             artist_display_name=row[4],
@@ -463,7 +469,7 @@ def list_library_image_assets(
             image_assets[image_asset_id] = LibraryImageAssetSummary(
                 image_asset_id=image_asset_id,
                 provider=row[1],
-                object_id=int(row[2]),
+                object_id=provider_object_id_value(provider=row[1], value=row[2]),
                 title=row[3],
                 object_name=row[4],
                 artist_display_name=row[5],
@@ -630,7 +636,7 @@ def list_collection_image_assets(
         LibraryImageAssetSummary(
             image_asset_id=int(row[0]),
             provider=row[1],
-            object_id=int(row[2]),
+            object_id=provider_object_id_value(provider=row[1], value=row[2]),
             title=row[3],
             object_name=row[4],
             artist_display_name=row[5],
@@ -655,7 +661,7 @@ def create_collection_provider_facets(
     image_assets: list[LibraryImageAssetSummary],
 ) -> list[CollectionProviderFacet]:
     image_counts_by_provider: dict[str, int] = {}
-    object_keys_by_provider: dict[str, set[tuple[str, int]]] = {}
+    object_keys_by_provider: dict[str, set[tuple[str, ProviderObjectIdValue]]] = {}
 
     for image_asset in image_assets:
         image_counts_by_provider[image_asset.provider] = (
@@ -905,9 +911,9 @@ def list_library_objects(
             """
         ).fetchall()
 
-    collections_by_object: dict[tuple[str, int], list[LibraryImageAssetCollection]] = {}
+    collections_by_object: dict[tuple[str, ProviderObjectIdValue], list[LibraryImageAssetCollection]] = {}
     for row in collection_rows:
-        key = (row[0], int(row[1]))
+        key = (row[0], provider_object_id_value(provider=row[0], value=row[1]))
         collections_by_object.setdefault(key, []).append(
             LibraryImageAssetCollection(
                 slug=row[2],
@@ -918,7 +924,7 @@ def list_library_objects(
     library_objects = [
         LibraryObjectSummary(
             provider=row[0],
-            object_id=int(row[1]),
+            object_id=provider_object_id_value(provider=row[0], value=row[1]),
             title=row[2],
             object_name=row[3],
             artist_display_name=row[4],
@@ -927,7 +933,10 @@ def list_library_objects(
             cover_original_width=int(row[7]),
             cover_original_height=int(row[8]),
             is_favorite=bool(row[9]),
-            collections=collections_by_object.get((row[0], int(row[1])), []),
+            collections=collections_by_object.get(
+                (row[0], provider_object_id_value(provider=row[0], value=row[1])),
+                [],
+            ),
         )
         for row in object_rows
     ]
@@ -1004,8 +1013,9 @@ def get_collection_object_detail(
     database_path: Path,
     search_set_slug: str,
     provider: str,
-    object_id: int,
+    object_id: SourceObjectId | int,
 ) -> CollectionObjectDetail | None:
+    source_object_id = normalize_source_object_id(object_id)
     with sqlite3.connect(database_path) as connection:
         ensure_collection_memberships(connection)
         object_row = connection.execute(
@@ -1052,7 +1062,7 @@ def get_collection_object_detail(
               AND image_assets.imported = 1
               AND image_assets.active = 1
             """,
-            (search_set_slug, provider, object_id),
+            (search_set_slug, provider, source_object_id),
         ).fetchone()
         if object_row is None:
             return None
@@ -1099,7 +1109,7 @@ def get_collection_object_detail(
               COALESCE(image_assets.image_index, 0),
               image_assets.id
             """,
-            (search_set_slug, provider, object_id),
+            (search_set_slug, provider, source_object_id),
         ).fetchall()
 
         match_rows = connection.execute(
@@ -1121,7 +1131,7 @@ def get_collection_object_detail(
               AND object_matches.object_id = ?
             ORDER BY object_matches.search_term
             """,
-            (search_set_slug, provider, object_id),
+            (search_set_slug, provider, source_object_id),
         ).fetchall()
 
         skipped_rows = connection.execute(
@@ -1135,13 +1145,16 @@ def get_collection_object_detail(
               source_image_url,
               reason
             """,
-            (provider, object_id),
+            (provider, source_object_id),
         ).fetchall()
 
     return CollectionObjectDetail(
         object=CollectionObjectMetadata(
             provider=object_row[0],
-            object_id=int(object_row[1]),
+            object_id=provider_object_id_value(
+                provider=object_row[0],
+                value=object_row[1],
+            ),
             title=object_row[2],
             object_name=object_row[3],
             artist_display_name=object_row[4],
@@ -1198,8 +1211,9 @@ def get_library_object_detail(
     *,
     database_path: Path,
     provider: str,
-    object_id: int,
+    object_id: SourceObjectId | int,
 ) -> CollectionObjectDetail | None:
+    source_object_id = normalize_source_object_id(object_id)
     with sqlite3.connect(database_path) as connection:
         ensure_collection_run_schema(connection)
         ensure_met_ingest_schema(connection)
@@ -1234,7 +1248,7 @@ def get_library_object_detail(
               AND image_assets.imported = 1
               AND image_assets.active = 1
             """,
-            (provider, object_id),
+            (provider, source_object_id),
         ).fetchone()
         if object_row is None:
             return None
@@ -1268,7 +1282,7 @@ def get_library_object_detail(
               COALESCE(image_assets.image_index, 0),
               image_assets.id
             """,
-            (provider, object_id),
+            (provider, source_object_id),
         ).fetchall()
 
         match_rows = connection.execute(
@@ -1283,7 +1297,7 @@ def get_library_object_detail(
               AND object_matches.object_id = ?
             ORDER BY object_matches.search_term
             """,
-            (provider, object_id),
+            (provider, source_object_id),
         ).fetchall()
 
         skipped_rows = connection.execute(
@@ -1297,13 +1311,16 @@ def get_library_object_detail(
               source_image_url,
               reason
             """,
-            (provider, object_id),
+            (provider, source_object_id),
         ).fetchall()
 
     return CollectionObjectDetail(
         object=CollectionObjectMetadata(
             provider=object_row[0],
-            object_id=int(object_row[1]),
+            object_id=provider_object_id_value(
+                provider=object_row[0],
+                value=object_row[1],
+            ),
             title=object_row[2],
             object_name=object_row[3],
             artist_display_name=object_row[4],

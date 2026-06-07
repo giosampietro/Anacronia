@@ -44,8 +44,8 @@ def test_discovers_met_candidates_from_active_search_set_terms(tmp_path):
     assert run.candidate_limit == 2
     assert run.candidate_progress_total == 2
     assert [(candidate.object_id, candidate.source_term) for candidate in run.candidates] == [
-        (20, "snake"),
-        (30, "snake"),
+        ("20", "snake"),
+        ("30", "snake"),
     ]
 
     persisted_run = get_candidate_run(database_path=database_path, run_id=run.run_id)

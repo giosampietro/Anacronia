@@ -116,17 +116,22 @@ describe("grid view URL helpers", () => {
         collectionFilterText: "",
         localQueryText: "",
         imageAssetId: 502,
-        object: { objectId: 40, provider: "met" },
+        object: { objectId: "40", provider: "met" },
         searchSetSlug: "snake-study",
         viewMode: "images",
         workspaceMode: "search-set",
       }),
     ).toBe("/?search_set=snake-study&view=images&object=met%3A40");
-    expect(createObjectRouteKey("met", 841279)).toBe("met:841279");
+    expect(createObjectRouteKey("met", "841279")).toBe("met:841279");
     expect(parseObjectRouteKey("met:841279")).toEqual({
-      objectId: 841279,
+      objectId: "841279",
       provider: "met",
     });
-    expect(parseObjectRouteKey("met:not-a-number")).toBeNull();
+    expect(createObjectRouteKey("vam", "O:9138")).toBe("vam:O%3A9138");
+    expect(parseObjectRouteKey("vam:O%3A9138")).toEqual({
+      objectId: "O:9138",
+      provider: "vam",
+    });
+    expect(parseObjectRouteKey("met:")).toBeNull();
   });
 });

@@ -8,6 +8,8 @@ from urllib.error import HTTPError
 from anacronia.collection_runs import ensure_collection_run_schema
 from anacronia.curation import get_collection_import_exclusions
 from anacronia.image_pipeline import ProcessedMetImageAsset, process_met_image_asset
+from anacronia.provider_identity import normalize_source_object_id
+from anacronia.schema_migrations import ensure_object_id_text_column
 from anacronia.search_sets import normalize_search_term
 from anacronia.storage import met_raw_object_path
 
@@ -223,7 +225,8 @@ def ingest_met_run(
         )
 
     for candidate in run_candidates:
-        object_id = candidate["object_id"]
+        source_object_id = normalize_source_object_id(candidate["object_id"])
+        object_id = int(source_object_id)
         run_position = int(candidate["run_position"])
         with sqlite3.connect(database_path) as connection:
             ensure_met_ingest_schema(connection)
@@ -231,7 +234,7 @@ def ingest_met_run(
                 connection=connection,
                 search_set_id=search_set_id,
                 provider=MET_PROVIDER,
-                object_id=object_id,
+                object_id=source_object_id,
             )
             if import_exclusions.object_excluded:
                 skipped_candidate = SkippedMetCandidate(
@@ -480,7 +483,7 @@ def record_met_skipped_candidate_row(
         (
             run_id,
             MET_PROVIDER,
-            candidate.object_id,
+            normalize_source_object_id(candidate.object_id),
             candidate.reason,
         ),
     )
@@ -501,14 +504,14 @@ def get_met_museum_objects(*, database_path: Path) -> list[MetMuseumObject]:
               metadata_date
             FROM museum_objects
             WHERE provider = ?
-            ORDER BY object_id
+            ORDER BY CAST(object_id AS INTEGER)
             """,
             (MET_PROVIDER,),
         ).fetchall()
 
     return [
         MetMuseumObject(
-            object_id=row[0],
+            object_id=int(row[0]),
             title=row[1],
             object_name=row[2],
             object_url=row[3],
@@ -538,14 +541,14 @@ def get_met_image_assets(*, database_path: Path) -> list[MetImageAsset]:
               imported
             FROM image_assets
             WHERE provider = ?
-            ORDER BY object_id, COALESCE(image_index, 0), source_image_url
+            ORDER BY CAST(object_id AS INTEGER), COALESCE(image_index, 0), source_image_url
             """,
             (MET_PROVIDER,),
         ).fetchall()
 
     return [
         MetImageAsset(
-            object_id=row[0],
+            object_id=int(row[0]),
             source_image_url=row[1],
             image_role=row[2],
             image_index=row[3],
@@ -571,14 +574,14 @@ def get_met_skipped_image_references(
             SELECT object_id, source_image_url, image_role, image_index, reason
             FROM skipped_image_references
             WHERE provider = ?
-            ORDER BY object_id, COALESCE(image_index, 0), source_image_url, reason
+            ORDER BY CAST(object_id AS INTEGER), COALESCE(image_index, 0), source_image_url, reason
             """,
             (MET_PROVIDER,),
         ).fetchall()
 
     return [
         SkippedMetImageReference(
-            object_id=row[0],
+            object_id=int(row[0]),
             source_image_url=row[1],
             image_role=row[2],
             image_index=row[3],
@@ -600,13 +603,13 @@ def get_met_skipped_candidates(
             SELECT object_id, reason
             FROM skipped_candidates
             WHERE provider = ? AND run_id = ?
-            ORDER BY object_id, reason
+            ORDER BY CAST(object_id AS INTEGER), reason
             """,
             (MET_PROVIDER, run_id),
         ).fetchall()
 
     return [
-        SkippedMetCandidate(object_id=row[0], reason=row[1])
+        SkippedMetCandidate(object_id=int(row[0]), reason=row[1])
         for row in rows
     ]
 
@@ -619,14 +622,14 @@ def get_met_matches(*, database_path: Path, run_id: int) -> list[MetMatch]:
             SELECT object_id, search_term, verified, matched_fields_json
             FROM object_matches
             WHERE provider = ? AND run_id = ?
-            ORDER BY object_id, search_term
+            ORDER BY CAST(object_id AS INTEGER), search_term
             """,
             (MET_PROVIDER, run_id),
         ).fetchall()
 
     return [
         MetMatch(
-            object_id=row[0],
+            object_id=int(row[0]),
             search_term=row[1],
             verified=bool(row[2]),
             matched_fields=json.loads(row[3]),
@@ -673,7 +676,7 @@ def rebuild_met_descriptors(*, database_path: Path) -> DescriptorRebuildSummary:
             SELECT object_id, raw_record_path
             FROM museum_objects
             WHERE provider = ?
-            ORDER BY object_id
+            ORDER BY CAST(object_id AS INTEGER)
             """,
             (MET_PROVIDER,),
         ).fetchall()
@@ -760,6 +763,7 @@ def upsert_met_museum_object(
     raw_record_path: Path,
 ) -> None:
     object_id = int(record["objectID"])
+    source_object_id = normalize_source_object_id(object_id)
     connection.execute(
         """
         INSERT INTO museum_objects (
@@ -791,7 +795,7 @@ def upsert_met_museum_object(
         """,
         (
             MET_PROVIDER,
-            object_id,
+            source_object_id,
             string_value(record.get("title")),
             string_value(record.get("objectName")),
             string_value(record.get("artistDisplayName")),
@@ -829,7 +833,7 @@ def record_met_match(
         (
             run_id,
             MET_PROVIDER,
-            object_id,
+            normalize_source_object_id(object_id),
             search_term,
             int(bool(matched_fields)),
             json.dumps(matched_fields),
@@ -874,7 +878,7 @@ def record_met_image_asset(
         """,
         (
             MET_PROVIDER,
-            image_asset.object_id,
+            normalize_source_object_id(image_asset.object_id),
             image_asset.source_image_url,
             image_asset.image_role,
             image_asset.image_index,
@@ -909,7 +913,7 @@ def record_met_skipped_image_reference(
         """,
         (
             MET_PROVIDER,
-            reference.object_id,
+            normalize_source_object_id(reference.object_id),
             reference.source_image_url,
             reference.image_role,
             reference.image_index,
@@ -926,7 +930,7 @@ def replace_met_descriptors(
 ) -> None:
     connection.execute(
         "DELETE FROM descriptors WHERE provider = ? AND object_id = ?",
-        (MET_PROVIDER, object_id),
+        (MET_PROVIDER, normalize_source_object_id(object_id)),
     )
 
     for descriptor in descriptors:
@@ -944,7 +948,7 @@ def replace_met_descriptors(
             """,
             (
                 MET_PROVIDER,
-                object_id,
+                normalize_source_object_id(object_id),
                 descriptor.descriptor_type,
                 descriptor.value,
                 descriptor.normalized_value,
@@ -1046,7 +1050,7 @@ def ensure_met_ingest_schema(connection: sqlite3.Connection) -> None:
         CREATE TABLE IF NOT EXISTS museum_objects (
           id INTEGER PRIMARY KEY,
           provider TEXT NOT NULL,
-          object_id INTEGER NOT NULL,
+          object_id TEXT NOT NULL,
           title TEXT NOT NULL,
           object_name TEXT NOT NULL,
           artist_display_name TEXT NOT NULL,
@@ -1061,6 +1065,7 @@ def ensure_met_ingest_schema(connection: sqlite3.Connection) -> None:
         )
         """
     )
+    ensure_object_id_text_column(connection=connection, table_name="museum_objects")
     ensure_table_columns(
         connection=connection,
         table_name="museum_objects",
@@ -1075,7 +1080,7 @@ def ensure_met_ingest_schema(connection: sqlite3.Connection) -> None:
           id INTEGER PRIMARY KEY,
           run_id INTEGER NOT NULL,
           provider TEXT NOT NULL,
-          object_id INTEGER NOT NULL,
+          object_id TEXT NOT NULL,
           search_term TEXT NOT NULL,
           verified INTEGER NOT NULL,
           matched_fields_json TEXT NOT NULL,
@@ -1084,26 +1089,28 @@ def ensure_met_ingest_schema(connection: sqlite3.Connection) -> None:
         )
         """
     )
+    ensure_object_id_text_column(connection=connection, table_name="object_matches")
     connection.execute(
         """
         CREATE TABLE IF NOT EXISTS skipped_candidates (
           id INTEGER PRIMARY KEY,
           run_id INTEGER NOT NULL,
           provider TEXT NOT NULL,
-          object_id INTEGER NOT NULL,
+          object_id TEXT NOT NULL,
           reason TEXT NOT NULL,
           FOREIGN KEY (run_id) REFERENCES collection_runs(id),
           UNIQUE (run_id, provider, object_id, reason)
         )
         """
     )
+    ensure_object_id_text_column(connection=connection, table_name="skipped_candidates")
     connection.execute(
         """
         CREATE TABLE IF NOT EXISTS collection_object_exclusions (
           id INTEGER PRIMARY KEY,
           search_set_id INTEGER NOT NULL,
           provider TEXT NOT NULL,
-          object_id INTEGER NOT NULL,
+          object_id TEXT NOT NULL,
           reason TEXT NOT NULL,
           created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (search_set_id) REFERENCES search_sets(id),
@@ -1111,13 +1118,17 @@ def ensure_met_ingest_schema(connection: sqlite3.Connection) -> None:
         )
         """
     )
+    ensure_object_id_text_column(
+        connection=connection,
+        table_name="collection_object_exclusions",
+    )
     connection.execute(
         """
         CREATE TABLE IF NOT EXISTS collection_image_asset_exclusions (
           id INTEGER PRIMARY KEY,
           search_set_id INTEGER NOT NULL,
           provider TEXT NOT NULL,
-          object_id INTEGER NOT NULL,
+          object_id TEXT NOT NULL,
           source_image_url TEXT NOT NULL,
           reason TEXT NOT NULL,
           created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -1126,12 +1137,16 @@ def ensure_met_ingest_schema(connection: sqlite3.Connection) -> None:
         )
         """
     )
+    ensure_object_id_text_column(
+        connection=connection,
+        table_name="collection_image_asset_exclusions",
+    )
     connection.execute(
         """
         CREATE TABLE IF NOT EXISTS image_assets (
           id INTEGER PRIMARY KEY,
           provider TEXT NOT NULL,
-          object_id INTEGER NOT NULL,
+          object_id TEXT NOT NULL,
           source_image_url TEXT NOT NULL,
           image_role TEXT NOT NULL,
           image_index INTEGER,
@@ -1147,6 +1162,7 @@ def ensure_met_ingest_schema(connection: sqlite3.Connection) -> None:
         )
         """
     )
+    ensure_object_id_text_column(connection=connection, table_name="image_assets")
     ensure_table_columns(
         connection=connection,
         table_name="image_assets",
@@ -1160,7 +1176,7 @@ def ensure_met_ingest_schema(connection: sqlite3.Connection) -> None:
         CREATE TABLE IF NOT EXISTS skipped_image_references (
           id INTEGER PRIMARY KEY,
           provider TEXT NOT NULL,
-          object_id INTEGER NOT NULL,
+          object_id TEXT NOT NULL,
           source_image_url TEXT NOT NULL,
           image_role TEXT NOT NULL,
           image_index INTEGER,
@@ -1169,12 +1185,16 @@ def ensure_met_ingest_schema(connection: sqlite3.Connection) -> None:
         )
         """
     )
+    ensure_object_id_text_column(
+        connection=connection,
+        table_name="skipped_image_references",
+    )
     connection.execute(
         """
         CREATE TABLE IF NOT EXISTS descriptors (
           id INTEGER PRIMARY KEY,
           provider TEXT NOT NULL,
-          object_id INTEGER NOT NULL,
+          object_id TEXT NOT NULL,
           descriptor_type TEXT NOT NULL,
           value TEXT NOT NULL,
           normalized_value TEXT NOT NULL,
@@ -1189,6 +1209,7 @@ def ensure_met_ingest_schema(connection: sqlite3.Connection) -> None:
         )
         """
     )
+    ensure_object_id_text_column(connection=connection, table_name="descriptors")
 
 
 def ensure_table_columns(

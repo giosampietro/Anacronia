@@ -4,6 +4,8 @@ from pathlib import Path
 import sqlite3
 from typing import Protocol
 
+from anacronia.provider_identity import SourceObjectId, normalize_source_object_id
+from anacronia.schema_migrations import ensure_object_id_text_column
 from anacronia.search_sets import (
     ensure_provider_collection,
     ensure_provider_collection_schema,
@@ -22,7 +24,7 @@ class MetCandidateClient(Protocol):
 
 @dataclass(frozen=True)
 class RunCandidate:
-    object_id: int
+    object_id: SourceObjectId
     source_term: str
     source_term_index: int
     provider_position: int
@@ -136,17 +138,18 @@ def merge_met_candidate_object_ids(
     met_client: MetCandidateClient,
 ) -> list[RunCandidate]:
     candidates: list[RunCandidate] = []
-    seen_object_ids: set[int] = set()
+    seen_object_ids: set[SourceObjectId] = set()
 
     for term_index, term in enumerate(term_snapshot):
         for provider_position, object_id in enumerate(met_client.search_object_ids(term)):
-            if object_id in seen_object_ids:
+            source_object_id = normalize_source_object_id(object_id)
+            if source_object_id in seen_object_ids:
                 continue
 
-            seen_object_ids.add(object_id)
+            seen_object_ids.add(source_object_id)
             candidates.append(
                 RunCandidate(
-                    object_id=object_id,
+                    object_id=source_object_id,
                     source_term=term,
                     source_term_index=term_index,
                     provider_position=provider_position,
@@ -262,12 +265,11 @@ def ensure_collection_run_schema(connection: sqlite3.Connection) -> None:
             ADD COLUMN batch_target INTEGER NOT NULL DEFAULT 10
             """
         )
-    connection.execute(
-        """
+    run_candidates_create_sql = """
         CREATE TABLE IF NOT EXISTS run_candidates (
           id INTEGER PRIMARY KEY,
           run_id INTEGER NOT NULL,
-          object_id INTEGER NOT NULL,
+          object_id TEXT NOT NULL,
           source_term TEXT NOT NULL,
           source_term_index INTEGER NOT NULL,
           provider_position INTEGER NOT NULL,
@@ -276,4 +278,8 @@ def ensure_collection_run_schema(connection: sqlite3.Connection) -> None:
           UNIQUE (run_id, object_id)
         )
         """
+    connection.execute(run_candidates_create_sql)
+    ensure_object_id_text_column(
+        connection=connection,
+        table_name="run_candidates",
     )

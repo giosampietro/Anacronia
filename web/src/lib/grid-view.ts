@@ -4,7 +4,7 @@ export type GridViewMode = "objects" | "images";
 export type LibraryCollectionFilter = "all" | "none";
 
 export type ObjectRouteRef = {
-  objectId: number;
+  objectId: string;
   provider: string;
 };
 
@@ -30,8 +30,8 @@ export function isDefaultGridViewMode(
   return viewMode === defaultGridViewMode(workspaceMode);
 }
 
-export function createObjectRouteKey(provider: string, objectId: number): string {
-  return `${provider}:${objectId}`;
+export function createObjectRouteKey(provider: string, objectId: string): string {
+  return `${provider}:${encodeURIComponent(objectId)}`;
 }
 
 export function parseObjectRouteKey(value: string | undefined): ObjectRouteRef | null {
@@ -40,11 +40,16 @@ export function parseObjectRouteKey(value: string | undefined): ObjectRouteRef |
   }
 
   const [provider, objectIdText, ...extraParts] = value.split(":");
-  const objectId = Number.parseInt(objectIdText ?? "", 10);
+  let objectId = "";
+  try {
+    objectId = decodeURIComponent(objectIdText ?? "").trim();
+  } catch {
+    return null;
+  }
   if (
     extraParts.length > 0 ||
     provider.trim() === "" ||
-    !Number.isFinite(objectId)
+    objectId === ""
   ) {
     return null;
   }

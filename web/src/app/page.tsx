@@ -344,11 +344,13 @@ async function getCollectionObjectDetail(
   apiPort: number,
   slug: string,
   provider: string,
-  objectId: number,
+  objectId: string,
 ): Promise<CollectionObjectDetail | null> {
   try {
+    const encodedProvider = encodeURIComponent(provider);
+    const encodedObjectId = encodeURIComponent(objectId);
     const response = await fetch(
-      `http://127.0.0.1:${apiPort}/search-sets/${slug}/objects/${provider}/${objectId}`,
+      `http://127.0.0.1:${apiPort}/search-sets/${slug}/objects/${encodedProvider}/${encodedObjectId}`,
       { cache: "no-store" },
     );
 
@@ -365,11 +367,13 @@ async function getCollectionObjectDetail(
 async function getLibraryObjectDetail(
   apiPort: number,
   provider: string,
-  objectId: number,
+  objectId: string,
 ): Promise<CollectionObjectDetail | null> {
   try {
+    const encodedProvider = encodeURIComponent(provider);
+    const encodedObjectId = encodeURIComponent(objectId);
     const response = await fetch(
-      `http://127.0.0.1:${apiPort}/library/objects/${provider}/${objectId}`,
+      `http://127.0.0.1:${apiPort}/library/objects/${encodedProvider}/${encodedObjectId}`,
       { cache: "no-store" },
     );
 
@@ -681,13 +685,12 @@ export default async function Home({ searchParams }: HomeProps) {
   const requestedGridViewMode = getFirstParam(resolvedSearchParams?.view);
   const activeSearchSetSlug = getFirstParam(resolvedSearchParams?.search_set);
   const legacyObjectProvider = getFirstParam(resolvedSearchParams?.object_provider);
-  const legacyObjectId = Number.parseInt(
-    getFirstParam(resolvedSearchParams?.object_id) ?? "",
-    10,
-  );
+  const legacyObjectId = getFirstParam(resolvedSearchParams?.object_id)?.trim();
   const selectedObjectRoute =
     parseObjectRouteKey(getFirstParam(resolvedSearchParams?.object)) ??
-    (legacyObjectProvider !== undefined && Number.isFinite(legacyObjectId)
+    (legacyObjectProvider !== undefined &&
+    legacyObjectId !== undefined &&
+    legacyObjectId !== ""
       ? { objectId: legacyObjectId, provider: legacyObjectProvider }
       : null);
   const selectedImageAssetId = Number.parseInt(

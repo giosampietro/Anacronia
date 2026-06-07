@@ -1,11 +1,13 @@
 import json
 from pathlib import Path
+import sqlite3
 
 import pytest
 from fastapi.testclient import TestClient
 
 from anacronia.api import DEFAULT_CANDIDATE_LIMIT, DEFAULT_MAX_IMAGES_PER_OBJECT, create_app
 from anacronia.collection_runs import get_candidate_run
+from anacronia.curation import ensure_curation_schema
 from anacronia.worker import (
     cancel_collect_job,
     complete_collect_job,
@@ -14,7 +16,11 @@ from anacronia.worker import (
     pause_collect_job,
     start_collect_job,
 )
-from anacronia.met_ingest import get_met_matches, get_met_museum_objects
+from anacronia.met_ingest import (
+    ensure_met_ingest_schema,
+    get_met_matches,
+    get_met_museum_objects,
+)
 from anacronia.storage import initialize_storage
 
 
@@ -553,14 +559,14 @@ def test_api_discovers_met_candidates_without_listing_runs_as_search_sets(tmp_pa
         "status": "discovered",
         "candidates": [
             {
-                "object_id": 20,
+                "object_id": "20",
                 "source_term": "snake",
                 "source_term_index": 0,
                 "provider_position": 1,
                 "run_position": 0,
             },
             {
-                "object_id": 30,
+                "object_id": "30",
                 "source_term": "anaconda",
                 "source_term_index": 1,
                 "provider_position": 1,
@@ -764,7 +770,7 @@ def test_api_keeps_met_searching_from_next_safe_candidate_after_completed_batch(
         run_id=second_response.json()["run_id"],
     )
     assert second_run.candidate_offset == 1
-    assert [candidate.object_id for candidate in second_run.candidates] == [20, 30]
+    assert [candidate.object_id for candidate in second_run.candidates] == ["20", "30"]
     assert second_response.json()["status"] == "running"
 
 
@@ -1012,10 +1018,10 @@ def test_api_ingests_met_records_for_a_candidate_run(tmp_path):
     assert response.status_code == 200
     assert response.json() == {
         "run_id": 1,
-        "fetched_object_ids": [20, 30],
-        "imported_object_ids": [20],
+        "fetched_object_ids": ["20", "30"],
+        "imported_object_ids": ["20"],
         "skipped_candidates": [
-            {"object_id": 30, "reason": "not_public_domain"},
+            {"object_id": "30", "reason": "not_public_domain"},
         ],
     }
     assert [(museum_object.object_id, museum_object.title) for museum_object in get_met_museum_objects(database_path=storage.database_path)] == [
@@ -1107,10 +1113,10 @@ def test_api_returns_collection_objects_newest_first(tmp_path):
 
     assert response.status_code == 200
     objects = response.json()["objects"]
-    assert [museum_object["object_id"] for museum_object in objects] == [40, 20]
+    assert [museum_object["object_id"] for museum_object in objects] == ["40", "20"]
     assert objects[0] == {
         "provider": "met",
-        "object_id": 40,
+        "object_id": "40",
         "title": "Coiled Snake Bowl",
         "object_name": "Bowl",
         "artist_display_name": "Unknown maker",
@@ -1151,7 +1157,7 @@ def test_api_paginates_collection_objects_with_total_count(tmp_path):
 
     assert response.status_code == 200
     payload = response.json()
-    assert [museum_object["object_id"] for museum_object in payload["objects"]] == [20]
+    assert [museum_object["object_id"] for museum_object in payload["objects"]] == ["20"]
     assert payload["pagination"] == {
         "total": 2,
         "count": 1,
@@ -1186,12 +1192,12 @@ def test_api_returns_collection_image_assets_newest_first(tmp_path):
 
     assert response.status_code == 200
     image_assets = response.json()["image_assets"]
-    assert [asset["object_id"] for asset in image_assets] == [40, 40, 40, 20]
+    assert [asset["object_id"] for asset in image_assets] == ["40", "40", "40", "20"]
     assert len({asset["image_asset_id"] for asset in image_assets}) == 4
     assert image_assets[0] == {
         "image_asset_id": image_assets[0]["image_asset_id"],
         "provider": "met",
-        "object_id": 40,
+        "object_id": "40",
         "title": "Coiled Snake Bowl",
         "object_name": "Bowl",
         "artist_display_name": "Unknown maker",
@@ -1262,7 +1268,7 @@ def test_api_returns_read_only_collection_local_result_set_with_query_counts_and
     assert payload["provider_facets"] == [
         {"provider": "met", "object_count": 1, "image_count": 3}
     ]
-    assert [museum_object["object_id"] for museum_object in payload["objects"]] == [40]
+    assert [museum_object["object_id"] for museum_object in payload["objects"]] == ["40"]
     assert payload["image_assets"] == []
     assert payload["pagination"] == {
         "total": 1,
@@ -1299,7 +1305,7 @@ def test_api_returns_read_only_collection_local_result_set_with_query_counts_and
 
     assert paged_response.status_code == 200
     paged_payload = paged_response.json()
-    assert [asset["object_id"] for asset in paged_payload["image_assets"]] == [40, 40]
+    assert [asset["object_id"] for asset in paged_payload["image_assets"]] == ["40", "40"]
     assert paged_payload["pagination"] == {
         "total": 3,
         "count": 2,
@@ -1354,12 +1360,12 @@ def test_api_returns_user_library_image_assets_once_with_collection_membership(t
     dashboard_provider = client.get("/dashboard").json()["provider_focus"][0]
     assert dashboard_provider["imported_image_count"] == 4
     assert len(image_assets) == dashboard_provider["imported_image_count"]
-    assert [asset["object_id"] for asset in image_assets] == [40, 40, 40, 20]
+    assert [asset["object_id"] for asset in image_assets] == ["40", "40", "40", "20"]
     assert len({asset["image_asset_id"] for asset in image_assets}) == 4
     assert image_assets[0] == {
         "image_asset_id": image_assets[0]["image_asset_id"],
         "provider": "met",
-        "object_id": 40,
+        "object_id": "40",
         "title": "Coiled Snake Bowl",
         "object_name": "Bowl",
         "artist_display_name": "Unknown maker",
@@ -1382,9 +1388,9 @@ def test_api_returns_user_library_image_assets_once_with_collection_membership(t
 
     assert filtered_response.status_code == 200
     assert [asset["object_id"] for asset in filtered_response.json()["image_assets"]] == [
-        40,
-        40,
-        40,
+        "40",
+        "40",
+        "40",
     ]
 
 
@@ -1430,10 +1436,10 @@ def test_api_returns_user_library_objects_once_with_collection_membership(tmp_pa
 
     assert response.status_code == 200
     objects = response.json()["objects"]
-    assert [museum_object["object_id"] for museum_object in objects] == [40, 20]
+    assert [museum_object["object_id"] for museum_object in objects] == ["40", "20"]
     assert objects[0] == {
         "provider": "met",
-        "object_id": 40,
+        "object_id": "40",
         "title": "Coiled Snake Bowl",
         "object_name": "Bowl",
         "artist_display_name": "Unknown maker",
@@ -1454,7 +1460,7 @@ def test_api_returns_user_library_objects_once_with_collection_membership(tmp_pa
     filtered_response = client.get("/library/objects?filter=Bowl%20Study")
 
     assert filtered_response.status_code == 200
-    assert [museum_object["object_id"] for museum_object in filtered_response.json()["objects"]] == [40]
+    assert [museum_object["object_id"] for museum_object in filtered_response.json()["objects"]] == ["40"]
 
 
 def test_api_object_favorites_are_global_and_filterable(tmp_path):
@@ -1500,7 +1506,7 @@ def test_api_object_favorites_are_global_and_filterable(tmp_path):
     assert favorite_response.status_code == 200
     assert favorite_response.json() == {
         "provider": "met",
-        "object_id": 40,
+        "object_id": "40",
         "is_favorite": True,
     }
     snake_objects = client.get("/search-sets/snake-study/objects").json()["objects"]
@@ -1509,24 +1515,24 @@ def test_api_object_favorites_are_global_and_filterable(tmp_path):
     assert [
         (museum_object["object_id"], museum_object["is_favorite"])
         for museum_object in snake_objects
-    ] == [(40, True), (20, False)]
+    ] == [("40", True), ("20", False)]
     assert [
         (museum_object["object_id"], museum_object["is_favorite"])
         for museum_object in bowl_objects
-    ] == [(40, True)]
+    ] == [("40", True)]
     assert [
         (museum_object["object_id"], museum_object["is_favorite"])
         for museum_object in library_objects
-    ] == [(40, True), (20, False)]
+    ] == [("40", True), ("20", False)]
 
     favorite_only = client.get("/library/objects?favorite=true").json()["objects"]
     collection_favorite_only = client.get(
         "/search-sets/snake-study/local-result-set?view=objects&favorite=true"
     ).json()
 
-    assert [museum_object["object_id"] for museum_object in favorite_only] == [40]
+    assert [museum_object["object_id"] for museum_object in favorite_only] == ["40"]
     assert [museum_object["object_id"] for museum_object in collection_favorite_only["objects"]] == [
-        40
+        "40"
     ]
     assert collection_favorite_only["counts"] == {"objects": 1, "images": 0}
 
@@ -1535,7 +1541,7 @@ def test_api_object_favorites_are_global_and_filterable(tmp_path):
     assert unfavorite_response.status_code == 200
     assert unfavorite_response.json() == {
         "provider": "met",
-        "object_id": 40,
+        "object_id": "40",
         "is_favorite": False,
     }
     assert client.get("/library/objects?favorite=true").json()["objects"] == []
@@ -1736,7 +1742,7 @@ def test_api_removes_selected_object_from_collection_without_deleting_library(tm
         "/search-sets/snake-study/remove-from-collection",
         json={
             "selection": {
-                "objects": [{"provider": "met", "object_id": 40}],
+                "objects": [{"provider": "met", "object_id": "40"}],
             },
         },
     )
@@ -1752,8 +1758,8 @@ def test_api_removes_selected_object_from_collection_without_deleting_library(tm
     library_objects = client.get("/library/local-result-set?view=objects").json()[
         "objects"
     ]
-    assert [museum_object["object_id"] for museum_object in collection_objects] == [20]
-    assert [museum_object["object_id"] for museum_object in library_objects] == [40, 20]
+    assert [museum_object["object_id"] for museum_object in collection_objects] == ["20"]
+    assert [museum_object["object_id"] for museum_object in library_objects] == ["40", "20"]
 
 
 def test_api_filters_user_library_to_no_collection_material(tmp_path):
@@ -1781,7 +1787,7 @@ def test_api_filters_user_library_to_no_collection_material(tmp_path):
         "/search-sets/snake-study/remove-from-collection",
         json={
             "selection": {
-                "objects": [{"provider": "met", "object_id": 40}],
+                "objects": [{"provider": "met", "object_id": "40"}],
             },
         },
     )
@@ -1798,22 +1804,22 @@ def test_api_filters_user_library_to_no_collection_material(tmp_path):
     all_library_objects = client.get("/library/local-result-set?view=objects").json()
 
     assert [museum_object["object_id"] for museum_object in orphan_objects["objects"]] == [
-        40
+        "40"
     ]
     assert orphan_objects["counts"] == {"objects": 1, "images": 3}
     assert [image_asset["object_id"] for image_asset in orphan_images["image_assets"]] == [
-        40,
-        40,
-        40,
+        "40",
+        "40",
+        "40",
     ]
     assert orphan_images["counts"] == {"objects": 1, "images": 3}
     assert [
         museum_object["object_id"]
         for museum_object in favorite_orphan_objects["objects"]
-    ] == [40]
+    ] == ["40"]
     assert [museum_object["object_id"] for museum_object in all_library_objects["objects"]] == [
-        40,
-        20,
+        "40",
+        "20",
     ]
 
 
@@ -1846,7 +1852,7 @@ def test_api_exports_selected_user_library_orphan_object(tmp_path):
         "/search-sets/snake-study/remove-from-collection",
         json={
             "selection": {
-                "objects": [{"provider": "met", "object_id": 40}],
+                "objects": [{"provider": "met", "object_id": "40"}],
             },
         },
     )
@@ -1856,7 +1862,7 @@ def test_api_exports_selected_user_library_orphan_object(tmp_path):
         json={
             "format": "jsonl",
             "selection": {
-                "objects": [{"provider": "met", "object_id": 40}],
+                "objects": [{"provider": "met", "object_id": "40"}],
             },
         },
     )
@@ -1871,7 +1877,7 @@ def test_api_exports_selected_user_library_orphan_object(tmp_path):
         .read_text(encoding="utf-8")
         .splitlines()
     ]
-    assert {row["image_asset"]["object_id"] for row in rows} == {40}
+    assert {row["image_asset"]["object_id"] for row in rows} == {"40"}
     assert {row["collection"]["scope"] for row in rows} == {"user-library"}
     assert {row["collection"]["slug"] for row in rows} == {"user-library"}
     assert {row["museum_object"]["is_favorite"] for row in rows} == {True}
@@ -2011,7 +2017,7 @@ def test_api_returns_user_library_object_detail_without_collection_slug(tmp_path
 
     assert response.status_code == 200
     detail = response.json()
-    assert detail["object"]["object_id"] == 40
+    assert detail["object"]["object_id"] == "40"
     assert detail["object"]["title"] == "Coiled Snake Bowl"
     assert [image["image_role"] for image in detail["images"]] == [
         "primary",
@@ -2084,7 +2090,7 @@ def test_api_returns_user_library_local_result_set_with_counts_and_facets(tmp_pa
     assert payload["provider_facets"] == [
         {"provider": "met", "object_count": 1, "image_count": 3}
     ]
-    assert [museum_object["object_id"] for museum_object in payload["objects"]] == [40]
+    assert [museum_object["object_id"] for museum_object in payload["objects"]] == ["40"]
     assert payload["objects"][0]["collections"] == [
         {"slug": "bowl-study", "display_name": "Bowl Study"},
         {"slug": "snake-study", "display_name": "Snake Study"},
@@ -2123,7 +2129,7 @@ def test_api_returns_user_library_local_result_set_with_counts_and_facets(tmp_pa
 
     assert paged_response.status_code == 200
     paged_payload = paged_response.json()
-    assert [asset["object_id"] for asset in paged_payload["image_assets"]] == [40, 40]
+    assert [asset["object_id"] for asset in paged_payload["image_assets"]] == ["40", "40"]
     assert paged_payload["pagination"] == {
         "total": 3,
         "count": 2,
@@ -2175,7 +2181,7 @@ def test_api_paginates_filtered_user_library_after_searching_all_assets(tmp_path
 
     assert response.status_code == 200
     payload = response.json()
-    assert [asset["object_id"] for asset in payload["image_assets"]] == [40, 40]
+    assert [asset["object_id"] for asset in payload["image_assets"]] == ["40", "40"]
     assert payload["pagination"] == {
         "total": 3,
         "count": 2,
@@ -2263,7 +2269,7 @@ def test_api_returns_collection_object_detail_for_overlay(tmp_path):
     detail = response.json()
     assert detail["object"] == {
         "provider": "met",
-        "object_id": 40,
+        "object_id": "40",
         "title": "Coiled Snake Bowl",
         "object_name": "Bowl",
         "artist_display_name": "Unknown maker",
@@ -2307,6 +2313,137 @@ def test_api_returns_collection_object_detail_for_overlay(tmp_path):
             "reason": "beyond_max_images_per_object",
         }
     ]
+
+
+def test_api_returns_collection_object_detail_for_string_provider_object_id(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    client = TestClient(
+        create_app(database_path=storage.database_path, data_root=storage.data_root)
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "VAM Study", "terms_text": "ceramic"},
+    )
+
+    with sqlite3.connect(storage.database_path) as connection:
+        ensure_met_ingest_schema(connection)
+        ensure_curation_schema(connection)
+        search_set_id = int(
+            connection.execute(
+                "SELECT id FROM search_sets WHERE slug = ?",
+                ("vam-study",),
+            ).fetchone()[0]
+        )
+        source_image_url = (
+            "https://framemark.vam.ac.uk/collections/O9138/full/full/0/default.jpg"
+        )
+        connection.execute(
+            """
+            INSERT INTO museum_objects (
+              provider,
+              object_id,
+              title,
+              object_name,
+              artist_display_name,
+              object_url,
+              is_public_domain,
+              rights_and_reproduction,
+              metadata_date,
+              raw_record_path,
+              active,
+              deleted_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "vam",
+                "O9138",
+                "V&A Ceramic Study",
+                "Bowl",
+                "",
+                "https://collections.vam.ac.uk/item/O9138",
+                0,
+                "V&A source rights retained",
+                "",
+                str(storage.data_root / "vam-raw-O9138.json"),
+                1,
+                None,
+            ),
+        )
+        connection.execute(
+            """
+            INSERT INTO image_assets (
+              provider,
+              object_id,
+              source_image_url,
+              image_role,
+              image_index,
+              primary_image_small_url,
+              original_width,
+              original_height,
+              standard_path,
+              thumb_path,
+              imported,
+              active,
+              deleted_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "vam",
+                "O9138",
+                source_image_url,
+                "primary",
+                None,
+                "",
+                1200,
+                900,
+                str(storage.data_root / "vam" / "O9138-standard.jpg"),
+                str(storage.data_root / "vam" / "O9138-thumb.jpg"),
+                1,
+                1,
+                None,
+            ),
+        )
+        connection.execute(
+            """
+            INSERT INTO collection_object_memberships (
+              search_set_id,
+              provider,
+              object_id,
+              active
+            )
+            VALUES (?, ?, ?, ?)
+            """,
+            (search_set_id, "vam", "O9138", 1),
+        )
+        connection.execute(
+            """
+            INSERT INTO collection_image_asset_memberships (
+              search_set_id,
+              provider,
+              object_id,
+              source_image_url,
+              active
+            )
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (search_set_id, "vam", "O9138", source_image_url, 1),
+        )
+
+    detail_response = client.get("/search-sets/vam-study/objects/vam/O9138")
+    result_set_response = client.get(
+        "/search-sets/vam-study/local-result-set?view=objects&q=O9138"
+    )
+
+    assert detail_response.status_code == 200
+    assert detail_response.json()["object"]["object_id"] == "O9138"
+    assert detail_response.json()["object"]["provider"] == "vam"
+    assert detail_response.json()["images"][0]["source_image_url"].startswith(
+        "https://framemark.vam.ac.uk/"
+    )
+    assert result_set_response.status_code == 200
+    assert result_set_response.json()["objects"][0]["object_id"] == "O9138"
 
 
 def test_api_serves_local_image_derivatives(tmp_path):
@@ -2450,7 +2587,7 @@ def test_api_exports_selected_objects_as_image_asset_rows(tmp_path):
         json={
             "format": "jsonl",
             "selection": {
-                "objects": [{"provider": "met", "object_id": 40}],
+                "objects": [{"provider": "met", "object_id": "40"}],
             },
         },
     )
@@ -2464,7 +2601,7 @@ def test_api_exports_selected_objects_as_image_asset_rows(tmp_path):
         .read_text(encoding="utf-8")
         .splitlines()
     ]
-    assert {row["image_asset"]["object_id"] for row in rows} == {40}
+    assert {row["image_asset"]["object_id"] for row in rows} == {"40"}
 
 
 def test_api_rejects_export_for_zero_image_collection(tmp_path):

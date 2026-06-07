@@ -64,6 +64,8 @@ from anacronia.met_ingest import (
     ingest_met_run,
 )
 from anacronia.met_provider import HttpMetCandidateClient, fetch_bytes_url
+from anacronia.provider_identity import SourceObjectId
+from anacronia.provider_identity import normalize_source_object_id
 from anacronia.search_sets import (
     DuplicateSearchSetNameError,
     SearchSet,
@@ -139,7 +141,7 @@ class StartMetCollectRequest(BaseModel):
 
 class CollectionExportObjectSelection(BaseModel):
     provider: str
-    object_id: int
+    object_id: SourceObjectId | int
 
 
 class CollectionExportSelection(BaseModel):
@@ -198,7 +200,7 @@ def serialize_candidate_run(run: CandidateRun) -> dict[str, object]:
         "status": run.status,
         "candidates": [
             {
-                "object_id": candidate.object_id,
+                "object_id": normalize_source_object_id(candidate.object_id),
                 "source_term": candidate.source_term,
                 "source_term_index": candidate.source_term_index,
                 "provider_position": candidate.provider_position,
@@ -212,11 +214,17 @@ def serialize_candidate_run(run: CandidateRun) -> dict[str, object]:
 def serialize_met_ingest_summary(summary: MetIngestSummary) -> dict[str, object]:
     return {
         "run_id": summary.run_id,
-        "fetched_object_ids": summary.fetched_object_ids,
-        "imported_object_ids": summary.imported_object_ids,
+        "fetched_object_ids": [
+            normalize_source_object_id(object_id)
+            for object_id in summary.fetched_object_ids
+        ],
+        "imported_object_ids": [
+            normalize_source_object_id(object_id)
+            for object_id in summary.imported_object_ids
+        ],
         "skipped_candidates": [
             {
-                "object_id": skipped.object_id,
+                "object_id": normalize_source_object_id(skipped.object_id),
                 "reason": skipped.reason,
             }
             for skipped in summary.skipped_candidates
@@ -278,7 +286,7 @@ def serialize_collection_object_summary(
 ) -> dict[str, object]:
     return {
         "provider": collection_object.provider,
-        "object_id": collection_object.object_id,
+        "object_id": normalize_source_object_id(collection_object.object_id),
         "title": collection_object.title,
         "object_name": collection_object.object_name,
         "artist_display_name": collection_object.artist_display_name,
@@ -297,7 +305,7 @@ def serialize_collection_object_metadata(
 ) -> dict[str, object]:
     return {
         "provider": collection_object.provider,
-        "object_id": collection_object.object_id,
+        "object_id": normalize_source_object_id(collection_object.object_id),
         "title": collection_object.title,
         "object_name": collection_object.object_name,
         "artist_display_name": collection_object.artist_display_name,
@@ -367,7 +375,7 @@ def serialize_library_object_summary(
 ) -> dict[str, object]:
     return {
         "provider": library_object.provider,
-        "object_id": library_object.object_id,
+        "object_id": normalize_source_object_id(library_object.object_id),
         "title": library_object.title,
         "object_name": library_object.object_name,
         "artist_display_name": library_object.artist_display_name,
@@ -391,7 +399,7 @@ def serialize_library_image_asset_summary(
     return {
         "image_asset_id": image_asset.image_asset_id,
         "provider": image_asset.provider,
-        "object_id": image_asset.object_id,
+        "object_id": normalize_source_object_id(image_asset.object_id),
         "title": image_asset.title,
         "object_name": image_asset.object_name,
         "artist_display_name": image_asset.artist_display_name,
@@ -511,7 +519,7 @@ def serialize_collection_export_result(result: CollectionExportResult) -> dict[s
             {
                 "image_asset_id": skipped.image_asset_id,
                 "provider": skipped.provider,
-                "object_id": skipped.object_id,
+                "object_id": normalize_source_object_id(skipped.object_id),
                 "source_image_url": skipped.source_image_url,
                 "reason": skipped.reason,
             }
@@ -744,7 +752,7 @@ def create_app(
         }
 
     @app.get("/library/objects/{provider}/{object_id}")
-    def get_library_object(provider: str, object_id: int) -> dict[str, object]:
+    def get_library_object(provider: str, object_id: SourceObjectId) -> dict[str, object]:
         detail = get_library_object_detail(
             database_path=resolved_database_path,
             provider=provider,
@@ -755,7 +763,7 @@ def create_app(
         return serialize_collection_object_detail(detail)
 
     @app.put("/objects/{provider}/{object_id}/favorite")
-    def favorite_object(provider: str, object_id: int) -> dict[str, object]:
+    def favorite_object(provider: str, object_id: SourceObjectId) -> dict[str, object]:
         set_object_favorite(
             database_path=resolved_database_path,
             provider=provider,
@@ -769,7 +777,7 @@ def create_app(
         }
 
     @app.delete("/objects/{provider}/{object_id}/favorite")
-    def unfavorite_object(provider: str, object_id: int) -> dict[str, object]:
+    def unfavorite_object(provider: str, object_id: SourceObjectId) -> dict[str, object]:
         set_object_favorite(
             database_path=resolved_database_path,
             provider=provider,
@@ -871,7 +879,11 @@ def create_app(
         }
 
     @app.get("/search-sets/{slug}/objects/{provider}/{object_id}")
-    def get_collection_object(slug: str, provider: str, object_id: int) -> dict[str, object]:
+    def get_collection_object(
+        slug: str,
+        provider: str,
+        object_id: SourceObjectId,
+    ) -> dict[str, object]:
         detail = get_collection_object_detail(
             database_path=resolved_database_path,
             search_set_slug=slug,
@@ -953,7 +965,7 @@ def create_app(
                         {
                             "image_asset_id": skipped.image_asset_id,
                             "provider": skipped.provider,
-                            "object_id": skipped.object_id,
+                            "object_id": normalize_source_object_id(skipped.object_id),
                             "source_image_url": skipped.source_image_url,
                             "reason": skipped.reason,
                         }
@@ -1000,7 +1012,7 @@ def create_app(
                         {
                             "image_asset_id": skipped.image_asset_id,
                             "provider": skipped.provider,
-                            "object_id": skipped.object_id,
+                            "object_id": normalize_source_object_id(skipped.object_id),
                             "source_image_url": skipped.source_image_url,
                             "reason": skipped.reason,
                         }

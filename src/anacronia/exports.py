@@ -12,6 +12,7 @@ from typing import Literal
 from anacronia.collection_runs import ensure_collection_run_schema
 from anacronia.curation import ensure_collection_memberships
 from anacronia.met_ingest import ensure_met_ingest_schema
+from anacronia.provider_identity import SourceObjectId, normalize_source_object_id
 
 
 ExportFormat = Literal["jsonl", "csv", "package"]
@@ -21,7 +22,7 @@ ExportFormat = Literal["jsonl", "csv", "package"]
 class ExportSkippedImageAsset:
     image_asset_id: int
     provider: str
-    object_id: int
+    object_id: SourceObjectId
     source_image_url: str
     reason: str
 
@@ -55,7 +56,7 @@ class ExportCollection:
 class ExportImageAsset:
     image_asset_id: int
     provider: str
-    object_id: int
+    object_id: SourceObjectId
     source_image_url: str
     image_role: str
     image_index: int | None
@@ -95,6 +96,15 @@ class PackageImageCopy:
     relative_path: str
 
 
+def normalize_selected_object_refs(
+    selected_objects: list[tuple[str, SourceObjectId | int]],
+) -> set[tuple[str, SourceObjectId]]:
+    return {
+        (provider, normalize_source_object_id(object_id))
+        for provider, object_id in selected_objects
+    }
+
+
 def export_collection(
     *,
     database_path: Path,
@@ -102,7 +112,7 @@ def export_collection(
     search_set_slug: str,
     export_format: ExportFormat,
     selected_image_asset_ids: list[int] | None = None,
-    selected_objects: list[tuple[str, int]] | None = None,
+    selected_objects: list[tuple[str, SourceObjectId | int]] | None = None,
     timestamp: str | None = None,
 ) -> CollectionExportResult:
     if export_format not in {"jsonl", "csv", "package"}:
@@ -119,7 +129,7 @@ def export_collection(
         )
         if selected_image_asset_ids is not None or selected_objects is not None:
             selected_ids = set(selected_image_asset_ids or [])
-            selected_object_refs = set(selected_objects or [])
+            selected_object_refs = normalize_selected_object_refs(selected_objects or [])
             image_assets = [
                 image_asset
                 for image_asset in image_assets
@@ -173,7 +183,7 @@ def export_user_library(
     data_root: Path,
     export_format: ExportFormat,
     selected_image_asset_ids: list[int] | None = None,
-    selected_objects: list[tuple[str, int]] | None = None,
+    selected_objects: list[tuple[str, SourceObjectId | int]] | None = None,
     timestamp: str | None = None,
 ) -> CollectionExportResult:
     if export_format not in {"jsonl", "csv", "package"}:
@@ -191,7 +201,7 @@ def export_user_library(
         image_assets = list_user_library_image_assets(connection=connection)
         if selected_image_asset_ids is not None or selected_objects is not None:
             selected_ids = set(selected_image_asset_ids or [])
-            selected_object_refs = set(selected_objects or [])
+            selected_object_refs = normalize_selected_object_refs(selected_objects or [])
             image_assets = [
                 image_asset
                 for image_asset in image_assets
@@ -350,7 +360,7 @@ def list_collection_image_assets(
         ExportImageAsset(
             image_asset_id=int(row[0]),
             provider=row[1],
-            object_id=int(row[2]),
+            object_id=normalize_source_object_id(row[2]),
             source_image_url=row[3],
             image_role=row[4],
             image_index=row[5],
@@ -426,7 +436,7 @@ def list_user_library_image_assets(
         ExportImageAsset(
             image_asset_id=int(row[0]),
             provider=row[1],
-            object_id=int(row[2]),
+            object_id=normalize_source_object_id(row[2]),
             source_image_url=row[3],
             image_role=row[4],
             image_index=row[5],
@@ -582,8 +592,9 @@ def get_export_matches(
     connection: sqlite3.Connection,
     collection_slug: str,
     provider: str,
-    object_id: int,
+    object_id: SourceObjectId | int,
 ) -> list[ExportMatch]:
+    source_object_id = normalize_source_object_id(object_id)
     rows = connection.execute(
         """
         SELECT DISTINCT
@@ -603,7 +614,7 @@ def get_export_matches(
           AND object_matches.object_id = ?
         ORDER BY object_matches.search_term
         """,
-        (collection_slug, provider, object_id),
+        (collection_slug, provider, source_object_id),
     ).fetchall()
 
     return [
@@ -620,8 +631,9 @@ def get_user_library_export_matches(
     *,
     connection: sqlite3.Connection,
     provider: str,
-    object_id: int,
+    object_id: SourceObjectId | int,
 ) -> list[ExportMatch]:
+    source_object_id = normalize_source_object_id(object_id)
     rows = connection.execute(
         """
         SELECT DISTINCT
@@ -634,7 +646,7 @@ def get_user_library_export_matches(
           AND object_matches.object_id = ?
         ORDER BY object_matches.search_term
         """,
-        (provider, object_id),
+        (provider, source_object_id),
     ).fetchall()
 
     return [
@@ -651,8 +663,9 @@ def get_export_descriptors(
     *,
     connection: sqlite3.Connection,
     provider: str,
-    object_id: int,
+    object_id: SourceObjectId | int,
 ) -> list[ExportDescriptor]:
+    source_object_id = normalize_source_object_id(object_id)
     rows = connection.execute(
         """
         SELECT provider, descriptor_type, value, normalized_value, source_field
@@ -660,7 +673,7 @@ def get_export_descriptors(
         WHERE provider = ? AND object_id = ?
         ORDER BY descriptor_type, value, source_field
         """,
-        (provider, object_id),
+        (provider, source_object_id),
     ).fetchall()
 
     return [

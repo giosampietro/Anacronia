@@ -106,7 +106,7 @@ type SelectionDialogKind = "delete" | "export" | "remove";
 
 type CollectionCurationObjectSelection = {
   provider: string;
-  object_id: number;
+  object_id: string;
 };
 
 type CollectionCurationSelection = {
