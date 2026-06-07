@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { getActionFormDataString, getActionFormDataValue } from "./action-form-data";
+import {
+  getActionFormDataString,
+  getActionFormDataValue,
+  getActionFormDataValues,
+} from "./action-form-data";
 
 describe("action form data", () => {
   it("reads standard form field names", () => {
@@ -24,5 +28,16 @@ describe("action form data", () => {
     formData.set("archived_display_name", "Wrong");
 
     expect(getActionFormDataValue(formData, "display_name")).toBeNull();
+  });
+
+  it("reads multiple action-prefixed values from Next server actions", () => {
+    const formData = new FormData();
+    formData.append("_1_folder_files", "first");
+    formData.append("_1_folder_files", "second");
+
+    expect(getActionFormDataValues(formData, "folder_files")).toEqual([
+      "first",
+      "second",
+    ]);
   });
 });

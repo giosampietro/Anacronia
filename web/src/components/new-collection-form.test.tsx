@@ -1,11 +1,7 @@
 import { renderToString } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
-import {
-  LOCAL_FOLDER_PICKER_UNAVAILABLE_MESSAGE,
-  NewCollectionForm,
-  normalizeLocalFolderPickerErrorMessage,
-} from "./new-collection-form";
+import { NewCollectionForm } from "./new-collection-form";
 
 const formStatus = vi.hoisted(() => ({
   pending: false,
@@ -37,6 +33,7 @@ describe("NewCollectionForm", () => {
 
     expect(html).toContain("Name the Collection");
     expect(html).toContain("Choose source");
+    expect(html).toContain("flex-row items-center gap-3");
     expect(html).toContain("Online archive");
     expect(html).toContain("Local folder");
     expect(html).not.toContain("Search online archive");
@@ -77,25 +74,19 @@ describe("NewCollectionForm", () => {
 
     expect(html).toContain("Import folder");
     expect(html).toContain("Choose folder");
+    expect(html).toContain("name=\"folder_files\"");
+    expect(html).toContain("webkitdirectory=\"\"");
+    expect(html).toContain("aria-hidden=\"true\"");
+    expect(html).toContain("name=\"folder_upload_manifest\"");
     expect(html).toContain("name=\"folder_path\"");
+    expect(html).toContain(
+      "Choose a folder or paste /Users/giorgio/Desktop/reference-folder",
+    );
     expect(html).toContain("Import folder</button>");
     expect(html).not.toContain("Search online archive");
     expect(html).not.toContain("Images to find");
     expect(html).not.toContain("Start search");
-  });
-
-  it("collapses native folder picker diagnostics to a manual path fallback", () => {
-    const nativeDiagnostic =
-      "2026-06-07 osascript[56029:18091055] Connection Invalid error for service com.apple.hiservices-xpcservice. HostCallsAuxiliary: Connection invalid";
-
-    expect(normalizeLocalFolderPickerErrorMessage(nativeDiagnostic)).toBe(
-      LOCAL_FOLDER_PICKER_UNAVAILABLE_MESSAGE,
-    );
-    expect(
-      normalizeLocalFolderPickerErrorMessage(
-        "Folder picker did not return a folder path.",
-      ),
-    ).toBe("Folder picker did not return a folder path.");
+    expect(html).not.toContain("Folder picker could not open");
   });
 
   it("renders the Collection name entry without browser autofill history", () => {

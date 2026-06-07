@@ -46,7 +46,14 @@ import { readAppVersionStamp } from "@/lib/app-version";
 import {
   getActionFormDataString,
   getActionFormDataValue,
+  getActionFormDataValues,
 } from "@/lib/action-form-data";
+import {
+  isUploadedFile,
+  parseFolderUploadManifest,
+  removeUploadedLocalFolder,
+  writeUploadedLocalFolderFiles,
+} from "@/lib/local-folder-upload";
 import {
   COLLECT_STATE_CHANGED_NOTICE,
   canStartCollect,
@@ -510,15 +517,31 @@ async function createLocalFolderCollection(formData: FormData) {
   const apiPort = getPort("ANACRONIA_API_PORT", DEFAULT_API_PORT);
   const apiBaseUrl = `http://127.0.0.1:${apiPort}`;
   const displayName = getActionFormDataString(formData, "display_name");
-  const folderPath = getActionFormDataString(formData, "folder_path");
-  const response = await fetch(`${apiBaseUrl}/local-folder-collections`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      display_name: displayName,
-      folder_path: folderPath,
-    }),
-  });
+  const uploadedFiles = getActionFormDataValues(formData, "folder_files")
+    .filter(isUploadedFile)
+    .filter((file) => file.name.trim() !== "");
+  const uploadManifest = parseFolderUploadManifest(
+    getActionFormDataString(formData, "folder_upload_manifest"),
+  );
+  const uploadedFolderPath = uploadedFiles.length > 0
+    ? await writeUploadedLocalFolderFiles(uploadedFiles, uploadManifest)
+    : null;
+  const folderPath = uploadedFolderPath ?? getActionFormDataString(formData, "folder_path");
+  let response: Response;
+  try {
+    response = await fetch(`${apiBaseUrl}/local-folder-collections`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        display_name: displayName,
+        folder_path: folderPath,
+      }),
+    });
+  } finally {
+    if (uploadedFolderPath !== null) {
+      await removeUploadedLocalFolder(uploadedFolderPath);
+    }
+  }
 
   if (response.status === 409) {
     revalidatePath("/");

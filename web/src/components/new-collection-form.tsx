@@ -1,6 +1,11 @@
 "use client";
 
-import { type ReactNode, useState } from "react";
+import {
+  type InputHTMLAttributes,
+  type ReactNode,
+  useRef,
+  useState,
+} from "react";
 import { useFormStatus } from "react-dom";
 import { Archive, FolderOpen, Play } from "lucide-react";
 
@@ -30,10 +35,6 @@ import { announceProviderSearchRefresh } from "@/lib/dashboard-refresh";
 
 export type NewCollectionServerError = "duplicate_name";
 type CreationTrajectory = "online-archive" | "local-folder";
-type FolderPickerStatus =
-  | { state: "idle" }
-  | { state: "pending" }
-  | { message: string; state: "error" };
 
 type NewCollectionFormProps = {
   initialTrajectory?: CreationTrajectory | null;
@@ -43,22 +44,20 @@ type NewCollectionFormProps = {
   serverError?: NewCollectionServerError | null;
 };
 
-export const LOCAL_FOLDER_PICKER_UNAVAILABLE_MESSAGE =
-  "Folder picker could not open. Paste the folder path manually.";
-
-const localFolderPickerDiagnosticPatterns = [
-  /osascript/i,
-  /connection invalid/i,
-  /com\.apple/i,
-  /NSXPC/i,
-  /HostCallsAuxiliary/i,
-];
-
 const providerSources = [
   { label: "Met", value: "met", disabled: false },
   { label: "V&A", value: "vam", disabled: false },
 ] as const;
 type ProviderSourceValue = (typeof providerSources)[number]["value"];
+type DirectoryInputProps = InputHTMLAttributes<HTMLInputElement> & {
+  directory: string;
+  webkitdirectory: string;
+};
+
+const directoryInputProps: DirectoryInputProps = {
+  directory: "",
+  webkitdirectory: "",
+};
 
 function StepNumber({ children }: { children: ReactNode }) {
   return (
@@ -79,7 +78,7 @@ function StepCard({
 }) {
   return (
     <Card className="gap-3" size="sm">
-      <CardHeader className="gap-3">
+      <CardHeader className="flex flex-row items-center gap-3">
         <StepNumber>{number}</StepNumber>
         <CardTitle className="text-sm">{title}</CardTitle>
       </CardHeader>
@@ -177,41 +176,6 @@ function SubmitTrajectoryButton({
   );
 }
 
-export function normalizeLocalFolderPickerErrorMessage(message: unknown): string {
-  if (typeof message !== "string") {
-    return LOCAL_FOLDER_PICKER_UNAVAILABLE_MESSAGE;
-  }
-
-  const normalizedMessage = message.replace(/\s+/g, " ").trim();
-  if (normalizedMessage === "") {
-    return LOCAL_FOLDER_PICKER_UNAVAILABLE_MESSAGE;
-  }
-
-  if (
-    normalizedMessage.length > 160 ||
-    localFolderPickerDiagnosticPatterns.some((pattern) =>
-      pattern.test(normalizedMessage),
-    )
-  ) {
-    return LOCAL_FOLDER_PICKER_UNAVAILABLE_MESSAGE;
-  }
-
-  return normalizedMessage;
-}
-
-async function localFolderPickerErrorMessage(response: Response): Promise<string> {
-  try {
-    const payload = (await response.json()) as { detail?: unknown };
-    if (typeof payload.detail === "string") {
-      return normalizeLocalFolderPickerErrorMessage(payload.detail);
-    }
-  } catch {
-    // Fall through to the generic message.
-  }
-
-  return LOCAL_FOLDER_PICKER_UNAVAILABLE_MESSAGE;
-}
-
 export function NewCollectionForm({
   initialTrajectory = null,
   localFolderAction,
@@ -222,10 +186,11 @@ export function NewCollectionForm({
   const [trajectory, setTrajectory] = useState<CreationTrajectory | null>(
     initialTrajectory,
   );
+  const folderFileInputRef = useRef<HTMLInputElement>(null);
   const [displayName, setDisplayName] = useState("");
   const [folderPath, setFolderPath] = useState("");
-  const [folderPickerStatus, setFolderPickerStatus] =
-    useState<FolderPickerStatus>({ state: "idle" });
+  const [folderUploadManifest, setFolderUploadManifest] = useState("");
+  const [folderUploadFileCount, setFolderUploadFileCount] = useState(0);
   const [providerSource, setProviderSource] = useState<ProviderSourceValue | "">("");
   const [termsText, setTermsText] = useState("");
   const duplicateName = isDuplicateCollectionName(displayName, existingCollections);
@@ -238,42 +203,49 @@ export function NewCollectionForm({
     termsText,
     existingCollections,
   ) && providerSource !== "";
+  const hasFolderUpload = folderUploadFileCount > 0;
   const canImportFolder =
     displayName.trim() !== "" &&
-    folderPath.trim() !== "" &&
+    (folderPath.trim() !== "" || hasFolderUpload) &&
     !isDuplicateCollectionName(displayName, existingCollections);
   const activeAction =
     trajectory === "local-folder" ? localFolderAction : onlineArchiveAction;
-  const folderPickerError =
-    folderPickerStatus.state === "error" ? folderPickerStatus.message : "";
 
   async function chooseLocalFolder() {
-    setFolderPickerStatus({ state: "pending" });
-    try {
-      const response = await fetch("/api/local-folder-picker", {
-        method: "POST",
-      });
-      if (response.status === 204) {
-        setFolderPickerStatus({ state: "idle" });
-        return;
-      }
-      if (!response.ok) {
-        throw new Error(await localFolderPickerErrorMessage(response));
-      }
-      const payload = (await response.json()) as { folder_path?: unknown };
-      if (typeof payload.folder_path !== "string" || payload.folder_path.trim() === "") {
-        throw new Error("Folder picker did not return a folder path.");
-      }
-      setFolderPath(payload.folder_path);
-      setFolderPickerStatus({ state: "idle" });
-    } catch (error) {
-      setFolderPickerStatus({
-        message: normalizeLocalFolderPickerErrorMessage(
-          error instanceof Error ? error.message : "",
-        ),
-        state: "error",
-      });
+    folderFileInputRef.current?.click();
+  }
+
+  function resetSelectedFolderUpload() {
+    setFolderUploadManifest("");
+    setFolderUploadFileCount(0);
+    if (folderFileInputRef.current !== null) {
+      folderFileInputRef.current.value = "";
     }
+  }
+
+  function updateSelectedFolderUpload(files: FileList | null) {
+    if (files === null || files.length === 0) {
+      return;
+    }
+
+    const selectedFiles = Array.from(files);
+    const manifestFiles = selectedFiles.map((file) => ({
+      name: file.name,
+      relativePath: file.webkitRelativePath || file.name,
+    }));
+    const firstRelativePath = manifestFiles[0]?.relativePath ?? "";
+    const rootFolderName = firstRelativePath.includes("/")
+      ? firstRelativePath.split("/")[0]
+      : "";
+    const fileCount = selectedFiles.length;
+
+    setFolderUploadManifest(JSON.stringify({ files: manifestFiles }));
+    setFolderUploadFileCount(fileCount);
+    setFolderPath(
+      rootFolderName !== ""
+        ? `${rootFolderName} (${fileCount} files selected)`
+        : `${fileCount} files selected`,
+    );
   }
 
   return (
@@ -283,6 +255,11 @@ export function NewCollectionForm({
       className="mx-auto flex w-full max-w-4xl flex-col gap-4"
     >
       <input name="display_name" type="hidden" value={displayName} />
+      <input
+        name="folder_upload_manifest"
+        type="hidden"
+        value={folderUploadManifest}
+      />
       <StepCard number={1} title="Name the Collection">
         <Field data-invalid={Boolean(nameError)}>
           <FieldLabel className="sr-only" htmlFor="collection_name_entry">
@@ -367,39 +344,41 @@ export function NewCollectionForm({
         <>
           <StepCard number={3} title="Import folder">
             <div className="grid gap-3 md:grid-cols-[auto_minmax(0,1fr)_auto] md:items-end">
+              <input
+                {...directoryInputProps}
+                ref={folderFileInputRef}
+                aria-hidden="true"
+                className="sr-only"
+                multiple
+                name="folder_files"
+                onChange={(event) =>
+                  updateSelectedFolderUpload(event.currentTarget.files)
+                }
+                tabIndex={-1}
+                type="file"
+              />
               <Button
-                disabled={folderPickerStatus.state === "pending"}
                 onClick={chooseLocalFolder}
                 size="lg"
                 type="button"
                 variant="outline"
               >
-                {folderPickerStatus.state === "pending" ? (
-                  <Spinner data-icon="inline-start" />
-                ) : (
-                  <FolderOpen data-icon="inline-start" />
-                )}
-                {folderPickerStatus.state === "pending" ? "Choosing..." : "Choose folder"}
+                <FolderOpen data-icon="inline-start" />
+                Choose folder
               </Button>
-              <Field data-invalid={Boolean(folderPickerError)}>
+              <Field>
                 <FieldLabel className="sr-only" htmlFor="folder_path">
                   Folder path
                 </FieldLabel>
                 <Input
-                  aria-describedby={
-                    folderPickerError ? "folder_path_picker_error" : undefined
-                  }
-                  aria-invalid={Boolean(folderPickerError)}
                   autoComplete="off"
                   id="folder_path"
                   name="folder_path"
                   onChange={(event) => {
                     setFolderPath(event.currentTarget.value);
-                    if (folderPickerStatus.state === "error") {
-                      setFolderPickerStatus({ state: "idle" });
-                    }
+                    resetSelectedFolderUpload();
                   }}
-                  placeholder="/Users/giorgio/Desktop/reference-folder"
+                  placeholder="Choose a folder or paste /Users/giorgio/Desktop/reference-folder"
                   required
                   spellCheck={false}
                   value={folderPath}
@@ -411,7 +390,6 @@ export function NewCollectionForm({
                 pendingLabel="Importing..."
               />
             </div>
-            <FieldError id="folder_path_picker_error">{folderPickerError}</FieldError>
           </StepCard>
         </>
       ) : null}
