@@ -18,6 +18,18 @@ A museum or cultural data source that exposes collection records and image refer
 
 When available, provider record versioning or timestamp fields should be retained, such as the Met `metadataDate`.
 
+Online Providers can have provider-specific terms, rights statements, and reuse expectations. Anacronia should preserve provider source statements and may show provider-specific notices, but it is a private local testing/research tool and does not enforce provider terms beyond provider-specific ingestion filters that Anacronia explicitly implements.
+
+The Met is the MVP permanent local-ingestion Provider. V&A is the next museum Provider to use for testing the multi-provider scaffolding. For that test, V&A should create the same local `standard-1024` and `thumb-256` derivatives as Met so the shared Collection, User Library, export, curation, and future analysis paths can be exercised.
+
+### User-Imported Local Material
+
+Images that the user imports from their own computer are private local material. Examples include a plain folder of images, a later Are.na export folder, or a later Instagram extension export folder.
+
+User-imported local material is not subject to Anacronia's online Provider rights eligibility gates. Anacronia does not need to determine whether this material is public domain, copyright-cleared, or reusable. The first user-import workflow should accept a plain folder of image files without requiring metadata, manifest files, source URLs, or rights declarations.
+
+User-imported local material still needs stable local identity, derivative generation, Collection Membership, User Library visibility, curation actions, export support, and future Analysis Results.
+
 ### Collection
 
 A named research intent made from explicit search terms. A Collection is what the user sees and manages.
@@ -73,6 +85,8 @@ The user-facing action of building or extending a Provider Source from a locked 
 Primary UI labels are `Start search`, `Stop search`, `Resume search`, and `Keep searching`. The term `collect` can remain in internal code, CLI, or technical documentation where it describes the ingestion pipeline, but it should not be used for primary workflow buttons.
 
 Local result search within a Collection is deferred beyond the Start New Collection workflow. Broader faceted filtering is outside the MVP.
+
+Provider Search applies to online Providers that Anacronia queries directly. Importing a local folder from the user's computer is not a Provider Search and does not use provider candidates, provider rights filters, provider API backoff, or provider cache rules.
 
 ### Run
 
@@ -173,6 +187,10 @@ The Met MVP uses strict public-domain filtering. Future providers may use broade
 
 The source provider rights/license statement must be stored and shown in image detail views and exports.
 
+Public-domain eligibility is an online Provider ingestion rule, not a rule for user-imported local material. User-imported local material may be private, self-authored, copyrighted, unattributed, or otherwise unknown; Anacronia stores and visualizes it locally without trying to resolve its IP status.
+
+For V&A, Anacronia should retain source rights/copyright/API-term statements when available and eventually show a non-blocking provider notice about V&A timing and API-use expectations. That notice should inform the user; it should not prevent private local derivative generation for the V&A test importer.
+
 ### Standard-1024
 
 The primary local image derivative used for analysis and richer display. It has a 1024-pixel long edge, JPEG format, and quality 90.
@@ -217,7 +235,9 @@ The primary export unit is the Image Asset: one exported row or JSONL object per
 - Search feedback should show the search state plus stable `Objects` and `Images` counters. The MVP should not show percentage progress or candidate counts in the primary UI.
 - `Objects` counts Museum Objects with at least one successfully downloaded Image Asset. `Images` counts complete Image Assets with validated `standard-1024` and `thumb-256` derivatives.
 - For accepted Met material, Anacronia must require `isPublicDomain === true`.
+- For V&A testing, Anacronia should create permanent local `standard-1024` and `thumb-256` derivatives like Met, retain source records where useful for audit/descriptor regeneration, and show a future non-blocking provider notice about V&A API-use expectations.
 - Anacronia stores local `standard-1024` and `thumb-256` derivatives, not full-resolution originals by default.
+- User-imported local folders are private local material. They do not require provider metadata, public-domain checks, rights declarations, source URLs, manifests, or provider records.
 - User-facing imported image counts include only complete Image Assets with validated `standard-1024` and `thumb-256` derivatives.
 - Missing descriptive fields such as date, artist, culture, or period do not prevent import when public-domain and image-derivative requirements are satisfied.
 - The MVP should not expose destructive deletion from the interface, but the domain model should allow future user-driven curation actions.

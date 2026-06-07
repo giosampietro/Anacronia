@@ -10,6 +10,10 @@ Anacronia should solve the first stage of this workflow: collect museum records 
 
 Anacronia will be a local-first collection builder. It will let the user define a Collection made of explicit terms, start searching Met for usable public-domain image material, download source images temporarily, generate local `standard-1024` and `thumb-256` derivatives, store raw provider records, extract Descriptors from provider-specific metadata, and expose the resulting Museum Objects and Image Assets in a dense operational web interface.
 
+The Met is the MVP permanent local-ingestion Provider. V&A should be the next museum Provider used to test the multi-provider scaffolding. For that test, V&A should create permanent local `standard-1024` and `thumb-256` derivatives like Met, while retaining source rights/copyright/API-term statements where available. A future V&A workflow should show a non-blocking notice about V&A API-use expectations; the notice informs the private local user but does not block local derivative generation.
+
+User-imported local material is a separate workflow from Provider Search. A user-provided plain folder of images should be treated as private local material, not as online Provider material. It does not require provider metadata, public-domain checks, rights declarations, source URLs, or manifest files.
+
 The user will run Anacronia locally from the terminal. A single command will start the Next.js interface, FastAPI backend, and Python worker. The browser UI will open on `localhost:18660` when available. The worker will process one actively running Provider Search at a time, prioritizing correctness, resumability, provider tolerance, and data integrity over raw speed. Stopped or paused/error searches are parked resumable jobs and do not block other work until the user chooses to resume them.
 
 The MVP will not try to become the future visual atlas. It will provide the operational foundation: start locked Collections, search Met in resumable batches, stop and resume safely, monitor Object/Image counters, inspect downloaded Museum Objects, view details and source metadata, and export imported Image Assets as JSONL/CSV or complete packages.
@@ -160,6 +164,35 @@ The MVP will not try to become the future visual atlas. It will provide the oper
 142. As a developer, I want Collection Exclusions and Favorites keyed by provider identity, so that delete/re-import does not break curation intent.
 143. As a developer, I want deleted Objects and Images marked inactive/deleted while local files are removed, so that Run history can remain auditable.
 144. As a developer, I want re-import after delete to reactivate or update the old inactive provider-identity row, so that duplicate active rows are avoided.
+
+## Additional Source Requirements
+
+### V&A Provider Test
+
+V&A is the next museum Provider to use for testing Anacronia's multi-provider scaffolding after Met.
+
+Required default behavior:
+
+- V&A search and ingest should exercise the same Collection, Provider Source, Image Asset, derivative, User Library, export, curation, and future analysis scaffolding as Met.
+- V&A results should use V&A object and image identifiers, including `systemNumber` and IIIF image identifiers, as source identity.
+- V&A images should be imported into permanent local `standard-1024` and `thumb-256` derivatives for private local testing.
+- V&A source records should be retained where useful for audit, descriptor regeneration, and source detail display.
+- V&A rights/copyright/API-term statements should be retained when available and shown in detail/export metadata where the current UI already exposes source information.
+- A future V&A workflow should show a non-blocking notice about V&A API-use expectations and timing. The notice should not prevent private local import.
+- V&A implementation should avoid turning provider terms into hard enforcement unless a future product decision explicitly adds such enforcement.
+
+### Plain Local Folder Import
+
+The first user-imported source should be a plain local folder of image files.
+
+Required default behavior:
+
+- The user selects or points Anacronia at a folder on their computer.
+- Anacronia recursively discovers supported image files.
+- No metadata file, manifest, source URL, public-domain flag, or rights declaration is required.
+- Imported folder images are private local material, not online Provider material.
+- Online Provider public-domain and rights gates do not apply.
+- Anacronia generates local derivatives, creates stable local item identity, adds Collection Membership, and makes the material visible in the Collection and User Library.
 
 ## Implementation Decisions
 
