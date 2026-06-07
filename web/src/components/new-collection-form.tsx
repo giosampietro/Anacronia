@@ -290,7 +290,7 @@ export function NewCollectionForm({
             onClick={() => setTrajectory("online-archive")}
             title="Online archive"
           >
-            choose a museum archive, then search by keywords
+            Choose a museum archive, then search by keywords
           </TrajectoryButton>
           <TrajectoryButton
             active={trajectory === "local-folder"}
@@ -298,14 +298,14 @@ export function NewCollectionForm({
             onClick={() => setTrajectory("local-folder")}
             title="Local folder"
           >
-            import a local image folder
+            Import a local image folder
           </TrajectoryButton>
         </div>
       </StepCard>
 
       {trajectory === "online-archive" ? (
         <>
-          <StepCard number={3} title="Search online archive">
+          <StepCard number={3} title="Search and import online archive">
             <Field className="md:w-1/2">
               <FieldLabel className="sr-only" htmlFor="terms_text">
                 Search terms
@@ -321,19 +321,24 @@ export function NewCollectionForm({
               />
             </Field>
 
-            <div className="grid gap-3 md:w-1/2 md:grid-cols-[minmax(0,1fr)_140px_auto] md:items-end">
+            <div className="grid gap-3 md:w-1/2">
               <Field className="gap-2">
                 <ProviderSelect
                   onSelect={setProviderSource}
                   selectedProvider={providerSource}
                 />
               </Field>
-              <BatchTargetControl idPrefix="new_collection" showLabel={false} />
-              <SubmitTrajectoryButton
-                disabled={!canStart}
-                idleLabel="Start search"
-                pendingLabel="Starting..."
-              />
+              <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3">
+                <BatchTargetControl
+                  idPrefix="new_collection"
+                  showLabel={false}
+                />
+                <SubmitTrajectoryButton
+                  disabled={!canStart}
+                  idleLabel="Start search"
+                  pendingLabel="Starting..."
+                />
+              </div>
             </div>
           </StepCard>
         </>

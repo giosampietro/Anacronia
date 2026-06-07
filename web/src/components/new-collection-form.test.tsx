@@ -36,10 +36,10 @@ describe("NewCollectionForm", () => {
     expect(html).toContain("flex-row items-center gap-3");
     expect(html).toContain("md:w-1/2");
     expect(html).toContain("Online archive");
-    expect(html).toContain("choose a museum archive, then search by keywords");
+    expect(html).toContain("Choose a museum archive, then search by keywords");
     expect(html).toContain("Local folder");
-    expect(html).toContain("import a local image folder");
-    expect(html).not.toContain("Search online archive");
+    expect(html).toContain("Import a local image folder");
+    expect(html).not.toContain("Search and import online archive");
     expect(html).not.toContain("Import folder");
     expect(html).not.toContain("terms detected");
     expect(html).not.toContain("Batch target");
@@ -51,7 +51,7 @@ describe("NewCollectionForm", () => {
       renderForm({ initialTrajectory: "online-archive" }),
     ).replaceAll("<!-- -->", "");
 
-    expect(html).toContain("Search online archive");
+    expect(html).toContain("Search and import online archive");
     expect(html).toContain("Choose provider");
     expect(html).toContain("Choose provider</option>");
     expect(html).toContain(
@@ -87,7 +87,7 @@ describe("NewCollectionForm", () => {
       "Choose a folder or paste /Users/giorgio/Desktop/reference-folder",
     );
     expect(html).toContain("Import</button>");
-    expect(html).not.toContain("Search online archive");
+    expect(html).not.toContain("Search and import online archive");
     expect(html).not.toContain("Images to find");
     expect(html).not.toContain("Start search");
     expect(html).not.toContain("Folder picker could not open");
