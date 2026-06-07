@@ -1,9 +1,7 @@
 "use client";
 
 import {
-  type InputHTMLAttributes,
   type ReactNode,
-  useRef,
   useState,
 } from "react";
 import { useFormStatus } from "react-dom";
@@ -49,15 +47,6 @@ const providerSources = [
   { label: "V&A", value: "vam", disabled: false },
 ] as const;
 type ProviderSourceValue = (typeof providerSources)[number]["value"];
-type DirectoryInputProps = InputHTMLAttributes<HTMLInputElement> & {
-  directory: string;
-  webkitdirectory: string;
-};
-
-const directoryInputProps: DirectoryInputProps = {
-  directory: "",
-  webkitdirectory: "",
-};
 
 function StepNumber({ children }: { children: ReactNode }) {
   return (
@@ -176,6 +165,12 @@ function SubmitTrajectoryButton({
   );
 }
 
+function localFolderDisplayName(folderPath: string): string {
+  const normalizedPath = folderPath.trim();
+  const segments = normalizedPath.split(/[\\/]+/).filter((segment) => segment !== "");
+  return segments.at(-1) ?? normalizedPath;
+}
+
 export function NewCollectionForm({
   initialTrajectory = null,
   localFolderAction,
@@ -186,11 +181,10 @@ export function NewCollectionForm({
   const [trajectory, setTrajectory] = useState<CreationTrajectory | null>(
     initialTrajectory,
   );
-  const folderFileInputRef = useRef<HTMLInputElement>(null);
   const [displayName, setDisplayName] = useState("");
   const [folderPath, setFolderPath] = useState("");
-  const [folderUploadManifest, setFolderUploadManifest] = useState("");
-  const [folderUploadFileCount, setFolderUploadFileCount] = useState(0);
+  const [folderPathDisplay, setFolderPathDisplay] = useState("");
+  const [folderPickerError, setFolderPickerError] = useState("");
   const [providerSource, setProviderSource] = useState<ProviderSourceValue | "">("");
   const [termsText, setTermsText] = useState("");
   const duplicateName = isDuplicateCollectionName(displayName, existingCollections);
@@ -203,49 +197,31 @@ export function NewCollectionForm({
     termsText,
     existingCollections,
   ) && providerSource !== "";
-  const hasFolderUpload = folderUploadFileCount > 0;
   const canImportFolder =
     displayName.trim() !== "" &&
-    (folderPath.trim() !== "" || hasFolderUpload) &&
+    folderPath.trim() !== "" &&
     !isDuplicateCollectionName(displayName, existingCollections);
   const activeAction =
     trajectory === "local-folder" ? localFolderAction : onlineArchiveAction;
 
   async function chooseLocalFolder() {
-    folderFileInputRef.current?.click();
-  }
-
-  function resetSelectedFolderUpload() {
-    setFolderUploadManifest("");
-    setFolderUploadFileCount(0);
-    if (folderFileInputRef.current !== null) {
-      folderFileInputRef.current.value = "";
+    setFolderPickerError("");
+    const response = await fetch("/api/local-folder-picker", { method: "POST" });
+    if (response.status === 204) {
+      return;
     }
-  }
-
-  function updateSelectedFolderUpload(files: FileList | null) {
-    if (files === null || files.length === 0) {
+    if (!response.ok) {
+      setFolderPickerError("Folder picker could not open. Paste a folder path manually.");
       return;
     }
 
-    const selectedFiles = Array.from(files);
-    const manifestFiles = selectedFiles.map((file) => ({
-      name: file.name,
-      relativePath: file.webkitRelativePath || file.name,
-    }));
-    const firstRelativePath = manifestFiles[0]?.relativePath ?? "";
-    const rootFolderName = firstRelativePath.includes("/")
-      ? firstRelativePath.split("/")[0]
-      : "";
-    const fileCount = selectedFiles.length;
-
-    setFolderUploadManifest(JSON.stringify({ files: manifestFiles }));
-    setFolderUploadFileCount(fileCount);
-    setFolderPath(
-      rootFolderName !== ""
-        ? `${rootFolderName} (${fileCount} files selected)`
-        : `${fileCount} files selected`,
-    );
+    const payload = (await response.json()) as { folder_path?: unknown };
+    if (typeof payload.folder_path !== "string" || payload.folder_path.trim() === "") {
+      return;
+    }
+    const selectedFolderPath = payload.folder_path.trim();
+    setFolderPath(selectedFolderPath);
+    setFolderPathDisplay(localFolderDisplayName(selectedFolderPath));
   }
 
   return (
@@ -255,11 +231,6 @@ export function NewCollectionForm({
       className="mx-auto flex w-full max-w-4xl flex-col gap-4"
     >
       <input name="display_name" type="hidden" value={displayName} />
-      <input
-        name="folder_upload_manifest"
-        type="hidden"
-        value={folderUploadManifest}
-      />
       <StepCard number={1} title="Name the Collection">
         <Field className="md:w-1/2" data-invalid={Boolean(nameError)}>
           <FieldLabel className="sr-only" htmlFor="collection_name_entry">
@@ -348,19 +319,6 @@ export function NewCollectionForm({
         <>
           <StepCard number={3} title="Import folder">
             <div className="grid gap-3 md:grid-cols-[auto_minmax(0,1fr)_auto] md:items-end">
-              <input
-                {...directoryInputProps}
-                ref={folderFileInputRef}
-                aria-hidden="true"
-                className="sr-only"
-                multiple
-                name="folder_files"
-                onChange={(event) =>
-                  updateSelectedFolderUpload(event.currentTarget.files)
-                }
-                tabIndex={-1}
-                type="file"
-              />
               <Button
                 onClick={chooseLocalFolder}
                 size="lg"
@@ -370,22 +328,24 @@ export function NewCollectionForm({
                 <FolderOpen data-icon="inline-start" />
                 Choose folder
               </Button>
+              <input name="folder_path" type="hidden" value={folderPath} />
               <Field>
-                <FieldLabel className="sr-only" htmlFor="folder_path">
+                <FieldLabel className="sr-only" htmlFor="folder_path_display">
                   Folder path
                 </FieldLabel>
                 <Input
                   autoComplete="off"
-                  id="folder_path"
-                  name="folder_path"
+                  id="folder_path_display"
                   onChange={(event) => {
+                    setFolderPickerError("");
                     setFolderPath(event.currentTarget.value);
-                    resetSelectedFolderUpload();
+                    setFolderPathDisplay(event.currentTarget.value);
                   }}
                   required
                   spellCheck={false}
-                  value={folderPath}
+                  value={folderPathDisplay}
                 />
+                <FieldError>{folderPickerError}</FieldError>
               </Field>
               <SubmitTrajectoryButton
                 disabled={!canImportFolder}

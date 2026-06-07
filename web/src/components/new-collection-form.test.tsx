@@ -78,11 +78,11 @@ describe("NewCollectionForm", () => {
 
     expect(html).toContain("Import folder");
     expect(html).toContain("Choose folder");
-    expect(html).toContain("name=\"folder_files\"");
-    expect(html).toContain("webkitdirectory=\"\"");
-    expect(html).toContain("aria-hidden=\"true\"");
-    expect(html).toContain("name=\"folder_upload_manifest\"");
     expect(html).toContain("name=\"folder_path\"");
+    expect(html).toContain("id=\"folder_path_display\"");
+    expect(html).not.toContain("name=\"folder_files\"");
+    expect(html).not.toContain("webkitdirectory=\"\"");
+    expect(html).not.toContain("name=\"folder_upload_manifest\"");
     expect(html).not.toContain("/Users/giorgio/Desktop/reference-folder");
     expect(html).toContain("Import</button>");
     expect(html).not.toContain("Search and import online archive");
