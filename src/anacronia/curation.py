@@ -258,6 +258,58 @@ def get_collection_import_exclusions(
     )
 
 
+def add_collection_object_membership(
+    *,
+    connection: sqlite3.Connection,
+    search_set_id: int,
+    provider: str,
+    object_id: SourceObjectId | int,
+) -> None:
+    ensure_curation_schema(connection)
+    source_object_id = normalize_source_object_id(object_id)
+    connection.execute(
+        """
+        INSERT INTO collection_object_memberships (
+          search_set_id,
+          provider,
+          object_id,
+          active
+        )
+        VALUES (?, ?, ?, 1)
+        ON CONFLICT(search_set_id, provider, object_id) DO UPDATE SET
+          active = 1
+        """,
+        (search_set_id, provider, source_object_id),
+    )
+
+
+def add_collection_image_asset_membership(
+    *,
+    connection: sqlite3.Connection,
+    search_set_id: int,
+    provider: str,
+    object_id: SourceObjectId | int,
+    source_image_url: str,
+) -> None:
+    ensure_curation_schema(connection)
+    source_object_id = normalize_source_object_id(object_id)
+    connection.execute(
+        """
+        INSERT INTO collection_image_asset_memberships (
+          search_set_id,
+          provider,
+          object_id,
+          source_image_url,
+          active
+        )
+        VALUES (?, ?, ?, ?, 1)
+        ON CONFLICT(search_set_id, provider, object_id, source_image_url) DO UPDATE SET
+          active = 1
+        """,
+        (search_set_id, provider, source_object_id, source_image_url),
+    )
+
+
 def remove_object_from_collection(
     *,
     database_path: Path,

@@ -54,6 +54,7 @@ def create_or_continue_search_set(
     display_name: str,
     terms_text: str,
     provider: str = MET_PROVIDER,
+    allow_empty_terms: bool = False,
 ) -> SearchSet:
     slug = slugify_search_set_name(display_name)
     terms = parse_search_terms(terms_text)
@@ -61,7 +62,7 @@ def create_or_continue_search_set(
 
     if not slug:
         raise ValueError("Collection title is required.")
-    if not terms:
+    if not terms and not allow_empty_terms:
         raise ValueError("At least one Collection term is required.")
 
     with sqlite3.connect(database_path) as connection:

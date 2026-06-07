@@ -20,7 +20,7 @@ class LocalMuseumObject:
     is_public_domain: bool
     rights_and_reproduction: str
     metadata_date: str
-    raw_record_path: Path
+    raw_record_path: Path | str
 
 
 @dataclass(frozen=True)

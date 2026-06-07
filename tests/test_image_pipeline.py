@@ -1,6 +1,7 @@
 from anacronia.image_pipeline import (
     ImageDerivativeSettings,
     process_image_derivatives_from_bytes,
+    process_image_derivatives_from_path,
     process_met_image_asset,
     validate_image_derivative,
     write_image_derivative_settings,
@@ -82,6 +83,28 @@ def test_processes_generic_source_bytes_into_valid_derivatives_and_deletes_origi
     assert result.imported is True
     assert result.original_width == 1600
     assert result.original_height == 800
+    assert temporary_original_path.exists() is False
+    assert validate_image_derivative(path=standard_path, settings=result.standard_settings)
+    assert validate_image_derivative(path=thumb_path, settings=result.thumb_settings)
+
+
+def test_processes_local_source_path_and_upscales_small_images(tmp_path):
+    source_path = tmp_path / "small-local.png"
+    standard_path = tmp_path / "local-folder" / "primary-standard-1024.jpg"
+    thumb_path = tmp_path / "local-folder" / "primary-thumb-256.jpg"
+    temporary_original_path = tmp_path / "temp" / "local-folder-source-original"
+    Image.new("RGB", (320, 160), color=(40, 130, 180)).save(source_path)
+
+    result = process_image_derivatives_from_path(
+        source_path=source_path,
+        temporary_original_path=temporary_original_path,
+        standard_path=standard_path,
+        thumb_path=thumb_path,
+    )
+
+    assert result.imported is True
+    assert result.original_width == 320
+    assert result.original_height == 160
     assert temporary_original_path.exists() is False
     assert validate_image_derivative(path=standard_path, settings=result.standard_settings)
     assert validate_image_derivative(path=thumb_path, settings=result.thumb_settings)

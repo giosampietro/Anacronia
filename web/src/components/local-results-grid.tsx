@@ -104,6 +104,9 @@ function objectProviderDisplayLabel(provider: string): string {
   if (provider === "vam") {
     return "V&A";
   }
+  if (provider === "local-folder") {
+    return "Local folder";
+  }
 
   return provider.trim() || "Unknown";
 }

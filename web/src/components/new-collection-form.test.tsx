@@ -17,26 +17,64 @@ vi.mock("react-dom", async (importOriginal) => {
 });
 
 describe("NewCollectionForm", () => {
-  it("renders the compact locked-definition form without duplicate visible helper state", () => {
+  const renderForm = (
+    props: Partial<Parameters<typeof NewCollectionForm>[0]> = {},
+  ) => (
+    <NewCollectionForm
+      localFolderAction={() => undefined}
+      onlineArchiveAction={() => undefined}
+      {...props}
+    />
+  );
+
+  it("renders the two source trajectories before showing source-specific fields", () => {
     formStatus.pending = false;
-    const html = renderToString(<NewCollectionForm action={() => undefined} />)
-      .replaceAll("<!-- -->", "");
+    const html = renderToString(renderForm()).replaceAll("<!-- -->", "");
 
     expect(html).toContain("Name the Collection");
+    expect(html).toContain("Choose source");
+    expect(html).toContain("Online archive");
+    expect(html).toContain("Local folder");
+    expect(html).not.toContain("Add search terms");
+    expect(html).not.toContain("Import folder");
+    expect(html).not.toContain("terms detected");
+    expect(html).not.toContain("Batch target");
+  });
+
+  it("renders online archive fields with no provider selected by default", () => {
+    formStatus.pending = false;
+    const html = renderToString(
+      renderForm({ initialTrajectory: "online-archive" }),
+    ).replaceAll("<!-- -->", "");
+
     expect(html).toContain("Add search terms");
-    expect(html).toContain("Search image source");
+    expect(html).toContain("Choose provider");
+    expect(html).toContain("Choose provider</option>");
+    expect(html).toContain("Met</option>");
+    expect(html).toContain("V&amp;A</option>");
     expect(html).toContain("Images to find");
     expect(html).toContain("10 images");
     expect(html).toMatch(/value="10" selected="">10\s*images/);
     expect(html).toContain("Start search");
-    expect(html).not.toContain("terms detected");
-    expect(html).not.toContain("Batch target");
+  });
+
+  it("renders local folder fields without keyword or batch controls", () => {
+    formStatus.pending = false;
+    const html = renderToString(
+      renderForm({ initialTrajectory: "local-folder" }),
+    ).replaceAll("<!-- -->", "");
+
+    expect(html).toContain("Import folder");
+    expect(html).toContain("name=\"folder_path\"");
+    expect(html).not.toContain("Add search terms");
+    expect(html).not.toContain("Images to find");
+    expect(html).not.toContain("Start search");
   });
 
   it("renders the Collection name entry without browser autofill history", () => {
     formStatus.pending = false;
 
-    const html = renderToString(<NewCollectionForm action={() => undefined} />);
+    const html = renderToString(renderForm());
 
     expect(html).toContain("autoComplete=\"off\"");
     expect(html).toContain("name=\"collection_name_entry\"");
@@ -48,21 +86,21 @@ describe("NewCollectionForm", () => {
     formStatus.pending = false;
 
     const html = renderToString(
-      <NewCollectionForm
-        action={() => undefined}
-        existingCollections={[{ displayName: "Snake Studies", slug: "snake-studies" }]}
-        serverError="duplicate_name"
-      />,
+      renderForm({
+        existingCollections: [{ displayName: "Snake Studies", slug: "snake-studies" }],
+        serverError: "duplicate_name",
+      }),
     );
 
     expect(html).toContain("A Collection with this name already exists.");
-    expect(html).toContain("disabled=\"\"");
   });
 
   it("shows immediate feedback while the start search action is pending", () => {
     formStatus.pending = true;
 
-    const html = renderToString(<NewCollectionForm action={() => undefined} />);
+    const html = renderToString(
+      renderForm({ initialTrajectory: "online-archive" }),
+    );
 
     expect(html).toContain("Starting...");
     expect(html).toContain("aria-busy=\"true\"");

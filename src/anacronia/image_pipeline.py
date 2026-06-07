@@ -171,6 +171,25 @@ def process_image_derivatives_from_bytes(
     )
 
 
+def process_image_derivatives_from_path(
+    *,
+    source_path: Path,
+    temporary_original_path: Path,
+    standard_path: Path,
+    thumb_path: Path,
+    standard_settings: ImageDerivativeSettings | None = None,
+    thumb_settings: ImageDerivativeSettings | None = None,
+) -> ProcessedImageDerivatives:
+    return process_image_derivatives_from_bytes(
+        source_bytes=source_path.read_bytes(),
+        temporary_original_path=temporary_original_path,
+        standard_path=standard_path,
+        thumb_path=thumb_path,
+        standard_settings=standard_settings,
+        thumb_settings=thumb_settings,
+    )
+
+
 def write_image_derivative(
     *,
     source_image: Image.Image,
@@ -178,8 +197,13 @@ def write_image_derivative(
     settings: ImageDerivativeSettings,
 ) -> None:
     derivative_image = source_image.convert("RGB").copy()
-    derivative_image.thumbnail(
-        (settings.long_edge, settings.long_edge),
+    width, height = derivative_image.size
+    scale = settings.long_edge / max(width, height)
+    derivative_image = derivative_image.resize(
+        (
+            max(1, round(width * scale)),
+            max(1, round(height * scale)),
+        ),
         Image.Resampling.LANCZOS,
     )
     path.parent.mkdir(parents=True, exist_ok=True)

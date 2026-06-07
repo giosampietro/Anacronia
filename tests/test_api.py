@@ -5,6 +5,7 @@ import sqlite3
 
 import pytest
 from fastapi.testclient import TestClient
+from PIL import Image
 
 from anacronia.api import DEFAULT_CANDIDATE_LIMIT, DEFAULT_MAX_IMAGES_PER_OBJECT, create_app
 from anacronia.collection_runs import discover_provider_candidates, get_candidate_run
@@ -24,6 +25,11 @@ from anacronia.met_ingest import (
 )
 from anacronia.provider_adapters import ProviderIngestRequest
 from anacronia.storage import initialize_storage
+
+
+def write_local_test_image(path: Path, *, size: tuple[int, int] = (640, 320)) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    Image.new("RGB", size, color=(40, 130, 180)).save(path)
 
 
 class FakeMetCandidateClient:
@@ -385,6 +391,94 @@ def test_api_rejects_unsupported_initial_provider_source(tmp_path):
 
     assert response.status_code == 422
     assert response.json()["detail"] == "Unsupported Provider: europeana"
+    assert client.get("/search-sets").json() == []
+
+
+def test_api_creates_local_folder_collection_and_exposes_results(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    folder = tmp_path / "incoming"
+    write_local_test_image(folder / "sketch.jpg")
+    client = TestClient(
+        create_app(database_path=storage.database_path, data_root=storage.data_root)
+    )
+
+    response = client.post(
+        "/local-folder-collections",
+        json={
+            "display_name": "Studio Folder",
+            "folder_path": str(folder),
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["search_set_slug"] == "studio-folder"
+    assert payload["discovered_file_count"] == 1
+    assert payload["imported_image_count"] == 1
+    assert payload["skipped_files"] == []
+    assert client.get("/search-sets").json() == [
+        {
+            "display_name": "Studio Folder",
+            "slug": "studio-folder",
+            "terms": [],
+        }
+    ]
+    result_set = client.get(
+        "/search-sets/studio-folder/local-result-set",
+        params={"provider": "local-folder", "view": "objects"},
+    )
+    assert result_set.status_code == 200
+    assert result_set.json()["counts"] == {"objects": 1, "images": 1}
+    library_result_set = client.get(
+        "/library/local-result-set",
+        params={"provider": "local-folder", "view": "objects"},
+    )
+    assert library_result_set.status_code == 200
+    assert library_result_set.json()["counts"] == {"objects": 1, "images": 1}
+
+
+def test_api_imports_local_folder_into_existing_collection(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    folder = tmp_path / "incoming"
+    write_local_test_image(folder / "sketch.jpg")
+    client = TestClient(
+        create_app(database_path=storage.database_path, data_root=storage.data_root)
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Snake Study", "terms_text": "snake"},
+    )
+
+    response = client.post(
+        "/search-sets/snake-study/local-folder-imports",
+        json={"folder_path": str(folder)},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["imported_image_count"] == 1
+    dashboard = client.get("/dashboard").json()
+    assert sorted(
+        provider_collection["provider"]
+        for provider_collection in dashboard["search_sets"][0]["provider_collections"]
+    ) == ["local-folder", "met"]
+
+
+def test_api_rejects_invalid_local_folder_path(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    client = TestClient(
+        create_app(database_path=storage.database_path, data_root=storage.data_root)
+    )
+
+    response = client.post(
+        "/local-folder-collections",
+        json={
+            "display_name": "Missing Folder",
+            "folder_path": str(tmp_path / "missing"),
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Local folder path must be an existing folder."
     assert client.get("/search-sets").json() == []
 
 

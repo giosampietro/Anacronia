@@ -57,6 +57,11 @@ from anacronia.exports import (
     export_collection,
     export_user_library,
 )
+from anacronia.local_folder_import import (
+    LocalFolderImportSummary,
+    create_local_folder_collection,
+    import_local_image_folder,
+)
 from anacronia.met_ingest import (
     DEFAULT_MAX_IMAGES_PER_OBJECT,
     MetIngestSummary,
@@ -132,6 +137,15 @@ class SearchSetRequest(BaseModel):
     display_name: str
     terms_text: str
     provider: str = "met"
+
+
+class LocalFolderCollectionRequest(BaseModel):
+    display_name: str
+    folder_path: str
+
+
+class LocalFolderImportRequest(BaseModel):
+    folder_path: str
 
 
 class RenameSearchSetRequest(BaseModel):
@@ -236,6 +250,25 @@ def serialize_provider_ingest_summary(summary: ProviderIngestSummary) -> dict[st
                 "reason": skipped.reason,
             }
             for skipped in summary.skipped_candidates
+        ],
+    }
+
+
+def serialize_local_folder_import_summary(
+    summary: LocalFolderImportSummary,
+) -> dict[str, object]:
+    return {
+        "search_set_slug": summary.search_set_slug,
+        "folder_path": str(summary.folder_path),
+        "discovered_file_count": summary.discovered_file_count,
+        "imported_object_ids": summary.imported_object_ids,
+        "imported_image_count": summary.imported_image_count,
+        "skipped_files": [
+            {
+                "path": str(skipped_file.path),
+                "reason": skipped_file.reason,
+            }
+            for skipped_file in summary.skipped_files
         ],
     }
 
@@ -662,6 +695,58 @@ def create_app(
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
         return serialize_search_set(search_set)
+
+    @app.post("/local-folder-collections")
+    def create_local_folder_import_collection(
+        request: LocalFolderCollectionRequest,
+    ) -> dict[str, object]:
+        if get_worker_status(database_path=resolved_database_path).active_collect_job_id is not None:
+            raise HTTPException(status_code=409, detail="Another search is already active.")
+
+        slug = slugify_search_set_name(request.display_name)
+        if slug:
+            try:
+                get_search_set(database_path=resolved_database_path, slug=slug)
+            except LookupError:
+                pass
+            else:
+                raise HTTPException(
+                    status_code=409,
+                    detail="A Collection with this name already exists.",
+                )
+
+        try:
+            summary = create_local_folder_collection(
+                database_path=resolved_database_path,
+                data_root=resolved_data_root,
+                display_name=request.display_name,
+                folder_path=Path(request.folder_path),
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
+        return serialize_local_folder_import_summary(summary)
+
+    @app.post("/search-sets/{slug}/local-folder-imports")
+    def import_local_folder_into_collection(
+        slug: str,
+        request: LocalFolderImportRequest,
+    ) -> dict[str, object]:
+        if get_worker_status(database_path=resolved_database_path).active_collect_job_id is not None:
+            raise HTTPException(status_code=409, detail="Another search is already active.")
+        try:
+            summary = import_local_image_folder(
+                database_path=resolved_database_path,
+                data_root=resolved_data_root,
+                search_set_slug=slug,
+                folder_path=Path(request.folder_path),
+            )
+        except LookupError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
+        return serialize_local_folder_import_summary(summary)
 
     @app.get("/search-sets")
     def get_search_sets() -> list[dict[str, object]]:

@@ -209,4 +209,52 @@ describe("CollectionObjectDetailOverlay", () => {
     expect(html).toContain("Not checked");
     expect(html).not.toContain("<dd>No</dd>");
   });
+
+  it("renders local folder detail as private material without source links", () => {
+    const html = renderToString(
+      <CollectionObjectDetailOverlay
+        apiBaseUrl="http://127.0.0.1:18670"
+        closeHref="/?search_set=studio-folder"
+        collectionLabels={["Studio Folder"]}
+        detail={createDetail({
+          object: {
+            provider: "local-folder",
+            object_id:
+              "sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            title: "sketch",
+            object_name: "Local image",
+            is_public_domain: false,
+            rights_and_reproduction: "",
+            object_url: "",
+          },
+          images: [
+            {
+              image_asset_id: 10,
+              source_image_url:
+                "local-folder:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              image_role: "primary",
+              image_index: null,
+              original_width: 640,
+              original_height: 320,
+              thumb_url: "/image-assets/10/thumb",
+              standard_url: "/image-assets/10/standard",
+              is_favorite: false,
+            },
+          ],
+          skipped_image_references: [],
+        })}
+        returnFocusId="collection-object-local-folder-sketch"
+      />,
+    ).replace(/<!-- -->/g, "");
+
+    expect(html).toContain("Local folder");
+    expect(html).toContain("Private local material");
+    expect(html).toContain("Private local image");
+    expect(html).toContain("Not checked");
+    expect(html).not.toContain("Open provider record");
+    expect(html).not.toContain("Source image");
+    expect(html).not.toContain("local-folder:sha256");
+    expect(html).not.toContain("Object ID");
+    expect(html).not.toContain("sha256-aaaaaaaa");
+  });
 });

@@ -11,6 +11,7 @@ from typing import Literal
 
 from anacronia.collection_runs import ensure_collection_run_schema
 from anacronia.curation import ensure_collection_memberships
+from anacronia.local_folder_import import LOCAL_FOLDER_PROVIDER
 from anacronia.met_ingest import ensure_met_ingest_schema
 from anacronia.provider_identity import SourceObjectId, normalize_source_object_id
 
@@ -528,7 +529,8 @@ def build_export_rows(
                     "image_asset_id": image_asset.image_asset_id,
                     "provider": image_asset.provider,
                     "object_id": image_asset.object_id,
-                    "source_image_url": image_asset.source_image_url,
+                    "source_image_url": export_source_image_url(image_asset),
+                    "source_image_identity": export_source_image_identity(image_asset),
                     "image_role": image_asset.image_role,
                     "image_index": image_asset.image_index,
                     "original_width": image_asset.original_width,
@@ -585,6 +587,18 @@ def missing_derivative_reason(image_asset: ExportImageAsset) -> str | None:
     if not standard_exists:
         return "missing_standard_derivative"
     return "missing_thumb_derivative"
+
+
+def export_source_image_url(image_asset: ExportImageAsset) -> str:
+    if image_asset.provider == LOCAL_FOLDER_PROVIDER:
+        return ""
+    return image_asset.source_image_url
+
+
+def export_source_image_identity(image_asset: ExportImageAsset) -> str:
+    if image_asset.provider == LOCAL_FOLDER_PROVIDER:
+        return image_asset.source_image_url
+    return ""
 
 
 def get_export_matches(
@@ -780,6 +794,7 @@ def write_csv_metadata(*, path: Path, rows: list[dict[str, object]]) -> None:
         "object_id",
         "image_asset_id",
         "source_image_url",
+        "source_image_identity",
         "image_role",
         "image_index",
         "standard_path",
@@ -822,6 +837,7 @@ def flatten_export_row(row: dict[str, object]) -> dict[str, object]:
         "object_id": image_asset["object_id"],
         "image_asset_id": image_asset["image_asset_id"],
         "source_image_url": image_asset["source_image_url"],
+        "source_image_identity": image_asset["source_image_identity"],
         "image_role": image_asset["image_role"],
         "image_index": "" if image_asset["image_index"] is None else image_asset["image_index"],
         "standard_path": image_asset["standard_path"],

@@ -251,8 +251,29 @@ function objectProviderDisplayLabel(provider: string): string {
   if (provider === "vam") {
     return "V&A";
   }
+  if (provider === "local-folder") {
+    return "Local folder";
+  }
 
   return provider.trim() || "Unknown";
+}
+
+function objectOpenAriaLabel({
+  objectId,
+  provider,
+  providerLabel,
+  title,
+}: {
+  objectId: string;
+  provider: string;
+  providerLabel: string;
+  title: string;
+}): string {
+  if (provider === "local-folder") {
+    return `Open ${providerLabel} object ${title}`;
+  }
+
+  return `Open ${providerLabel} object ${objectId}`;
 }
 
 function objectSelectionId(collectionObject: LocalResultObjectSummary): string {
@@ -1153,7 +1174,12 @@ export function LocalResultSelectionSurface({
                 onMouseLeave={() => clearShortcutTarget(shortcutTargetId)}
               >
                 <ObjectDetailPendingLink
-                  ariaLabel={`Open ${collectionObjectProviderLabel} object ${collectionObject.object_id}`}
+                  ariaLabel={objectOpenAriaLabel({
+                    objectId: collectionObject.object_id,
+                    provider: collectionObject.provider,
+                    providerLabel: collectionObjectProviderLabel,
+                    title,
+                  })}
                   className={IMAGE_GRID_TILE_CLASS_NAME}
                   closeHref={closeObjectHref}
                   href={href}

@@ -438,6 +438,9 @@ function objectProviderDisplayLabel(provider: string): string {
   if (provider === "vam") {
     return "V&A";
   }
+  if (provider === "local-folder") {
+    return "Local folder";
+  }
 
   return provider.trim() || "Unknown";
 }
@@ -453,7 +456,11 @@ async function createSearchSetAndCollect(formData: FormData) {
   const apiBaseUrl = `http://127.0.0.1:${apiPort}`;
   const displayName = getActionFormDataString(formData, "display_name");
   const termsText = getActionFormDataString(formData, "terms_text");
-  const provider = getActionProviderKey(formData);
+  const provider = getActionFormDataString(formData, "provider").trim();
+  if (provider === "") {
+    revalidatePath("/");
+    return;
+  }
   const batchTarget = normalizeBatchTarget(
     getActionFormDataValue(formData, "batch_target"),
   );
@@ -495,6 +502,36 @@ async function createSearchSetAndCollect(formData: FormData) {
     redirect(`/?search_set=${searchSet.slug}&collect_notice=${COLLECT_STATE_CHANGED_NOTICE}`);
   }
   redirect(`/?search_set=${searchSet.slug}`);
+}
+
+async function createLocalFolderCollection(formData: FormData) {
+  "use server";
+
+  const apiPort = getPort("ANACRONIA_API_PORT", DEFAULT_API_PORT);
+  const apiBaseUrl = `http://127.0.0.1:${apiPort}`;
+  const displayName = getActionFormDataString(formData, "display_name");
+  const folderPath = getActionFormDataString(formData, "folder_path");
+  const response = await fetch(`${apiBaseUrl}/local-folder-collections`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      display_name: displayName,
+      folder_path: folderPath,
+    }),
+  });
+
+  if (response.status === 409) {
+    revalidatePath("/");
+    redirect("/?mode=new-search-set&collection_error=duplicate_name");
+  }
+
+  revalidatePath("/");
+  if (!response.ok) {
+    return;
+  }
+
+  const summary = (await response.json()) as { search_set_slug: string };
+  redirect(`/?search_set=${summary.search_set_slug}&provider=local-folder`);
 }
 
 async function startProviderCollect(formData: FormData) {
@@ -592,8 +629,9 @@ function NewSearchSetWorkspace({
   return (
     <div className="mx-auto flex max-w-4xl flex-col gap-4">
       <NewCollectionForm
-        action={createSearchSetAndCollect}
         existingCollections={existingCollections}
+        localFolderAction={createLocalFolderCollection}
+        onlineArchiveAction={createSearchSetAndCollect}
         serverError={serverError}
       />
     </div>
@@ -608,6 +646,10 @@ function isSubmittableProviderSearchAction(
   action: ProviderSearchAction,
 ): action is SubmittableProviderSearchAction {
   return action.kind === "start" || action.kind === "stop" || action.kind === "resume";
+}
+
+function isOnlineProvider(provider: string): boolean {
+  return provider === "met" || provider === "vam";
 }
 
 function ProviderSourceHeaderControls({
@@ -642,6 +684,9 @@ function ProviderSourceHeaderControls({
   return (
     <>
       {providerCollections.map((providerCollection) => {
+        if (!isOnlineProvider(providerCollection.provider)) {
+          return null;
+        }
         const action = providerSearchAction(providerCollection.status);
         const submittableAction = isSubmittableProviderSearchAction(action) ? action : null;
         const actionAvailable =

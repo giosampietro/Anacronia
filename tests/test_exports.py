@@ -3,6 +3,7 @@ import json
 import sqlite3
 
 import pytest
+from PIL import Image
 
 from anacronia.collection_runs import discover_met_candidates
 from anacronia.exports import (
@@ -10,11 +11,17 @@ from anacronia.exports import (
     export_collection,
     export_user_library,
 )
+from anacronia.local_folder_import import create_local_folder_collection
 from anacronia.met_ingest import ingest_met_run
 from anacronia.search_sets import create_or_continue_search_set
 from anacronia.storage import initialize_storage
 
 from tests.test_met_ingest import ppm_image_bytes
+
+
+def write_export_test_image(path, *, size=(640, 320)):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    Image.new("RGB", size, color=(40, 130, 180)).save(path)
 
 
 class ExportCandidateClient:
@@ -109,6 +116,7 @@ def test_exports_collection_jsonl_rows_with_descriptors_and_semantic_text(tmp_pa
     assert rows[0]["image_asset"]["provider"] == "met"
     assert rows[0]["image_asset"]["object_id"] == "40"
     assert rows[0]["image_asset"]["source_image_url"] == "https://images.metmuseum.org/40-primary.jpg"
+    assert rows[0]["image_asset"]["source_image_identity"] == ""
     assert rows[0]["image_asset"]["standard_path"].endswith("/primary-standard-1024.jpg")
     assert rows[0]["image_asset"]["thumb_path"].endswith("/primary-thumb-256.jpg")
     assert rows[0]["image_asset"]["is_favorite"] is False
@@ -141,6 +149,51 @@ def test_exports_collection_jsonl_rows_with_descriptors_and_semantic_text(tmp_pa
         "Medium: Terracotta. Classification: Ceramics. Culture: Moche. "
         "Period: Early Intermediate Period. Date: 3rd-7th century. Place: Peru."
     )
+
+
+def test_exports_local_folder_without_source_url_or_rights_implication(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    folder = tmp_path / "incoming"
+    write_export_test_image(folder / "sketch.jpg")
+    create_local_folder_collection(
+        database_path=storage.database_path,
+        data_root=storage.data_root,
+        display_name="Studio Folder",
+        folder_path=folder,
+    )
+
+    jsonl_result = export_collection(
+        database_path=storage.database_path,
+        data_root=storage.data_root,
+        search_set_slug="studio-folder",
+        export_format="jsonl",
+        timestamp="260530-1234Z",
+    )
+    csv_result = export_collection(
+        database_path=storage.database_path,
+        data_root=storage.data_root,
+        search_set_slug="studio-folder",
+        export_format="csv",
+        timestamp="260530-1235Z",
+    )
+
+    manifest_row = json.loads(
+        (jsonl_result.export_path / "manifest.jsonl").read_text(encoding="utf-8")
+    )
+    assert manifest_row["image_asset"]["provider"] == "local-folder"
+    assert manifest_row["image_asset"]["source_image_url"] == ""
+    assert manifest_row["image_asset"]["source_image_identity"].startswith(
+        "local-folder:sha256:"
+    )
+    assert manifest_row["museum_object"]["object_url"] == ""
+    assert manifest_row["museum_object"]["rights_and_reproduction"] == ""
+    assert manifest_row["matches"] == []
+    assert manifest_row["descriptors"] == []
+
+    with (csv_result.export_path / "metadata.csv").open(encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    assert rows[0]["source_image_url"] == ""
+    assert rows[0]["source_image_identity"].startswith("local-folder:sha256:")
 
 
 def test_exports_selected_image_asset_jsonl_rows_only_selected_asset(tmp_path):
