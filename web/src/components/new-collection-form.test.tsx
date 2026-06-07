@@ -1,7 +1,11 @@
 import { renderToString } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
-import { NewCollectionForm } from "./new-collection-form";
+import {
+  LOCAL_FOLDER_PICKER_UNAVAILABLE_MESSAGE,
+  NewCollectionForm,
+  normalizeLocalFolderPickerErrorMessage,
+} from "./new-collection-form";
 
 const formStatus = vi.hoisted(() => ({
   pending: false,
@@ -78,6 +82,20 @@ describe("NewCollectionForm", () => {
     expect(html).not.toContain("Search online archive");
     expect(html).not.toContain("Images to find");
     expect(html).not.toContain("Start search");
+  });
+
+  it("collapses native folder picker diagnostics to a manual path fallback", () => {
+    const nativeDiagnostic =
+      "2026-06-07 osascript[56029:18091055] Connection Invalid error for service com.apple.hiservices-xpcservice. HostCallsAuxiliary: Connection invalid";
+
+    expect(normalizeLocalFolderPickerErrorMessage(nativeDiagnostic)).toBe(
+      LOCAL_FOLDER_PICKER_UNAVAILABLE_MESSAGE,
+    );
+    expect(
+      normalizeLocalFolderPickerErrorMessage(
+        "Folder picker did not return a folder path.",
+      ),
+    ).toBe("Folder picker did not return a folder path.");
   });
 
   it("renders the Collection name entry without browser autofill history", () => {

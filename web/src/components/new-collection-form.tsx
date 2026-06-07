@@ -43,6 +43,17 @@ type NewCollectionFormProps = {
   serverError?: NewCollectionServerError | null;
 };
 
+export const LOCAL_FOLDER_PICKER_UNAVAILABLE_MESSAGE =
+  "Folder picker could not open. Paste the folder path manually.";
+
+const localFolderPickerDiagnosticPatterns = [
+  /osascript/i,
+  /connection invalid/i,
+  /com\.apple/i,
+  /NSXPC/i,
+  /HostCallsAuxiliary/i,
+];
+
 const providerSources = [
   { label: "Met", value: "met", disabled: false },
   { label: "V&A", value: "vam", disabled: false },
@@ -166,17 +177,39 @@ function SubmitTrajectoryButton({
   );
 }
 
+export function normalizeLocalFolderPickerErrorMessage(message: unknown): string {
+  if (typeof message !== "string") {
+    return LOCAL_FOLDER_PICKER_UNAVAILABLE_MESSAGE;
+  }
+
+  const normalizedMessage = message.replace(/\s+/g, " ").trim();
+  if (normalizedMessage === "") {
+    return LOCAL_FOLDER_PICKER_UNAVAILABLE_MESSAGE;
+  }
+
+  if (
+    normalizedMessage.length > 160 ||
+    localFolderPickerDiagnosticPatterns.some((pattern) =>
+      pattern.test(normalizedMessage),
+    )
+  ) {
+    return LOCAL_FOLDER_PICKER_UNAVAILABLE_MESSAGE;
+  }
+
+  return normalizedMessage;
+}
+
 async function localFolderPickerErrorMessage(response: Response): Promise<string> {
   try {
     const payload = (await response.json()) as { detail?: unknown };
-    if (typeof payload.detail === "string" && payload.detail.trim() !== "") {
-      return payload.detail;
+    if (typeof payload.detail === "string") {
+      return normalizeLocalFolderPickerErrorMessage(payload.detail);
     }
   } catch {
     // Fall through to the generic message.
   }
 
-  return "Folder picker failed.";
+  return LOCAL_FOLDER_PICKER_UNAVAILABLE_MESSAGE;
 }
 
 export function NewCollectionForm({
@@ -235,7 +268,9 @@ export function NewCollectionForm({
       setFolderPickerStatus({ state: "idle" });
     } catch (error) {
       setFolderPickerStatus({
-        message: error instanceof Error ? error.message : "Folder picker failed.",
+        message: normalizeLocalFolderPickerErrorMessage(
+          error instanceof Error ? error.message : "",
+        ),
         state: "error",
       });
     }

@@ -65,6 +65,7 @@ from anacronia.local_folder_import import (
 from anacronia.local_folder_picker import (
     LocalFolderPickerCancelled,
     LocalFolderPickerUnavailable,
+    PICKER_UNAVAILABLE_MESSAGE,
     choose_local_folder_path,
 )
 from anacronia.met_ingest import (
@@ -741,7 +742,7 @@ def create_app(
         except LocalFolderPickerCancelled:
             return Response(status_code=204)
         except LocalFolderPickerUnavailable as error:
-            raise HTTPException(status_code=503, detail=str(error)) from error
+            raise HTTPException(status_code=503, detail=PICKER_UNAVAILABLE_MESSAGE) from error
 
         return {"folder_path": str(folder_path)}
 

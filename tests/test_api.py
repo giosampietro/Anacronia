@@ -13,6 +13,7 @@ from anacronia.curation import ensure_curation_schema
 from anacronia.local_folder_picker import (
     LocalFolderPickerCancelled,
     LocalFolderPickerUnavailable,
+    PICKER_UNAVAILABLE_MESSAGE,
 )
 from anacronia.worker import (
     cancel_collect_job,
@@ -526,9 +527,13 @@ def test_api_returns_no_content_when_local_folder_picker_is_cancelled(tmp_path):
 
 def test_api_reports_unavailable_local_folder_picker(tmp_path):
     storage = initialize_storage(project_root=tmp_path)
+    native_diagnostic = (
+        "2026-06-07 osascript[56029:18091055] Connection Invalid error for "
+        "service com.apple.hiservices-xpcservice"
+    )
 
     def unavailable_picker() -> Path:
-        raise LocalFolderPickerUnavailable("picker unavailable")
+        raise LocalFolderPickerUnavailable(native_diagnostic)
 
     client = TestClient(
         create_app(
@@ -541,7 +546,9 @@ def test_api_reports_unavailable_local_folder_picker(tmp_path):
     response = client.post("/local-folder-picker")
 
     assert response.status_code == 503
-    assert response.json()["detail"] == "picker unavailable"
+    assert response.json()["detail"] == PICKER_UNAVAILABLE_MESSAGE
+    assert "osascript" not in response.json()["detail"]
+    assert "Connection Invalid" not in response.json()["detail"]
 
 
 def test_api_renames_collection_display_name_without_changing_slug_or_terms(tmp_path):
