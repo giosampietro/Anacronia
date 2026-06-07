@@ -12,6 +12,9 @@ Planning and milestone guide for the `codex/vna-requirements` branch.
 - A future V&A notice should be non-blocking. It informs the user about V&A API-use expectations and timing, but does not block private local import, export, curation, or analysis.
 - Plain local folder import is separate from Provider Search.
 - Plain local folder import requires no metadata, no manifest, no source URL, no public-domain flag, and no rights declaration.
+- New Collection should begin with two trajectories: `Online archive` and `Local folder`.
+- `Online archive` should require the user to choose a Provider from an initially empty `Choose provider` dropdown. Available choices are Met and V&A.
+- `Local folder` should create a Collection from a title and folder path without requiring search keywords or a Provider Search batch target.
 
 ## Tracker
 
@@ -98,15 +101,20 @@ Goal: import a folder of user image files as private local material.
 
 Deliverables:
 
-- User can provide a local folder path.
+- New Collection UI offers separate `Online archive` and `Local folder` trajectories.
+- Online archive creation has no default provider selected and requires choosing Met or V&A.
+- User can provide a local folder path and Collection title.
 - Import recursively discovers supported image files.
 - Import generates derivatives and creates Collection Membership.
-- No metadata/manifest/source URL/rights input is required.
+- Local folder Collections can be created without search terms.
+- No metadata/manifest/source URL/rights/keywords/batch-target input is required for local folders.
 
 Verification:
 
 - Test fixture folder imports successfully.
+- New Collection online archive trajectory rejects missing Provider selection and accepts Met/V&A.
 - Browser check shows imported folder images in the target Collection and User Library.
+- Browser check shows the two New Collection trajectories and local folder path form.
 - Detail/export/favorite/remove/delete smoke paths work for folder images.
 
 ### Milestone 5: Mixed Source Regression Pass

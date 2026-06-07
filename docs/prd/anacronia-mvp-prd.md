@@ -8,11 +8,11 @@ Anacronia should solve the first stage of this workflow: collect museum records 
 
 ## Solution
 
-Anacronia will be a local-first collection builder. It will let the user define a Collection made of explicit terms, start searching Met for usable public-domain image material, download source images temporarily, generate local `standard-1024` and `thumb-256` derivatives, store raw provider records, extract Descriptors from provider-specific metadata, and expose the resulting Museum Objects and Image Assets in a dense operational web interface.
+Anacronia will be a local-first collection builder. It will let the user define a Collection through either an online archive search or a local folder import. Online archive Collections are made of explicit terms and a selected Provider; they search Met or V&A, download source images temporarily, generate local `standard-1024` and `thumb-256` derivatives, store raw provider records, extract Descriptors from provider-specific metadata, and expose the resulting Museum Objects and Image Assets in a dense operational web interface. Local folder Collections are made from a title and folder path; they import private local images without provider metadata or search terms.
 
 The Met is the MVP permanent local-ingestion Provider. V&A should be the next museum Provider used to test the multi-provider scaffolding. For that test, V&A should create permanent local `standard-1024` and `thumb-256` derivatives like Met, while retaining source rights/copyright/API-term statements where available. A future V&A workflow should show a non-blocking notice about V&A API-use expectations; the notice informs the private local user but does not block local derivative generation.
 
-User-imported local material is a separate workflow from Provider Search. A user-provided plain folder of images should be treated as private local material, not as online Provider material. It does not require provider metadata, public-domain checks, rights declarations, source URLs, or manifest files.
+User-imported local material is a separate workflow from Provider Search. A user-provided plain folder of images should be treated as private local material, not as online Provider material. It does not require provider metadata, public-domain checks, rights declarations, source URLs, keywords, Provider Search batch targets, or manifest files.
 
 The user will run Anacronia locally from the terminal. A single command will start the Next.js interface, FastAPI backend, and Python worker. The browser UI will open on `localhost:18660` when available. The worker will process one actively running Provider Search at a time, prioritizing correctness, resumability, provider tolerance, and data integrity over raw speed. Stopped or paused/error searches are parked resumable jobs and do not block other work until the user chooses to resume them.
 
@@ -29,7 +29,10 @@ The MVP will not try to become the future visual atlas. It will provide the oper
 7. As a non-technical Mac user, I want a guided setup script, so that I can install the project with minimal manual setup.
 8. As a technical user, I want documented manual setup steps, so that I can debug installation issues.
 9. As a GitHub user, I want the repository to exclude generated data, so that cloning the project does not download someone else's dataset.
-10. As a collection builder, I want to create a Collection with a readable title and explicit terms, so that my research intent is clear.
+10. As a collection builder, I want New Collection to offer `Online archive` and `Local folder` trajectories first, so that I do not confuse provider search with private local import.
+11. As a collection builder, I want to create an online archive Collection with a readable title and explicit terms, so that my research intent is clear.
+12. As a collection builder, I want the online archive Provider control to show `Choose provider` with no default selected, so that I consciously choose Met or V&A before starting a search.
+13. As a collection builder, I want to create a local folder Collection with a readable title and folder path, so that folder imports can be organized without search keywords.
 11. As a collection builder, I want Collection titles to generate stable slugs, so that folders and identifiers remain clean.
 12. As a collection builder, I want no draft Collection saved before I start searching, so that abandoned forms do not clutter the sidebar.
 13. As a collection builder, I want `Start search` to create and save the Collection, so that creation and first search are one clear action.
@@ -87,7 +90,7 @@ The MVP will not try to become the future visual atlas. It will provide the oper
 65. As a collection builder, I want Met verified matches checked against title, object name, tags, medium, culture, period, classification, and artist display name, so that obvious match reasons are captured.
 66. As a collection builder, I want Met Descriptors extracted from a broader curated field set than verified matching, so that later local search is richer.
 67. As a future collection browser, I want local post-import search across canonical fields and Descriptors, so that I can find material after collection.
-68. As a collection builder, I do not need local result search in the Start New Collection workflow, so that the first workflow stays focused on starting and monitoring search.
+68. As a collection builder, I do not need local result search in the New Collection workflow, so that the first workflow stays focused on choosing a source trajectory and starting work.
 69. As a collection builder, I want only one Provider Search actively searching or stopping at a time, so that the MVP remains stable and provider-friendly.
 70. As a collection builder, I want no search queue in the MVP, so that system behavior stays simple.
 71. As a collection builder, I want stopped and paused/error searches to be parked without blocking other work, so that I can move to another Collection when a search is not actively running.
@@ -187,9 +190,14 @@ The first user-imported source should be a plain local folder of image files.
 
 Required default behavior:
 
+- New Collection first presents two large trajectory choices: `Online archive` and `Local folder`.
+- `Online archive` uses Collection title, search keywords, required Provider dropdown, and target image count.
+- The online Provider dropdown starts empty with `Choose provider`; available choices are Met and V&A.
+- `Local folder` uses Collection title and a folder path.
 - The user selects or points Anacronia at a folder on their computer.
 - Anacronia recursively discovers supported image files.
 - No metadata file, manifest, source URL, public-domain flag, or rights declaration is required.
+- No search keywords or target-image Provider Search batch size is required for local folder import.
 - Imported folder images are private local material, not online Provider material.
 - Online Provider public-domain and rights gates do not apply.
 - Anacronia generates local derivatives, creates stable local item identity, adds Collection Membership, and makes the material visible in the Collection and User Library.
@@ -225,7 +233,8 @@ Required default behavior:
 - Define the domain model around Collection, Provider Source, Run, Candidate, Museum Object, Image Asset, Descriptor, Match, Verified Match, Unverified Match, Standard-1024, Thumb-256, Export, and Analysis Result.
 - Make Collections user-visible research intents with display names and stable slugs.
 - Treat matching Collection slugs as existing Collections rather than duplicate creation, without silently mutating a locked Collection definition.
-- Lock the Collection title, terms, and initial Provider Source after `Start search` in the MVP.
+- Lock the online archive Collection title, terms, and initial Provider Source after `Start search` in the MVP.
+- Lock the local folder Collection title and `local-folder` source after import in the MVP; local folder Collections may have no terms.
 - Defer title editing, term editing, adding terms, term deactivation, and adding another Provider Source to future workflows.
 - Parse multiline and comma-separated term input as one term per line or comma-separated segment, including terms with spaces.
 - Trim and deduplicate terms case-insensitively.
@@ -236,7 +245,7 @@ Required default behavior:
 - Keep candidate cursor and processing limits internal; do not expose `Candidate offset` or `Candidate limit` in the primary MVP UI.
 - Hide Run complexity from the primary UI while retaining Run data for state, progress, and auditing.
 - Treat provider drift across days or weeks as non-blocking; continuation should use the current provider response without interrupting the user.
-- MVP provider support is Met only.
+- MVP online Provider support is Met and V&A in the current multi-provider test branch.
 - Met accepted material requires `isPublicDomain === true`.
 - Met Museum Objects can be accepted when at least one valid image URL exists across `primaryImage` or `additionalImages`.
 - Met `primaryImageSmall` is stored as source metadata but not downloaded locally.
@@ -306,7 +315,7 @@ Required default behavior:
 - Include a basic object-first grid for downloaded Museum Objects.
 - Selecting a Museum Object tile opens a right-side detail overlay over the main content area.
 - The detail overlay shows a `standard-1024` image carousel, essential metadata, source provider object link, match/source information, license/rights information, and skipped related image counts when applicable.
-- Defer local result search within the Collection grid beyond the Start New Collection workflow.
+- Defer local result search within the Collection grid beyond the New Collection workflow.
 - Advanced faceted filtering is out of scope.
 - Export only imported Image Assets and their metadata, not failed or skipped candidates.
 - Use one Image Asset per exported JSONL object or CSV row, with linked Museum Object metadata included or referenced.
@@ -325,7 +334,7 @@ Required default behavior:
 - **Storage Layer**: Owns SQLite schema access, filesystem layout, raw JSON persistence, derivative paths, state persistence, and idempotent checks.
 - **Worker**: Owns the single actively running Provider Search lifecycle, parked search resume rules, provider backoff, disk checks, and search state.
 - **FastAPI Backend**: Exposes backend operations to the UI gateway and CLI.
-- **Next.js UI/Gateway**: Provides the operational interface, route-handler proxying, Start New Collection form, search state header, object grid, detail overlay, and export interactions.
+- **Next.js UI/Gateway**: Provides the operational interface, route-handler proxying, New Collection workflow, search state header, object grid, detail overlay, and export interactions.
 - **CLI**: Provides local commands for startup and operational workflows.
 - **Exporter**: Produces JSONL, CSV, manifest, and complete package exports.
 - **Setup/Docs**: Provides setup script, manual setup docs, and user-facing README.
@@ -353,14 +362,14 @@ Required default behavior:
 ## Out of Scope
 
 - Providers beyond the Met in the MVP.
-- Full Europeana or V&A implementation.
+- Full Europeana implementation.
 - A universal museum metadata model.
 - AI/chatbot-based descriptor interpretation.
 - OpenCV, embeddings, clustering, visual similarity, segmentation, generated semantic metadata, or other Analysis Result pipelines.
 - The immersive visual atlas, WebGL maps, spatial clustering, or advanced image exploration.
 - Advanced provider-specific structured filters such as department, date range, geography, artist/culture toggles, or medium filters.
 - Advanced faceted filtering in the MVP grid.
-- Local result search within the Start New Collection workflow.
+- Local result search within the New Collection workflow.
 - Multi-user profiles, authentication, permissions, or shared server deployment.
 - Online/cloud deployment.
 - Postgres, object storage, external worker queues, or multi-worker infrastructure.

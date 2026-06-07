@@ -32,7 +32,9 @@ User-imported local material still needs stable local identity, derivative gener
 
 ### Collection
 
-A named research intent made from explicit search terms. A Collection is what the user sees and manages.
+A named research intent. A Collection is what the user sees and manages.
+
+Online Provider Search Collections are made from explicit search terms. User-imported local folder Collections can be made from a title and a folder path without search terms, because the imported files may have no useful metadata.
 
 - Example: `snake-study` with terms `snake`, `serpent`, `cobra`.
 - Not: A single API call or a single import attempt.
@@ -45,13 +47,15 @@ The user interface may also expose a User Library view for searching and filteri
 
 No draft Collection is saved before the user starts the first search.
 
-When the user starts the first search, the Collection is created and its MVP definition is locked: title, terms, and initial Provider Source are not edited, replaced, appended, or deactivated in the MVP.
+When the user starts the first online Provider Search, the Collection is created and its MVP definition is locked: title, terms, and initial Provider Source are not edited, replaced, appended, or deactivated in the MVP.
+
+When the user imports a local folder as a new Collection, the Collection is created and its MVP definition is locked as title plus the `local-folder` source. It has no provider search terms unless a future workflow explicitly adds online Provider Sources to the same Collection.
 
 If a new Collection request resolves to an existing slug, Anacronia should avoid creating a duplicate and must not silently mutate the locked Collection definition.
 
 Future workflows may support editing titles, adding terms, deactivating terms, or adding another Provider Source to an existing locked Collection. Those workflows are outside the MVP and must preserve historical search state.
 
-The interface should support adding multiple Collection terms at once. Each line or comma-separated segment is one term, even when the term contains spaces. Quotes are not required for multi-word terms.
+The online Provider Search interface should support adding multiple Collection terms at once. Each line or comma-separated segment is one term, even when the term contains spaces. Quotes are not required for multi-word terms.
 
 Collection terms should be trimmed and deduplicated case-insensitively.
 
@@ -78,15 +82,24 @@ The image detail panel should show source provider rights/license information. T
 
 The image detail panel can show when related provider images were skipped because of the per-object image limit.
 
+### Collection Creation Workflow
+
+The New Collection view starts with two trajectories:
+
+- `Online archive`: create a Collection by searching an online Provider. The user enters a Collection title, search keywords, a required Provider selection, and a target number of images. The Provider dropdown has no default selection and shows `Choose provider` until the user selects one. The available providers are Met and V&A for now.
+- `Local folder`: create a Collection by importing image files from a folder on the user's computer. The user enters a Collection title and folder path. No keywords, Provider Search batch target, source URL, manifest, metadata, or rights declaration is required.
+
+These trajectories should stay visibly distinct because they have different state, eligibility, metadata, rights, progress, and failure behavior.
+
 ### Provider Search
 
 The user-facing action of building or extending a Provider Source from a locked Collection definition.
 
 Primary UI labels are `Start search`, `Stop search`, `Resume search`, and `Keep searching`. The term `collect` can remain in internal code, CLI, or technical documentation where it describes the ingestion pipeline, but it should not be used for primary workflow buttons.
 
-Local result search within a Collection is deferred beyond the Start New Collection workflow. Broader faceted filtering is outside the MVP.
+Local result search within a Collection is deferred beyond the New Collection workflow. Broader faceted filtering is outside the MVP.
 
-Provider Search applies to online Providers that Anacronia queries directly. Importing a local folder from the user's computer is not a Provider Search and does not use provider candidates, provider rights filters, provider API backoff, or provider cache rules.
+Provider Search applies to online Providers that Anacronia queries directly. Importing a local folder from the user's computer is not a Provider Search and does not use provider candidates, provider rights filters, provider API backoff, Provider Search batch targets, or provider cache rules.
 
 ### Run
 
@@ -226,9 +239,12 @@ The primary export unit is the Image Asset: one exported row or JSONL object per
 
 ## Invariants
 
+- The New Collection view should first ask the user to choose between `Online archive` and `Local folder`.
+- Online archive creation should require the user to explicitly choose a Provider; no online Provider is selected by default.
 - The user should see one locked Collection and Provider Source rather than separate visible searches for each Run.
 - Anacronia should avoid duplicate visible Collections for the same slug; matching slugs must not silently mutate an existing locked Collection definition.
-- Starting the first search creates the Collection and locks its title, terms, and initial Provider Source for the MVP.
+- Starting the first online Provider Search creates the Collection and locks its title, terms, and initial Provider Source for the MVP.
+- Importing a local folder as a new Collection creates the Collection and locks its title plus `local-folder` source for the MVP; terms may be empty.
 - User-facing batch size means target usable downloaded results, not provider candidates processed. The MVP batch dropdown values are `5`, `10`, `20`, `30`, `100`, `500`, and `1000`, defaulting to `100`.
 - Candidate offset and candidate limit remain internal Run mechanics and apply after term queries are merged, deduplicated, and ordered.
 - Candidate order follows term insertion order, preserving provider order within each term and skipping duplicates already seen.
@@ -237,7 +253,7 @@ The primary export unit is the Image Asset: one exported row or JSONL object per
 - For accepted Met material, Anacronia must require `isPublicDomain === true`.
 - For V&A testing, Anacronia should create permanent local `standard-1024` and `thumb-256` derivatives like Met, retain source records where useful for audit/descriptor regeneration, and show a future non-blocking provider notice about V&A API-use expectations.
 - Anacronia stores local `standard-1024` and `thumb-256` derivatives, not full-resolution originals by default.
-- User-imported local folders are private local material. They do not require provider metadata, public-domain checks, rights declarations, source URLs, manifests, or provider records.
+- User-imported local folders are private local material. They do not require provider metadata, public-domain checks, rights declarations, source URLs, manifests, provider records, search keywords, or Provider Search batch targets.
 - User-facing imported image counts include only complete Image Assets with validated `standard-1024` and `thumb-256` derivatives.
 - Missing descriptive fields such as date, artist, culture, or period do not prevent import when public-domain and image-derivative requirements are satisfied.
 - The MVP should not expose destructive deletion from the interface, but the domain model should allow future user-driven curation actions.
