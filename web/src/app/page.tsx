@@ -435,6 +435,9 @@ function objectProviderDisplayLabel(provider: string): string {
   if (provider === "met") {
     return "Met";
   }
+  if (provider === "vam") {
+    return "V&A";
+  }
 
   return provider.trim() || "Unknown";
 }
@@ -460,6 +463,7 @@ async function createSearchSetAndCollect(formData: FormData) {
     body: JSON.stringify({
       display_name: displayName,
       terms_text: termsText,
+      provider,
     }),
   });
 

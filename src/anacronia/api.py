@@ -81,6 +81,8 @@ from anacronia.search_sets import (
     slugify_search_set_name,
 )
 from anacronia.storage import initialize_storage
+from anacronia.vam_adapter import VamProviderAdapter
+from anacronia.vam_provider import HttpVamClient
 from anacronia.worker import (
     CollectLockError,
     get_active_collect_job_for_search_set_provider,
@@ -129,6 +131,7 @@ BatchTarget = Literal[5, 10, 20, 30, 100, 500, 1000]
 class SearchSetRequest(BaseModel):
     display_name: str
     terms_text: str
+    provider: str = "met"
 
 
 class RenameSearchSetRequest(BaseModel):
@@ -591,8 +594,13 @@ def create_app(
         record_client=resolved_met_record_client,
         download_image_bytes=resolved_download_image_bytes,
     )
+    default_vam_adapter = VamProviderAdapter(
+        vam_client=HttpVamClient(),
+        download_image_bytes=resolved_download_image_bytes,
+    )
     resolved_provider_adapters = {
         "met": default_met_adapter,
+        "vam": default_vam_adapter,
         **(provider_adapters or {}),
     }
 
@@ -623,6 +631,14 @@ def create_app(
     def create_search_set(request: SearchSetRequest) -> dict[str, object]:
         if get_worker_status(database_path=resolved_database_path).active_collect_job_id is not None:
             raise HTTPException(status_code=409, detail="Another search is already active.")
+        provider_key = request.provider.strip()
+        if not provider_key:
+            provider_key = "met"
+        if provider_key not in resolved_provider_adapters:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Unsupported Provider: {provider_key}",
+            )
 
         slug = slugify_search_set_name(request.display_name)
         if slug:
@@ -641,6 +657,7 @@ def create_app(
                 database_path=resolved_database_path,
                 display_name=request.display_name,
                 terms_text=request.terms_text,
+                provider=provider_key,
             )
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error

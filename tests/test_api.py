@@ -341,6 +341,53 @@ def test_api_lists_search_sets(tmp_path):
     ]
 
 
+def test_api_creates_search_set_with_requested_provider_source(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    client = TestClient(create_app(database_path=storage.database_path))
+
+    response = client.post(
+        "/search-sets",
+        json={
+            "display_name": "Bed Studies",
+            "terms_text": "bed",
+            "provider": "vam",
+        },
+    )
+
+    assert response.status_code == 200
+    with sqlite3.connect(storage.database_path) as connection:
+        rows = connection.execute(
+            """
+            SELECT provider_collections.provider
+            FROM provider_collections
+            JOIN search_sets
+              ON search_sets.id = provider_collections.search_set_id
+            WHERE search_sets.slug = ?
+            """,
+            ("bed-studies",),
+        ).fetchall()
+
+    assert rows == [("vam",)]
+
+
+def test_api_rejects_unsupported_initial_provider_source(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    client = TestClient(create_app(database_path=storage.database_path))
+
+    response = client.post(
+        "/search-sets",
+        json={
+            "display_name": "Europeana Draft",
+            "terms_text": "bed",
+            "provider": "europeana",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Unsupported Provider: europeana"
+    assert client.get("/search-sets").json() == []
+
+
 def test_api_renames_collection_display_name_without_changing_slug_or_terms(tmp_path):
     storage = initialize_storage(project_root=tmp_path)
     client = TestClient(create_app(database_path=storage.database_path))

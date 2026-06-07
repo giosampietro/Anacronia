@@ -169,4 +169,44 @@ describe("CollectionObjectDetailOverlay", () => {
     expect(html).toContain("Unfavorite image");
     expect(html).not.toContain("Favorite object");
   });
+
+  it("renders V&A public-domain status as not checked", () => {
+    const html = renderToString(
+      <CollectionObjectDetailOverlay
+        apiBaseUrl="http://127.0.0.1:18670"
+        closeHref="/?search_set=bed"
+        collectionLabels={["Bed Studies"]}
+        detail={createDetail({
+          object: {
+            provider: "vam",
+            object_id: "O9138",
+            title: "Great Bed of Ware",
+            object_name: "Bed",
+            is_public_domain: false,
+            rights_and_reproduction: "© Victoria and Albert Museum, London",
+            object_url: "https://collections.vam.ac.uk/item/O9138/",
+          },
+          images: [
+            {
+              image_asset_id: 9,
+              source_image_url:
+                "https://framemark.vam.ac.uk/collections/2006AL3614/full/full/0/default.jpg",
+              image_role: "primary",
+              image_index: null,
+              original_width: 2500,
+              original_height: 1971,
+              thumb_url: "/image-assets/9/thumb",
+              standard_url: "/image-assets/9/standard",
+              is_favorite: false,
+            },
+          ],
+        })}
+        returnFocusId="collection-object-vam-O9138"
+      />,
+    ).replace(/<!-- -->/g, "");
+
+    expect(html).toContain("V&amp;A");
+    expect(html).toContain("Not checked");
+    expect(html).not.toContain("<dd>No</dd>");
+  });
 });

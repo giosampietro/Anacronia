@@ -72,6 +72,9 @@ function providerLabel(provider: string): string {
   if (provider === "met") {
     return "Met";
   }
+  if (provider === "vam") {
+    return "V&A";
+  }
 
   return provider.trim() || "Unknown";
 }
@@ -91,6 +94,14 @@ function rightsStatement(object: CollectionObjectDetail["object"]): string {
   }
 
   return "No rights statement provided.";
+}
+
+function publicDomainStatus(object: CollectionObjectDetail["object"]): string {
+  if (object.provider === "vam") {
+    return "Not checked";
+  }
+
+  return object.is_public_domain ? "Yes" : "No";
 }
 
 function imageReferenceLabel(image: CollectionObjectImage, index: number): string {
@@ -199,7 +210,7 @@ function createProviderMetadataSections(
         { label: "Rights", value: displayRightsStatement },
         {
           label: "Public domain",
-          value: detail.object.is_public_domain ? "Yes" : "No",
+          value: publicDomainStatus(detail.object),
         },
         { label: "Metadata date", value: detail.object.metadata_date },
         { label: "Provider URL", value: detail.object.object_url },

@@ -38,9 +38,10 @@ type NewCollectionFormProps = {
 
 const providerSources = [
   { label: "Met", value: "met", disabled: false },
-  { label: "V&A", value: "vam", disabled: true },
+  { label: "V&A", value: "vam", disabled: false },
   { label: "Europeana", value: "europeana", disabled: true },
 ] as const;
+type ProviderSourceValue = (typeof providerSources)[number]["value"];
 
 function StepNumber({ children }: { children: ReactNode }) {
   return (
@@ -70,17 +71,24 @@ function StepCard({
   );
 }
 
-function ImageSourceControl() {
+function ImageSourceControl({
+  onSelect,
+  selectedProvider,
+}: {
+  onSelect: (provider: ProviderSourceValue) => void;
+  selectedProvider: ProviderSourceValue;
+}) {
   return (
     <div aria-label="Image source" className="flex flex-wrap gap-2" role="group">
       {providerSources.map((provider) => {
-        const selected = provider.value === "met";
+        const selected = provider.value === selectedProvider;
 
         return (
           <Button
             aria-pressed={selected}
             disabled={provider.disabled}
             key={provider.value}
+            onClick={() => onSelect(provider.value)}
             size="sm"
             title={provider.disabled ? "Not available yet" : undefined}
             type="button"
@@ -122,6 +130,7 @@ export function NewCollectionForm({
   serverError = null,
 }: NewCollectionFormProps) {
   const [displayName, setDisplayName] = useState("");
+  const [providerSource, setProviderSource] = useState<ProviderSourceValue>("met");
   const [termsText, setTermsText] = useState("");
   const duplicateName = isDuplicateCollectionName(displayName, existingCollections);
   const serverDuplicateName = serverError === "duplicate_name" && displayName.trim() === "";
@@ -141,7 +150,7 @@ export function NewCollectionForm({
       className="mx-auto flex w-full max-w-4xl flex-col gap-4"
     >
       <input name="display_name" type="hidden" value={displayName} />
-      <input name="provider" type="hidden" value="met" />
+      <input name="provider" type="hidden" value={providerSource} />
       <StepCard number={1} title="Name the Collection">
         <Field data-invalid={Boolean(nameError)}>
           <FieldLabel className="sr-only" htmlFor="collection_name_entry">
@@ -187,7 +196,10 @@ export function NewCollectionForm({
       <StepCard number={3} title="Search image source">
         <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px] md:items-end">
           <Field className="gap-2">
-            <ImageSourceControl />
+            <ImageSourceControl
+              onSelect={setProviderSource}
+              selectedProvider={providerSource}
+            />
           </Field>
           <BatchTargetControl idPrefix="new_collection" />
         </div>

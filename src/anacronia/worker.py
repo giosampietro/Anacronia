@@ -19,6 +19,8 @@ from anacronia.provider_adapters import (
     ProviderIngestSummary,
 )
 from anacronia.storage import initialize_storage
+from anacronia.vam_adapter import VamProviderAdapter
+from anacronia.vam_provider import HttpVamClient
 
 
 ACTIVE_COLLECT_JOB_STATUSES = ("running", "stopping")
@@ -166,7 +168,11 @@ def process_running_collect_job(
             candidate_client=met_client,
             record_client=met_client,
             download_image_bytes=download_image_bytes,
-        )
+        ),
+        "vam": VamProviderAdapter(
+            vam_client=HttpVamClient(),
+            download_image_bytes=download_image_bytes,
+        ),
     }
     provider_ingester = resolved_provider_ingesters.get(provider)
     if provider_ingester is None:
@@ -802,6 +808,7 @@ def main() -> None:
     project_root = Path(__file__).resolve().parents[2]
     storage = initialize_storage(project_root=project_root)
     met_client = HttpMetCandidateClient()
+    vam_client = HttpVamClient()
 
     while True:
         try:
@@ -810,6 +817,17 @@ def main() -> None:
                 data_root=storage.data_root,
                 met_client=met_client,
                 download_image_bytes=fetch_bytes_url,
+                provider_ingesters={
+                    "met": MetProviderAdapter(
+                        candidate_client=met_client,
+                        record_client=met_client,
+                        download_image_bytes=fetch_bytes_url,
+                    ),
+                    "vam": VamProviderAdapter(
+                        vam_client=vam_client,
+                        download_image_bytes=fetch_bytes_url,
+                    ),
+                },
             )
         except Exception:
             pass

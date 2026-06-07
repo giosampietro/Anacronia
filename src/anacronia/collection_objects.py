@@ -183,6 +183,128 @@ def raw_tags(record: dict[str, object]) -> list[str]:
     return values
 
 
+def provider_raw_string(
+    *,
+    provider: str,
+    record: dict[str, object],
+    key: str,
+) -> str:
+    if provider == "vam":
+        return vam_raw_string(record=record, key=key)
+    return raw_string(record, key)
+
+
+def provider_raw_tags(*, provider: str, record: dict[str, object]) -> list[str]:
+    if provider == "vam":
+        return vam_raw_tags(record)
+    return raw_tags(record)
+
+
+def vam_raw_string(*, record: dict[str, object], key: str) -> str:
+    payload = vam_record_payload(record)
+    if key == "objectDate":
+        return first_nested_text(payload, ["productionDates"], ("date", "text"))
+    if key == "medium":
+        return raw_string(payload, "materialsAndTechniques") or ", ".join(
+            text_values(payload.get("materials"))
+        )
+    if key == "dimensions":
+        return vam_dimensions(payload)
+    if key == "classification":
+        return ", ".join(text_values(payload.get("categories")))
+    if key == "creditLine":
+        return raw_string(payload, "creditLine")
+    if key == "accessionNumber":
+        return raw_string(payload, "accessionNumber")
+    if key == "repository":
+        return "Victoria and Albert Museum"
+    return raw_string(payload, key)
+
+
+def vam_record_payload(record: dict[str, object]) -> dict[str, object]:
+    payload = record.get("record")
+    return payload if isinstance(payload, dict) else {}
+
+
+def first_nested_text(
+    payload: dict[str, object],
+    list_path: list[str],
+    key_path: tuple[str, str],
+) -> str:
+    items = nested_raw_value(payload, list_path)
+    if not isinstance(items, list):
+        return ""
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        text = nested_raw_string(item, [key_path[0], key_path[1]])
+        if text:
+            return text
+    return ""
+
+
+def nested_raw_value(value: object, path: list[str]) -> object:
+    current = value
+    for path_item in path:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(path_item)
+    return current
+
+
+def nested_raw_string(value: object, path: list[str]) -> str:
+    nested = nested_raw_value(value, path)
+    return nested.strip() if isinstance(nested, str) else ""
+
+
+def text_values(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    values: list[str] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        text = item.get("text")
+        if isinstance(text, str) and text.strip():
+            values.append(text.strip())
+    return values
+
+
+def vam_dimensions(payload: dict[str, object]) -> str:
+    dimensions = payload.get("dimensions")
+    if not isinstance(dimensions, list):
+        return ""
+    values: list[str] = []
+    for dimension in dimensions:
+        if not isinstance(dimension, dict):
+            continue
+        name = raw_string(dimension, "dimension")
+        value = raw_string(dimension, "value")
+        unit = raw_string(dimension, "unit")
+        if not name or not value:
+            continue
+        values.append(" ".join(part for part in [name, value, unit] if part))
+    return "; ".join(values)
+
+
+def vam_raw_tags(record: dict[str, object]) -> list[str]:
+    payload = vam_record_payload(record)
+    seen: set[str] = set()
+    tags: list[str] = []
+    for value in (
+        text_values(payload.get("categories"))
+        + text_values(payload.get("materials"))
+        + text_values(payload.get("techniques"))
+        + text_values(payload.get("styles"))
+    ):
+        key = value.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        tags.append(value)
+    return tags
+
+
 def load_raw_record(raw_record_path: str) -> dict[str, object]:
     try:
         data = json.loads(Path(raw_record_path).read_text(encoding="utf-8"))
@@ -1159,17 +1281,57 @@ def get_collection_object_detail(
             object_name=object_row[3],
             artist_display_name=object_row[4],
             object_url=object_row[5],
-            artist_display_bio=raw_string(raw_record, "artistDisplayBio"),
-            artist_nationality=raw_string(raw_record, "artistNationality"),
-            department=raw_string(raw_record, "department"),
-            object_date=raw_string(raw_record, "objectDate"),
-            medium=raw_string(raw_record, "medium"),
-            dimensions=raw_string(raw_record, "dimensions"),
-            classification=raw_string(raw_record, "classification"),
-            credit_line=raw_string(raw_record, "creditLine"),
-            accession_number=raw_string(raw_record, "accessionNumber"),
-            repository=raw_string(raw_record, "repository"),
-            tags=raw_tags(raw_record),
+            artist_display_bio=provider_raw_string(
+                provider=object_row[0],
+                record=raw_record,
+                key="artistDisplayBio",
+            ),
+            artist_nationality=provider_raw_string(
+                provider=object_row[0],
+                record=raw_record,
+                key="artistNationality",
+            ),
+            department=provider_raw_string(
+                provider=object_row[0],
+                record=raw_record,
+                key="department",
+            ),
+            object_date=provider_raw_string(
+                provider=object_row[0],
+                record=raw_record,
+                key="objectDate",
+            ),
+            medium=provider_raw_string(
+                provider=object_row[0],
+                record=raw_record,
+                key="medium",
+            ),
+            dimensions=provider_raw_string(
+                provider=object_row[0],
+                record=raw_record,
+                key="dimensions",
+            ),
+            classification=provider_raw_string(
+                provider=object_row[0],
+                record=raw_record,
+                key="classification",
+            ),
+            credit_line=provider_raw_string(
+                provider=object_row[0],
+                record=raw_record,
+                key="creditLine",
+            ),
+            accession_number=provider_raw_string(
+                provider=object_row[0],
+                record=raw_record,
+                key="accessionNumber",
+            ),
+            repository=provider_raw_string(
+                provider=object_row[0],
+                record=raw_record,
+                key="repository",
+            ),
+            tags=provider_raw_tags(provider=object_row[0], record=raw_record),
             is_public_domain=bool(object_row[6]),
             rights_and_reproduction=object_row[7],
             metadata_date=object_row[8],
@@ -1325,17 +1487,57 @@ def get_library_object_detail(
             object_name=object_row[3],
             artist_display_name=object_row[4],
             object_url=object_row[5],
-            artist_display_bio=raw_string(raw_record, "artistDisplayBio"),
-            artist_nationality=raw_string(raw_record, "artistNationality"),
-            department=raw_string(raw_record, "department"),
-            object_date=raw_string(raw_record, "objectDate"),
-            medium=raw_string(raw_record, "medium"),
-            dimensions=raw_string(raw_record, "dimensions"),
-            classification=raw_string(raw_record, "classification"),
-            credit_line=raw_string(raw_record, "creditLine"),
-            accession_number=raw_string(raw_record, "accessionNumber"),
-            repository=raw_string(raw_record, "repository"),
-            tags=raw_tags(raw_record),
+            artist_display_bio=provider_raw_string(
+                provider=object_row[0],
+                record=raw_record,
+                key="artistDisplayBio",
+            ),
+            artist_nationality=provider_raw_string(
+                provider=object_row[0],
+                record=raw_record,
+                key="artistNationality",
+            ),
+            department=provider_raw_string(
+                provider=object_row[0],
+                record=raw_record,
+                key="department",
+            ),
+            object_date=provider_raw_string(
+                provider=object_row[0],
+                record=raw_record,
+                key="objectDate",
+            ),
+            medium=provider_raw_string(
+                provider=object_row[0],
+                record=raw_record,
+                key="medium",
+            ),
+            dimensions=provider_raw_string(
+                provider=object_row[0],
+                record=raw_record,
+                key="dimensions",
+            ),
+            classification=provider_raw_string(
+                provider=object_row[0],
+                record=raw_record,
+                key="classification",
+            ),
+            credit_line=provider_raw_string(
+                provider=object_row[0],
+                record=raw_record,
+                key="creditLine",
+            ),
+            accession_number=provider_raw_string(
+                provider=object_row[0],
+                record=raw_record,
+                key="accessionNumber",
+            ),
+            repository=provider_raw_string(
+                provider=object_row[0],
+                record=raw_record,
+                key="repository",
+            ),
+            tags=provider_raw_tags(provider=object_row[0], record=raw_record),
             is_public_domain=bool(object_row[6]),
             rights_and_reproduction=object_row[7],
             metadata_date=object_row[8],

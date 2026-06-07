@@ -101,6 +101,9 @@ function objectProviderDisplayLabel(provider: string): string {
   if (provider === "met") {
     return "Met";
   }
+  if (provider === "vam") {
+    return "V&A";
+  }
 
   return provider.trim() || "Unknown";
 }

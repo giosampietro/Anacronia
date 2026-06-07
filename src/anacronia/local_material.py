@@ -1,8 +1,299 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+import json
+from pathlib import Path
 import sqlite3
 
+from anacronia.provider_identity import ProviderObjectIdValue, normalize_source_object_id
 from anacronia.schema_migrations import ensure_object_id_text_column
+
+
+@dataclass(frozen=True)
+class LocalMuseumObject:
+    provider: str
+    object_id: ProviderObjectIdValue
+    title: str
+    object_name: str
+    artist_display_name: str
+    object_url: str
+    is_public_domain: bool
+    rights_and_reproduction: str
+    metadata_date: str
+    raw_record_path: Path
+
+
+@dataclass(frozen=True)
+class LocalImageAsset:
+    provider: str
+    object_id: ProviderObjectIdValue
+    source_image_url: str
+    image_role: str
+    image_index: int | None
+    primary_image_small_url: str
+    original_width: int
+    original_height: int
+    standard_path: Path
+    thumb_path: Path
+    imported: bool
+
+
+@dataclass(frozen=True)
+class LocalObjectMatch:
+    run_id: int
+    provider: str
+    object_id: ProviderObjectIdValue
+    search_term: str
+    matched_fields: list[str]
+
+
+@dataclass(frozen=True)
+class LocalDescriptor:
+    provider: str
+    object_id: ProviderObjectIdValue
+    descriptor_type: str
+    value: str
+    normalized_value: str
+    source_field: str
+
+
+@dataclass(frozen=True)
+class LocalSkippedCandidate:
+    run_id: int
+    provider: str
+    object_id: ProviderObjectIdValue
+    reason: str
+
+
+@dataclass(frozen=True)
+class LocalSkippedImageReference:
+    provider: str
+    object_id: ProviderObjectIdValue
+    source_image_url: str
+    image_role: str
+    image_index: int | None
+    reason: str
+
+
+def upsert_local_museum_object(
+    *,
+    connection: sqlite3.Connection,
+    museum_object: LocalMuseumObject,
+) -> None:
+    connection.execute(
+        """
+        INSERT INTO museum_objects (
+          provider,
+          object_id,
+          title,
+          object_name,
+          artist_display_name,
+          object_url,
+          is_public_domain,
+          rights_and_reproduction,
+          metadata_date,
+          raw_record_path,
+          active,
+          deleted_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(provider, object_id) DO UPDATE SET
+          title = excluded.title,
+          object_name = excluded.object_name,
+          artist_display_name = excluded.artist_display_name,
+          object_url = excluded.object_url,
+          is_public_domain = excluded.is_public_domain,
+          rights_and_reproduction = excluded.rights_and_reproduction,
+          metadata_date = excluded.metadata_date,
+          raw_record_path = excluded.raw_record_path,
+          active = 1,
+          deleted_at = NULL
+        """,
+        (
+            museum_object.provider,
+            normalize_source_object_id(museum_object.object_id),
+            museum_object.title,
+            museum_object.object_name,
+            museum_object.artist_display_name,
+            museum_object.object_url,
+            int(museum_object.is_public_domain),
+            museum_object.rights_and_reproduction,
+            museum_object.metadata_date,
+            str(museum_object.raw_record_path),
+            1,
+            None,
+        ),
+    )
+
+
+def record_local_image_asset(
+    *,
+    connection: sqlite3.Connection,
+    image_asset: LocalImageAsset,
+) -> None:
+    connection.execute(
+        """
+        INSERT INTO image_assets (
+          provider,
+          object_id,
+          source_image_url,
+          image_role,
+          image_index,
+          primary_image_small_url,
+          original_width,
+          original_height,
+          standard_path,
+          thumb_path,
+          imported,
+          active,
+          deleted_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(provider, object_id, source_image_url) DO UPDATE SET
+          image_role = excluded.image_role,
+          image_index = excluded.image_index,
+          primary_image_small_url = excluded.primary_image_small_url,
+          original_width = excluded.original_width,
+          original_height = excluded.original_height,
+          standard_path = excluded.standard_path,
+          thumb_path = excluded.thumb_path,
+          imported = excluded.imported,
+          active = 1,
+          deleted_at = NULL
+        """,
+        (
+            image_asset.provider,
+            normalize_source_object_id(image_asset.object_id),
+            image_asset.source_image_url,
+            image_asset.image_role,
+            image_asset.image_index,
+            image_asset.primary_image_small_url,
+            image_asset.original_width,
+            image_asset.original_height,
+            str(image_asset.standard_path),
+            str(image_asset.thumb_path),
+            int(image_asset.imported),
+            1,
+            None,
+        ),
+    )
+
+
+def record_local_object_match(
+    *,
+    connection: sqlite3.Connection,
+    match: LocalObjectMatch,
+) -> None:
+    connection.execute(
+        """
+        INSERT OR REPLACE INTO object_matches (
+          run_id,
+          provider,
+          object_id,
+          search_term,
+          verified,
+          matched_fields_json
+        )
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (
+            match.run_id,
+            match.provider,
+            normalize_source_object_id(match.object_id),
+            match.search_term,
+            int(bool(match.matched_fields)),
+            json.dumps(match.matched_fields),
+        ),
+    )
+
+
+def replace_local_descriptors(
+    *,
+    connection: sqlite3.Connection,
+    provider: str,
+    object_id: ProviderObjectIdValue,
+    descriptors: list[LocalDescriptor],
+) -> None:
+    source_object_id = normalize_source_object_id(object_id)
+    connection.execute(
+        "DELETE FROM descriptors WHERE provider = ? AND object_id = ?",
+        (provider, source_object_id),
+    )
+
+    for descriptor in descriptors:
+        connection.execute(
+            """
+            INSERT OR IGNORE INTO descriptors (
+              provider,
+              object_id,
+              descriptor_type,
+              value,
+              normalized_value,
+              source_field
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                descriptor.provider,
+                normalize_source_object_id(descriptor.object_id),
+                descriptor.descriptor_type,
+                descriptor.value,
+                descriptor.normalized_value,
+                descriptor.source_field,
+            ),
+        )
+
+
+def record_local_skipped_candidate(
+    *,
+    connection: sqlite3.Connection,
+    candidate: LocalSkippedCandidate,
+) -> None:
+    connection.execute(
+        """
+        INSERT OR IGNORE INTO skipped_candidates (
+          run_id,
+          provider,
+          object_id,
+          reason
+        )
+        VALUES (?, ?, ?, ?)
+        """,
+        (
+            candidate.run_id,
+            candidate.provider,
+            normalize_source_object_id(candidate.object_id),
+            candidate.reason,
+        ),
+    )
+
+
+def record_local_skipped_image_reference(
+    *,
+    connection: sqlite3.Connection,
+    reference: LocalSkippedImageReference,
+) -> None:
+    connection.execute(
+        """
+        INSERT OR REPLACE INTO skipped_image_references (
+          provider,
+          object_id,
+          source_image_url,
+          image_role,
+          image_index,
+          reason
+        )
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (
+            reference.provider,
+            normalize_source_object_id(reference.object_id),
+            reference.source_image_url,
+            reference.image_role,
+            reference.image_index,
+            reference.reason,
+        ),
+    )
 
 
 def ensure_local_material_schema(connection: sqlite3.Connection) -> None:
