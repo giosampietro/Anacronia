@@ -14,7 +14,6 @@ import {
 } from "@/components/ui/card";
 import {
   Field,
-  FieldDescription,
   FieldError,
   FieldLabel,
 } from "@/components/ui/field";
@@ -31,6 +30,10 @@ import { announceProviderSearchRefresh } from "@/lib/dashboard-refresh";
 
 export type NewCollectionServerError = "duplicate_name";
 type CreationTrajectory = "online-archive" | "local-folder";
+type FolderPickerStatus =
+  | { state: "idle" }
+  | { state: "pending" }
+  | { message: string; state: "error" };
 
 type NewCollectionFormProps = {
   initialTrajectory?: CreationTrajectory | null;
@@ -163,6 +166,19 @@ function SubmitTrajectoryButton({
   );
 }
 
+async function localFolderPickerErrorMessage(response: Response): Promise<string> {
+  try {
+    const payload = (await response.json()) as { detail?: unknown };
+    if (typeof payload.detail === "string" && payload.detail.trim() !== "") {
+      return payload.detail;
+    }
+  } catch {
+    // Fall through to the generic message.
+  }
+
+  return "Folder picker failed.";
+}
+
 export function NewCollectionForm({
   initialTrajectory = null,
   localFolderAction,
@@ -175,6 +191,8 @@ export function NewCollectionForm({
   );
   const [displayName, setDisplayName] = useState("");
   const [folderPath, setFolderPath] = useState("");
+  const [folderPickerStatus, setFolderPickerStatus] =
+    useState<FolderPickerStatus>({ state: "idle" });
   const [providerSource, setProviderSource] = useState<ProviderSourceValue | "">("");
   const [termsText, setTermsText] = useState("");
   const duplicateName = isDuplicateCollectionName(displayName, existingCollections);
@@ -193,6 +211,35 @@ export function NewCollectionForm({
     !isDuplicateCollectionName(displayName, existingCollections);
   const activeAction =
     trajectory === "local-folder" ? localFolderAction : onlineArchiveAction;
+  const folderPickerError =
+    folderPickerStatus.state === "error" ? folderPickerStatus.message : "";
+
+  async function chooseLocalFolder() {
+    setFolderPickerStatus({ state: "pending" });
+    try {
+      const response = await fetch("/api/local-folder-picker", {
+        method: "POST",
+      });
+      if (response.status === 204) {
+        setFolderPickerStatus({ state: "idle" });
+        return;
+      }
+      if (!response.ok) {
+        throw new Error(await localFolderPickerErrorMessage(response));
+      }
+      const payload = (await response.json()) as { folder_path?: unknown };
+      if (typeof payload.folder_path !== "string" || payload.folder_path.trim() === "") {
+        throw new Error("Folder picker did not return a folder path.");
+      }
+      setFolderPath(payload.folder_path);
+      setFolderPickerStatus({ state: "idle" });
+    } catch (error) {
+      setFolderPickerStatus({
+        message: error instanceof Error ? error.message : "Folder picker failed.",
+        state: "error",
+      });
+    }
+  }
 
   return (
     <form
@@ -247,28 +294,23 @@ export function NewCollectionForm({
 
       {trajectory === "online-archive" ? (
         <>
-          <StepCard number={3} title="Add search terms">
+          <StepCard number={3} title="Search online archive">
             <Field>
               <FieldLabel className="sr-only" htmlFor="terms_text">
                 Search terms
               </FieldLabel>
               <Textarea
-                className="min-h-28 resize-y"
+                className="min-h-20 resize-y"
                 id="terms_text"
                 name="terms_text"
                 onChange={(event) => setTermsText(event.currentTarget.value)}
-                placeholder={"snake\nserpent\ncobra"}
+                placeholder="Add search terms, separated by commas or new lines"
                 required
                 value={termsText}
               />
-              <FieldDescription>
-                Use a new line for each term, or separate several terms with commas.
-              </FieldDescription>
             </Field>
-          </StepCard>
 
-          <StepCard number={4} title="Choose provider">
-            <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px] md:items-end">
+            <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px_auto] md:items-end">
               <Field className="gap-2">
                 <ProviderSelect
                   onSelect={setProviderSource}
@@ -276,46 +318,66 @@ export function NewCollectionForm({
                 />
               </Field>
               <BatchTargetControl idPrefix="new_collection" />
+              <SubmitTrajectoryButton
+                disabled={!canStart}
+                idleLabel="Start search"
+                pendingLabel="Starting..."
+              />
             </div>
           </StepCard>
-
-          <div className="flex justify-end">
-            <SubmitTrajectoryButton
-              disabled={!canStart}
-              idleLabel="Start search"
-              pendingLabel="Starting..."
-            />
-          </div>
         </>
       ) : null}
 
       {trajectory === "local-folder" ? (
         <>
           <StepCard number={3} title="Import folder">
-            <Field>
-              <FieldLabel className="sr-only" htmlFor="folder_path">
-                Folder path
-              </FieldLabel>
-              <Input
-                autoComplete="off"
-                id="folder_path"
-                name="folder_path"
-                onChange={(event) => setFolderPath(event.currentTarget.value)}
-                placeholder="/Users/giorgio/Desktop/reference-folder"
-                required
-                spellCheck={false}
-                value={folderPath}
+            <div className="grid gap-3 md:grid-cols-[auto_minmax(0,1fr)_auto] md:items-end">
+              <Button
+                disabled={folderPickerStatus.state === "pending"}
+                onClick={chooseLocalFolder}
+                size="lg"
+                type="button"
+                variant="outline"
+              >
+                {folderPickerStatus.state === "pending" ? (
+                  <Spinner data-icon="inline-start" />
+                ) : (
+                  <FolderOpen data-icon="inline-start" />
+                )}
+                {folderPickerStatus.state === "pending" ? "Choosing..." : "Choose folder"}
+              </Button>
+              <Field data-invalid={Boolean(folderPickerError)}>
+                <FieldLabel className="sr-only" htmlFor="folder_path">
+                  Folder path
+                </FieldLabel>
+                <Input
+                  aria-describedby={
+                    folderPickerError ? "folder_path_picker_error" : undefined
+                  }
+                  aria-invalid={Boolean(folderPickerError)}
+                  autoComplete="off"
+                  id="folder_path"
+                  name="folder_path"
+                  onChange={(event) => {
+                    setFolderPath(event.currentTarget.value);
+                    if (folderPickerStatus.state === "error") {
+                      setFolderPickerStatus({ state: "idle" });
+                    }
+                  }}
+                  placeholder="/Users/giorgio/Desktop/reference-folder"
+                  required
+                  spellCheck={false}
+                  value={folderPath}
+                />
+              </Field>
+              <SubmitTrajectoryButton
+                disabled={!canImportFolder}
+                idleLabel="Import folder"
+                pendingLabel="Importing..."
               />
-            </Field>
+            </div>
+            <FieldError id="folder_path_picker_error">{folderPickerError}</FieldError>
           </StepCard>
-
-          <div className="flex justify-end">
-            <SubmitTrajectoryButton
-              disabled={!canImportFolder}
-              idleLabel="Import folder"
-              pendingLabel="Importing..."
-            />
-          </div>
         </>
       ) : null}
     </form>

@@ -35,27 +35,34 @@ describe("NewCollectionForm", () => {
     expect(html).toContain("Choose source");
     expect(html).toContain("Online archive");
     expect(html).toContain("Local folder");
-    expect(html).not.toContain("Add search terms");
+    expect(html).not.toContain("Search online archive");
     expect(html).not.toContain("Import folder");
     expect(html).not.toContain("terms detected");
     expect(html).not.toContain("Batch target");
   });
 
-  it("renders online archive fields with no provider selected by default", () => {
+  it("renders compact online archive fields with no provider selected by default", () => {
     formStatus.pending = false;
     const html = renderToString(
       renderForm({ initialTrajectory: "online-archive" }),
     ).replaceAll("<!-- -->", "");
 
-    expect(html).toContain("Add search terms");
+    expect(html).toContain("Search online archive");
     expect(html).toContain("Choose provider");
     expect(html).toContain("Choose provider</option>");
+    expect(html).toContain(
+      "placeholder=\"Add search terms, separated by commas or new lines\"",
+    );
     expect(html).toContain("Met</option>");
     expect(html).toContain("V&amp;A</option>");
     expect(html).toContain("Images to find");
     expect(html).toContain("10 images");
     expect(html).toMatch(/value="10" selected="">10\s*images/);
     expect(html).toContain("Start search");
+    expect(html).not.toContain("snake");
+    expect(html).not.toContain("serpent");
+    expect(html).not.toContain("cobra");
+    expect(html).not.toContain(">4</span>");
   });
 
   it("renders local folder fields without keyword or batch controls", () => {
@@ -65,8 +72,10 @@ describe("NewCollectionForm", () => {
     ).replaceAll("<!-- -->", "");
 
     expect(html).toContain("Import folder");
+    expect(html).toContain("Choose folder");
     expect(html).toContain("name=\"folder_path\"");
-    expect(html).not.toContain("Add search terms");
+    expect(html).toContain("Import folder</button>");
+    expect(html).not.toContain("Search online archive");
     expect(html).not.toContain("Images to find");
     expect(html).not.toContain("Start search");
   });

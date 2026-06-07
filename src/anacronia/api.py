@@ -2,7 +2,7 @@ from pathlib import Path
 import shutil
 from typing import Annotated, Callable, Literal, Mapping, TypeVar
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
@@ -61,6 +61,11 @@ from anacronia.local_folder_import import (
     LocalFolderImportSummary,
     create_local_folder_collection,
     import_local_image_folder,
+)
+from anacronia.local_folder_picker import (
+    LocalFolderPickerCancelled,
+    LocalFolderPickerUnavailable,
+    choose_local_folder_path,
 )
 from anacronia.met_ingest import (
     DEFAULT_MAX_IMAGES_PER_OBJECT,
@@ -608,6 +613,7 @@ def create_app(
     met_record_client: MetRecordClient | None = None,
     download_image_bytes: Callable[[str], bytes] | None = None,
     provider_adapters: Mapping[str, OnlineProviderAdapter] | None = None,
+    local_folder_picker: Callable[[], Path] | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Anacronia")
     project_root = Path(__file__).resolve().parents[2]
@@ -622,6 +628,7 @@ def create_app(
     resolved_met_candidate_client = met_candidate_client or HttpMetCandidateClient()
     resolved_met_record_client = met_record_client or HttpMetCandidateClient()
     resolved_download_image_bytes = download_image_bytes or fetch_bytes_url
+    resolved_local_folder_picker = local_folder_picker or choose_local_folder_path
     default_met_adapter = MetProviderAdapter(
         candidate_client=resolved_met_candidate_client,
         record_client=resolved_met_record_client,
@@ -726,6 +733,17 @@ def create_app(
             raise HTTPException(status_code=422, detail=str(error)) from error
 
         return serialize_local_folder_import_summary(summary)
+
+    @app.post("/local-folder-picker", response_model=None)
+    def choose_local_folder() -> dict[str, str] | Response:
+        try:
+            folder_path = resolved_local_folder_picker()
+        except LocalFolderPickerCancelled:
+            return Response(status_code=204)
+        except LocalFolderPickerUnavailable as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
+
+        return {"folder_path": str(folder_path)}
 
     @app.post("/search-sets/{slug}/local-folder-imports")
     def import_local_folder_into_collection(

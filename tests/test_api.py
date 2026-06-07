@@ -10,6 +10,10 @@ from PIL import Image
 from anacronia.api import DEFAULT_CANDIDATE_LIMIT, DEFAULT_MAX_IMAGES_PER_OBJECT, create_app
 from anacronia.collection_runs import discover_provider_candidates, get_candidate_run
 from anacronia.curation import ensure_curation_schema
+from anacronia.local_folder_picker import (
+    LocalFolderPickerCancelled,
+    LocalFolderPickerUnavailable,
+)
 from anacronia.worker import (
     cancel_collect_job,
     complete_collect_job,
@@ -480,6 +484,64 @@ def test_api_rejects_invalid_local_folder_path(tmp_path):
     assert response.status_code == 422
     assert response.json()["detail"] == "Local folder path must be an existing folder."
     assert client.get("/search-sets").json() == []
+
+
+def test_api_chooses_local_folder_path(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    folder = tmp_path / "incoming"
+    folder.mkdir()
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            local_folder_picker=lambda: folder,
+        )
+    )
+
+    response = client.post("/local-folder-picker")
+
+    assert response.status_code == 200
+    assert response.json() == {"folder_path": str(folder)}
+
+
+def test_api_returns_no_content_when_local_folder_picker_is_cancelled(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+
+    def cancelled_picker() -> Path:
+        raise LocalFolderPickerCancelled("cancelled")
+
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            local_folder_picker=cancelled_picker,
+        )
+    )
+
+    response = client.post("/local-folder-picker")
+
+    assert response.status_code == 204
+    assert response.content == b""
+
+
+def test_api_reports_unavailable_local_folder_picker(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+
+    def unavailable_picker() -> Path:
+        raise LocalFolderPickerUnavailable("picker unavailable")
+
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            local_folder_picker=unavailable_picker,
+        )
+    )
+
+    response = client.post("/local-folder-picker")
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "picker unavailable"
 
 
 def test_api_renames_collection_display_name_without_changing_slug_or_terms(tmp_path):
