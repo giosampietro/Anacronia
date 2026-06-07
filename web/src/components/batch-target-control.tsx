@@ -12,12 +12,14 @@ type BatchTargetControlProps = {
   idPrefix: string;
   defaultBatchTarget?: number;
   inline?: boolean;
+  showLabel?: boolean;
 };
 
 export function BatchTargetControl({
   idPrefix,
   defaultBatchTarget = DEFAULT_BATCH_TARGET,
   inline = false,
+  showLabel = true,
 }: BatchTargetControlProps) {
   if (inline) {
     return (
@@ -46,8 +48,13 @@ export function BatchTargetControl({
   return (
     <FieldGroup>
       <Field>
-        <FieldLabel htmlFor={`${idPrefix}_batch_target`}>Images to find</FieldLabel>
+        {showLabel ? (
+          <FieldLabel htmlFor={`${idPrefix}_batch_target`}>
+            Images to find
+          </FieldLabel>
+        ) : null}
         <NativeSelect
+          aria-label={showLabel ? undefined : "Image count"}
           className="w-full"
           defaultValue={defaultBatchTarget}
           id={`${idPrefix}_batch_target`}

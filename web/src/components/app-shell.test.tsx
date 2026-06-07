@@ -105,6 +105,27 @@ describe("AppShell", () => {
     expect(html).not.toContain("7 images");
   });
 
+  it("keeps the New Collection top bar titleless", () => {
+    const html = normalizeServerHtml(renderToString(
+      <AppShell
+        activeSearchSetSlug={null}
+        appVersionStamp={{ display: "v0.1.60", title: "App version v0.1.60" }}
+        collectAvailable
+        dashboardView={{ ...dashboardView, activeSearchSet: null }}
+        filterText=""
+        rows={rows}
+        workspaceMode="new-search-set"
+      >
+        <div>Form</div>
+      </AppShell>,
+    ));
+
+    expect(html).toContain("aria-label=\"Workspace\"");
+    expect(html).toContain("id=\"app-shell-top-bar-controls\"");
+    expect(html).not.toContain("NEW COLLECTION");
+    expect(html).not.toContain("data-vertical:h-4");
+  });
+
   it("renders a collapsed runtime status footer without a local runtime label", () => {
     const html = renderToString(
       <AppShell

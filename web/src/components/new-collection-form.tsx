@@ -261,7 +261,7 @@ export function NewCollectionForm({
         value={folderUploadManifest}
       />
       <StepCard number={1} title="Name the Collection">
-        <Field data-invalid={Boolean(nameError)}>
+        <Field className="md:w-1/2" data-invalid={Boolean(nameError)}>
           <FieldLabel className="sr-only" htmlFor="collection_name_entry">
             Collection name
           </FieldLabel>
@@ -290,8 +290,7 @@ export function NewCollectionForm({
             onClick={() => setTrajectory("online-archive")}
             title="Online archive"
           >
-            Search a museum archive by keywords. Choose Met or V&A, then start
-            a Provider Search.
+            choose a museum archive, then search by keywords
           </TrajectoryButton>
           <TrajectoryButton
             active={trajectory === "local-folder"}
@@ -299,7 +298,7 @@ export function NewCollectionForm({
             onClick={() => setTrajectory("local-folder")}
             title="Local folder"
           >
-            Import private image files from a folder on this computer.
+            import a local image folder
           </TrajectoryButton>
         </div>
       </StepCard>
@@ -307,7 +306,7 @@ export function NewCollectionForm({
       {trajectory === "online-archive" ? (
         <>
           <StepCard number={3} title="Search online archive">
-            <Field>
+            <Field className="md:w-1/2">
               <FieldLabel className="sr-only" htmlFor="terms_text">
                 Search terms
               </FieldLabel>
@@ -322,14 +321,14 @@ export function NewCollectionForm({
               />
             </Field>
 
-            <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px_auto] md:items-end">
+            <div className="grid gap-3 md:w-1/2 md:grid-cols-[minmax(0,1fr)_140px_auto] md:items-end">
               <Field className="gap-2">
                 <ProviderSelect
                   onSelect={setProviderSource}
                   selectedProvider={providerSource}
                 />
               </Field>
-              <BatchTargetControl idPrefix="new_collection" />
+              <BatchTargetControl idPrefix="new_collection" showLabel={false} />
               <SubmitTrajectoryButton
                 disabled={!canStart}
                 idleLabel="Start search"
@@ -386,7 +385,7 @@ export function NewCollectionForm({
               </Field>
               <SubmitTrajectoryButton
                 disabled={!canImportFolder}
-                idleLabel="Import folder"
+                idleLabel="Import"
                 pendingLabel="Importing..."
               />
             </div>
