@@ -127,8 +127,8 @@ export function LocalResultSetSearchForm({
           name="q"
           placeholder={placeholder}
         />
-        <InputGroupAddon align="inline-end">
-          {hasLocalQuery ? (
+        {hasLocalQuery ? (
+          <InputGroupAddon align="inline-end">
             <InputGroupButton
               aria-label="Clear local search"
               disabled={isPending}
@@ -138,16 +138,17 @@ export function LocalResultSetSearchForm({
             >
               <X />
             </InputGroupButton>
-          ) : null}
-          <InputGroupButton
-            className="@max-[459px]/topbar:hidden"
-            disabled={isPending}
-            type="submit"
-          >
-            Search
-          </InputGroupButton>
-        </InputGroupAddon>
+          </InputGroupAddon>
+        ) : null}
       </InputGroup>
+      <button
+        aria-label="Submit local search"
+        className="sr-only"
+        disabled={isPending}
+        type="submit"
+      >
+        Submit local search
+      </button>
     </form>
   );
 }
