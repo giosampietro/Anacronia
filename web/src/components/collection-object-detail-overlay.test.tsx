@@ -42,6 +42,7 @@ function createDetail(
       {
         image_asset_id: 7,
         source_image_url: "https://images.metmuseum.org/40-primary.jpg",
+        source_file_url: null,
         image_role: "primary",
         image_index: null,
         original_width: 1600,
@@ -53,6 +54,7 @@ function createDetail(
       {
         image_asset_id: 8,
         source_image_url: "https://images.metmuseum.org/40-detail-a.jpg",
+        source_file_url: null,
         image_role: "additional",
         image_index: 1,
         original_width: 1600,
@@ -191,6 +193,7 @@ describe("CollectionObjectDetailOverlay", () => {
               image_asset_id: 9,
               source_image_url:
                 "https://framemark.vam.ac.uk/collections/2006AL3614/full/full/0/default.jpg",
+              source_file_url: null,
               image_role: "primary",
               image_index: null,
               original_width: 2500,
@@ -232,6 +235,7 @@ describe("CollectionObjectDetailOverlay", () => {
               image_asset_id: 10,
               source_image_url:
                 "local-folder:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              source_file_url: null,
               image_role: "primary",
               image_index: null,
               original_width: 640,
@@ -256,5 +260,50 @@ describe("CollectionObjectDetailOverlay", () => {
     expect(html).not.toContain("local-folder:sha256");
     expect(html).not.toContain("Object ID");
     expect(html).not.toContain("sha256-aaaaaaaa");
+  });
+
+  it("renders a local folder original file link when one is stored", () => {
+    const html = renderToString(
+      <CollectionObjectDetailOverlay
+        apiBaseUrl="http://127.0.0.1:18670"
+        closeHref="/?search_set=studio-folder"
+        detail={createDetail({
+          object: {
+            provider: "local-folder",
+            object_id:
+              "sha256-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            title: "render",
+            object_name: "Local image",
+            is_public_domain: false,
+            rights_and_reproduction: "",
+            object_url: "",
+          },
+          images: [
+            {
+              image_asset_id: 11,
+              source_image_url:
+                "local-folder:sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              source_file_url: "/image-assets/11/source",
+              image_role: "primary",
+              image_index: null,
+              original_width: 640,
+              original_height: 320,
+              thumb_url: "/image-assets/11/thumb",
+              standard_url: "/image-assets/11/standard",
+              is_favorite: false,
+            },
+          ],
+          skipped_image_references: [],
+        })}
+        returnFocusId="collection-object-local-folder-render"
+      />,
+    ).replace(/<!-- -->/g, "");
+
+    expect(html).toContain("Original file");
+    expect(html).toContain("Open original file");
+    expect(html).toContain(
+      "href=\"http://127.0.0.1:18670/image-assets/11/source\"",
+    );
+    expect(html).not.toContain("local-folder:sha256");
   });
 });

@@ -434,6 +434,15 @@ def test_api_creates_local_folder_collection_and_exposes_results(tmp_path):
     )
     assert result_set.status_code == 200
     assert result_set.json()["counts"] == {"objects": 1, "images": 1}
+    local_object = result_set.json()["objects"][0]
+    detail = client.get(
+        f"/search-sets/studio-folder/objects/local-folder/{local_object['object_id']}"
+    ).json()
+    assert detail["images"][0]["source_image_url"].startswith("local-folder:sha256:")
+    assert detail["images"][0]["source_file_url"] == (
+        f"/image-assets/{detail['images'][0]['image_asset_id']}/source"
+    )
+    assert client.get(detail["images"][0]["source_file_url"]).status_code == 200
     library_result_set = client.get(
         "/library/local-result-set",
         params={"provider": "local-folder", "view": "objects"},

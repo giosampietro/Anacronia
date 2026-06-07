@@ -55,6 +55,7 @@ export type LibraryImageAssetSummary = {
 export type CollectionObjectImage = {
   image_asset_id: number;
   source_image_url: string;
+  source_file_url: string | null;
   image_role: string;
   image_index: number | null;
   original_width: number;

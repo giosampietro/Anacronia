@@ -83,9 +83,7 @@ describe("NewCollectionForm", () => {
     expect(html).toContain("aria-hidden=\"true\"");
     expect(html).toContain("name=\"folder_upload_manifest\"");
     expect(html).toContain("name=\"folder_path\"");
-    expect(html).toContain(
-      "Choose a folder or paste /Users/giorgio/Desktop/reference-folder",
-    );
+    expect(html).not.toContain("/Users/giorgio/Desktop/reference-folder");
     expect(html).toContain("Import</button>");
     expect(html).not.toContain("Search and import online archive");
     expect(html).not.toContain("Images to find");

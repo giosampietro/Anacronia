@@ -535,6 +535,7 @@ async function createLocalFolderCollection(formData: FormData) {
       body: JSON.stringify({
         display_name: displayName,
         folder_path: folderPath,
+        store_source_file_links: uploadedFolderPath === null,
       }),
     });
   } finally {

@@ -56,6 +56,7 @@ def create_local_folder_collection(
     data_root: Path,
     display_name: str,
     folder_path: Path,
+    store_source_file_links: bool = True,
 ) -> LocalFolderImportSummary:
     resolved_folder_path = validate_local_folder_path(folder_path)
     search_set = create_or_continue_search_set(
@@ -70,6 +71,7 @@ def create_local_folder_collection(
         data_root=data_root,
         search_set_slug=search_set.slug,
         folder_path=resolved_folder_path,
+        store_source_file_links=store_source_file_links,
     )
 
 
@@ -79,6 +81,7 @@ def import_local_image_folder(
     data_root: Path,
     search_set_slug: str,
     folder_path: Path,
+    store_source_file_links: bool = True,
 ) -> LocalFolderImportSummary:
     resolved_folder_path = validate_local_folder_path(folder_path)
 
@@ -213,6 +216,9 @@ def import_local_image_folder(
                     standard_path=processed.standard_path,
                     thumb_path=processed.thumb_path,
                     imported=True,
+                    source_file_path=(
+                        str(image_path.resolve()) if store_source_file_links else ""
+                    ),
                 ),
             )
             add_collection_object_membership(

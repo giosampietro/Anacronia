@@ -119,6 +119,16 @@ function isExternalSourceUrl(value: string): boolean {
   return value.startsWith("http://") || value.startsWith("https://");
 }
 
+function sourceFileHref(
+  apiBaseUrl: string,
+  image: CollectionObjectImage | undefined,
+): string | null {
+  if (!image?.source_file_url) {
+    return null;
+  }
+  return imageUrl(apiBaseUrl, image.source_file_url);
+}
+
 function imageReferenceLabel(image: CollectionObjectImage, index: number): string {
   const role = image.image_role.trim() || "image";
   const providerIndex =
@@ -242,9 +252,11 @@ function createProviderMetadataSections(
 }
 
 function ProviderMetadata({
+  apiBaseUrl,
   detail,
   displayRightsStatement,
 }: {
+  apiBaseUrl: string;
   detail: CollectionObjectDetail;
   displayRightsStatement: string;
 }) {
@@ -290,9 +302,21 @@ function ProviderMetadata({
                 {imageReferenceLabel(image, index)}
               </dt>
               <dd className="break-all text-sm">
-                {isExternalSourceUrl(image.source_image_url)
-                  ? image.source_image_url
-                  : "Private local image"}
+                {sourceFileHref(apiBaseUrl, image) !== null ? (
+                  <a
+                    className="inline-flex items-center gap-2 text-foreground underline-offset-4 hover:underline"
+                    href={sourceFileHref(apiBaseUrl, image) ?? undefined}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    <ExternalLink data-icon="inline-start" />
+                    Open original file
+                  </a>
+                ) : isExternalSourceUrl(image.source_image_url) ? (
+                  image.source_image_url
+                ) : (
+                  "Private local image"
+                )}
               </dd>
               <dd className="text-xs text-muted-foreground">
                 {image.original_width} x {image.original_height}
@@ -478,9 +502,11 @@ function RightsCard({
 }
 
 function MatchDisclosure({
+  apiBaseUrl,
   detail,
   displayRightsStatement,
 }: {
+  apiBaseUrl: string;
   detail: CollectionObjectDetail;
   displayRightsStatement: string;
 }) {
@@ -537,6 +563,7 @@ function MatchDisclosure({
 
         <Separator />
         <ProviderMetadata
+          apiBaseUrl={apiBaseUrl}
           detail={detail}
           displayRightsStatement={displayRightsStatement}
         />
@@ -720,6 +747,7 @@ export function CollectionObjectDetailOverlay({
   const displayRightsStatement = rightsStatement(detail.object);
   const actionNoun = detailKind === "image" ? "image" : "object";
   const activeFavorite = detailKind === "image" ? activeImageFavorite : objectFavorite;
+  const activeImageSourceFileHref = sourceFileHref(apiBaseUrl, activeImage);
 
   const closeOverlay = useCallback(() => {
     document.getElementById(returnFocusId)?.focus();
@@ -976,8 +1004,18 @@ export function CollectionObjectDetailOverlay({
                 Open provider record
               </a>
             ) : null}
-            {activeImage?.source_image_url &&
-            isExternalSourceUrl(activeImage.source_image_url) ? (
+            {activeImageSourceFileHref !== null ? (
+              <a
+                className={topActionClassName}
+                href={activeImageSourceFileHref}
+                rel="noreferrer"
+                target="_blank"
+              >
+                <ImageIcon data-icon="inline-start" />
+                Original file
+              </a>
+            ) : activeImage?.source_image_url &&
+              isExternalSourceUrl(activeImage.source_image_url) ? (
               <a
                 className={topActionClassName}
                 href={activeImage.source_image_url}
@@ -1066,6 +1104,7 @@ export function CollectionObjectDetailOverlay({
           </div>
 
           <MatchDisclosure
+            apiBaseUrl={apiBaseUrl}
             detail={detail}
             displayRightsStatement={displayRightsStatement}
           />

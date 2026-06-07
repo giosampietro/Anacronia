@@ -36,6 +36,7 @@ class LocalImageAsset:
     standard_path: Path
     thumb_path: Path
     imported: bool
+    source_file_path: str = ""
 
 
 @dataclass(frozen=True)
@@ -145,10 +146,11 @@ def record_local_image_asset(
           standard_path,
           thumb_path,
           imported,
+          source_file_path,
           active,
           deleted_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(provider, object_id, source_image_url) DO UPDATE SET
           image_role = excluded.image_role,
           image_index = excluded.image_index,
@@ -158,6 +160,7 @@ def record_local_image_asset(
           standard_path = excluded.standard_path,
           thumb_path = excluded.thumb_path,
           imported = excluded.imported,
+          source_file_path = excluded.source_file_path,
           active = 1,
           deleted_at = NULL
         """,
@@ -173,6 +176,7 @@ def record_local_image_asset(
             str(image_asset.standard_path),
             str(image_asset.thumb_path),
             int(image_asset.imported),
+            image_asset.source_file_path,
             1,
             None,
         ),
@@ -408,6 +412,7 @@ def ensure_local_material_schema(connection: sqlite3.Connection) -> None:
           standard_path TEXT NOT NULL,
           thumb_path TEXT NOT NULL,
           imported INTEGER NOT NULL,
+          source_file_path TEXT NOT NULL DEFAULT '',
           active INTEGER NOT NULL DEFAULT 1,
           deleted_at TEXT,
           UNIQUE (provider, object_id, source_image_url)
@@ -421,6 +426,7 @@ def ensure_local_material_schema(connection: sqlite3.Connection) -> None:
         columns={
             "active": "INTEGER NOT NULL DEFAULT 1",
             "deleted_at": "TEXT",
+            "source_file_path": "TEXT NOT NULL DEFAULT ''",
         },
     )
     connection.execute(

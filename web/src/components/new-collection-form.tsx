@@ -382,7 +382,6 @@ export function NewCollectionForm({
                     setFolderPath(event.currentTarget.value);
                     resetSelectedFolderUpload();
                   }}
-                  placeholder="Choose a folder or paste /Users/giorgio/Desktop/reference-folder"
                   required
                   spellCheck={false}
                   value={folderPath}

@@ -44,6 +44,7 @@ from anacronia.collection_objects import (
     get_collection_object_detail,
     get_library_object_detail,
     get_image_asset_derivative_path,
+    get_image_asset_source_file_path,
     list_collection_image_assets,
     list_library_image_assets,
     list_library_objects,
@@ -148,10 +149,12 @@ class SearchSetRequest(BaseModel):
 class LocalFolderCollectionRequest(BaseModel):
     display_name: str
     folder_path: str
+    store_source_file_links: bool = True
 
 
 class LocalFolderImportRequest(BaseModel):
     folder_path: str
+    store_source_file_links: bool = True
 
 
 class RenameSearchSetRequest(BaseModel):
@@ -383,6 +386,11 @@ def serialize_collection_object_image(image: CollectionObjectImage) -> dict[str,
     return {
         "image_asset_id": image.image_asset_id,
         "source_image_url": image.source_image_url,
+        "source_file_url": (
+            f"/image-assets/{image.image_asset_id}/source"
+            if image.source_file_path.strip()
+            else None
+        ),
         "image_role": image.image_role,
         "image_index": image.image_index,
         "original_width": image.original_width,
@@ -729,6 +737,7 @@ def create_app(
                 data_root=resolved_data_root,
                 display_name=request.display_name,
                 folder_path=Path(request.folder_path),
+                store_source_file_links=request.store_source_file_links,
             )
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
@@ -759,6 +768,7 @@ def create_app(
                 data_root=resolved_data_root,
                 search_set_slug=slug,
                 folder_path=Path(request.folder_path),
+                store_source_file_links=request.store_source_file_links,
             )
         except LookupError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
@@ -1231,6 +1241,24 @@ def create_app(
             "deleted_objects": deleted_objects,
             "deleted_image_assets": deleted_image_assets,
         }
+
+    @app.get("/image-assets/{image_asset_id}/source")
+    def get_image_asset_source_file(image_asset_id: int) -> FileResponse:
+        path = get_image_asset_source_file_path(
+            database_path=resolved_database_path,
+            image_asset_id=image_asset_id,
+        )
+        if path is None:
+            raise HTTPException(status_code=404, detail="Image Asset source file not found.")
+
+        resolved_path = path.resolve()
+        if not resolved_path.is_file():
+            raise HTTPException(status_code=404, detail="Image Asset source file not found.")
+
+        return FileResponse(
+            resolved_path,
+            headers={"Cache-Control": "private, max-age=0"},
+        )
 
     @app.get("/image-assets/{image_asset_id}/{derivative}")
     def get_image_asset_derivative(image_asset_id: int, derivative: str) -> FileResponse:

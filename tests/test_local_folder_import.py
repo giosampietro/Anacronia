@@ -79,6 +79,7 @@ def test_imports_plain_local_folder_without_metadata_or_rights(tmp_path):
     assert detail.images[0].source_image_url == local_folder_source_image_identity(
         sha256_file(image_path)
     )
+    assert detail.images[0].source_file_path == str(image_path.resolve())
 
     with sqlite3.connect(storage.database_path) as connection:
         row = connection.execute(
@@ -153,6 +154,30 @@ def test_dedupes_same_file_bytes_and_can_join_multiple_collections(tmp_path):
             """,
             (LOCAL_FOLDER_PROVIDER, object_id),
         ).fetchone()[0] == 2
+
+
+def test_can_suppress_source_file_links_for_temporary_browser_uploads(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    folder = tmp_path / "incoming"
+    image_path = folder / "sketch.png"
+    write_image(image_path)
+
+    summary = create_local_folder_collection(
+        database_path=storage.database_path,
+        data_root=storage.data_root,
+        display_name="Browser Upload",
+        folder_path=folder,
+        store_source_file_links=False,
+    )
+    detail = get_collection_object_detail(
+        database_path=storage.database_path,
+        search_set_slug=summary.search_set_slug,
+        provider=LOCAL_FOLDER_PROVIDER,
+        object_id=summary.imported_object_ids[0],
+    )
+
+    assert detail is not None
+    assert detail.images[0].source_file_path == ""
 
 
 def test_collection_exclusion_blocks_local_folder_readd(tmp_path):

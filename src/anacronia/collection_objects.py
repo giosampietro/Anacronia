@@ -5,6 +5,7 @@ import sqlite3
 
 from anacronia.collection_runs import ensure_collection_run_schema
 from anacronia.curation import ensure_collection_memberships
+from anacronia.local_material import ensure_local_material_schema
 from anacronia.met_ingest import ensure_met_ingest_schema
 from anacronia.provider_identity import (
     ProviderObjectIdValue,
@@ -58,6 +59,7 @@ class CollectionObjectMetadata:
 class CollectionObjectImage:
     image_asset_id: int
     source_image_url: str
+    source_file_path: str
     image_role: str
     image_index: int | None
     original_width: int
@@ -1139,6 +1141,7 @@ def get_collection_object_detail(
 ) -> CollectionObjectDetail | None:
     source_object_id = normalize_source_object_id(object_id)
     with sqlite3.connect(database_path) as connection:
+        ensure_local_material_schema(connection)
         ensure_collection_memberships(connection)
         object_row = connection.execute(
             """
@@ -1195,6 +1198,7 @@ def get_collection_object_detail(
             SELECT DISTINCT
               image_assets.id,
               image_assets.source_image_url,
+              image_assets.source_file_path,
               image_assets.image_role,
               image_assets.image_index,
               image_assets.original_width,
@@ -1341,11 +1345,12 @@ def get_collection_object_detail(
             CollectionObjectImage(
                 image_asset_id=int(row[0]),
                 source_image_url=row[1],
-                image_role=row[2],
-                image_index=row[3],
-                original_width=int(row[4]),
-                original_height=int(row[5]),
-                is_favorite=bool(row[6]),
+                source_file_path=row[2],
+                image_role=row[3],
+                image_index=row[4],
+                original_width=int(row[5]),
+                original_height=int(row[6]),
+                is_favorite=bool(row[7]),
             )
             for row in image_rows
         ],
@@ -1377,6 +1382,7 @@ def get_library_object_detail(
 ) -> CollectionObjectDetail | None:
     source_object_id = normalize_source_object_id(object_id)
     with sqlite3.connect(database_path) as connection:
+        ensure_local_material_schema(connection)
         ensure_collection_run_schema(connection)
         ensure_met_ingest_schema(connection)
         object_row = connection.execute(
@@ -1421,6 +1427,7 @@ def get_library_object_detail(
             SELECT DISTINCT
               image_assets.id,
               image_assets.source_image_url,
+              image_assets.source_file_path,
               image_assets.image_role,
               image_assets.image_index,
               image_assets.original_width,
@@ -1547,11 +1554,12 @@ def get_library_object_detail(
             CollectionObjectImage(
                 image_asset_id=int(row[0]),
                 source_image_url=row[1],
-                image_role=row[2],
-                image_index=row[3],
-                original_width=int(row[4]),
-                original_height=int(row[5]),
-                is_favorite=bool(row[6]),
+                source_file_path=row[2],
+                image_role=row[3],
+                image_index=row[4],
+                original_width=int(row[5]),
+                original_height=int(row[6]),
+                is_favorite=bool(row[7]),
             )
             for row in image_rows
         ],
@@ -1597,3 +1605,27 @@ def get_image_asset_derivative_path(
         ).fetchone()
 
     return None if row is None else Path(row[0])
+
+
+def get_image_asset_source_file_path(
+    *,
+    database_path: Path,
+    image_asset_id: int,
+) -> Path | None:
+    with sqlite3.connect(database_path) as connection:
+        ensure_local_material_schema(connection)
+        row = connection.execute(
+            """
+            SELECT source_file_path
+            FROM image_assets
+            WHERE id = ? AND imported = 1
+            """,
+            (image_asset_id,),
+        ).fetchone()
+
+    if row is None:
+        return None
+    source_file_path = str(row[0]).strip()
+    if source_file_path == "":
+        return None
+    return Path(source_file_path)
