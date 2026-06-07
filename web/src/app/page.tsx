@@ -439,13 +439,18 @@ function objectProviderDisplayLabel(provider: string): string {
   return provider.trim() || "Unknown";
 }
 
-async function createSearchSetAndCollectFromMet(formData: FormData) {
+function getActionProviderKey(formData: FormData): string {
+  return getActionFormDataString(formData, "provider").trim() || "met";
+}
+
+async function createSearchSetAndCollect(formData: FormData) {
   "use server";
 
   const apiPort = getPort("ANACRONIA_API_PORT", DEFAULT_API_PORT);
   const apiBaseUrl = `http://127.0.0.1:${apiPort}`;
   const displayName = getActionFormDataString(formData, "display_name");
   const termsText = getActionFormDataString(formData, "terms_text");
+  const provider = getActionProviderKey(formData);
   const batchTarget = normalizeBatchTarget(
     getActionFormDataValue(formData, "batch_target"),
   );
@@ -469,7 +474,7 @@ async function createSearchSetAndCollectFromMet(formData: FormData) {
   }
 
   const searchSet = (await searchSetResponse.json()) as { slug: string };
-  const collectResponse = await fetch(`${apiBaseUrl}/search-sets/${searchSet.slug}/provider-collections/met/collects`, {
+  const collectResponse = await fetch(`${apiBaseUrl}/search-sets/${searchSet.slug}/provider-collections/${encodeURIComponent(provider)}/collects`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -488,16 +493,17 @@ async function createSearchSetAndCollectFromMet(formData: FormData) {
   redirect(`/?search_set=${searchSet.slug}`);
 }
 
-async function startMetCollect(formData: FormData) {
+async function startProviderCollect(formData: FormData) {
   "use server";
 
   const apiPort = getPort("ANACRONIA_API_PORT", DEFAULT_API_PORT);
   const slug = getActionFormDataString(formData, "slug");
+  const provider = getActionProviderKey(formData);
   const batchTarget = normalizeBatchTarget(
     getActionFormDataValue(formData, "batch_target"),
   );
 
-  const response = await fetch(`http://127.0.0.1:${apiPort}/search-sets/${slug}/provider-collections/met/collects`, {
+  const response = await fetch(`http://127.0.0.1:${apiPort}/search-sets/${slug}/provider-collections/${encodeURIComponent(provider)}/collects`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -512,16 +518,17 @@ async function startMetCollect(formData: FormData) {
   redirect(`/?search_set=${slug}`);
 }
 
-async function resumeMetCollect(formData: FormData) {
+async function resumeProviderCollect(formData: FormData) {
   "use server";
 
   const apiPort = getPort("ANACRONIA_API_PORT", DEFAULT_API_PORT);
   const slug = getActionFormDataString(formData, "slug");
+  const provider = getActionProviderKey(formData);
   const batchTarget = normalizeBatchTarget(
     getActionFormDataValue(formData, "batch_target"),
   );
 
-  const response = await fetch(`http://127.0.0.1:${apiPort}/search-sets/${slug}/provider-collections/met/collects/resume`, {
+  const response = await fetch(`http://127.0.0.1:${apiPort}/search-sets/${slug}/provider-collections/${encodeURIComponent(provider)}/collects/resume`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -536,13 +543,14 @@ async function resumeMetCollect(formData: FormData) {
   redirect(`/?search_set=${slug}`);
 }
 
-async function stopMetCollect(formData: FormData) {
+async function stopProviderCollect(formData: FormData) {
   "use server";
 
   const apiPort = getPort("ANACRONIA_API_PORT", DEFAULT_API_PORT);
   const slug = getActionFormDataString(formData, "slug");
+  const provider = getActionProviderKey(formData);
 
-  const response = await fetch(`http://127.0.0.1:${apiPort}/search-sets/${slug}/provider-collections/met/collects/stop`, {
+  const response = await fetch(`http://127.0.0.1:${apiPort}/search-sets/${slug}/provider-collections/${encodeURIComponent(provider)}/collects/stop`, {
     method: "POST",
   });
 
@@ -580,7 +588,7 @@ function NewSearchSetWorkspace({
   return (
     <div className="mx-auto flex max-w-4xl flex-col gap-4">
       <NewCollectionForm
-        action={createSearchSetAndCollectFromMet}
+        action={createSearchSetAndCollect}
         existingCollections={existingCollections}
         serverError={serverError}
       />
@@ -618,9 +626,10 @@ function ProviderSourceHeaderControls({
         }}
         actionAvailable={collectAvailable}
         batchTarget={DEFAULT_BATCH_TARGET}
-        formAction={startMetCollect}
+        formAction={startProviderCollect}
         idPrefix={`${searchSet.slug}_met`}
         inline
+        provider="met"
         searchSetSlug={searchSet.slug}
       />
     );
@@ -639,10 +648,10 @@ function ProviderSourceHeaderControls({
           });
         const formAction =
           submittableAction?.kind === "resume"
-            ? resumeMetCollect
+            ? resumeProviderCollect
             : submittableAction?.kind === "stop"
-              ? stopMetCollect
-              : startMetCollect;
+              ? stopProviderCollect
+              : startProviderCollect;
 
         if (submittableAction === null) {
           return null;
@@ -657,6 +666,7 @@ function ProviderSourceHeaderControls({
             idPrefix={`${searchSet.slug}_${providerCollection.provider}`}
             inline
             key={`${searchSet.slug}-${providerCollection.provider}`}
+            provider={providerCollection.provider}
             searchSetSlug={searchSet.slug}
           />
         );

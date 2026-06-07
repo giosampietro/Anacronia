@@ -3,17 +3,21 @@ from pathlib import Path
 import shutil
 import sqlite3
 import time
-from typing import Callable
+from typing import Callable, Mapping
 
 from anacronia.collection_runs import DEFAULT_BATCH_TARGET, ensure_collection_run_schema
+from anacronia.met_adapter import MetProviderAdapter
 from anacronia.met_ingest import (
     DEFAULT_MAX_IMAGES_PER_OBJECT,
-    MetIngestSummary,
     MetRecordClient,
     clamp_max_images_per_object,
-    ingest_met_run,
 )
 from anacronia.met_provider import HttpMetCandidateClient, fetch_bytes_url
+from anacronia.provider_adapters import (
+    OnlineProviderAdapter,
+    ProviderIngestRequest,
+    ProviderIngestSummary,
+)
 from anacronia.storage import initialize_storage
 
 
@@ -143,7 +147,8 @@ def process_running_collect_job(
     met_client: MetRecordClient,
     download_image_bytes: Callable[[str], bytes] | None = None,
     available_disk_bytes: Callable[[], int] | None = None,
-) -> MetIngestSummary | None:
+    provider_ingesters: Mapping[str, OnlineProviderAdapter] | None = None,
+) -> ProviderIngestSummary | None:
     with sqlite3.connect(database_path) as connection:
         ensure_worker_schema(connection)
         job = get_processable_collect_job(connection=connection)
@@ -154,6 +159,18 @@ def process_running_collect_job(
     if job.status == "stopping":
         stop_collect_job(database_path=database_path, job_id=job.job_id)
         return None
+
+    provider = get_collect_job_provider(database_path=database_path, run_id=job.run_id)
+    resolved_provider_ingesters = provider_ingesters or {
+        "met": MetProviderAdapter(
+            candidate_client=met_client,
+            record_client=met_client,
+            download_image_bytes=download_image_bytes,
+        )
+    }
+    provider_ingester = resolved_provider_ingesters.get(provider)
+    if provider_ingester is None:
+        raise ValueError(f"No Provider Adapter is registered for {provider}.")
 
     read_available_disk_bytes = available_disk_bytes or (lambda: shutil.disk_usage(data_root).free)
     job = check_collect_job_disk_availability(
@@ -177,21 +194,21 @@ def process_running_collect_job(
         )
 
     try:
-        summary = ingest_met_run(
-            database_path=database_path,
-            data_root=data_root,
-            run_id=job.run_id,
-            met_client=met_client,
-            download_image_bytes=download_image_bytes,
-            max_images_per_object=job.max_images_per_object,
-            batch_target=job.batch_target,
-            start_run_position=next_run_position(job),
-            on_candidate_processed=mark_candidate_processed_and_check_disk,
-            should_stop=lambda: get_collect_job(
+        summary = provider_ingester.ingest_run(
+            ProviderIngestRequest(
                 database_path=database_path,
-                job_id=job.job_id,
-            ).status
-            != "running",
+                data_root=data_root,
+                run_id=job.run_id,
+                max_images_per_object=job.max_images_per_object,
+                batch_target=job.batch_target,
+                start_run_position=next_run_position(job),
+                on_candidate_processed=mark_candidate_processed_and_check_disk,
+                should_stop=lambda: get_collect_job(
+                    database_path=database_path,
+                    job_id=job.job_id,
+                ).status
+                != "running",
+            )
         )
     except Exception:
         record_collect_provider_failure(
@@ -475,6 +492,24 @@ def get_collect_job(*, database_path: Path, job_id: int) -> CollectJob:
         raise LookupError(f"Collect job not found: {job_id}")
 
     return collect_job_from_row(row)
+
+
+def get_collect_job_provider(*, database_path: Path, run_id: int) -> str:
+    with sqlite3.connect(database_path) as connection:
+        ensure_collection_run_schema(connection)
+        row = connection.execute(
+            """
+            SELECT provider
+            FROM collection_runs
+            WHERE id = ?
+            """,
+            (run_id,),
+        ).fetchone()
+
+    if row is None:
+        raise LookupError(f"Run not found: {run_id}")
+
+    return str(row[0])
 
 
 def get_active_collect_job_for_search_set_provider(

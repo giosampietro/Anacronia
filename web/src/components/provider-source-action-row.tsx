@@ -14,6 +14,7 @@ type ProviderSourceActionRowProps = {
   formAction: (formData: FormData) => Promise<void>;
   idPrefix: string;
   inline?: boolean;
+  provider: string;
   searchSetSlug: string;
 };
 
@@ -24,6 +25,7 @@ export function ProviderSourceActionRow({
   formAction,
   idPrefix,
   inline = false,
+  provider,
   searchSetSlug,
 }: ProviderSourceActionRowProps) {
   const showBatchTarget = action.showBatchTarget && actionAvailable;
@@ -38,6 +40,7 @@ export function ProviderSourceActionRow({
       )}
     >
       <input name="slug" type="hidden" value={searchSetSlug} />
+      <input name="provider" type="hidden" value={provider} />
       <div
         className={cn(
           inline ? "flex min-w-0 shrink-0 items-center gap-1.5" : "flex justify-end gap-3",

@@ -1,11 +1,17 @@
+from dataclasses import dataclass
 import concurrent.futures
 import threading
 from urllib.error import HTTPError
 
 import pytest
 
-from anacronia.collection_runs import discover_met_candidates, get_candidate_run
+from anacronia.collection_runs import (
+    discover_met_candidates,
+    discover_provider_candidates,
+    get_candidate_run,
+)
 from anacronia.met_ingest import get_met_image_assets, get_met_skipped_candidates
+from anacronia.provider_adapters import ProviderIngestRequest
 from anacronia.storage import initialize_storage
 from anacronia.worker import (
     CollectLockError,
@@ -43,6 +49,49 @@ class FakeMetRecordClient:
             "primaryImage": "https://images.metmuseum.org/10.jpg",
             "objectURL": "https://www.metmuseum.org/art/collection/search/10",
         }
+
+
+class FakeVamCandidateClient:
+    def search_object_ids(self, term: str) -> list[str]:
+        return {"snake": ["O:10"]}[term]
+
+
+@dataclass(frozen=True)
+class FakeSkippedCandidate:
+    object_id: str
+    reason: str
+
+
+@dataclass(frozen=True)
+class FakeProviderIngestSummary:
+    run_id: int
+    fetched_object_ids: list[str]
+    imported_object_ids: list[str]
+    imported_image_count: int
+    skipped_candidates: list[FakeSkippedCandidate]
+
+
+class FakeVamProviderIngester:
+    provider = "vam"
+    display_name = "V&A"
+
+    def __init__(self) -> None:
+        self.requests: list[ProviderIngestRequest] = []
+
+    def discover_candidate_run(self, **_kwargs):
+        raise AssertionError("Worker should not discover candidates.")
+
+    def ingest_run(self, request: ProviderIngestRequest) -> FakeProviderIngestSummary:
+        self.requests.append(request)
+        if request.on_candidate_processed is not None:
+            request.on_candidate_processed(0)
+        return FakeProviderIngestSummary(
+            run_id=request.run_id,
+            fetched_object_ids=["O:10"],
+            imported_object_ids=["O:10"],
+            imported_image_count=1,
+            skipped_candidates=[],
+        )
 
 
 def ppm_image_bytes(*, width: int, height: int) -> bytes:
@@ -483,6 +532,52 @@ def test_worker_processes_running_collect_job_through_met_ingest(tmp_path):
         download_image_bytes=lambda _url: ppm_image_bytes(width=1600, height=800),
     ) is None
     assert get_worker_status(database_path=storage.database_path).active_collect_job_id is None
+
+
+def test_worker_dispatches_collect_job_to_registered_provider_ingester(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    from anacronia.search_sets import create_or_continue_search_set
+
+    create_or_continue_search_set(
+        database_path=storage.database_path,
+        display_name="Snake Studies",
+        terms_text="snake",
+    )
+    run = discover_provider_candidates(
+        database_path=storage.database_path,
+        search_set_slug="snake-studies",
+        provider="vam",
+        candidate_offset=0,
+        candidate_limit=1,
+        candidate_client=FakeVamCandidateClient(),
+        batch_target=1,
+    )
+    job = start_collect_job(
+        database_path=storage.database_path,
+        run_id=run.run_id,
+        candidate_offset=0,
+        candidate_limit=1,
+        candidate_progress_total=1,
+        batch_target=1,
+        max_images_per_object=2,
+        available_disk_bytes=10_000_000,
+    )
+    vam_ingester = FakeVamProviderIngester()
+
+    summary = process_running_collect_job(
+        database_path=storage.database_path,
+        data_root=storage.data_root,
+        met_client=FakeMetRecordClient(),
+        provider_ingesters={"vam": vam_ingester},
+    )
+
+    assert summary is not None
+    assert summary.imported_object_ids == ["O:10"]
+    assert len(vam_ingester.requests) == 1
+    assert vam_ingester.requests[0].run_id == run.run_id
+    assert vam_ingester.requests[0].max_images_per_object == 2
+    assert get_worker_status(database_path=storage.database_path).status == "idle"
+    assert get_collect_job(database_path=storage.database_path, job_id=job.job_id).status == "completed"
 
 
 def test_worker_skips_missing_met_object_records_without_pausing_search(tmp_path):

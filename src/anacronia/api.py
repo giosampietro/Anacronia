@@ -1,6 +1,6 @@
 from pathlib import Path
 import shutil
-from typing import Annotated, Callable, Literal, TypeVar
+from typing import Annotated, Callable, Literal, Mapping, TypeVar
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
@@ -11,7 +11,7 @@ from anacronia.collection_runs import (
     DEFAULT_BATCH_TARGET,
     MetCandidateClient,
     discard_candidate_run,
-    discover_met_candidates,
+    get_candidate_run,
 )
 from anacronia.curation import (
     CollectionCurationBusyError,
@@ -61,9 +61,14 @@ from anacronia.met_ingest import (
     DEFAULT_MAX_IMAGES_PER_OBJECT,
     MetIngestSummary,
     MetRecordClient,
-    ingest_met_run,
 )
+from anacronia.met_adapter import MetProviderAdapter
 from anacronia.met_provider import HttpMetCandidateClient, fetch_bytes_url
+from anacronia.provider_adapters import (
+    OnlineProviderAdapter,
+    ProviderIngestRequest,
+    ProviderIngestSummary,
+)
 from anacronia.provider_identity import SourceObjectId
 from anacronia.provider_identity import normalize_source_object_id
 from anacronia.search_sets import (
@@ -211,7 +216,7 @@ def serialize_candidate_run(run: CandidateRun) -> dict[str, object]:
     }
 
 
-def serialize_met_ingest_summary(summary: MetIngestSummary) -> dict[str, object]:
+def serialize_provider_ingest_summary(summary: ProviderIngestSummary) -> dict[str, object]:
     return {
         "run_id": summary.run_id,
         "fetched_object_ids": [
@@ -230,6 +235,10 @@ def serialize_met_ingest_summary(summary: MetIngestSummary) -> dict[str, object]
             for skipped in summary.skipped_candidates
         ],
     }
+
+
+def serialize_met_ingest_summary(summary: MetIngestSummary) -> dict[str, object]:
+    return serialize_provider_ingest_summary(summary)
 
 
 def serialize_operational_dashboard(dashboard: OperationalDashboard) -> dict[str, object]:
@@ -562,6 +571,7 @@ def create_app(
     met_candidate_client: MetCandidateClient | None = None,
     met_record_client: MetRecordClient | None = None,
     download_image_bytes: Callable[[str], bytes] | None = None,
+    provider_adapters: Mapping[str, OnlineProviderAdapter] | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Anacronia")
     project_root = Path(__file__).resolve().parents[2]
@@ -576,6 +586,25 @@ def create_app(
     resolved_met_candidate_client = met_candidate_client or HttpMetCandidateClient()
     resolved_met_record_client = met_record_client or HttpMetCandidateClient()
     resolved_download_image_bytes = download_image_bytes or fetch_bytes_url
+    default_met_adapter = MetProviderAdapter(
+        candidate_client=resolved_met_candidate_client,
+        record_client=resolved_met_record_client,
+        download_image_bytes=resolved_download_image_bytes,
+    )
+    resolved_provider_adapters = {
+        "met": default_met_adapter,
+        **(provider_adapters or {}),
+    }
+
+    def get_online_provider_adapter(provider: str) -> OnlineProviderAdapter:
+        provider_key = provider.strip()
+        adapter = resolved_provider_adapters.get(provider_key)
+        if adapter is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Provider is not configured: {provider_key}",
+            )
+        return adapter
 
     @app.get("/health")
     def health() -> dict[str, object]:
@@ -1103,49 +1132,58 @@ def create_app(
             media_type="image/jpeg",
         )
 
-    @app.post("/search-sets/{slug}/provider-collections/met/runs")
-    def discover_met_candidate_run(
+    @app.post("/search-sets/{slug}/provider-collections/{provider}/runs")
+    def discover_provider_candidate_run(
         slug: str,
+        provider: str,
         request: DiscoverMetCandidatesRequest,
     ) -> dict[str, object]:
-        run = discover_met_candidates(
+        adapter = get_online_provider_adapter(provider)
+        run = adapter.discover_candidate_run(
             database_path=resolved_database_path,
             search_set_slug=slug,
             candidate_offset=request.candidate_offset,
             candidate_limit=request.candidate_limit,
-            met_client=resolved_met_candidate_client,
+            batch_target=DEFAULT_BATCH_TARGET,
         )
         return serialize_candidate_run(run)
 
-    @app.post("/search-sets/{slug}/provider-collections/met/collects")
-    def start_met_collect(
+    @app.post("/search-sets/{slug}/provider-collections/{provider}/collects")
+    def start_provider_collect(
         slug: str,
+        provider: str,
         request: StartMetCollectRequest,
     ) -> dict[str, object]:
+        adapter = get_online_provider_adapter(provider)
         if get_worker_status(database_path=resolved_database_path).active_collect_job_id is not None:
             raise HTTPException(status_code=409, detail="Another search is already active.")
         existing_collect_job = get_active_collect_job_for_search_set_provider(
             database_path=resolved_database_path,
             search_set_slug=slug,
-            provider="met",
+            provider=adapter.provider,
         )
         if existing_collect_job is not None and existing_collect_job.status == "paused":
-            raise HTTPException(status_code=409, detail="Paused Met search can be resumed.")
+            raise HTTPException(
+                status_code=409,
+                detail=f"Paused {adapter.display_name} search can be resumed.",
+            )
 
         candidate_offset = get_next_collect_candidate_offset_for_search_set_provider(
             database_path=resolved_database_path,
             search_set_slug=slug,
-            provider="met",
+            provider=adapter.provider,
         )
         if candidate_offset is None:
-            raise HTTPException(status_code=409, detail="Met has no more results for this Collection.")
+            raise HTTPException(
+                status_code=409,
+                detail=f"{adapter.display_name} has no more results for this Collection.",
+            )
 
-        run = discover_met_candidates(
+        run = adapter.discover_candidate_run(
             database_path=resolved_database_path,
             search_set_slug=slug,
             candidate_offset=candidate_offset,
             candidate_limit=INTERNAL_CANDIDATE_LIMIT,
-            met_client=resolved_met_candidate_client,
             batch_target=request.batch_target,
         )
         try:
@@ -1170,15 +1208,19 @@ def create_app(
             "batch_target": collect_job.batch_target,
         }
 
-    @app.post("/search-sets/{slug}/provider-collections/met/collects/stop")
-    def stop_met_collect(slug: str) -> dict[str, object]:
+    @app.post("/search-sets/{slug}/provider-collections/{provider}/collects/stop")
+    def stop_provider_collect(slug: str, provider: str) -> dict[str, object]:
+        adapter = get_online_provider_adapter(provider)
         collect_job = get_active_collect_job_for_search_set_provider(
             database_path=resolved_database_path,
             search_set_slug=slug,
-            provider="met",
+            provider=adapter.provider,
         )
         if collect_job is None or collect_job.status != "running":
-            raise HTTPException(status_code=409, detail="No running Met search can be stopped.")
+            raise HTTPException(
+                status_code=409,
+                detail=f"No running {adapter.display_name} search can be stopped.",
+            )
 
         stopped_job = request_stop_collect_job(
             database_path=resolved_database_path,
@@ -1189,18 +1231,23 @@ def create_app(
             "status": stopped_job.status,
         }
 
-    @app.post("/search-sets/{slug}/provider-collections/met/collects/resume")
-    def resume_met_collect(
+    @app.post("/search-sets/{slug}/provider-collections/{provider}/collects/resume")
+    def resume_provider_collect(
         slug: str,
+        provider: str,
         request: StartMetCollectRequest,
     ) -> dict[str, object]:
+        adapter = get_online_provider_adapter(provider)
         collect_job = get_active_collect_job_for_search_set_provider(
             database_path=resolved_database_path,
             search_set_slug=slug,
-            provider="met",
+            provider=adapter.provider,
         )
         if collect_job is None or collect_job.status != "paused":
-            raise HTTPException(status_code=409, detail="No paused Met search can be resumed.")
+            raise HTTPException(
+                status_code=409,
+                detail=f"No paused {adapter.display_name} search can be resumed.",
+            )
 
         try:
             resumed_job = resume_collect_job(
@@ -1216,15 +1263,21 @@ def create_app(
             "batch_target": resumed_job.batch_target,
         }
 
-    @app.post("/provider-collections/met/runs/{run_id}/ingest")
-    def ingest_met_candidate_run(run_id: int) -> dict[str, object]:
-        summary = ingest_met_run(
-            database_path=resolved_database_path,
-            data_root=resolved_data_root,
-            run_id=run_id,
-            met_client=resolved_met_record_client,
-            download_image_bytes=resolved_download_image_bytes,
+    @app.post("/provider-collections/{provider}/runs/{run_id}/ingest")
+    def ingest_provider_candidate_run(provider: str, run_id: int) -> dict[str, object]:
+        adapter = get_online_provider_adapter(provider)
+        run = get_candidate_run(database_path=resolved_database_path, run_id=run_id)
+        if run.provider != adapter.provider:
+            raise HTTPException(status_code=409, detail="Run belongs to another Provider.")
+
+        summary = adapter.ingest_run(
+            ProviderIngestRequest(
+                database_path=resolved_database_path,
+                data_root=resolved_data_root,
+                run_id=run_id,
+                max_images_per_object=DEFAULT_MAX_IMAGES_PER_OBJECT,
+            )
         )
-        return serialize_met_ingest_summary(summary)
+        return serialize_provider_ingest_summary(summary)
 
     return app

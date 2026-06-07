@@ -38,7 +38,7 @@ type NewCollectionFormProps = {
 
 const providerSources = [
   { label: "Met", value: "met", disabled: false },
-  { label: "V&A", value: "vna", disabled: true },
+  { label: "V&A", value: "vam", disabled: true },
   { label: "Europeana", value: "europeana", disabled: true },
 ] as const;
 
@@ -141,6 +141,7 @@ export function NewCollectionForm({
       className="mx-auto flex w-full max-w-4xl flex-col gap-4"
     >
       <input name="display_name" type="hidden" value={displayName} />
+      <input name="provider" type="hidden" value="met" />
       <StepCard number={1} title="Name the Collection">
         <Field data-invalid={Boolean(nameError)}>
           <FieldLabel className="sr-only" htmlFor="collection_name_entry">

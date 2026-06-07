@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 import json
 from pathlib import Path
 import sqlite3
@@ -6,7 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from anacronia.api import DEFAULT_CANDIDATE_LIMIT, DEFAULT_MAX_IMAGES_PER_OBJECT, create_app
-from anacronia.collection_runs import get_candidate_run
+from anacronia.collection_runs import discover_provider_candidates, get_candidate_run
 from anacronia.curation import ensure_curation_schema
 from anacronia.worker import (
     cancel_collect_job,
@@ -21,6 +22,7 @@ from anacronia.met_ingest import (
     get_met_matches,
     get_met_museum_objects,
 )
+from anacronia.provider_adapters import ProviderIngestRequest
 from anacronia.storage import initialize_storage
 
 
@@ -34,6 +36,71 @@ class FakeMetCandidateClient:
             "snake": [10, 20],
             "anaconda": [20, 30],
         }[term]
+
+
+class FakeVamCandidateClient:
+    def __init__(self) -> None:
+        self.queries: list[str] = []
+
+    def search_object_ids(self, term: str) -> list[str]:
+        self.queries.append(term)
+        return {
+            "snake": ["O:10", "O:20"],
+            "anaconda": ["O:20", "O:30"],
+        }[term]
+
+
+@dataclass(frozen=True)
+class FakeSkippedCandidate:
+    object_id: str
+    reason: str
+
+
+@dataclass(frozen=True)
+class FakeProviderIngestSummary:
+    run_id: int
+    fetched_object_ids: list[str]
+    imported_object_ids: list[str]
+    imported_image_count: int
+    skipped_candidates: list[FakeSkippedCandidate]
+
+
+class FakeVamProviderAdapter:
+    provider = "vam"
+    display_name = "V&A"
+
+    def __init__(self) -> None:
+        self.candidate_client = FakeVamCandidateClient()
+        self.ingest_requests: list[ProviderIngestRequest] = []
+
+    def discover_candidate_run(
+        self,
+        *,
+        database_path: Path,
+        search_set_slug: str,
+        candidate_offset: int,
+        candidate_limit: int,
+        batch_target: int,
+    ):
+        return discover_provider_candidates(
+            database_path=database_path,
+            search_set_slug=search_set_slug,
+            provider=self.provider,
+            candidate_offset=candidate_offset,
+            candidate_limit=candidate_limit,
+            candidate_client=self.candidate_client,
+            batch_target=batch_target,
+        )
+
+    def ingest_run(self, request: ProviderIngestRequest) -> FakeProviderIngestSummary:
+        self.ingest_requests.append(request)
+        return FakeProviderIngestSummary(
+            run_id=request.run_id,
+            fetched_object_ids=["O:10"],
+            imported_object_ids=["O:10"],
+            imported_image_count=1,
+            skipped_candidates=[FakeSkippedCandidate(object_id="O:20", reason="fixture_skip")],
+        )
 
 
 class FakeMetCandidateClientThatMakesWorkerBusy:
@@ -585,6 +652,85 @@ def test_api_discovers_met_candidates_without_listing_runs_as_search_sets(tmp_pa
             ],
         }
     ]
+
+
+def test_api_discovers_registered_provider_candidates_with_string_ids(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    vam_adapter = FakeVamProviderAdapter()
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            provider_adapters={"vam": vam_adapter},
+        )
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda"},
+    )
+
+    response = client.post(
+        "/search-sets/snake-studies/provider-collections/vam/runs",
+        json={"candidate_offset": 1, "candidate_limit": 2},
+    )
+
+    assert response.status_code == 200
+    assert vam_adapter.candidate_client.queries == ["snake", "anaconda"]
+    assert response.json()["provider"] == "vam"
+    assert response.json()["candidates"] == [
+        {
+            "object_id": "O:20",
+            "source_term": "snake",
+            "source_term_index": 0,
+            "provider_position": 1,
+            "run_position": 0,
+        },
+        {
+            "object_id": "O:30",
+            "source_term": "anaconda",
+            "source_term_index": 1,
+            "provider_position": 1,
+            "run_position": 1,
+        },
+    ]
+
+
+def test_api_ingests_registered_provider_run_with_generic_summary(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    vam_adapter = FakeVamProviderAdapter()
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            provider_adapters={"vam": vam_adapter},
+        )
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Snake Studies", "terms_text": "snake"},
+    )
+    run_response = client.post(
+        "/search-sets/snake-studies/provider-collections/vam/runs",
+        json={"candidate_offset": 0, "candidate_limit": 1},
+    )
+
+    response = client.post(
+        f"/provider-collections/vam/runs/{run_response.json()['run_id']}/ingest"
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "run_id": run_response.json()["run_id"],
+        "fetched_object_ids": ["O:10"],
+        "imported_object_ids": ["O:10"],
+        "skipped_candidates": [
+            {
+                "object_id": "O:20",
+                "reason": "fixture_skip",
+            }
+        ],
+    }
+    assert len(vam_adapter.ingest_requests) == 1
+    assert vam_adapter.ingest_requests[0].data_root == storage.data_root
 
 
 def test_api_starts_met_collect_job_from_search_set(tmp_path):

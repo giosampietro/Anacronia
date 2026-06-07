@@ -29,6 +29,18 @@ class ImageDerivativeSettings:
 
 
 @dataclass(frozen=True)
+class ProcessedImageDerivatives:
+    original_width: int
+    original_height: int
+    temporary_original_path: Path
+    standard_path: Path
+    thumb_path: Path
+    standard_settings: ImageDerivativeSettings
+    thumb_settings: ImageDerivativeSettings
+    imported: bool
+
+
+@dataclass(frozen=True)
 class ProcessedMetImageAsset:
     object_id: int
     image_role: str
@@ -78,8 +90,48 @@ def process_met_image_asset(
         derivative=thumb_settings.derivative,
     )
 
+    processed = process_image_derivatives_from_bytes(
+        source_bytes=download_bytes(source_image_url),
+        temporary_original_path=temporary_original_path,
+        standard_path=standard_path,
+        thumb_path=thumb_path,
+        standard_settings=standard_settings,
+        thumb_settings=thumb_settings,
+    )
+
+    return ProcessedMetImageAsset(
+        object_id=object_id,
+        image_role=image_role,
+        image_index=image_index,
+        source_image_url=source_image_url,
+        primary_image_small_url=primary_image_small_url,
+        original_width=processed.original_width,
+        original_height=processed.original_height,
+        temporary_original_path=processed.temporary_original_path,
+        standard_path=processed.standard_path,
+        thumb_path=processed.thumb_path,
+        standard_settings=processed.standard_settings,
+        thumb_settings=processed.thumb_settings,
+        imported=processed.imported,
+    )
+
+
+def process_image_derivatives_from_bytes(
+    *,
+    source_bytes: bytes,
+    temporary_original_path: Path,
+    standard_path: Path,
+    thumb_path: Path,
+    standard_settings: ImageDerivativeSettings | None = None,
+    thumb_settings: ImageDerivativeSettings | None = None,
+) -> ProcessedImageDerivatives:
+    resolved_standard_settings = standard_settings or ImageDerivativeSettings(
+        **STANDARD_1024_SETTINGS
+    )
+    resolved_thumb_settings = thumb_settings or ImageDerivativeSettings(
+        **THUMB_256_SETTINGS
+    )
     temporary_original_path.parent.mkdir(parents=True, exist_ok=True)
-    source_bytes = download_bytes(source_image_url)
     temporary_original_path.write_bytes(source_bytes)
 
     try:
@@ -89,37 +141,32 @@ def process_met_image_asset(
             write_image_derivative(
                 source_image=source_image,
                 path=standard_path,
-                settings=standard_settings,
+                settings=resolved_standard_settings,
             )
             write_image_derivative(
                 source_image=source_image,
                 path=thumb_path,
-                settings=thumb_settings,
+                settings=resolved_thumb_settings,
             )
     finally:
         temporary_original_path.unlink(missing_ok=True)
 
     imported = validate_image_derivative(
         path=standard_path,
-        settings=standard_settings,
+        settings=resolved_standard_settings,
     ) and validate_image_derivative(
         path=thumb_path,
-        settings=thumb_settings,
+        settings=resolved_thumb_settings,
     )
 
-    return ProcessedMetImageAsset(
-        object_id=object_id,
-        image_role=image_role,
-        image_index=image_index,
-        source_image_url=source_image_url,
-        primary_image_small_url=primary_image_small_url,
+    return ProcessedImageDerivatives(
         original_width=original_width,
         original_height=original_height,
         temporary_original_path=temporary_original_path,
         standard_path=standard_path,
         thumb_path=thumb_path,
-        standard_settings=standard_settings,
-        thumb_settings=thumb_settings,
+        standard_settings=resolved_standard_settings,
+        thumb_settings=resolved_thumb_settings,
         imported=imported,
     )
 
