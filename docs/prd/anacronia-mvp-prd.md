@@ -4,7 +4,7 @@
 
 Researchers, artists, and technically curious users need a reliable way to build local museum image collections for later visual analysis, AI, OpenCV, machine learning, clustering, and semantic enrichment. Existing museum APIs expose useful data, but each provider has different fields, image rules, rights metadata, and search behavior. Manually reviewing thousands of records before download is too slow, while naive scraping creates fragile datasets, duplicated files, unclear provenance, and inconsistent image quality.
 
-Anacronia should solve the first stage of this workflow: collect museum records and images locally in a controlled, resumable, transparent, Mac-first system. The MVP focuses on the Met as the first provider, while keeping the domain model flexible enough for Europeana, V&A, and other providers later.
+Anacronia should solve the first stage of this workflow: collect museum records and images locally in a controlled, resumable, transparent, Mac-first system. The MVP starts with the Met as the first permanent Provider, uses V&A to test multi-provider scaffolding, and keeps the domain model flexible enough for Europeana and other providers later.
 
 ## Solution
 
@@ -43,7 +43,7 @@ The MVP will not try to become the future visual atlas. It will provide the oper
 18. As a collection builder, I want terms to run as separate provider searches, so that Anacronia can record which terms matched which records.
 19. As a collection builder, I want provider candidates from multiple terms to be merged and deduplicated before internal cursor and processing limits are applied, so that search continuation stays reproducible.
 20. As a collection builder, I want candidate order to follow term insertion order and provider order, so that early terms define priority.
-21. As a collection builder, I want a batch dropdown with `5`, `10`, `20`, `30`, `100`, `500`, and `1000`, defaulting to `100`, so that I can choose the target amount of usable local material to search for next.
+21. As a collection builder, I want a batch dropdown with `5`, `10`, `20`, `30`, `100`, `500`, and `1000`, defaulting to `10`, so that I can start with a small, reviewable amount of usable local material and deliberately choose larger batches when needed.
 22. As a collection builder, I want batch size to mean target usable downloaded results, not provider candidates processed, so that the control matches what I receive locally.
 23. As a developer, I want internal candidate cursors and limits to remain auditable, so that provider search is reproducible without exposing candidate mechanics in the primary UI.
 24. As a collection builder, I want the UI to hide technical Run complexity by default, so that I see one continuing Collection rather than many internal executions.
@@ -60,7 +60,7 @@ The MVP will not try to become the future visual atlas. It will provide the oper
 35. As a collection builder, I want per-object image folders, so that all derivatives for one Museum Object are easy to find.
 36. As a collection builder, I want source image filenames and URLs stored in metadata, so that local derivative filenames can stay short and stable.
 37. As a collection builder, I want local image filenames standardized, so that the filesystem is predictable.
-38. As a collection builder, I want Image Asset identity based on provider, Museum Object, and source image URL, so that additional image order changes do not create duplicates.
+38. As a collection builder, I want Image Asset identity based on Source Identity rather than provider array position or local row ID, so that additional image order changes, V&A string IDs, local-folder material, delete, and re-import do not create duplicates.
 39. As a collection builder, I want duplicate source image URLs within an object deduplicated, so that the same image is not stored twice.
 40. As a collection builder, I want Anacronia to import Met objects with valid additional images even when `primaryImage` is missing, so that useful images are not discarded.
 41. As a collection builder, I want Met `primaryImageSmall` stored as metadata but not downloaded, so that source information is preserved without redundant local files.
@@ -164,9 +164,9 @@ The MVP will not try to become the future visual atlas. It will provide the oper
 139. As a collection curator, I want exports to include favorite state, so that downstream analysis can use my curation marks.
 140. As a collection curator, I want delete confirmations to warn when material is shared or favorited, so that destructive scope is clear.
 141. As a developer, I want explicit Collection Membership backfilled from current Run/match-derived visibility, so that existing data keeps the same visible results after the curation model is added.
-142. As a developer, I want Collection Exclusions and Favorites keyed by provider identity, so that delete/re-import does not break curation intent.
+142. As a developer, I want Collection Exclusions and Favorites keyed by Source Identity, so that delete/re-import does not break curation intent across online Provider and local-folder material.
 143. As a developer, I want deleted Objects and Images marked inactive/deleted while local files are removed, so that Run history can remain auditable.
-144. As a developer, I want re-import after delete to reactivate or update the old inactive provider-identity row, so that duplicate active rows are avoided.
+144. As a developer, I want re-import after delete to reactivate or update the old inactive Source Identity row, so that duplicate active rows are avoided.
 
 ## Additional Source Requirements
 
@@ -241,7 +241,7 @@ Required default behavior:
 - Query each term separately against the provider.
 - Merge and deduplicate candidate object IDs across term queries before applying internal candidate cursor and processing limits.
 - Preserve candidate ordering by term insertion order, then provider ordering within each term, skipping duplicates.
-- Use the primary UI batch dropdown as target usable downloaded results with values `5`, `10`, `20`, `30`, `100`, `500`, and `1000`, defaulting to `100`.
+- Use the primary UI batch dropdown as target usable downloaded results with values `5`, `10`, `20`, `30`, `100`, `500`, and `1000`, defaulting to `10`.
 - Keep candidate cursor and processing limits internal; do not expose `Candidate offset` or `Candidate limit` in the primary MVP UI.
 - Hide Run complexity from the primary UI while retaining Run data for state, progress, and auditing.
 - Treat provider drift across days or weeks as non-blocking; continuation should use the current provider response without interrupting the user.
@@ -259,7 +259,7 @@ Required default behavior:
 - For Met, group object files by numeric range folders and store images in per-object folders.
 - Use standardized local derivative filenames such as `primary-standard-1024.jpg`, `primary-thumb-256.jpg`, `additional-001-standard-1024.jpg`, and `additional-001-thumb-256.jpg`.
 - Store source filenames and source URLs in metadata rather than local filenames.
-- Define Image Asset identity by provider, Museum Object, and source image URL.
+- Define Image Asset identity by Source Identity rather than provider array position or local database row ID.
 - Deduplicate repeated source image URLs within a Museum Object and prefer the `primary` role if present.
 - Attempt multiple Image Assets per Museum Object up to the MVP per-object image limit of 3.
 - Do not expose the per-object image limit as a routine UI control in the MVP.
@@ -294,9 +294,9 @@ Required default behavior:
 - Future exports should include favorite state.
 - Favorite export workflow should be `Favorites` filter, then `Select`, then `Export`, so the visible grid stays the source of truth.
 - Future Collection Membership should be explicit and backfilled from current Run/match-derived visibility.
-- Future Collection Exclusions and Favorites should use provider identity keys.
+- Future Collection Exclusions and Favorites should use Source Identity keys.
 - Future Provider Searches should skip Collection Exclusions before download/import/reactivation for that Collection and should create Collection Membership for matched imported material only when no Collection Exclusion applies.
-- Future deletes should mark local Objects and Images inactive/deleted, delete local files, keep Run history and matches for audit, and allow later re-import to reactivate/update the old inactive provider-identity row.
+- Future deletes should mark local Objects and Images inactive/deleted, delete local files, keep Run history and matches for audit, and allow later re-import to reactivate/update the old inactive Source Identity row.
 - Store future AI/OpenCV/ML outputs as separate Analysis Results rather than provider metadata.
 - Build provider-specific Descriptor mappings instead of assuming universal `tags`.
 - Store each Descriptor value with descriptor type and provider source field.
@@ -361,7 +361,7 @@ Required default behavior:
 
 ## Out of Scope
 
-- Providers beyond the Met in the MVP.
+- Providers beyond the current Met plus V&A test scope.
 - Full Europeana implementation.
 - A universal museum metadata model.
 - AI/chatbot-based descriptor interpretation.
@@ -390,4 +390,4 @@ Required default behavior:
 - The project has been renamed from OpenMuseum to Anacronia. Future folders, commands, configuration, and documentation should use Anacronia naming.
 - `CONTEXT.md` contains the domain vocabulary and should remain the source of truth for terms during implementation.
 - The Met API has live behavior that requires defensive handling: `tags` can be `null`, wildcard search behavior is not a reliable canonical source, and repeated API sampling can trigger `403` responses. The implementation should use documented endpoints, conservative requests, retry/backoff, and robust filtering.
-- V&A and Europeana findings informed the model but are not MVP provider work. They justify the raw + canonical minimal + provider-specific + Descriptor mapping approach.
+- V&A is current multi-provider scaffolding test work. Europeana findings still inform the raw + canonical minimal + provider-specific + Descriptor mapping approach, but Europeana implementation is outside the MVP.

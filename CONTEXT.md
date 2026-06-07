@@ -30,6 +30,27 @@ User-imported local material is not subject to Anacronia's online Provider right
 
 User-imported local material still needs stable local identity, derivative generation, Collection Membership, User Library visibility, curation actions, export support, and future Analysis Results.
 
+### Source Type
+
+The kind of source that produced local material.
+
+Current source types are:
+
+- `online-provider`: museum Provider material created through Provider Search, with Provider IDs such as `met` and `vam`.
+- `local-folder`: the first User-Imported Local Material workflow, created from image files on the user's computer.
+
+Future Are.na, Instagram, or similar workflows should introduce explicit source types or source keys instead of pretending to be museum Providers.
+
+Source type should appear in User Library facets, exports, and architecture decisions where Met, V&A, local-folder material, and future sources need to be distinguished.
+
+### Source Identity
+
+A stable identity for local material that is not based on volatile database row IDs.
+
+Online Provider material uses Provider plus provider object identity, with Image Assets additionally keyed by provider/source image identity. User-Imported Local Material uses a local source namespace plus generated local object/image identities and private source-file provenance.
+
+Collection Membership, Collection Exclusions, Favorites, delete, re-import, cross-Collection views, and exports should use Source Identity where durable identity matters.
+
 ### Collection
 
 A named research intent. A Collection is what the user sees and manages.
@@ -145,7 +166,7 @@ A Collection-scoped rule that prevents a Museum Object or Image Asset from being
 
 Collection Exclusions are not global. They do not prevent other Collections from adding or keeping the same Museum Object or Image Asset.
 
-Collection Exclusions use provider identity, not local database row identity. Object exclusions are keyed by Collection, Provider, and provider object ID. Image exclusions are keyed by Collection, Provider, provider object ID, and source image URL.
+Collection Exclusions use Source Identity, not local database row identity. Online Provider object exclusions are keyed by Collection, Provider, and provider object ID. Online Provider image exclusions are keyed by Collection, Provider, provider object ID, and source image identity. Local-folder exclusions use local Source Identity.
 
 ### Favorite
 
@@ -155,7 +176,7 @@ Favorite state is not Collection-scoped. A favorited Museum Object or Image Asse
 
 Favorites can be filtered in User Library and within Collection views. Collection favorite filters show favorited material that belongs to the current Collection; they do not pull unrelated User Library material into the Collection.
 
-Favorites use provider identity, not local database row identity. Deleting a Museum Object or Image Asset removes matching favorite records.
+Favorites use Source Identity, not local database row identity. Deleting a Museum Object or Image Asset removes matching favorite records.
 
 ### Orphan Local Material
 
@@ -245,7 +266,7 @@ The primary export unit is the Image Asset: one exported row or JSONL object per
 - Anacronia should avoid duplicate visible Collections for the same slug; matching slugs must not silently mutate an existing locked Collection definition.
 - Starting the first online Provider Search creates the Collection and locks its title, terms, and initial Provider Source for the MVP.
 - Importing a local folder as a new Collection creates the Collection and locks its title plus `local-folder` source for the MVP; terms may be empty.
-- User-facing batch size means target usable downloaded results, not provider candidates processed. The MVP batch dropdown values are `5`, `10`, `20`, `30`, `100`, `500`, and `1000`, defaulting to `100`.
+- User-facing batch size means target usable downloaded results, not provider candidates processed. The MVP batch dropdown values are `5`, `10`, `20`, `30`, `100`, `500`, and `1000`, defaulting to `10`.
 - Candidate offset and candidate limit remain internal Run mechanics and apply after term queries are merged, deduplicated, and ordered.
 - Candidate order follows term insertion order, preserving provider order within each term and skipping duplicates already seen.
 - Search feedback should show the search state plus stable `Objects` and `Images` counters. The MVP should not show percentage progress or candidate counts in the primary UI.
@@ -262,7 +283,7 @@ The primary export unit is the Image Asset: one exported row or JSONL object per
 - `Delete` does not create a global never-import-again rule. A future Provider Search may import the same Museum Object or Image Asset again.
 - `Delete` keeps Run history and matches as audit history, while active views ignore deleted material.
 - Deleted Museum Objects and Image Assets should be marked inactive/deleted rather than physically removing every row needed for audit integrity. Local image files should still be deleted.
-- Re-importing deleted material should reactivate or update the old inactive provider-identity row rather than creating a duplicate active row.
+- Re-importing deleted material should reactivate or update the old inactive Source Identity row rather than creating a duplicate active row.
 - Collection Exclusions survive global delete so prior per-Collection removal intent still applies if the material is re-imported later.
 - Orphan local material remains visible in User Library as `No Collection`.
 - Favorites are global and filterable in User Library and Collection views.
@@ -300,7 +321,7 @@ The primary export unit is the Image Asset: one exported row or JSONL object per
 - The default data directory is `./data` inside the Anacronia project root. It can be overridden in configuration for future storage needs such as external disks.
 - File storage should prefer human-readable provider-specific layouts when possible. For Met objects, use numeric range folders and per-object image folders, such as `raw-api/objects/436000-436999/436535.json` and `images/436000-436999/436535/primary-standard-1024.jpg`. Opaque hash sharding is a fallback for providers with unsuitable IDs or URLs.
 - Local image derivative filenames should be standardized and short, such as `primary-standard-1024.jpg` and `additional-001-thumb-256.jpg`. Source image filenames and URLs belong in metadata.
-- Image Asset identity should be based on provider, Museum Object, and source image URL, not only on the image's position in a provider array.
+- Image Asset identity should be based on Source Identity, not only on the image's position in a provider array or on local database row IDs.
 - If the same source image URL appears multiple times for one Museum Object, Anacronia should create one Image Asset and prefer the `primary` role when present.
 - A Met Museum Object can be imported when it has at least one valid image URL, even if `primaryImage` is missing and valid URLs appear only in `additionalImages`.
 - Met `primaryImageSmall` should be stored as source metadata when available, but Anacronia should not download it as a local derivative in the MVP.
@@ -322,5 +343,6 @@ The primary export unit is the Image Asset: one exported row or JSONL object per
 
 ## Open Questions
 
-- How should Anacronia balance a shared cross-provider model with provider-specific metadata that should not be flattened away?
-- Should Anacronia exclude or restrict future providers whose terms prohibit persistent local storage or local copies of images?
+- What portable library backup/restore format is needed beyond dataset exports?
+- What packaged Mac app distribution, signing/notarization, data-root, and update model should replace terminal-first setup after the MVP?
+- Which future Providers should be rejected, warned, or admitted when their terms restrict persistent local copies? Decide this per Provider ADR before implementation.

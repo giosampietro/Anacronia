@@ -1,5 +1,7 @@
 # Search Set Workspace UX Notes
 
+> Historical note: this document describes the earlier Search Set / collect prototype. Current implementation planning uses `Collection`, `Provider Search`, object-first Collection grids, and the live contracts in `docs/ux/start-new-collection-contract.md`, `docs/ux/local-result-set-contract.md`, and `docs/ux/curation-actions-contract.md`.
+
 Use this with `docs/ux/search-set-workspace-mockup.html`.
 
 ## Core Rules
