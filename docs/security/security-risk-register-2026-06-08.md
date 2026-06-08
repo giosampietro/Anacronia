@@ -13,13 +13,10 @@ and make future reruns comparable.
 - Status: tracked, not fixed.
 - Original scan date: June 8, 2026.
 - Original validated report checkout: `main@89ac831`.
-- Tracking branch note: this register is intended to live on a standalone
-  branch based on `origin/main@89ac831`, so it does not depend on the open V&A
-  requirements branch. While the scan was running, the working tree moved
-  between `codex/vna-requirements@3ec1489` and `main@89ac831`; the findings
-  below are the earlier validated `main@89ac831` set. Because
-  `codex/vna-requirements` includes V&A and local-folder code that was absent
-  from `main`, the next full scan must recheck those surfaces before
+- Tracking branch note: this register preserves the earlier validated
+  `main@89ac831` scan set. PR #168 was later updated on top of `origin/main`
+  after the V&A/local-folder/source-identity architecture work merged in PR
+  #167, so the next full scan must recheck those newer surfaces before
   implementation issues are finalized.
 - Original report artifacts: `/tmp/codex-security-scans/Anacronia/3ec1489_20260608T201634Z/`
 
@@ -148,7 +145,7 @@ Record the rerun result here:
 
 | Date | Branch / commit | Result | Decision |
 | --- | --- | --- | --- |
-| 2026-06-08 | `main@89ac831` scan artifacts, tracking branch based on `origin/main@89ac831` | Baseline created. | Revalidate before fixing. |
+| 2026-06-08 | `main@89ac831` scan artifacts, then PR #168 updated on top of `origin/main` after PR #167 | Baseline created. | Revalidate current `main` before fixing. |
 
 ## GitHub Issue Plan
 
