@@ -40,3 +40,11 @@ export function getActionFormDataString(formData: FormData, name: string): strin
   const value = getActionFormDataValue(formData, name);
   return value === null ? "" : String(value);
 }
+
+export function getRequiredActionFormDataString(
+  formData: FormData,
+  name: string,
+): string | null {
+  const value = getActionFormDataString(formData, name).trim();
+  return value === "" ? null : value;
+}

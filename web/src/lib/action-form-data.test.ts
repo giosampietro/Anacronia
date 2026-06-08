@@ -4,6 +4,7 @@ import {
   getActionFormDataString,
   getActionFormDataValue,
   getActionFormDataValues,
+  getRequiredActionFormDataString,
 } from "./action-form-data";
 
 describe("action form data", () => {
@@ -39,5 +40,20 @@ describe("action form data", () => {
       "first",
       "second",
     ]);
+  });
+
+  it("returns null for missing or blank required string values", () => {
+    const formData = new FormData();
+    formData.set("provider", "   ");
+
+    expect(getRequiredActionFormDataString(formData, "provider")).toBeNull();
+    expect(getRequiredActionFormDataString(formData, "slug")).toBeNull();
+  });
+
+  it("trims required string values from action-prefixed fields", () => {
+    const formData = new FormData();
+    formData.set("_1_provider", " vam ");
+
+    expect(getRequiredActionFormDataString(formData, "provider")).toBe("vam");
   });
 });

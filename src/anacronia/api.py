@@ -143,7 +143,7 @@ BatchTarget = Literal[5, 10, 20, 30, 100, 500, 1000]
 class SearchSetRequest(BaseModel):
     display_name: str
     terms_text: str
-    provider: str = "met"
+    provider: str | None = None
 
 
 class LocalFolderCollectionRequest(BaseModel):
@@ -680,9 +680,9 @@ def create_app(
     def create_search_set(request: SearchSetRequest) -> dict[str, object]:
         if get_worker_status(database_path=resolved_database_path).active_collect_job_id is not None:
             raise HTTPException(status_code=409, detail="Another search is already active.")
-        provider_key = request.provider.strip()
+        provider_key = request.provider.strip() if request.provider is not None else ""
         if not provider_key:
-            provider_key = "met"
+            raise HTTPException(status_code=422, detail="Provider is required.")
         if provider_key not in resolved_provider_adapters:
             raise HTTPException(
                 status_code=422,

@@ -228,6 +228,41 @@ def test_health_reports_api_and_idle_worker(tmp_path):
     }
 
 
+def test_api_rejects_online_archive_collection_without_provider(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    client = TestClient(create_app(database_path=storage.database_path))
+
+    response = client.post(
+        "/search-sets",
+        json={
+            "display_name": "Snake Studies",
+            "terms_text": "snake, anaconda",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Provider is required."
+    assert client.get("/search-sets").json() == []
+
+
+def test_api_rejects_online_archive_collection_with_blank_provider(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    client = TestClient(create_app(database_path=storage.database_path))
+
+    response = client.post(
+        "/search-sets",
+        json={
+            "display_name": "Snake Studies",
+            "terms_text": "snake, anaconda",
+            "provider": "   ",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Provider is required."
+    assert client.get("/search-sets").json() == []
+
+
 def test_api_starts_locked_collection_with_initial_met_provider_source(tmp_path):
     storage = initialize_storage(project_root=tmp_path)
     client = TestClient(create_app(database_path=storage.database_path))
@@ -237,6 +272,7 @@ def test_api_starts_locked_collection_with_initial_met_provider_source(tmp_path)
         json={
             "display_name": "Snake Studies",
             "terms_text": "snake, anaconda",
+            "provider": "met",
         },
     )
 
@@ -273,6 +309,7 @@ def test_api_starts_locked_collection_with_initial_met_provider_source(tmp_path)
         json={
             "display_name": "snake studies",
             "terms_text": "Snake, cobra",
+            "provider": "met",
         },
     )
 
@@ -315,11 +352,11 @@ def test_api_rejects_collection_without_title_or_terms(tmp_path):
 
     missing_title = client.post(
         "/search-sets",
-        json={"display_name": "  ", "terms_text": "snake"},
+        json={"display_name": "  ", "terms_text": "snake", "provider": "met"},
     )
     missing_terms = client.post(
         "/search-sets",
-        json={"display_name": "Snake Studies", "terms_text": " , \n "},
+        json={"display_name": "Snake Studies", "terms_text": " , \n ", "provider": "met"},
     )
 
     assert missing_title.status_code == 422
@@ -334,7 +371,7 @@ def test_api_lists_search_sets(tmp_path):
     client = TestClient(create_app(database_path=storage.database_path))
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda"},
+        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda", "provider": "met"},
     )
 
     response = client.get("/search-sets")
@@ -460,7 +497,7 @@ def test_api_imports_local_folder_into_existing_collection(tmp_path):
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
 
     response = client.post(
@@ -565,7 +602,7 @@ def test_api_renames_collection_display_name_without_changing_slug_or_terms(tmp_
     client = TestClient(create_app(database_path=storage.database_path))
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda"},
+        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda", "provider": "met"},
     )
 
     response = client.patch(
@@ -599,11 +636,11 @@ def test_api_deletes_empty_collection_and_removes_it_from_dashboard(tmp_path):
     client = TestClient(create_app(database_path=storage.database_path))
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Studies", "terms_text": "snake"},
+        json={"display_name": "Snake Studies", "terms_text": "snake", "provider": "met"},
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Bowl Study", "terms_text": "bowl"},
+        json={"display_name": "Bowl Study", "terms_text": "bowl", "provider": "met"},
     )
 
     response = client.delete("/search-sets/snake-studies")
@@ -638,7 +675,7 @@ def test_api_deletes_collection_with_exclusive_material_and_removes_local_files(
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
     run_response = client.post(
         "/search-sets/snake-study/provider-collections/met/runs",
@@ -672,7 +709,7 @@ def test_api_rejects_delete_collection_while_provider_search_is_running(tmp_path
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
     client.post(
         "/search-sets/snake-study/provider-collections/met/runs",
@@ -721,7 +758,7 @@ def test_api_reports_retryable_delete_collection_database_failure(tmp_path, monk
     client = TestClient(create_app(database_path=storage.database_path))
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
 
     failed_response = client.delete("/search-sets/snake-study")
@@ -745,11 +782,11 @@ def test_api_rejects_collection_rename_that_would_match_existing_slug(tmp_path):
     client = TestClient(create_app(database_path=storage.database_path))
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Studies", "terms_text": "snake"},
+        json={"display_name": "Snake Studies", "terms_text": "snake", "provider": "met"},
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Masks", "terms_text": "mask"},
+        json={"display_name": "Masks", "terms_text": "mask", "provider": "met"},
     )
 
     response = client.patch(
@@ -767,11 +804,11 @@ def test_api_rejects_collection_rename_that_would_match_existing_display_name(tm
     client = TestClient(create_app(database_path=storage.database_path))
     client.post(
         "/search-sets",
-        json={"display_name": "Masks", "terms_text": "mask"},
+        json={"display_name": "Masks", "terms_text": "mask", "provider": "met"},
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Studies", "terms_text": "snake"},
+        json={"display_name": "Snake Studies", "terms_text": "snake", "provider": "met"},
     )
     client.patch(
         "/search-sets/masks",
@@ -804,7 +841,7 @@ def test_api_does_not_expose_term_deactivation(tmp_path):
     client = TestClient(create_app(database_path=storage.database_path))
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda"},
+        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda", "provider": "met"},
     )
 
     response = client.post(
@@ -823,7 +860,7 @@ def test_api_discovers_met_candidates_without_listing_runs_as_search_sets(tmp_pa
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda"},
+        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda", "provider": "met"},
     )
 
     response = client.post(
@@ -884,7 +921,7 @@ def test_api_discovers_registered_provider_candidates_with_string_ids(tmp_path):
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda"},
+        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda", "provider": "vam"},
     )
 
     response = client.post(
@@ -925,7 +962,7 @@ def test_api_ingests_registered_provider_run_with_generic_summary(tmp_path):
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Studies", "terms_text": "snake"},
+        json={"display_name": "Snake Studies", "terms_text": "snake", "provider": "vam"},
     )
     run_response = client.post(
         "/search-sets/snake-studies/provider-collections/vam/runs",
@@ -964,7 +1001,7 @@ def test_api_starts_met_collect_job_from_search_set(tmp_path):
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda"},
+        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda", "provider": "met"},
     )
 
     response = client.post(
@@ -1007,7 +1044,7 @@ def test_api_starts_met_search_from_batch_target(tmp_path, batch_target):
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda"},
+        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda", "provider": "met"},
     )
 
     response = client.post(
@@ -1048,7 +1085,7 @@ def test_api_rejects_unsupported_met_batch_targets(tmp_path):
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Studies", "terms_text": "snake"},
+        json={"display_name": "Snake Studies", "terms_text": "snake", "provider": "met"},
     )
 
     response = client.post(
@@ -1070,7 +1107,7 @@ def test_api_requests_running_met_search_to_stop(tmp_path):
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda"},
+        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda", "provider": "met"},
     )
     client.post(
         "/search-sets/snake-studies/provider-collections/met/collects",
@@ -1108,7 +1145,7 @@ def test_api_keeps_met_searching_from_next_safe_candidate_after_completed_batch(
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda"},
+        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda", "provider": "met"},
     )
     first_response = client.post(
         "/search-sets/snake-studies/provider-collections/met/collects",
@@ -1150,7 +1187,7 @@ def test_api_resumes_paused_met_search_and_exposes_pause_reason(tmp_path):
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda"},
+        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda", "provider": "met"},
     )
     start_response = client.post(
         "/search-sets/snake-studies/provider-collections/met/collects",
@@ -1177,7 +1214,7 @@ def test_api_resumes_paused_met_search_and_exposes_pause_reason(tmp_path):
 
     client.post(
         "/search-sets",
-        json={"display_name": "Other Study", "terms_text": "snake"},
+        json={"display_name": "Other Study", "terms_text": "snake", "provider": "met"},
     )
     other_response = client.post(
         "/search-sets/other-study/provider-collections/met/collects",
@@ -1226,7 +1263,7 @@ def test_api_caps_met_collect_to_three_images_per_object(tmp_path):
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Studies", "terms_text": "snake"},
+        json={"display_name": "Snake Studies", "terms_text": "snake", "provider": "met"},
     )
 
     response = client.post(
@@ -1253,7 +1290,7 @@ def test_health_reports_running_worker_when_collect_job_is_active(tmp_path):
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda"},
+        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda", "provider": "met"},
     )
     client.post(
         "/search-sets/snake-studies/provider-collections/met/collects",
@@ -1290,7 +1327,7 @@ def test_api_rejects_met_collect_before_discovery_when_collect_job_is_active(tmp
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda"},
+        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda", "provider": "met"},
     )
     client.post(
         "/search-sets/snake-studies/provider-collections/met/collects",
@@ -1329,7 +1366,7 @@ def test_api_rejects_met_collect_without_leaving_discovered_run_when_worker_beco
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Studies", "terms_text": "snake"},
+        json={"display_name": "Snake Studies", "terms_text": "snake", "provider": "met"},
     )
 
     response = client.post(
@@ -1369,7 +1406,7 @@ def test_api_ingests_met_records_for_a_candidate_run(tmp_path):
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda"},
+        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda", "provider": "met"},
     )
     run_response = client.post(
         "/search-sets/snake-studies/provider-collections/met/runs",
@@ -1410,7 +1447,7 @@ def test_api_returns_operational_dashboard(tmp_path):
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda"},
+        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda", "provider": "met"},
     )
     run_response = client.post(
         "/search-sets/snake-studies/provider-collections/met/runs",
@@ -1466,7 +1503,7 @@ def test_api_returns_collection_objects_newest_first(tmp_path):
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
     run_response = client.post(
         "/search-sets/snake-study/provider-collections/met/runs",
@@ -1510,7 +1547,7 @@ def test_api_paginates_collection_objects_with_total_count(tmp_path):
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
     run_response = client.post(
         "/search-sets/snake-study/provider-collections/met/runs",
@@ -1545,7 +1582,7 @@ def test_api_returns_collection_image_assets_newest_first(tmp_path):
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
     run_response = client.post(
         "/search-sets/snake-study/provider-collections/met/runs",
@@ -1610,7 +1647,7 @@ def test_api_returns_read_only_collection_local_result_set_with_query_counts_and
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
     run_response = client.post(
         "/search-sets/snake-study/provider-collections/met/runs",
@@ -1701,7 +1738,7 @@ def test_api_returns_user_library_image_assets_once_with_collection_membership(t
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
     snake_run_response = client.post(
         "/search-sets/snake-study/provider-collections/met/runs",
@@ -1710,7 +1747,7 @@ def test_api_returns_user_library_image_assets_once_with_collection_membership(t
     client.post(f"/provider-collections/met/runs/{snake_run_response.json()['run_id']}/ingest")
     client.post(
         "/search-sets",
-        json={"display_name": "Bowl Study", "terms_text": "bowl"},
+        json={"display_name": "Bowl Study", "terms_text": "bowl", "provider": "met"},
     )
     bowl_run_response = client.post(
         "/search-sets/bowl-study/provider-collections/met/runs",
@@ -1780,7 +1817,7 @@ def test_api_returns_user_library_objects_once_with_collection_membership(tmp_pa
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
     snake_run_response = client.post(
         "/search-sets/snake-study/provider-collections/met/runs",
@@ -1789,7 +1826,7 @@ def test_api_returns_user_library_objects_once_with_collection_membership(tmp_pa
     client.post(f"/provider-collections/met/runs/{snake_run_response.json()['run_id']}/ingest")
     client.post(
         "/search-sets",
-        json={"display_name": "Bowl Study", "terms_text": "bowl"},
+        json={"display_name": "Bowl Study", "terms_text": "bowl", "provider": "met"},
     )
     bowl_run_response = client.post(
         "/search-sets/bowl-study/provider-collections/met/runs",
@@ -1849,7 +1886,7 @@ def test_api_object_favorites_are_global_and_filterable(tmp_path):
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
     snake_run_response = client.post(
         "/search-sets/snake-study/provider-collections/met/runs",
@@ -1858,7 +1895,7 @@ def test_api_object_favorites_are_global_and_filterable(tmp_path):
     client.post(f"/provider-collections/met/runs/{snake_run_response.json()['run_id']}/ingest")
     client.post(
         "/search-sets",
-        json={"display_name": "Bowl Study", "terms_text": "bowl"},
+        json={"display_name": "Bowl Study", "terms_text": "bowl", "provider": "met"},
     )
     bowl_run_response = client.post(
         "/search-sets/bowl-study/provider-collections/met/runs",
@@ -1933,7 +1970,7 @@ def test_api_image_favorites_are_separate_filterable_and_exported(tmp_path):
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
     snake_run_response = client.post(
         "/search-sets/snake-study/provider-collections/met/runs",
@@ -1942,7 +1979,7 @@ def test_api_image_favorites_are_separate_filterable_and_exported(tmp_path):
     client.post(f"/provider-collections/met/runs/{snake_run_response.json()['run_id']}/ingest")
     client.post(
         "/search-sets",
-        json={"display_name": "Bowl Study", "terms_text": "bowl"},
+        json={"display_name": "Bowl Study", "terms_text": "bowl", "provider": "met"},
     )
     bowl_run_response = client.post(
         "/search-sets/bowl-study/provider-collections/met/runs",
@@ -2051,7 +2088,7 @@ def test_api_object_detail_includes_object_and_image_favorite_state(tmp_path):
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
     run_response = client.post(
         "/search-sets/snake-study/provider-collections/met/runs",
@@ -2095,7 +2132,7 @@ def test_api_removes_selected_object_from_collection_without_deleting_library(tm
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
     run_response = client.post(
         "/search-sets/snake-study/provider-collections/met/runs",
@@ -2140,7 +2177,7 @@ def test_api_filters_user_library_to_no_collection_material(tmp_path):
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
     run_response = client.post(
         "/search-sets/snake-study/provider-collections/met/runs",
@@ -2201,7 +2238,7 @@ def test_api_exports_selected_user_library_orphan_object(tmp_path):
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
     run_response = client.post(
         "/search-sets/snake-study/provider-collections/met/runs",
@@ -2262,7 +2299,7 @@ def test_api_deletes_selected_image_asset_globally_and_removes_local_files(tmp_p
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
     run_response = client.post(
         "/search-sets/snake-study/provider-collections/met/runs",
@@ -2361,7 +2398,7 @@ def test_api_returns_user_library_object_detail_without_collection_slug(tmp_path
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
     snake_run_response = client.post(
         "/search-sets/snake-study/provider-collections/met/runs",
@@ -2370,7 +2407,7 @@ def test_api_returns_user_library_object_detail_without_collection_slug(tmp_path
     client.post(f"/provider-collections/met/runs/{snake_run_response.json()['run_id']}/ingest")
     client.post(
         "/search-sets",
-        json={"display_name": "Bowl Study", "terms_text": "bowl"},
+        json={"display_name": "Bowl Study", "terms_text": "bowl", "provider": "met"},
     )
     bowl_run_response = client.post(
         "/search-sets/bowl-study/provider-collections/met/runs",
@@ -2427,7 +2464,7 @@ def test_api_returns_user_library_local_result_set_with_counts_and_facets(tmp_pa
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
     snake_run_response = client.post(
         "/search-sets/snake-study/provider-collections/met/runs",
@@ -2436,7 +2473,7 @@ def test_api_returns_user_library_local_result_set_with_counts_and_facets(tmp_pa
     client.post(f"/provider-collections/met/runs/{snake_run_response.json()['run_id']}/ingest")
     client.post(
         "/search-sets",
-        json={"display_name": "Bowl Study", "terms_text": "bowl"},
+        json={"display_name": "Bowl Study", "terms_text": "bowl", "provider": "met"},
     )
     bowl_run_response = client.post(
         "/search-sets/bowl-study/provider-collections/met/runs",
@@ -2525,7 +2562,7 @@ def test_api_paginates_filtered_user_library_after_searching_all_assets(tmp_path
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
     snake_run_response = client.post(
         "/search-sets/snake-study/provider-collections/met/runs",
@@ -2534,7 +2571,7 @@ def test_api_paginates_filtered_user_library_after_searching_all_assets(tmp_path
     client.post(f"/provider-collections/met/runs/{snake_run_response.json()['run_id']}/ingest")
     client.post(
         "/search-sets",
-        json={"display_name": "Bowl Study", "terms_text": "bowl"},
+        json={"display_name": "Bowl Study", "terms_text": "bowl", "provider": "met"},
     )
     bowl_run_response = client.post(
         "/search-sets/bowl-study/provider-collections/met/runs",
@@ -2577,7 +2614,7 @@ def test_api_counts_only_processed_collection_matches_not_future_candidates(tmp_
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
     first_run_response = client.post(
         "/search-sets/snake-study/provider-collections/met/runs",
@@ -2586,7 +2623,7 @@ def test_api_counts_only_processed_collection_matches_not_future_candidates(tmp_
     client.post(f"/provider-collections/met/runs/{first_run_response.json()['run_id']}/ingest")
     client.post(
         "/search-sets",
-        json={"display_name": "Hands", "terms_text": "hand"},
+        json={"display_name": "Hands", "terms_text": "hand", "provider": "met"},
     )
     client.post(
         "/search-sets/hands/provider-collections/met/runs",
@@ -2620,7 +2657,7 @@ def test_api_returns_collection_object_detail_for_overlay(tmp_path):
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
     run_response = client.post(
         "/search-sets/snake-study/provider-collections/met/runs",
@@ -2687,7 +2724,7 @@ def test_api_returns_collection_object_detail_for_string_provider_object_id(tmp_
     )
     client.post(
         "/search-sets",
-        json={"display_name": "VAM Study", "terms_text": "ceramic"},
+        json={"display_name": "VAM Study", "terms_text": "ceramic", "provider": "vam"},
     )
 
     with sqlite3.connect(storage.database_path) as connection:
@@ -2824,7 +2861,7 @@ def test_api_serves_local_image_derivatives(tmp_path):
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
     run_response = client.post(
         "/search-sets/snake-study/provider-collections/met/runs",
@@ -2859,7 +2896,7 @@ def test_api_exports_collection_jsonl_with_absolute_path(tmp_path):
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
     run_response = client.post(
         "/search-sets/snake-study/provider-collections/met/runs",
@@ -2892,7 +2929,7 @@ def test_api_exports_selected_image_assets_only(tmp_path):
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
     run_response = client.post(
         "/search-sets/snake-study/provider-collections/met/runs",
@@ -2939,7 +2976,7 @@ def test_api_exports_selected_objects_as_image_asset_rows(tmp_path):
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
     run_response = client.post(
         "/search-sets/snake-study/provider-collections/met/runs",
@@ -2974,7 +3011,7 @@ def test_api_rejects_export_for_zero_image_collection(tmp_path):
     client = TestClient(create_app(database_path=storage.database_path, data_root=storage.data_root))
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
 
     response = client.post("/search-sets/snake-study/exports", json={"format": "jsonl"})
@@ -2996,7 +3033,7 @@ def test_api_rejects_export_while_collection_search_is_running(tmp_path):
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
     run_response = client.post(
         "/search-sets/snake-study/provider-collections/met/runs",

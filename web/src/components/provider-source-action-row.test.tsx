@@ -19,6 +19,7 @@ describe("ProviderSourceActionRow", () => {
         batchTarget={5}
         formAction={submitAction}
         idPrefix="snake_met"
+        provider="met"
         searchSetSlug="snake"
       />,
     );
@@ -43,12 +44,14 @@ describe("ProviderSourceActionRow", () => {
         batchTarget={5}
         formAction={submitAction}
         idPrefix="grotto_met"
+        provider="vam"
         searchSetSlug="grotto"
       />,
     );
 
     expect(html).toContain("Stop search");
     expect(html).toContain("type=\"submit\"");
+    expect(html).toContain("name=\"provider\" value=\"vam\"");
     expect(html).not.toContain("aria-disabled=\"true\"");
   });
 });

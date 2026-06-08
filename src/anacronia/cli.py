@@ -13,7 +13,7 @@ import webbrowser
 
 from anacronia.met_ingest import rebuild_met_descriptors
 from anacronia.ports import choose_port, is_port_available as socket_port_available
-from anacronia.search_sets import SearchSet, create_or_continue_search_set
+from anacronia.search_sets import MET_PROVIDER, SearchSet, create_or_continue_search_set
 from anacronia.storage import initialize_storage
 
 
@@ -230,6 +230,7 @@ def run_search_set_create(*, name: str, terms: str) -> None:
         database_path=storage.database_path,
         display_name=name,
         terms_text=terms,
+        provider=MET_PROVIDER,
     )
     print(json.dumps(serialize_search_set(search_set)), flush=True)
 

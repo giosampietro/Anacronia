@@ -47,6 +47,7 @@ import {
   getActionFormDataString,
   getActionFormDataValue,
   getActionFormDataValues,
+  getRequiredActionFormDataString,
 } from "@/lib/action-form-data";
 import {
   isUploadedFile,
@@ -452,10 +453,6 @@ function objectProviderDisplayLabel(provider: string): string {
   return provider.trim() || "Unknown";
 }
 
-function getActionProviderKey(formData: FormData): string {
-  return getActionFormDataString(formData, "provider").trim() || "met";
-}
-
 async function createSearchSetAndCollect(formData: FormData) {
   "use server";
 
@@ -563,7 +560,11 @@ async function startProviderCollect(formData: FormData) {
 
   const apiPort = getPort("ANACRONIA_API_PORT", DEFAULT_API_PORT);
   const slug = getActionFormDataString(formData, "slug");
-  const provider = getActionProviderKey(formData);
+  const provider = getRequiredActionFormDataString(formData, "provider");
+  if (provider === null) {
+    revalidatePath("/");
+    redirect(`/?search_set=${slug}&collect_notice=${COLLECT_STATE_CHANGED_NOTICE}`);
+  }
   const batchTarget = normalizeBatchTarget(
     getActionFormDataValue(formData, "batch_target"),
   );
@@ -588,7 +589,11 @@ async function resumeProviderCollect(formData: FormData) {
 
   const apiPort = getPort("ANACRONIA_API_PORT", DEFAULT_API_PORT);
   const slug = getActionFormDataString(formData, "slug");
-  const provider = getActionProviderKey(formData);
+  const provider = getRequiredActionFormDataString(formData, "provider");
+  if (provider === null) {
+    revalidatePath("/");
+    redirect(`/?search_set=${slug}&collect_notice=${COLLECT_STATE_CHANGED_NOTICE}`);
+  }
   const batchTarget = normalizeBatchTarget(
     getActionFormDataValue(formData, "batch_target"),
   );
@@ -613,7 +618,11 @@ async function stopProviderCollect(formData: FormData) {
 
   const apiPort = getPort("ANACRONIA_API_PORT", DEFAULT_API_PORT);
   const slug = getActionFormDataString(formData, "slug");
-  const provider = getActionProviderKey(formData);
+  const provider = getRequiredActionFormDataString(formData, "provider");
+  if (provider === null) {
+    revalidatePath("/");
+    redirect(`/?search_set=${slug}&collect_notice=${COLLECT_STATE_CHANGED_NOTICE}`);
+  }
 
   const response = await fetch(`http://127.0.0.1:${apiPort}/search-sets/${slug}/provider-collections/${encodeURIComponent(provider)}/collects/stop`, {
     method: "POST",
