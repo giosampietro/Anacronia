@@ -27,11 +27,17 @@ from anacronia.local_material import (
 )
 from anacronia.met_ingest import (
     DEFAULT_MAX_IMAGES_PER_OBJECT,
-    get_run_candidates_for_ingest,
-    get_search_set_id_for_run,
     missing_image_downloader,
 )
-from anacronia.provider_adapters import ProviderIngestRequest
+from anacronia.provider_adapters import (
+    ProviderAdapterCapabilities,
+    ProviderIngestRequest,
+    VAM_CAPABILITIES,
+)
+from anacronia.provider_import import (
+    finish_provider_import_candidate,
+    load_provider_import_run_context,
+)
 from anacronia.provider_identity import SourceObjectId, normalize_source_object_id
 from anacronia.search_sets import normalize_search_term
 from anacronia.storage import (
@@ -114,6 +120,7 @@ class VamProviderAdapter:
     download_image_bytes: Callable[[str], bytes] | None = None
     provider: str = VAM_PROVIDER
     display_name: str = VAM_DISPLAY_NAME
+    capabilities: ProviderAdapterCapabilities = VAM_CAPABILITIES
 
     def discover_candidate_run(
         self,
@@ -170,19 +177,17 @@ def ingest_vam_run(
 
     with sqlite3.connect(database_path) as connection:
         ensure_local_material_schema(connection)
-        run_candidates = get_run_candidates_for_ingest(
+        run_context = load_provider_import_run_context(
             connection=connection,
             run_id=run_id,
             start_run_position=start_run_position,
         )
-        search_set_id = get_search_set_id_for_run(
-            connection=connection,
-            run_id=run_id,
-        )
+        run_candidates = run_context.candidates
+        search_set_id = run_context.search_set_id
 
     for candidate in run_candidates:
-        object_id = normalize_source_object_id(candidate["object_id"])
-        run_position = int(candidate["run_position"])
+        object_id = normalize_source_object_id(candidate.object_id)
+        run_position = candidate.run_position
         with sqlite3.connect(database_path) as connection:
             ensure_local_material_schema(connection)
             import_exclusions = get_collection_import_exclusions(
@@ -202,9 +207,11 @@ def ingest_vam_run(
                     run_id=run_id,
                     candidate=skipped_candidate,
                 )
-                if on_candidate_processed is not None:
-                    on_candidate_processed(run_position)
-                if should_stop is not None and should_stop():
+                if finish_provider_import_candidate(
+                    run_position=run_position,
+                    on_candidate_processed=on_candidate_processed,
+                    should_stop=should_stop,
+                ):
                     break
                 continue
 
@@ -225,14 +232,15 @@ def ingest_vam_run(
                     run_id=run_id,
                     candidate=skipped_candidate,
                 )
-            if on_candidate_processed is not None:
-                on_candidate_processed(run_position)
-            if should_stop is not None and should_stop():
+            if finish_provider_import_candidate(
+                run_position=run_position,
+                on_candidate_processed=on_candidate_processed,
+                should_stop=should_stop,
+            ):
                 break
             continue
         fetched_object_ids.append(object_id)
 
-        raw_record_path = write_vam_raw_record(data_root=data_root, record=record)
         image_references, skipped_image_references = select_vam_image_references(
             record=record,
             max_images_per_object=max_images_per_object,
@@ -317,6 +325,7 @@ def ingest_vam_run(
                         provider=VAM_PROVIDER,
                         object_id=image_reference.object_id,
                         source_image_url=image_reference.source_image_url,
+                        source_image_id=image_reference.asset_ref,
                         image_role=image_reference.image_role,
                         image_index=image_reference.image_index,
                         primary_image_small_url=image_reference.primary_image_small_url,
@@ -325,6 +334,10 @@ def ingest_vam_run(
                         standard_path=processed.standard_path,
                         thumb_path=processed.thumb_path,
                         imported=processed.imported,
+                        source_rights_statement=image_reference.copyright_text,
+                        source_iiif_service_url=vam_iiif_service_url(
+                            image_reference.asset_ref
+                        ),
                         source_metadata=(
                             {"sensitive_image": image_reference.sensitive_image}
                             if image_reference.sensitive_image is not None
@@ -352,12 +365,15 @@ def ingest_vam_run(
                         connection=connection,
                         reference=skipped_image_reference,
                     )
-            if on_candidate_processed is not None:
-                on_candidate_processed(run_position)
-            if should_stop is not None and should_stop():
+            if finish_provider_import_candidate(
+                run_position=run_position,
+                on_candidate_processed=on_candidate_processed,
+                should_stop=should_stop,
+            ):
                 break
             continue
 
+        raw_record_path = write_vam_raw_record(data_root=data_root, record=record)
         with sqlite3.connect(database_path) as connection:
             ensure_local_material_schema(connection)
             for skipped_image_reference in skipped_image_references:
@@ -383,10 +399,10 @@ def ingest_vam_run(
                     run_id=run_id,
                     provider=VAM_PROVIDER,
                     object_id=object_id,
-                    search_term=str(candidate["source_term"]),
+                    search_term=candidate.source_term,
                     matched_fields=matched_vam_fields(
                         record=record,
-                        search_term=str(candidate["source_term"]),
+                        search_term=candidate.source_term,
                     ),
                 ),
             )
@@ -399,9 +415,11 @@ def ingest_vam_run(
 
         imported_object_ids.append(object_id)
         imported_image_count += len(processed_image_assets)
-        if on_candidate_processed is not None:
-            on_candidate_processed(run_position)
-        if should_stop is not None and should_stop():
+        if finish_provider_import_candidate(
+            run_position=run_position,
+            on_candidate_processed=on_candidate_processed,
+            should_stop=should_stop,
+        ):
             break
         if batch_target is not None and imported_image_count >= batch_target:
             break
@@ -736,6 +754,10 @@ def normalize_vam_copyright_text(value: str) -> str:
 
 def vam_iiif_source_image_url(asset_ref: str) -> str:
     return f"{VAM_IMAGE_BASE_URL}/{asset_ref}/full/full/0/default.jpg"
+
+
+def vam_iiif_service_url(asset_ref: str) -> str:
+    return f"{VAM_IMAGE_BASE_URL}/{asset_ref}"
 
 
 def nested_value(value: object, path: list[str]) -> object:

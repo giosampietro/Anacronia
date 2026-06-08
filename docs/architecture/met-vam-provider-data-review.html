@@ -400,8 +400,8 @@
           <strong>Imported records are the source canon</strong>
           <p>
             Everything that becomes imported Collection/User Library material
-            should keep its complete provider record on disk, not only the mapped
-            fields.
+            keeps its complete provider record on disk after at least one image
+            asset imports, not only the mapped fields.
           </p>
         </article>
         <article class="card">
@@ -425,14 +425,41 @@
           imported Collection/User Library material. The target rule is
           import-canon: if a Provider object contributes usable local Image
           Assets, write the complete provider object record locally and treat
-          mapped fields as derived data.
+          mapped fields as derived data. Fetched objects that never produce a
+          validated Image Asset do not enter the raw-record source canon.
         </p>
         <p class="note" style="margin-top: 10px">
           Current status: Met and V&amp;A records that import into local material are
-          preserved as raw JSON. Fetched candidates that fail eligibility checks,
-          image processing, or other import requirements can remain skipped
-          candidates rather than becoming part of this source canon. The practical
-          test is whether the object actually adds usable material to a Collection.
+          preserved as raw JSON only after at least one image derivative pair
+          succeeds. Fetched candidates that fail eligibility checks, image
+          processing, or other import requirements remain skipped candidates
+          rather than becoming part of this source canon. The practical test is
+          whether the object actually adds usable material to a Collection.
+        </p>
+      </section>
+
+      <section class="card">
+        <h2>Future Europeana Gate</h2>
+        <p class="note">
+          Europeana is the likely next provider named in the project docs. For a
+          future Europeana adapter, import the search filter states
+          <strong>Yes</strong> and <strong>Yes, with conditions</strong>, matching
+          API <code>reusability=open</code> and <code>reusability=restricted</code>.
+          Reject <strong>Maybe, seek permission</strong>, matching
+          <code>reusability=permission</code>. This is recorded in ADR-0025 and in
+          provider capability constants; it does not implement the Europeana
+          adapter yet.
+        </p>
+        <p class="note" style="margin-top: 10px">
+          Europeana media fields are not an import guarantee. Search flags such as
+          <code>media=true</code>, thumbnails, <code>edmPreview</code>,
+          <code>edmIsShownBy</code>, and <code>hasView</code> should only identify
+          media candidates. A future adapter must fetch source media from the
+          record aggregation/WebResource data and accept the record only after an
+          HTTP success response, image content, decodable bytes, and complete
+          <code>standard-1024</code> plus <code>thumb-256</code> derivatives. A
+          working Europeana thumbnail can be preview metadata, but it is not enough
+          by itself for AI-ready source material.
         </p>
       </section>
 
@@ -642,12 +669,14 @@
                 </td>
                 <td>
                   <span class="chip gap">Gap</span>
-                  Per-image V&amp;A copyright is aggregated to object rights, not
-                  retained per image in <code>source_metadata_json</code>. Met image
-                  URL provenance is stored, but no source filename or image service
-                  metadata is captured beyond dimensions and URLs.
+                  V&amp;A now stores <code>assetRef</code> as
+                  <code>source_image_id</code>, image copyright as
+                  <code>source_rights_statement</code>, and the IIIF service URL on
+                  the Image Asset. Met image identity still falls back to the source
+                  image URL because no better media ID is exposed in the current
+                  path.
                 </td>
-                <td>Works for local analysis. Per-image provenance should improve.</td>
+                <td>Improved. Future providers should supply a stable media ID.</td>
               </tr>
 
               <tr data-tags="image store">
@@ -718,13 +747,15 @@
                 </td>
                 <td>
                   Rights card and Provider metadata "Rights and record state".
-                  V&amp;A public-domain status appears as "Not checked".
+                  V&amp;A public-domain status appears as "Not checked". Image-level
+                  rights fields are available in the detail/API model.
                 </td>
                 <td>
                   <span class="chip gap">Gap</span>
                   V&amp;A source terms are shown as general text, not as a structured
-                  policy object. Per-image copyright is not shown beside each image.
-                  Met CC0/open-access context is not explicitly explained in detail.
+                  policy object. The UI can now read per-image copyright, but it is
+                  not yet emphasized beside each image. Met CC0/open-access context
+                  is not explicitly explained in detail.
                 </td>
                 <td>Meets current ADRs. Needs more precise user-facing language.</td>
               </tr>
@@ -873,9 +904,10 @@
                   can include <code>sensitiveImage</code>.
                 </td>
                 <td>
-                  Only per-image <code>sensitive_image</code> is stored in
+                  Per-image <code>sensitive_image</code> is stored in
                   <code>source_metadata_json</code> and shown on the Active image
-                  card when present.
+                  card when present. Per-image rights and media identity now live
+                  in first-class Image Asset fields.
                 </td>
                 <td>
                   Object-level content warnings and search-result warning summaries
@@ -1008,16 +1040,17 @@
                 </td>
               </tr>
               <tr>
-                <td><span class="chip store">Medium</span></td>
+                <td><span class="chip shown">Done</span></td>
                 <td>Retain per-image V&amp;A copyright in image metadata.</td>
                 <td>
-                  Current object-level aggregation can hide image-level differences
+                  Object-level aggregation can hide image-level differences
                   when an object has multiple images.
                 </td>
                 <td>
-                  Store <code>copyright_text</code> in
-                  <code>image_assets.source_metadata_json</code> and show it on the
-                  Active image card.
+                  Implemented as first-class Image Asset fields:
+                  <code>source_image_id</code>, <code>source_rights_statement</code>,
+                  rights/license URI fields, and <code>source_iiif_service_url</code>.
+                  UI emphasis can still improve.
                 </td>
               </tr>
               <tr>

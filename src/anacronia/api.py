@@ -386,6 +386,12 @@ def serialize_collection_object_image(image: CollectionObjectImage) -> dict[str,
     return {
         "image_asset_id": image.image_asset_id,
         "source_image_url": image.source_image_url,
+        "source_image_id": image.source_image_id,
+        "source_rights_statement": image.source_rights_statement,
+        "source_rights_uri": image.source_rights_uri,
+        "source_license_name": image.source_license_name,
+        "source_license_uri": image.source_license_uri,
+        "source_iiif_service_url": image.source_iiif_service_url,
         "source_file_url": (
             f"/image-assets/{image.image_asset_id}/source"
             if image.source_file_path.strip()

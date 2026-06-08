@@ -16,7 +16,11 @@ from anacronia.met_ingest import (
     MetRecordClient,
     ingest_met_run,
 )
-from anacronia.provider_adapters import ProviderIngestRequest
+from anacronia.provider_adapters import (
+    MET_CAPABILITIES,
+    ProviderAdapterCapabilities,
+    ProviderIngestRequest,
+)
 
 
 @dataclass(frozen=True)
@@ -26,6 +30,7 @@ class MetProviderAdapter:
     download_image_bytes: Callable[[str], bytes] | None = None
     provider: str = MET_PROVIDER
     display_name: str = "Met"
+    capabilities: ProviderAdapterCapabilities = MET_CAPABILITIES
 
     def discover_candidate_run(
         self,

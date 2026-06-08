@@ -8,7 +8,27 @@ from urllib.error import HTTPError
 from anacronia.collection_runs import ensure_collection_run_schema
 from anacronia.curation import get_collection_import_exclusions
 from anacronia.image_pipeline import ProcessedMetImageAsset, process_met_image_asset
-from anacronia.local_material import ensure_local_material_schema
+from anacronia.local_material import (
+    LocalDescriptor,
+    LocalImageAsset,
+    LocalMuseumObject,
+    LocalObjectMatch,
+    LocalSkippedCandidate,
+    LocalSkippedImageReference,
+    ensure_local_material_schema,
+    record_local_image_asset,
+    record_local_object_match,
+    record_local_skipped_candidate,
+    record_local_skipped_image_reference,
+    replace_local_descriptors,
+    upsert_local_museum_object,
+)
+from anacronia.provider_import import (
+    finish_provider_import_candidate,
+    get_provider_search_set_id_for_run,
+    list_provider_run_candidates,
+    load_provider_import_run_context,
+)
 from anacronia.provider_identity import normalize_source_object_id
 from anacronia.search_sets import normalize_search_term
 from anacronia.storage import met_raw_object_path
@@ -96,6 +116,7 @@ class MetMuseumObject:
 class MetImageAsset:
     object_id: int
     source_image_url: str
+    source_image_id: str
     image_role: str
     image_index: int | None
     primary_image_small_url: str
@@ -214,20 +235,18 @@ def ingest_met_run(
 
     with sqlite3.connect(database_path) as connection:
         ensure_met_ingest_schema(connection)
-        run_candidates = get_run_candidates_for_ingest(
+        run_context = load_provider_import_run_context(
             connection=connection,
             run_id=run_id,
             start_run_position=start_run_position,
         )
-        search_set_id = get_search_set_id_for_run(
-            connection=connection,
-            run_id=run_id,
-        )
+        run_candidates = run_context.candidates
+        search_set_id = run_context.search_set_id
 
     for candidate in run_candidates:
-        source_object_id = normalize_source_object_id(candidate["object_id"])
+        source_object_id = normalize_source_object_id(candidate.object_id)
         object_id = int(source_object_id)
-        run_position = int(candidate["run_position"])
+        run_position = candidate.run_position
         with sqlite3.connect(database_path) as connection:
             ensure_met_ingest_schema(connection)
             import_exclusions = get_collection_import_exclusions(
@@ -247,9 +266,11 @@ def ingest_met_run(
                     run_id=run_id,
                     candidate=skipped_candidate,
                 )
-                if on_candidate_processed is not None:
-                    on_candidate_processed(run_position)
-                if should_stop is not None and should_stop():
+                if finish_provider_import_candidate(
+                    run_position=run_position,
+                    on_candidate_processed=on_candidate_processed,
+                    should_stop=should_stop,
+                ):
                     break
                 continue
 
@@ -268,9 +289,11 @@ def ingest_met_run(
                 run_id=run_id,
                 candidate=skipped_candidate,
             )
-            if on_candidate_processed is not None:
-                on_candidate_processed(run_position)
-            if should_stop is not None and should_stop():
+            if finish_provider_import_candidate(
+                run_position=run_position,
+                on_candidate_processed=on_candidate_processed,
+                should_stop=should_stop,
+            ):
                 break
             continue
         fetched_object_ids.append(object_id)
@@ -286,13 +309,14 @@ def ingest_met_run(
                 run_id=run_id,
                 candidate=skipped_candidate,
             )
-            if on_candidate_processed is not None:
-                on_candidate_processed(run_position)
-            if should_stop is not None and should_stop():
+            if finish_provider_import_candidate(
+                run_position=run_position,
+                on_candidate_processed=on_candidate_processed,
+                should_stop=should_stop,
+            ):
                 break
             continue
 
-        raw_record_path = write_met_raw_record(data_root=data_root, record=record)
         image_references, skipped_image_references = select_met_image_references(
             record=record,
             max_images_per_object=max_images_per_object,
@@ -368,12 +392,15 @@ def ingest_met_run(
                 database_path=database_path,
                 references=skipped_image_references,
             )
-            if on_candidate_processed is not None:
-                on_candidate_processed(run_position)
-            if should_stop is not None and should_stop():
+            if finish_provider_import_candidate(
+                run_position=run_position,
+                on_candidate_processed=on_candidate_processed,
+                should_stop=should_stop,
+            ):
                 break
             continue
 
+        raw_record_path = write_met_raw_record(data_root=data_root, record=record)
         with sqlite3.connect(database_path) as connection:
             ensure_met_ingest_schema(connection)
             for skipped_image_reference in skipped_image_references:
@@ -390,10 +417,10 @@ def ingest_met_run(
                 connection=connection,
                 run_id=run_id,
                 object_id=object_id,
-                search_term=candidate["source_term"],
+                search_term=candidate.source_term,
                 matched_fields=matched_verified_fields(
                     record=record,
-                    search_term=candidate["source_term"],
+                    search_term=candidate.source_term,
                 ),
             )
             replace_met_descriptors(
@@ -419,9 +446,11 @@ def ingest_met_run(
         if usable_image_count > 0:
             imported_object_ids.append(object_id)
         imported_image_count += usable_image_count
-        if on_candidate_processed is not None:
-            on_candidate_processed(run_position)
-        if should_stop is not None and should_stop():
+        if finish_provider_import_candidate(
+            run_position=run_position,
+            on_candidate_processed=on_candidate_processed,
+            should_stop=should_stop,
+        ):
             break
         if batch_target is not None and imported_image_count >= batch_target:
             break
@@ -470,21 +499,13 @@ def record_met_skipped_candidate_row(
     run_id: int,
     candidate: SkippedMetCandidate,
 ) -> None:
-    connection.execute(
-        """
-        INSERT OR IGNORE INTO skipped_candidates (
-          run_id,
-          provider,
-          object_id,
-          reason
-        )
-        VALUES (?, ?, ?, ?)
-        """,
-        (
-            run_id,
-            MET_PROVIDER,
-            normalize_source_object_id(candidate.object_id),
-            candidate.reason,
+    record_local_skipped_candidate(
+        connection=connection,
+        candidate=LocalSkippedCandidate(
+            run_id=run_id,
+            provider=MET_PROVIDER,
+            object_id=candidate.object_id,
+            reason=candidate.reason,
         ),
     )
 
@@ -531,6 +552,7 @@ def get_met_image_assets(*, database_path: Path) -> list[MetImageAsset]:
             SELECT
               object_id,
               source_image_url,
+              source_image_id,
               image_role,
               image_index,
               primary_image_small_url,
@@ -550,14 +572,15 @@ def get_met_image_assets(*, database_path: Path) -> list[MetImageAsset]:
         MetImageAsset(
             object_id=int(row[0]),
             source_image_url=row[1],
-            image_role=row[2],
-            image_index=row[3],
-            primary_image_small_url=row[4],
-            original_width=row[5],
-            original_height=row[6],
-            standard_path=Path(row[7]),
-            thumb_path=Path(row[8]),
-            imported=bool(row[9]),
+            source_image_id=row[2],
+            image_role=row[3],
+            image_index=row[4],
+            primary_image_small_url=row[5],
+            original_width=row[6],
+            original_height=row[7],
+            standard_path=Path(row[8]),
+            thumb_path=Path(row[9]),
+            imported=bool(row[10]),
         )
         for row in rows
     ]
@@ -712,19 +735,17 @@ def get_run_candidates_for_ingest(
     run_id: int,
     start_run_position: int = 0,
 ) -> list[dict[str, object]]:
-    rows = connection.execute(
-        """
-        SELECT object_id, source_term, run_position
-        FROM run_candidates
-        WHERE run_id = ? AND run_position >= ?
-        ORDER BY run_position
-        """,
-        (run_id, start_run_position),
-    ).fetchall()
-
     return [
-        {"object_id": row[0], "source_term": row[1], "run_position": row[2]}
-        for row in rows
+        {
+            "object_id": candidate.object_id,
+            "source_term": candidate.source_term,
+            "run_position": candidate.run_position,
+        }
+        for candidate in list_provider_run_candidates(
+            connection=connection,
+            run_id=run_id,
+            start_run_position=start_run_position,
+        )
     ]
 
 
@@ -733,19 +754,10 @@ def get_search_set_id_for_run(
     connection: sqlite3.Connection,
     run_id: int,
 ) -> int:
-    row = connection.execute(
-        """
-        SELECT provider_collections.search_set_id
-        FROM collection_runs
-        JOIN provider_collections
-          ON provider_collections.id = collection_runs.provider_collection_id
-        WHERE collection_runs.id = ?
-        """,
-        (run_id,),
-    ).fetchone()
-    if row is None:
-        raise ValueError(f"Unknown Run: {run_id}")
-    return int(row[0])
+    return get_provider_search_set_id_for_run(
+        connection=connection,
+        run_id=run_id,
+    )
 
 
 def write_met_raw_record(*, data_root: Path, record: dict[str, object]) -> Path:
@@ -756,56 +768,56 @@ def write_met_raw_record(*, data_root: Path, record: dict[str, object]) -> Path:
     return raw_record_path
 
 
+def met_museum_object_from_record(
+    *,
+    record: dict[str, object],
+    raw_record_path: Path,
+) -> LocalMuseumObject:
+    object_id = int(record["objectID"])
+    return LocalMuseumObject(
+        provider=MET_PROVIDER,
+        object_id=object_id,
+        title=string_value(record.get("title")),
+        object_name=string_value(record.get("objectName")),
+        artist_display_name=string_value(record.get("artistDisplayName")),
+        object_url=string_value(record.get("objectURL")),
+        is_public_domain=True,
+        rights_and_reproduction=string_value(record.get("rightsAndReproduction")),
+        metadata_date=string_value(record.get("metadataDate")),
+        raw_record_path=raw_record_path,
+    )
+
+
+def met_local_image_asset_from_processed(
+    image_asset: ProcessedMetImageAsset,
+) -> LocalImageAsset:
+    return LocalImageAsset(
+        provider=MET_PROVIDER,
+        object_id=image_asset.object_id,
+        source_image_url=image_asset.source_image_url,
+        source_image_id=image_asset.source_image_url,
+        image_role=image_asset.image_role,
+        image_index=image_asset.image_index,
+        primary_image_small_url=image_asset.primary_image_small_url,
+        original_width=image_asset.original_width,
+        original_height=image_asset.original_height,
+        standard_path=image_asset.standard_path,
+        thumb_path=image_asset.thumb_path,
+        imported=image_asset.imported,
+    )
+
+
 def upsert_met_museum_object(
     *,
     connection: sqlite3.Connection,
     record: dict[str, object],
     raw_record_path: Path,
 ) -> None:
-    object_id = int(record["objectID"])
-    source_object_id = normalize_source_object_id(object_id)
-    connection.execute(
-        """
-        INSERT INTO museum_objects (
-          provider,
-          object_id,
-          title,
-          object_name,
-          artist_display_name,
-          object_url,
-          is_public_domain,
-          rights_and_reproduction,
-          metadata_date,
-          raw_record_path,
-          active,
-          deleted_at
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(provider, object_id) DO UPDATE SET
-          title = excluded.title,
-          object_name = excluded.object_name,
-          artist_display_name = excluded.artist_display_name,
-          object_url = excluded.object_url,
-          is_public_domain = excluded.is_public_domain,
-          rights_and_reproduction = excluded.rights_and_reproduction,
-          metadata_date = excluded.metadata_date,
-          raw_record_path = excluded.raw_record_path,
-          active = 1,
-          deleted_at = NULL
-        """,
-        (
-            MET_PROVIDER,
-            source_object_id,
-            string_value(record.get("title")),
-            string_value(record.get("objectName")),
-            string_value(record.get("artistDisplayName")),
-            string_value(record.get("objectURL")),
-            1,
-            string_value(record.get("rightsAndReproduction")),
-            string_value(record.get("metadataDate")),
-            str(raw_record_path),
-            1,
-            None,
+    upsert_local_museum_object(
+        connection=connection,
+        museum_object=met_museum_object_from_record(
+            record=record,
+            raw_record_path=raw_record_path,
         ),
     )
 
@@ -818,25 +830,14 @@ def record_met_match(
     search_term: str,
     matched_fields: list[str],
 ) -> None:
-    connection.execute(
-        """
-        INSERT OR REPLACE INTO object_matches (
-          run_id,
-          provider,
-          object_id,
-          search_term,
-          verified,
-          matched_fields_json
-        )
-        VALUES (?, ?, ?, ?, ?, ?)
-        """,
-        (
-            run_id,
-            MET_PROVIDER,
-            normalize_source_object_id(object_id),
-            search_term,
-            int(bool(matched_fields)),
-            json.dumps(matched_fields),
+    record_local_object_match(
+        connection=connection,
+        match=LocalObjectMatch(
+            run_id=run_id,
+            provider=MET_PROVIDER,
+            object_id=object_id,
+            search_term=search_term,
+            matched_fields=matched_fields,
         ),
     )
 
@@ -846,51 +847,9 @@ def record_met_image_asset(
     connection: sqlite3.Connection,
     image_asset: ProcessedMetImageAsset,
 ) -> None:
-    connection.execute(
-        """
-        INSERT INTO image_assets (
-          provider,
-          object_id,
-          source_image_url,
-          image_role,
-          image_index,
-          primary_image_small_url,
-          original_width,
-          original_height,
-          standard_path,
-          thumb_path,
-          imported,
-          active,
-          deleted_at
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(provider, object_id, source_image_url) DO UPDATE SET
-          image_role = excluded.image_role,
-          image_index = excluded.image_index,
-          primary_image_small_url = excluded.primary_image_small_url,
-          original_width = excluded.original_width,
-          original_height = excluded.original_height,
-          standard_path = excluded.standard_path,
-          thumb_path = excluded.thumb_path,
-          imported = excluded.imported,
-          active = 1,
-          deleted_at = NULL
-        """,
-        (
-            MET_PROVIDER,
-            normalize_source_object_id(image_asset.object_id),
-            image_asset.source_image_url,
-            image_asset.image_role,
-            image_asset.image_index,
-            image_asset.primary_image_small_url,
-            image_asset.original_width,
-            image_asset.original_height,
-            str(image_asset.standard_path),
-            str(image_asset.thumb_path),
-            int(image_asset.imported),
-            1,
-            None,
-        ),
+    record_local_image_asset(
+        connection=connection,
+        image_asset=met_local_image_asset_from_processed(image_asset),
     )
 
 
@@ -899,25 +858,15 @@ def record_met_skipped_image_reference(
     connection: sqlite3.Connection,
     reference: SkippedMetImageReference,
 ) -> None:
-    connection.execute(
-        """
-        INSERT OR REPLACE INTO skipped_image_references (
-          provider,
-          object_id,
-          source_image_url,
-          image_role,
-          image_index,
-          reason
-        )
-        VALUES (?, ?, ?, ?, ?, ?)
-        """,
-        (
-            MET_PROVIDER,
-            normalize_source_object_id(reference.object_id),
-            reference.source_image_url,
-            reference.image_role,
-            reference.image_index,
-            reference.reason,
+    record_local_skipped_image_reference(
+        connection=connection,
+        reference=LocalSkippedImageReference(
+            provider=MET_PROVIDER,
+            object_id=reference.object_id,
+            source_image_url=reference.source_image_url,
+            image_role=reference.image_role,
+            image_index=reference.image_index,
+            reason=reference.reason,
         ),
     )
 
@@ -928,33 +877,22 @@ def replace_met_descriptors(
     object_id: int,
     descriptors: list[MetDescriptor],
 ) -> None:
-    connection.execute(
-        "DELETE FROM descriptors WHERE provider = ? AND object_id = ?",
-        (MET_PROVIDER, normalize_source_object_id(object_id)),
-    )
-
-    for descriptor in descriptors:
-        connection.execute(
-            """
-            INSERT OR IGNORE INTO descriptors (
-              provider,
-              object_id,
-              descriptor_type,
-              value,
-              normalized_value,
-              source_field
+    replace_local_descriptors(
+        connection=connection,
+        provider=MET_PROVIDER,
+        object_id=object_id,
+        descriptors=[
+            LocalDescriptor(
+                provider=MET_PROVIDER,
+                object_id=object_id,
+                descriptor_type=descriptor.descriptor_type,
+                value=descriptor.value,
+                normalized_value=descriptor.normalized_value,
+                source_field=descriptor.source_field,
             )
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (
-                MET_PROVIDER,
-                normalize_source_object_id(object_id),
-                descriptor.descriptor_type,
-                descriptor.value,
-                descriptor.normalized_value,
-                descriptor.source_field,
-            ),
-        )
+            for descriptor in descriptors
+        ],
+    )
 
 
 def matched_verified_fields(
