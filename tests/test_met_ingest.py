@@ -3,6 +3,7 @@ import sqlite3
 
 from anacronia.collection_runs import discover_met_candidates
 from anacronia.met_ingest import (
+    MetImageReference,
     get_met_image_assets,
     get_met_descriptors,
     get_met_matches,
@@ -10,6 +11,7 @@ from anacronia.met_ingest import (
     get_met_skipped_image_references,
     ensure_met_ingest_schema,
     ingest_met_run,
+    met_image_import_candidate_from_reference,
     rebuild_met_descriptors,
     select_met_image_references,
 )
@@ -262,6 +264,49 @@ def test_selects_met_image_references_by_source_url_identity_primary_role_and_li
             "beyond_max_images_per_object",
         )
     ]
+
+
+def test_met_image_import_candidate_keeps_legacy_paths_and_identity(tmp_path):
+    candidate = met_image_import_candidate_from_reference(
+        data_root=tmp_path,
+        reference=MetImageReference(
+            object_id=436535,
+            source_image_url="https://images.metmuseum.org/detail-a.jpg",
+            image_role="additional",
+            image_index=2,
+            primary_image_small_url="https://images.metmuseum.org/small.jpg",
+        ),
+    )
+
+    assert candidate.provider == "met"
+    assert candidate.object_id == 436535
+    assert candidate.source_image_id == "https://images.metmuseum.org/detail-a.jpg"
+    assert candidate.primary_image_small_url == "https://images.metmuseum.org/small.jpg"
+    assert candidate.temporary_original_path == (
+        tmp_path
+        / "temp"
+        / "met"
+        / "images"
+        / "436000-436999"
+        / "436535"
+        / "additional-002-source-original"
+    )
+    assert candidate.standard_path == (
+        tmp_path
+        / "met"
+        / "images"
+        / "436000-436999"
+        / "436535"
+        / "additional-002-standard-1024.jpg"
+    )
+    assert candidate.thumb_path == (
+        tmp_path
+        / "met"
+        / "images"
+        / "436000-436999"
+        / "436535"
+        / "additional-002-thumb-256.jpg"
+    )
 
 
 def test_met_image_reference_limit_defaults_to_three():

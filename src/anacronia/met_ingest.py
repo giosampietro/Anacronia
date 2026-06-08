@@ -7,7 +7,7 @@ from urllib.error import HTTPError
 
 from anacronia.collection_runs import ensure_collection_run_schema
 from anacronia.curation import get_collection_import_exclusions
-from anacronia.image_pipeline import ProcessedMetImageAsset, process_met_image_asset
+from anacronia.image_pipeline import met_temporary_original_path
 from anacronia.local_material import (
     LocalDescriptor,
     LocalImageAsset,
@@ -29,9 +29,13 @@ from anacronia.provider_import import (
     list_provider_run_candidates,
     load_provider_import_run_context,
 )
+from anacronia.provider_image_import import (
+    ProviderImageImportCandidate,
+    import_provider_image_candidates,
+)
 from anacronia.provider_identity import normalize_source_object_id
 from anacronia.search_sets import normalize_search_term
-from anacronia.storage import met_raw_object_path
+from anacronia.storage import met_image_derivative_path, met_raw_object_path
 
 
 MET_PROVIDER = "met"
@@ -339,43 +343,21 @@ def ingest_met_run(
                 filtered_image_references.append(image_reference)
             image_references = filtered_image_references
 
-        processed_image_assets: list[ProcessedMetImageAsset] = []
-        for image_reference in image_references:
-            try:
-                image_asset = process_met_image_asset(
+        image_import_result = import_provider_image_candidates(
+            candidates=[
+                met_image_import_candidate_from_reference(
                     data_root=data_root,
-                    object_id=image_reference.object_id,
-                    image_role=image_reference.image_role,
-                    image_index=image_reference.image_index,
-                    source_image_url=image_reference.source_image_url,
-                    primary_image_small_url=image_reference.primary_image_small_url,
-                    download_bytes=resolved_download_image_bytes,
+                    reference=image_reference,
                 )
-            except Exception:
-                skipped_image_references.append(
-                    SkippedMetImageReference(
-                        object_id=image_reference.object_id,
-                        source_image_url=image_reference.source_image_url,
-                        image_role=image_reference.image_role,
-                        image_index=image_reference.image_index,
-                        reason="image_processing_failed",
-                    )
-                )
-                continue
-
-            if not image_asset.imported:
-                skipped_image_references.append(
-                    SkippedMetImageReference(
-                        object_id=image_reference.object_id,
-                        source_image_url=image_reference.source_image_url,
-                        image_role=image_reference.image_role,
-                        image_index=image_reference.image_index,
-                        reason="image_processing_failed",
-                    )
-                )
-                continue
-
-            processed_image_assets.append(image_asset)
+                for image_reference in image_references
+            ],
+            download_image_bytes=resolved_download_image_bytes,
+        )
+        processed_image_assets = image_import_result.imported_image_assets
+        skipped_image_references.extend(
+            met_skipped_image_reference_from_local(reference)
+            for reference in image_import_result.skipped_image_references
+        )
 
         if not processed_image_assets:
             skipped_candidate = SkippedMetCandidate(
@@ -788,22 +770,51 @@ def met_museum_object_from_record(
     )
 
 
-def met_local_image_asset_from_processed(
-    image_asset: ProcessedMetImageAsset,
-) -> LocalImageAsset:
-    return LocalImageAsset(
+def met_image_import_candidate_from_reference(
+    *,
+    data_root: Path,
+    reference: MetImageReference,
+) -> ProviderImageImportCandidate:
+    return ProviderImageImportCandidate(
         provider=MET_PROVIDER,
-        object_id=image_asset.object_id,
-        source_image_url=image_asset.source_image_url,
-        source_image_id=image_asset.source_image_url,
-        image_role=image_asset.image_role,
-        image_index=image_asset.image_index,
-        primary_image_small_url=image_asset.primary_image_small_url,
-        original_width=image_asset.original_width,
-        original_height=image_asset.original_height,
-        standard_path=image_asset.standard_path,
-        thumb_path=image_asset.thumb_path,
-        imported=image_asset.imported,
+        object_id=reference.object_id,
+        source_image_url=reference.source_image_url,
+        source_image_id=reference.source_image_url,
+        image_role=reference.image_role,
+        image_index=reference.image_index,
+        primary_image_small_url=reference.primary_image_small_url,
+        temporary_original_path=met_temporary_original_path(
+            data_root=data_root,
+            object_id=reference.object_id,
+            image_role=reference.image_role,
+            image_index=reference.image_index,
+        ),
+        standard_path=met_image_derivative_path(
+            data_root=data_root,
+            object_id=reference.object_id,
+            image_role=reference.image_role,
+            image_index=reference.image_index,
+            derivative="standard-1024",
+        ),
+        thumb_path=met_image_derivative_path(
+            data_root=data_root,
+            object_id=reference.object_id,
+            image_role=reference.image_role,
+            image_index=reference.image_index,
+            derivative="thumb-256",
+        ),
+    )
+
+
+def met_skipped_image_reference_from_local(
+    reference: LocalSkippedImageReference,
+) -> SkippedMetImageReference:
+    return SkippedMetImageReference(
+        object_id=int(reference.object_id),
+        source_image_url=reference.source_image_url,
+        image_role=reference.image_role,
+        image_index=reference.image_index,
+        reason=reference.reason,
     )
 
 
@@ -845,11 +856,11 @@ def record_met_match(
 def record_met_image_asset(
     *,
     connection: sqlite3.Connection,
-    image_asset: ProcessedMetImageAsset,
+    image_asset: LocalImageAsset,
 ) -> None:
     record_local_image_asset(
         connection=connection,
-        image_asset=met_local_image_asset_from_processed(image_asset),
+        image_asset=image_asset,
     )
 
 
