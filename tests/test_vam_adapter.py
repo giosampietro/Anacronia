@@ -1,8 +1,10 @@
+import sqlite3
+
 from anacronia.collection_objects import get_collection_object_detail
 from anacronia.collection_runs import discover_provider_candidates
 from anacronia.image_pipeline import ImageDerivativeSettings, validate_image_derivative
 from anacronia.search_sets import create_or_continue_search_set
-from anacronia.storage import initialize_storage
+from anacronia.storage import initialize_storage, provider_raw_record_path
 from anacronia.vam_adapter import (
     extract_vam_descriptors,
     ingest_vam_run,
@@ -216,6 +218,16 @@ def test_vam_import_creates_private_permanent_derivatives_and_collection_detail(
     assert detail.skipped_image_references[0].reason == "beyond_max_images_per_object"
     assert detail.matches[0].verified is True
     assert [image.sensitive_image for image in detail.images] == [False, False]
+    assert [image.source_image_id for image in detail.images] == [
+        "2006AL3614",
+        "2006AM3113",
+    ]
+    assert detail.images[0].source_rights_statement == (
+        "© Victoria and Albert Museum, London"
+    )
+    assert detail.images[0].source_iiif_service_url == (
+        "https://framemark.vam.ac.uk/collections/2006AL3614"
+    )
 
     for image in detail.images:
         standard_path = storage.data_root / "vam" / "images" / "O9138" / (
@@ -281,6 +293,69 @@ def test_vam_import_surfaces_sensitive_image_source_provenance(tmp_path):
 
     assert detail is not None
     assert detail.images[0].sensitive_image is True
+
+
+def test_vam_does_not_write_raw_record_when_no_image_asset_imports(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    create_or_continue_search_set(
+        database_path=storage.database_path,
+        display_name="Bed Studies",
+        terms_text="bed",
+        provider="vam",
+    )
+    run = discover_provider_candidates(
+        database_path=storage.database_path,
+        search_set_slug="bed-studies",
+        provider="vam",
+        candidate_offset=0,
+        candidate_limit=1,
+        candidate_client=FakeVamCandidateClient(),
+        batch_target=1,
+    )
+
+    summary = ingest_vam_run(
+        database_path=storage.database_path,
+        data_root=storage.data_root,
+        run_id=run.run_id,
+        vam_client=FakeVamRecordClient(),
+        download_image_bytes=lambda _url: (_ for _ in ()).throw(
+            OSError("simulated image processing failure")
+        ),
+        max_images_per_object=1,
+        batch_target=1,
+    )
+
+    assert summary.imported_object_ids == []
+    assert [(skipped.object_id, skipped.reason) for skipped in summary.skipped_candidates] == [
+        ("O9138", "no_imported_image_assets")
+    ]
+    assert not provider_raw_record_path(
+        data_root=storage.data_root,
+        provider="vam",
+        object_id="O9138",
+    ).exists()
+    assert (
+        get_collection_object_detail(
+            database_path=storage.database_path,
+            search_set_slug="bed-studies",
+            provider="vam",
+            object_id="O9138",
+        )
+        is None
+    )
+    with sqlite3.connect(storage.database_path) as connection:
+        assert (
+            connection.execute(
+                "SELECT COUNT(*) FROM museum_objects WHERE provider = 'vam'"
+            ).fetchone()[0]
+            == 0
+        )
+        assert (
+            connection.execute(
+                "SELECT COUNT(*) FROM image_assets WHERE provider = 'vam'"
+            ).fetchone()[0]
+            == 0
+        )
 
 
 def test_vam_import_allows_missing_sensitive_image_source_provenance(tmp_path):

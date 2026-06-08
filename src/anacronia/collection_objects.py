@@ -59,6 +59,12 @@ class CollectionObjectMetadata:
 class CollectionObjectImage:
     image_asset_id: int
     source_image_url: str
+    source_image_id: str
+    source_rights_statement: str
+    source_rights_uri: str
+    source_license_name: str
+    source_license_uri: str
+    source_iiif_service_url: str
     source_file_path: str
     sensitive_image: bool | None
     image_role: str
@@ -1211,6 +1217,12 @@ def get_collection_object_detail(
             SELECT DISTINCT
               image_assets.id,
               image_assets.source_image_url,
+              image_assets.source_image_id,
+              image_assets.source_rights_statement,
+              image_assets.source_rights_uri,
+              image_assets.source_license_name,
+              image_assets.source_license_uri,
+              image_assets.source_iiif_service_url,
               image_assets.source_file_path,
               image_assets.image_role,
               image_assets.image_index,
@@ -1359,13 +1371,19 @@ def get_collection_object_detail(
             CollectionObjectImage(
                 image_asset_id=int(row[0]),
                 source_image_url=row[1],
-                source_file_path=row[2],
-                sensitive_image=source_metadata_bool(row[7], "sensitive_image"),
-                image_role=row[3],
-                image_index=row[4],
-                original_width=int(row[5]),
-                original_height=int(row[6]),
-                is_favorite=bool(row[8]),
+                source_image_id=row[2],
+                source_rights_statement=row[3],
+                source_rights_uri=row[4],
+                source_license_name=row[5],
+                source_license_uri=row[6],
+                source_iiif_service_url=row[7],
+                source_file_path=row[8],
+                sensitive_image=source_metadata_bool(row[13], "sensitive_image"),
+                image_role=row[9],
+                image_index=row[10],
+                original_width=int(row[11]),
+                original_height=int(row[12]),
+                is_favorite=bool(row[14]),
             )
             for row in image_rows
         ],
@@ -1442,6 +1460,12 @@ def get_library_object_detail(
             SELECT DISTINCT
               image_assets.id,
               image_assets.source_image_url,
+              image_assets.source_image_id,
+              image_assets.source_rights_statement,
+              image_assets.source_rights_uri,
+              image_assets.source_license_name,
+              image_assets.source_license_uri,
+              image_assets.source_iiif_service_url,
               image_assets.source_file_path,
               image_assets.image_role,
               image_assets.image_index,
@@ -1570,13 +1594,19 @@ def get_library_object_detail(
             CollectionObjectImage(
                 image_asset_id=int(row[0]),
                 source_image_url=row[1],
-                source_file_path=row[2],
-                sensitive_image=source_metadata_bool(row[7], "sensitive_image"),
-                image_role=row[3],
-                image_index=row[4],
-                original_width=int(row[5]),
-                original_height=int(row[6]),
-                is_favorite=bool(row[8]),
+                source_image_id=row[2],
+                source_rights_statement=row[3],
+                source_rights_uri=row[4],
+                source_license_name=row[5],
+                source_license_uri=row[6],
+                source_iiif_service_url=row[7],
+                source_file_path=row[8],
+                sensitive_image=source_metadata_bool(row[13], "sensitive_image"),
+                image_role=row[9],
+                image_index=row[10],
+                original_width=int(row[11]),
+                original_height=int(row[12]),
+                is_favorite=bool(row[14]),
             )
             for row in image_rows
         ],

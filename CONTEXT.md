@@ -20,7 +20,7 @@ When available, provider record versioning or timestamp fields should be retaine
 
 Online Providers can have provider-specific terms, rights statements, and reuse expectations. Anacronia should preserve provider source statements and may show provider-specific notices, but it is a private local testing/research tool and does not enforce provider terms beyond provider-specific ingestion filters that Anacronia explicitly implements.
 
-When an online Provider object contributes usable local material to a Collection, its complete provider record should be treated as local source canon: write the complete provider data locally before reducing it into normalized fields, image details, Descriptors, matches, rights decisions, or UI display choices. Derived mappings can change; the raw provider record should remain the auditable source for future remapping. Fetched candidates that do not become imported Collection material do not need to enter this source canon.
+When an online Provider object contributes usable local material to a Collection, its complete provider record should be treated as local source canon: write the complete provider data locally after at least one Image Asset completes derivative validation and before accepting the normalized imported rows. Derived mappings can change; the raw provider record should remain the auditable source for future remapping. Fetched candidates that do not become imported Collection material do not need to enter this source canon.
 
 The Met is the MVP permanent local-ingestion Provider. V&A is the next museum Provider to use for testing the multi-provider scaffolding. For that test, V&A should create the same local `standard-1024` and `thumb-256` derivatives as Met so the shared Collection, User Library, export, curation, and future analysis paths can be exercised.
 
@@ -49,7 +49,7 @@ Source type should appear in User Library facets, exports, and architecture deci
 
 A stable identity for local material that is not based on volatile database row IDs.
 
-Online Provider material uses Provider plus provider object identity, with Image Assets additionally keyed by provider/source image identity. User-Imported Local Material uses a local source namespace plus generated local object/image identities and private source-file provenance.
+Online Provider material uses Provider plus provider object identity, with Image Assets additionally keyed by provider/source image identity. The source image URL remains the current membership and curation key, while imported Image Assets should also store a provider media identity such as a V&A `assetRef`, Europeana EDM WebResource identifier, or the source image URL when no better provider media ID exists. User-Imported Local Material uses a local source namespace plus generated local object/image identities and private source-file provenance.
 
 Collection Membership, Collection Exclusions, Favorites, delete, re-import, cross-Collection views, and exports should use Source Identity where durable identity matters.
 
@@ -221,7 +221,13 @@ Material accepted for ingestion only when the provider record states that it is 
 
 The Met MVP uses strict public-domain filtering. Future providers may use broader provider-specific reusable/open filters, such as Europeana open reusability.
 
+For a future Europeana Provider, Anacronia should import records whose "Can I use this?" state is `Yes` or `Yes, with conditions`, corresponding to Search API `reusability=open` and `reusability=restricted`. It should reject `Maybe, seek permission`, corresponding to `reusability=permission`.
+
+For that future Europeana Provider, `media=true`, `thumbnail=true`, `edmPreview`, `edmIsShownBy`, or `hasView` should be treated as candidate signals, not proof that import-grade image media is available. Before accepting a Europeana record, Anacronia must fetch at least one source media candidate from the record's aggregation/WebResource data and validate an HTTP success response, image content, decodable bytes, and complete `standard-1024` plus `thumb-256` derivatives. A working Europeana thumbnail can support preview metadata, but it is not enough by itself for AI-ready source material.
+
 The source provider rights/license statement must be stored and shown in image detail views and exports.
+
+When a provider exposes rights at the image/media level, Image Assets should store those per-image rights fields separately from object-level `rights_and_reproduction`. Provider-specific details can remain in `source_metadata_json`, but media identity and media rights should be first-class enough for detail views, exports, and future analysis provenance.
 
 Public-domain eligibility is an online Provider ingestion rule, not a rule for user-imported local material. User-imported local material may be private, self-authored, copyrighted, unattributed, or otherwise unknown; Anacronia stores and visualizes it locally without trying to resolve its IP status.
 

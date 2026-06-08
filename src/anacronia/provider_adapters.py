@@ -20,6 +20,48 @@ class ProviderIngestRequest:
     should_stop: Callable[[], bool] | None = None
 
 
+@dataclass(frozen=True)
+class ProviderAdapterCapabilities:
+    provider: str
+    raw_record_policy: str
+    source_image_id_policy: str
+    rights_eligibility_policy: str
+    accepted_reusability_values: tuple[str, ...] = ()
+    rejected_reusability_values: tuple[str, ...] = ()
+    per_image_rights_metadata: bool = False
+    provider_notice: str = ""
+
+
+MET_CAPABILITIES = ProviderAdapterCapabilities(
+    provider="met",
+    raw_record_policy="write_full_record_after_at_least_one_image_asset_imports",
+    source_image_id_policy="source_image_url",
+    rights_eligibility_policy="require_isPublicDomain_true",
+)
+
+VAM_CAPABILITIES = ProviderAdapterCapabilities(
+    provider="vam",
+    raw_record_policy="write_full_record_after_at_least_one_image_asset_imports",
+    source_image_id_policy="record.images assetRef",
+    rights_eligibility_policy="private_local_testing_notice_no_public_domain_gate",
+    per_image_rights_metadata=True,
+    provider_notice=(
+        "V&A images are imported for private local testing in Anacronia. "
+        "Check V&A terms before publication or commercial reuse."
+    ),
+)
+
+EUROPEANA_FUTURE_CAPABILITIES = ProviderAdapterCapabilities(
+    provider="europeana",
+    raw_record_policy="write_full_record_after_at_least_one_image_asset_imports",
+    source_image_id_policy="EDM WebResource about/edmIsShownBy or provider media id",
+    rights_eligibility_policy="accept_yes_and_yes_with_conditions_reject_maybe",
+    accepted_reusability_values=("open", "restricted"),
+    rejected_reusability_values=("permission",),
+    per_image_rights_metadata=True,
+)
+
+
 class ProviderSkippedCandidate(Protocol):
     object_id: ProviderObjectIdValue
     reason: str
@@ -36,6 +78,7 @@ class ProviderIngestSummary(Protocol):
 class OnlineProviderAdapter(Protocol):
     provider: str
     display_name: str
+    capabilities: ProviderAdapterCapabilities
 
     def discover_candidate_run(
         self,

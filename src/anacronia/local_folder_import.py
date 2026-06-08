@@ -208,6 +208,7 @@ def import_local_image_folder(
                     provider=LOCAL_FOLDER_PROVIDER,
                     object_id=object_id,
                     source_image_url=source_image_identity,
+                    source_image_id=source_image_identity,
                     image_role="primary",
                     image_index=None,
                     primary_image_small_url="",

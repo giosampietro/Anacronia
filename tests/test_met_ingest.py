@@ -459,6 +459,61 @@ def test_ingests_additional_image_assets_with_limits_and_independent_failures(tm
     ]
 
 
+def test_met_does_not_write_raw_record_when_no_image_asset_imports(tmp_path):
+    class SingleCandidateClient:
+        def search_object_ids(self, term: str) -> list[int]:
+            assert term == "snake"
+            return [100]
+
+    class PublicImageRecordClient:
+        def fetch_object_record(self, object_id: int) -> dict[str, object]:
+            assert object_id == 100
+            return {
+                "objectID": 100,
+                "isPublicDomain": True,
+                "title": "Failed Image Snake Object",
+                "objectName": "Vessel",
+                "primaryImage": "https://images.metmuseum.org/fail.jpg",
+                "primaryImageSmall": "",
+                "additionalImages": [],
+                "rightsAndReproduction": "",
+                "metadataDate": "2024-01-01",
+                "objectURL": "https://www.metmuseum.org/art/collection/search/100",
+            }
+
+    database_path = tmp_path / "anacronia.sqlite"
+    data_root = tmp_path / "data"
+    create_or_continue_search_set(
+        database_path=database_path,
+        display_name="Snake Studies",
+        terms_text="snake",
+    )
+    run = discover_met_candidates(
+        database_path=database_path,
+        search_set_slug="snake-studies",
+        candidate_offset=0,
+        candidate_limit=1,
+        met_client=SingleCandidateClient(),
+    )
+
+    summary = ingest_met_run(
+        database_path=database_path,
+        data_root=data_root,
+        run_id=run.run_id,
+        met_client=PublicImageRecordClient(),
+        download_image_bytes=lambda _url: (_ for _ in ()).throw(
+            OSError("simulated image processing failure")
+        ),
+    )
+
+    assert summary.imported_object_ids == []
+    assert [(skipped.object_id, skipped.reason) for skipped in summary.skipped_candidates] == [
+        (100, "no_imported_image_assets")
+    ]
+    assert not met_raw_object_path(data_root=data_root, object_id=100).exists()
+    assert get_met_museum_objects(database_path=database_path) == []
+
+
 def test_ingests_public_domain_met_records_with_raw_json_matches_and_descriptors(tmp_path):
     database_path = tmp_path / "anacronia.sqlite"
     data_root = tmp_path / "data"
@@ -528,6 +583,23 @@ def test_ingests_public_domain_met_records_with_raw_json_matches_and_descriptors
     ] == [
         (10, "snake", True, ["tags", "title"]),
         (40, "anaconda", False, []),
+    ]
+
+    image_assets = get_met_image_assets(database_path=database_path)
+    assert [
+        (image_asset.object_id, image_asset.source_image_id, image_asset.source_image_url)
+        for image_asset in image_assets
+    ] == [
+        (
+            10,
+            "https://images.metmuseum.org/10.jpg",
+            "https://images.metmuseum.org/10.jpg",
+        ),
+        (
+            40,
+            "https://images.metmuseum.org/40.jpg",
+            "https://images.metmuseum.org/40.jpg",
+        ),
     ]
 
     descriptors = get_met_descriptors(database_path=database_path, object_id=10)

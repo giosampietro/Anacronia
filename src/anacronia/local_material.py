@@ -28,6 +28,7 @@ class LocalImageAsset:
     provider: str
     object_id: ProviderObjectIdValue
     source_image_url: str
+    source_image_id: str
     image_role: str
     image_index: int | None
     primary_image_small_url: str
@@ -37,6 +38,11 @@ class LocalImageAsset:
     thumb_path: Path
     imported: bool
     source_file_path: str = ""
+    source_rights_statement: str = ""
+    source_rights_uri: str = ""
+    source_license_name: str = ""
+    source_license_uri: str = ""
+    source_iiif_service_url: str = ""
     source_metadata: dict[str, object] | None = None
 
 
@@ -139,6 +145,7 @@ def record_local_image_asset(
           provider,
           object_id,
           source_image_url,
+          source_image_id,
           image_role,
           image_index,
           primary_image_small_url,
@@ -148,12 +155,18 @@ def record_local_image_asset(
           thumb_path,
           imported,
           source_file_path,
+          source_rights_statement,
+          source_rights_uri,
+          source_license_name,
+          source_license_uri,
+          source_iiif_service_url,
           source_metadata_json,
           active,
           deleted_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(provider, object_id, source_image_url) DO UPDATE SET
+          source_image_id = excluded.source_image_id,
           image_role = excluded.image_role,
           image_index = excluded.image_index,
           primary_image_small_url = excluded.primary_image_small_url,
@@ -163,6 +176,11 @@ def record_local_image_asset(
           thumb_path = excluded.thumb_path,
           imported = excluded.imported,
           source_file_path = excluded.source_file_path,
+          source_rights_statement = excluded.source_rights_statement,
+          source_rights_uri = excluded.source_rights_uri,
+          source_license_name = excluded.source_license_name,
+          source_license_uri = excluded.source_license_uri,
+          source_iiif_service_url = excluded.source_iiif_service_url,
           source_metadata_json = excluded.source_metadata_json,
           active = 1,
           deleted_at = NULL
@@ -171,6 +189,7 @@ def record_local_image_asset(
             image_asset.provider,
             normalize_source_object_id(image_asset.object_id),
             image_asset.source_image_url,
+            image_asset.source_image_id,
             image_asset.image_role,
             image_asset.image_index,
             image_asset.primary_image_small_url,
@@ -180,6 +199,11 @@ def record_local_image_asset(
             str(image_asset.thumb_path),
             int(image_asset.imported),
             image_asset.source_file_path,
+            image_asset.source_rights_statement,
+            image_asset.source_rights_uri,
+            image_asset.source_license_name,
+            image_asset.source_license_uri,
+            image_asset.source_iiif_service_url,
             json.dumps(image_asset.source_metadata or {}, sort_keys=True),
             1,
             None,
@@ -408,6 +432,7 @@ def ensure_local_material_schema(connection: sqlite3.Connection) -> None:
           provider TEXT NOT NULL,
           object_id TEXT NOT NULL,
           source_image_url TEXT NOT NULL,
+          source_image_id TEXT NOT NULL DEFAULT '',
           image_role TEXT NOT NULL,
           image_index INTEGER,
           primary_image_small_url TEXT NOT NULL,
@@ -417,6 +442,11 @@ def ensure_local_material_schema(connection: sqlite3.Connection) -> None:
           thumb_path TEXT NOT NULL,
           imported INTEGER NOT NULL,
           source_file_path TEXT NOT NULL DEFAULT '',
+          source_rights_statement TEXT NOT NULL DEFAULT '',
+          source_rights_uri TEXT NOT NULL DEFAULT '',
+          source_license_name TEXT NOT NULL DEFAULT '',
+          source_license_uri TEXT NOT NULL DEFAULT '',
+          source_iiif_service_url TEXT NOT NULL DEFAULT '',
           source_metadata_json TEXT NOT NULL DEFAULT '{}',
           active INTEGER NOT NULL DEFAULT 1,
           deleted_at TEXT,
@@ -431,7 +461,13 @@ def ensure_local_material_schema(connection: sqlite3.Connection) -> None:
         columns={
             "active": "INTEGER NOT NULL DEFAULT 1",
             "deleted_at": "TEXT",
+            "source_image_id": "TEXT NOT NULL DEFAULT ''",
             "source_file_path": "TEXT NOT NULL DEFAULT ''",
+            "source_rights_statement": "TEXT NOT NULL DEFAULT ''",
+            "source_rights_uri": "TEXT NOT NULL DEFAULT ''",
+            "source_license_name": "TEXT NOT NULL DEFAULT ''",
+            "source_license_uri": "TEXT NOT NULL DEFAULT ''",
+            "source_iiif_service_url": "TEXT NOT NULL DEFAULT ''",
             "source_metadata_json": "TEXT NOT NULL DEFAULT '{}'",
         },
     )

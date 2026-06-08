@@ -290,9 +290,16 @@ def test_exports_vam_package_with_source_identity_and_iiif_metadata(tmp_path):
     assert manifest_rows[0]["image_asset"]["source_image_identity"] == (
         f"vam:{iiif_image_url}"
     )
+    assert manifest_rows[0]["image_asset"]["source_image_id"] == "2006AL3614"
     assert manifest_rows[0]["image_asset"]["source_image_url"] == iiif_image_url
     assert manifest_rows[0]["image_asset"]["source_system_number"] == "O9138"
     assert manifest_rows[0]["image_asset"]["source_iiif_image_url"] == iiif_image_url
+    assert manifest_rows[0]["image_asset"]["source_iiif_service_url"] == (
+        "https://framemark.vam.ac.uk/collections/2006AL3614"
+    )
+    assert manifest_rows[0]["image_asset"]["source_rights_statement"] == (
+        "© Victoria and Albert Museum, London"
+    )
     assert manifest_rows[0]["image_asset"]["source_sensitive_image"] is True
     assert manifest_rows[1]["image_asset"]["source_sensitive_image"] is False
 
@@ -304,8 +311,15 @@ def test_exports_vam_package_with_source_identity_and_iiif_metadata(tmp_path):
     )
     assert csv_rows[0]["source_object_identity"] == "vam:O9138"
     assert csv_rows[0]["source_image_identity"] == f"vam:{iiif_image_url}"
+    assert csv_rows[0]["source_image_id"] == "2006AL3614"
     assert csv_rows[0]["source_system_number"] == "O9138"
     assert csv_rows[0]["source_iiif_image_url"] == iiif_image_url
+    assert csv_rows[0]["source_iiif_service_url"] == (
+        "https://framemark.vam.ac.uk/collections/2006AL3614"
+    )
+    assert csv_rows[0]["source_rights_statement"] == (
+        "© Victoria and Albert Museum, London"
+    )
     assert csv_rows[0]["source_sensitive_image"] == "true"
     assert csv_rows[1]["source_sensitive_image"] == "false"
 
