@@ -28,7 +28,6 @@ import {
   PopoverTitle,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
 import {
   Sidebar,
@@ -49,7 +48,6 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import type { AppVersionStamp } from "@/lib/app-version";
-import { formatCollectionDisplayName } from "@/lib/collection-display";
 import type { OperationalDashboardView } from "@/lib/dashboard";
 import type { GridViewMode } from "@/lib/grid-view";
 import { FOOTER_PROJECT_CREDIT } from "@/lib/project-attribution";
@@ -89,25 +87,6 @@ function runtimeStatusIcon(state: string) {
     return <Spinner />;
   }
   return <Activity />;
-}
-
-function workspaceLabel({
-  dashboardView,
-  workspaceMode,
-}: {
-  dashboardView: OperationalDashboardView;
-  workspaceMode: WorkspaceMode;
-}) {
-  if (workspaceMode === "new-search-set") {
-    return "NEW COLLECTION";
-  }
-  if (workspaceMode === "user-library") {
-    return "MY LIBRARY";
-  }
-
-  return formatCollectionDisplayName(
-    dashboardView.activeSearchSet?.displayName ?? "Collection",
-  ).toUpperCase();
 }
 
 function runtimeSummaryRow(rows: StatusRow[]): StatusRow | null {
@@ -403,8 +382,6 @@ export function AppShell({
     "--sidebar-width": "21rem",
     "--sidebar-width-mobile": "20rem",
   } as CSSProperties;
-  const showWorkspaceLabel = workspaceMode === "new-search-set";
-
   return (
     <SidebarProvider defaultOpen={defaultSidebarOpen} style={sidebarStyle}>
       <AppSidebar
@@ -431,17 +408,6 @@ export function AppShell({
               rows={rows}
               workspaceMode={workspaceMode}
             />
-            {showWorkspaceLabel ? (
-              <>
-                <Separator
-                  className="data-vertical:h-4 data-vertical:self-auto"
-                  orientation="vertical"
-                />
-                <span className="truncate text-sm font-semibold uppercase tracking-wide">
-                  {workspaceLabel({ dashboardView, workspaceMode })}
-                </span>
-              </>
-            ) : null}
           </div>
           <div
             className="@container/topbar flex min-w-0 flex-1 items-center"

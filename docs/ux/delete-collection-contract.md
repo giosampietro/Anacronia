@@ -104,7 +104,7 @@ If material is not shared:
 - show preserved favorite-exclusive material in User Library as `No Collection`
 - mark non-favorite exclusive Museum Objects and Image Assets inactive/deleted
 - remove local derivative files for non-favorite exclusive Image Assets
-- keep database rows needed for audit integrity, provider identity stability, and future re-import
+- keep database rows needed for audit integrity, Source Identity stability, and future re-import
 
 ## Progress and Failure
 

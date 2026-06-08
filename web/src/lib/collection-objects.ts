@@ -1,6 +1,6 @@
 export type CollectionObjectSummary = {
   provider: string;
-  object_id: number;
+  object_id: string;
   title: string;
   object_name: string;
   artist_display_name: string;
@@ -36,7 +36,7 @@ export type LibraryObjectSummary = CollectionObjectSummary & {
 export type LibraryImageAssetSummary = {
   image_asset_id: number;
   provider: string;
-  object_id: number;
+  object_id: string;
   title: string;
   object_name: string;
   artist_display_name: string;
@@ -55,6 +55,8 @@ export type LibraryImageAssetSummary = {
 export type CollectionObjectImage = {
   image_asset_id: number;
   source_image_url: string;
+  source_file_url: string | null;
+  sensitive_image: boolean | null;
   image_role: string;
   image_index: number | null;
   original_width: number;
@@ -80,7 +82,7 @@ export type CollectionObjectSkippedImageReference = {
 export type CollectionObjectDetail = {
   object: {
     provider: string;
-    object_id: number;
+    object_id: string;
     title: string;
     object_name: string;
     artist_display_name: string;

@@ -1,8 +1,8 @@
 from pathlib import Path
 import shutil
-from typing import Annotated, Callable, Literal, TypeVar
+from typing import Annotated, Callable, Literal, Mapping, TypeVar
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
@@ -11,7 +11,7 @@ from anacronia.collection_runs import (
     DEFAULT_BATCH_TARGET,
     MetCandidateClient,
     discard_candidate_run,
-    discover_met_candidates,
+    get_candidate_run,
 )
 from anacronia.curation import (
     CollectionCurationBusyError,
@@ -44,6 +44,7 @@ from anacronia.collection_objects import (
     get_collection_object_detail,
     get_library_object_detail,
     get_image_asset_derivative_path,
+    get_image_asset_source_file_path,
     list_collection_image_assets,
     list_library_image_assets,
     list_library_objects,
@@ -57,13 +58,31 @@ from anacronia.exports import (
     export_collection,
     export_user_library,
 )
+from anacronia.local_folder_import import (
+    LocalFolderImportSummary,
+    create_local_folder_collection,
+    import_local_image_folder,
+)
+from anacronia.local_folder_picker import (
+    LocalFolderPickerCancelled,
+    LocalFolderPickerUnavailable,
+    PICKER_UNAVAILABLE_MESSAGE,
+    choose_local_folder_path,
+)
 from anacronia.met_ingest import (
     DEFAULT_MAX_IMAGES_PER_OBJECT,
     MetIngestSummary,
     MetRecordClient,
-    ingest_met_run,
 )
+from anacronia.met_adapter import MetProviderAdapter
 from anacronia.met_provider import HttpMetCandidateClient, fetch_bytes_url
+from anacronia.provider_adapters import (
+    OnlineProviderAdapter,
+    ProviderIngestRequest,
+    ProviderIngestSummary,
+)
+from anacronia.provider_identity import SourceObjectId
+from anacronia.provider_identity import normalize_source_object_id
 from anacronia.search_sets import (
     DuplicateSearchSetNameError,
     SearchSet,
@@ -74,6 +93,8 @@ from anacronia.search_sets import (
     slugify_search_set_name,
 )
 from anacronia.storage import initialize_storage
+from anacronia.vam_adapter import VamProviderAdapter
+from anacronia.vam_provider import HttpVamClient
 from anacronia.worker import (
     CollectLockError,
     get_active_collect_job_for_search_set_provider,
@@ -122,6 +143,18 @@ BatchTarget = Literal[5, 10, 20, 30, 100, 500, 1000]
 class SearchSetRequest(BaseModel):
     display_name: str
     terms_text: str
+    provider: str | None = None
+
+
+class LocalFolderCollectionRequest(BaseModel):
+    display_name: str
+    folder_path: str
+    store_source_file_links: bool = True
+
+
+class LocalFolderImportRequest(BaseModel):
+    folder_path: str
+    store_source_file_links: bool = True
 
 
 class RenameSearchSetRequest(BaseModel):
@@ -139,7 +172,7 @@ class StartMetCollectRequest(BaseModel):
 
 class CollectionExportObjectSelection(BaseModel):
     provider: str
-    object_id: int
+    object_id: SourceObjectId | int
 
 
 class CollectionExportSelection(BaseModel):
@@ -198,7 +231,7 @@ def serialize_candidate_run(run: CandidateRun) -> dict[str, object]:
         "status": run.status,
         "candidates": [
             {
-                "object_id": candidate.object_id,
+                "object_id": normalize_source_object_id(candidate.object_id),
                 "source_term": candidate.source_term,
                 "source_term_index": candidate.source_term_index,
                 "provider_position": candidate.provider_position,
@@ -209,19 +242,48 @@ def serialize_candidate_run(run: CandidateRun) -> dict[str, object]:
     }
 
 
-def serialize_met_ingest_summary(summary: MetIngestSummary) -> dict[str, object]:
+def serialize_provider_ingest_summary(summary: ProviderIngestSummary) -> dict[str, object]:
     return {
         "run_id": summary.run_id,
-        "fetched_object_ids": summary.fetched_object_ids,
-        "imported_object_ids": summary.imported_object_ids,
+        "fetched_object_ids": [
+            normalize_source_object_id(object_id)
+            for object_id in summary.fetched_object_ids
+        ],
+        "imported_object_ids": [
+            normalize_source_object_id(object_id)
+            for object_id in summary.imported_object_ids
+        ],
         "skipped_candidates": [
             {
-                "object_id": skipped.object_id,
+                "object_id": normalize_source_object_id(skipped.object_id),
                 "reason": skipped.reason,
             }
             for skipped in summary.skipped_candidates
         ],
     }
+
+
+def serialize_local_folder_import_summary(
+    summary: LocalFolderImportSummary,
+) -> dict[str, object]:
+    return {
+        "search_set_slug": summary.search_set_slug,
+        "folder_path": str(summary.folder_path),
+        "discovered_file_count": summary.discovered_file_count,
+        "imported_object_ids": summary.imported_object_ids,
+        "imported_image_count": summary.imported_image_count,
+        "skipped_files": [
+            {
+                "path": str(skipped_file.path),
+                "reason": skipped_file.reason,
+            }
+            for skipped_file in summary.skipped_files
+        ],
+    }
+
+
+def serialize_met_ingest_summary(summary: MetIngestSummary) -> dict[str, object]:
+    return serialize_provider_ingest_summary(summary)
 
 
 def serialize_operational_dashboard(dashboard: OperationalDashboard) -> dict[str, object]:
@@ -278,7 +340,7 @@ def serialize_collection_object_summary(
 ) -> dict[str, object]:
     return {
         "provider": collection_object.provider,
-        "object_id": collection_object.object_id,
+        "object_id": normalize_source_object_id(collection_object.object_id),
         "title": collection_object.title,
         "object_name": collection_object.object_name,
         "artist_display_name": collection_object.artist_display_name,
@@ -297,7 +359,7 @@ def serialize_collection_object_metadata(
 ) -> dict[str, object]:
     return {
         "provider": collection_object.provider,
-        "object_id": collection_object.object_id,
+        "object_id": normalize_source_object_id(collection_object.object_id),
         "title": collection_object.title,
         "object_name": collection_object.object_name,
         "artist_display_name": collection_object.artist_display_name,
@@ -324,6 +386,12 @@ def serialize_collection_object_image(image: CollectionObjectImage) -> dict[str,
     return {
         "image_asset_id": image.image_asset_id,
         "source_image_url": image.source_image_url,
+        "source_file_url": (
+            f"/image-assets/{image.image_asset_id}/source"
+            if image.source_file_path.strip()
+            else None
+        ),
+        "sensitive_image": image.sensitive_image,
         "image_role": image.image_role,
         "image_index": image.image_index,
         "original_width": image.original_width,
@@ -367,7 +435,7 @@ def serialize_library_object_summary(
 ) -> dict[str, object]:
     return {
         "provider": library_object.provider,
-        "object_id": library_object.object_id,
+        "object_id": normalize_source_object_id(library_object.object_id),
         "title": library_object.title,
         "object_name": library_object.object_name,
         "artist_display_name": library_object.artist_display_name,
@@ -391,7 +459,7 @@ def serialize_library_image_asset_summary(
     return {
         "image_asset_id": image_asset.image_asset_id,
         "provider": image_asset.provider,
-        "object_id": image_asset.object_id,
+        "object_id": normalize_source_object_id(image_asset.object_id),
         "title": image_asset.title,
         "object_name": image_asset.object_name,
         "artist_display_name": image_asset.artist_display_name,
@@ -511,7 +579,7 @@ def serialize_collection_export_result(result: CollectionExportResult) -> dict[s
             {
                 "image_asset_id": skipped.image_asset_id,
                 "provider": skipped.provider,
-                "object_id": skipped.object_id,
+                "object_id": normalize_source_object_id(skipped.object_id),
                 "source_image_url": skipped.source_image_url,
                 "reason": skipped.reason,
             }
@@ -554,6 +622,8 @@ def create_app(
     met_candidate_client: MetCandidateClient | None = None,
     met_record_client: MetRecordClient | None = None,
     download_image_bytes: Callable[[str], bytes] | None = None,
+    provider_adapters: Mapping[str, OnlineProviderAdapter] | None = None,
+    local_folder_picker: Callable[[], Path] | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Anacronia")
     project_root = Path(__file__).resolve().parents[2]
@@ -568,6 +638,31 @@ def create_app(
     resolved_met_candidate_client = met_candidate_client or HttpMetCandidateClient()
     resolved_met_record_client = met_record_client or HttpMetCandidateClient()
     resolved_download_image_bytes = download_image_bytes or fetch_bytes_url
+    resolved_local_folder_picker = local_folder_picker or choose_local_folder_path
+    default_met_adapter = MetProviderAdapter(
+        candidate_client=resolved_met_candidate_client,
+        record_client=resolved_met_record_client,
+        download_image_bytes=resolved_download_image_bytes,
+    )
+    default_vam_adapter = VamProviderAdapter(
+        vam_client=HttpVamClient(),
+        download_image_bytes=resolved_download_image_bytes,
+    )
+    resolved_provider_adapters = {
+        "met": default_met_adapter,
+        "vam": default_vam_adapter,
+        **(provider_adapters or {}),
+    }
+
+    def get_online_provider_adapter(provider: str) -> OnlineProviderAdapter:
+        provider_key = provider.strip()
+        adapter = resolved_provider_adapters.get(provider_key)
+        if adapter is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Provider is not configured: {provider_key}",
+            )
+        return adapter
 
     @app.get("/health")
     def health() -> dict[str, object]:
@@ -586,6 +681,14 @@ def create_app(
     def create_search_set(request: SearchSetRequest) -> dict[str, object]:
         if get_worker_status(database_path=resolved_database_path).active_collect_job_id is not None:
             raise HTTPException(status_code=409, detail="Another search is already active.")
+        provider_key = request.provider.strip() if request.provider is not None else ""
+        if not provider_key:
+            raise HTTPException(status_code=422, detail="Provider is required.")
+        if provider_key not in resolved_provider_adapters:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Unsupported Provider: {provider_key}",
+            )
 
         slug = slugify_search_set_name(request.display_name)
         if slug:
@@ -604,10 +707,76 @@ def create_app(
                 database_path=resolved_database_path,
                 display_name=request.display_name,
                 terms_text=request.terms_text,
+                provider=provider_key,
             )
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
         return serialize_search_set(search_set)
+
+    @app.post("/local-folder-collections")
+    def create_local_folder_import_collection(
+        request: LocalFolderCollectionRequest,
+    ) -> dict[str, object]:
+        if get_worker_status(database_path=resolved_database_path).active_collect_job_id is not None:
+            raise HTTPException(status_code=409, detail="Another search is already active.")
+
+        slug = slugify_search_set_name(request.display_name)
+        if slug:
+            try:
+                get_search_set(database_path=resolved_database_path, slug=slug)
+            except LookupError:
+                pass
+            else:
+                raise HTTPException(
+                    status_code=409,
+                    detail="A Collection with this name already exists.",
+                )
+
+        try:
+            summary = create_local_folder_collection(
+                database_path=resolved_database_path,
+                data_root=resolved_data_root,
+                display_name=request.display_name,
+                folder_path=Path(request.folder_path),
+                store_source_file_links=request.store_source_file_links,
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
+        return serialize_local_folder_import_summary(summary)
+
+    @app.post("/local-folder-picker", response_model=None)
+    def choose_local_folder() -> dict[str, str] | Response:
+        try:
+            folder_path = resolved_local_folder_picker()
+        except LocalFolderPickerCancelled:
+            return Response(status_code=204)
+        except LocalFolderPickerUnavailable as error:
+            raise HTTPException(status_code=503, detail=PICKER_UNAVAILABLE_MESSAGE) from error
+
+        return {"folder_path": str(folder_path)}
+
+    @app.post("/search-sets/{slug}/local-folder-imports")
+    def import_local_folder_into_collection(
+        slug: str,
+        request: LocalFolderImportRequest,
+    ) -> dict[str, object]:
+        if get_worker_status(database_path=resolved_database_path).active_collect_job_id is not None:
+            raise HTTPException(status_code=409, detail="Another search is already active.")
+        try:
+            summary = import_local_image_folder(
+                database_path=resolved_database_path,
+                data_root=resolved_data_root,
+                search_set_slug=slug,
+                folder_path=Path(request.folder_path),
+                store_source_file_links=request.store_source_file_links,
+            )
+        except LookupError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
+        return serialize_local_folder_import_summary(summary)
 
     @app.get("/search-sets")
     def get_search_sets() -> list[dict[str, object]]:
@@ -744,7 +913,7 @@ def create_app(
         }
 
     @app.get("/library/objects/{provider}/{object_id}")
-    def get_library_object(provider: str, object_id: int) -> dict[str, object]:
+    def get_library_object(provider: str, object_id: SourceObjectId) -> dict[str, object]:
         detail = get_library_object_detail(
             database_path=resolved_database_path,
             provider=provider,
@@ -755,7 +924,7 @@ def create_app(
         return serialize_collection_object_detail(detail)
 
     @app.put("/objects/{provider}/{object_id}/favorite")
-    def favorite_object(provider: str, object_id: int) -> dict[str, object]:
+    def favorite_object(provider: str, object_id: SourceObjectId) -> dict[str, object]:
         set_object_favorite(
             database_path=resolved_database_path,
             provider=provider,
@@ -769,7 +938,7 @@ def create_app(
         }
 
     @app.delete("/objects/{provider}/{object_id}/favorite")
-    def unfavorite_object(provider: str, object_id: int) -> dict[str, object]:
+    def unfavorite_object(provider: str, object_id: SourceObjectId) -> dict[str, object]:
         set_object_favorite(
             database_path=resolved_database_path,
             provider=provider,
@@ -871,7 +1040,11 @@ def create_app(
         }
 
     @app.get("/search-sets/{slug}/objects/{provider}/{object_id}")
-    def get_collection_object(slug: str, provider: str, object_id: int) -> dict[str, object]:
+    def get_collection_object(
+        slug: str,
+        provider: str,
+        object_id: SourceObjectId,
+    ) -> dict[str, object]:
         detail = get_collection_object_detail(
             database_path=resolved_database_path,
             search_set_slug=slug,
@@ -953,7 +1126,7 @@ def create_app(
                         {
                             "image_asset_id": skipped.image_asset_id,
                             "provider": skipped.provider,
-                            "object_id": skipped.object_id,
+                            "object_id": normalize_source_object_id(skipped.object_id),
                             "source_image_url": skipped.source_image_url,
                             "reason": skipped.reason,
                         }
@@ -1000,7 +1173,7 @@ def create_app(
                         {
                             "image_asset_id": skipped.image_asset_id,
                             "provider": skipped.provider,
-                            "object_id": skipped.object_id,
+                            "object_id": normalize_source_object_id(skipped.object_id),
                             "source_image_url": skipped.source_image_url,
                             "reason": skipped.reason,
                         }
@@ -1070,6 +1243,24 @@ def create_app(
             "deleted_image_assets": deleted_image_assets,
         }
 
+    @app.get("/image-assets/{image_asset_id}/source")
+    def get_image_asset_source_file(image_asset_id: int) -> FileResponse:
+        path = get_image_asset_source_file_path(
+            database_path=resolved_database_path,
+            image_asset_id=image_asset_id,
+        )
+        if path is None:
+            raise HTTPException(status_code=404, detail="Image Asset source file not found.")
+
+        resolved_path = path.resolve()
+        if not resolved_path.is_file():
+            raise HTTPException(status_code=404, detail="Image Asset source file not found.")
+
+        return FileResponse(
+            resolved_path,
+            headers={"Cache-Control": "private, max-age=0"},
+        )
+
     @app.get("/image-assets/{image_asset_id}/{derivative}")
     def get_image_asset_derivative(image_asset_id: int, derivative: str) -> FileResponse:
         path = get_image_asset_derivative_path(
@@ -1091,49 +1282,58 @@ def create_app(
             media_type="image/jpeg",
         )
 
-    @app.post("/search-sets/{slug}/provider-collections/met/runs")
-    def discover_met_candidate_run(
+    @app.post("/search-sets/{slug}/provider-collections/{provider}/runs")
+    def discover_provider_candidate_run(
         slug: str,
+        provider: str,
         request: DiscoverMetCandidatesRequest,
     ) -> dict[str, object]:
-        run = discover_met_candidates(
+        adapter = get_online_provider_adapter(provider)
+        run = adapter.discover_candidate_run(
             database_path=resolved_database_path,
             search_set_slug=slug,
             candidate_offset=request.candidate_offset,
             candidate_limit=request.candidate_limit,
-            met_client=resolved_met_candidate_client,
+            batch_target=DEFAULT_BATCH_TARGET,
         )
         return serialize_candidate_run(run)
 
-    @app.post("/search-sets/{slug}/provider-collections/met/collects")
-    def start_met_collect(
+    @app.post("/search-sets/{slug}/provider-collections/{provider}/collects")
+    def start_provider_collect(
         slug: str,
+        provider: str,
         request: StartMetCollectRequest,
     ) -> dict[str, object]:
+        adapter = get_online_provider_adapter(provider)
         if get_worker_status(database_path=resolved_database_path).active_collect_job_id is not None:
             raise HTTPException(status_code=409, detail="Another search is already active.")
         existing_collect_job = get_active_collect_job_for_search_set_provider(
             database_path=resolved_database_path,
             search_set_slug=slug,
-            provider="met",
+            provider=adapter.provider,
         )
         if existing_collect_job is not None and existing_collect_job.status == "paused":
-            raise HTTPException(status_code=409, detail="Paused Met search can be resumed.")
+            raise HTTPException(
+                status_code=409,
+                detail=f"Paused {adapter.display_name} search can be resumed.",
+            )
 
         candidate_offset = get_next_collect_candidate_offset_for_search_set_provider(
             database_path=resolved_database_path,
             search_set_slug=slug,
-            provider="met",
+            provider=adapter.provider,
         )
         if candidate_offset is None:
-            raise HTTPException(status_code=409, detail="Met has no more results for this Collection.")
+            raise HTTPException(
+                status_code=409,
+                detail=f"{adapter.display_name} has no more results for this Collection.",
+            )
 
-        run = discover_met_candidates(
+        run = adapter.discover_candidate_run(
             database_path=resolved_database_path,
             search_set_slug=slug,
             candidate_offset=candidate_offset,
             candidate_limit=INTERNAL_CANDIDATE_LIMIT,
-            met_client=resolved_met_candidate_client,
             batch_target=request.batch_target,
         )
         try:
@@ -1158,15 +1358,19 @@ def create_app(
             "batch_target": collect_job.batch_target,
         }
 
-    @app.post("/search-sets/{slug}/provider-collections/met/collects/stop")
-    def stop_met_collect(slug: str) -> dict[str, object]:
+    @app.post("/search-sets/{slug}/provider-collections/{provider}/collects/stop")
+    def stop_provider_collect(slug: str, provider: str) -> dict[str, object]:
+        adapter = get_online_provider_adapter(provider)
         collect_job = get_active_collect_job_for_search_set_provider(
             database_path=resolved_database_path,
             search_set_slug=slug,
-            provider="met",
+            provider=adapter.provider,
         )
         if collect_job is None or collect_job.status != "running":
-            raise HTTPException(status_code=409, detail="No running Met search can be stopped.")
+            raise HTTPException(
+                status_code=409,
+                detail=f"No running {adapter.display_name} search can be stopped.",
+            )
 
         stopped_job = request_stop_collect_job(
             database_path=resolved_database_path,
@@ -1177,18 +1381,23 @@ def create_app(
             "status": stopped_job.status,
         }
 
-    @app.post("/search-sets/{slug}/provider-collections/met/collects/resume")
-    def resume_met_collect(
+    @app.post("/search-sets/{slug}/provider-collections/{provider}/collects/resume")
+    def resume_provider_collect(
         slug: str,
+        provider: str,
         request: StartMetCollectRequest,
     ) -> dict[str, object]:
+        adapter = get_online_provider_adapter(provider)
         collect_job = get_active_collect_job_for_search_set_provider(
             database_path=resolved_database_path,
             search_set_slug=slug,
-            provider="met",
+            provider=adapter.provider,
         )
         if collect_job is None or collect_job.status != "paused":
-            raise HTTPException(status_code=409, detail="No paused Met search can be resumed.")
+            raise HTTPException(
+                status_code=409,
+                detail=f"No paused {adapter.display_name} search can be resumed.",
+            )
 
         try:
             resumed_job = resume_collect_job(
@@ -1204,15 +1413,21 @@ def create_app(
             "batch_target": resumed_job.batch_target,
         }
 
-    @app.post("/provider-collections/met/runs/{run_id}/ingest")
-    def ingest_met_candidate_run(run_id: int) -> dict[str, object]:
-        summary = ingest_met_run(
-            database_path=resolved_database_path,
-            data_root=resolved_data_root,
-            run_id=run_id,
-            met_client=resolved_met_record_client,
-            download_image_bytes=resolved_download_image_bytes,
+    @app.post("/provider-collections/{provider}/runs/{run_id}/ingest")
+    def ingest_provider_candidate_run(provider: str, run_id: int) -> dict[str, object]:
+        adapter = get_online_provider_adapter(provider)
+        run = get_candidate_run(database_path=resolved_database_path, run_id=run_id)
+        if run.provider != adapter.provider:
+            raise HTTPException(status_code=409, detail="Run belongs to another Provider.")
+
+        summary = adapter.ingest_run(
+            ProviderIngestRequest(
+                database_path=resolved_database_path,
+                data_root=resolved_data_root,
+                run_id=run_id,
+                max_images_per_object=DEFAULT_MAX_IMAGES_PER_OBJECT,
+            )
         )
-        return serialize_met_ingest_summary(summary)
+        return serialize_provider_ingest_summary(summary)
 
     return app

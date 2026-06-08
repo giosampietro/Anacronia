@@ -11,17 +11,27 @@ from typing import Literal
 
 from anacronia.collection_runs import ensure_collection_run_schema
 from anacronia.curation import ensure_collection_memberships
+from anacronia.image_pipeline import (
+    ImageDerivativeSettings,
+    STANDARD_1024_SETTINGS,
+    THUMB_256_SETTINGS,
+    validate_image_derivative,
+)
+from anacronia.local_folder_import import LOCAL_FOLDER_PROVIDER
 from anacronia.met_ingest import ensure_met_ingest_schema
+from anacronia.provider_identity import SourceObjectId, normalize_source_object_id
 
 
 ExportFormat = Literal["jsonl", "csv", "package"]
+EXPORT_STANDARD_SETTINGS = ImageDerivativeSettings(**STANDARD_1024_SETTINGS)
+EXPORT_THUMB_SETTINGS = ImageDerivativeSettings(**THUMB_256_SETTINGS)
 
 
 @dataclass(frozen=True)
 class ExportSkippedImageAsset:
     image_asset_id: int
     provider: str
-    object_id: int
+    object_id: SourceObjectId
     source_image_url: str
     reason: str
 
@@ -55,8 +65,9 @@ class ExportCollection:
 class ExportImageAsset:
     image_asset_id: int
     provider: str
-    object_id: int
+    object_id: SourceObjectId
     source_image_url: str
+    source_metadata: dict[str, object]
     image_role: str
     image_index: int | None
     original_width: int
@@ -95,6 +106,15 @@ class PackageImageCopy:
     relative_path: str
 
 
+def normalize_selected_object_refs(
+    selected_objects: list[tuple[str, SourceObjectId | int]],
+) -> set[tuple[str, SourceObjectId]]:
+    return {
+        (provider, normalize_source_object_id(object_id))
+        for provider, object_id in selected_objects
+    }
+
+
 def export_collection(
     *,
     database_path: Path,
@@ -102,7 +122,7 @@ def export_collection(
     search_set_slug: str,
     export_format: ExportFormat,
     selected_image_asset_ids: list[int] | None = None,
-    selected_objects: list[tuple[str, int]] | None = None,
+    selected_objects: list[tuple[str, SourceObjectId | int]] | None = None,
     timestamp: str | None = None,
 ) -> CollectionExportResult:
     if export_format not in {"jsonl", "csv", "package"}:
@@ -119,7 +139,7 @@ def export_collection(
         )
         if selected_image_asset_ids is not None or selected_objects is not None:
             selected_ids = set(selected_image_asset_ids or [])
-            selected_object_refs = set(selected_objects or [])
+            selected_object_refs = normalize_selected_object_refs(selected_objects or [])
             image_assets = [
                 image_asset
                 for image_asset in image_assets
@@ -173,7 +193,7 @@ def export_user_library(
     data_root: Path,
     export_format: ExportFormat,
     selected_image_asset_ids: list[int] | None = None,
-    selected_objects: list[tuple[str, int]] | None = None,
+    selected_objects: list[tuple[str, SourceObjectId | int]] | None = None,
     timestamp: str | None = None,
 ) -> CollectionExportResult:
     if export_format not in {"jsonl", "csv", "package"}:
@@ -191,7 +211,7 @@ def export_user_library(
         image_assets = list_user_library_image_assets(connection=connection)
         if selected_image_asset_ids is not None or selected_objects is not None:
             selected_ids = set(selected_image_asset_ids or [])
-            selected_object_refs = set(selected_objects or [])
+            selected_object_refs = normalize_selected_object_refs(selected_objects or [])
             image_assets = [
                 image_asset
                 for image_asset in image_assets
@@ -293,6 +313,7 @@ def list_collection_image_assets(
           image_assets.provider,
           image_assets.object_id,
           image_assets.source_image_url,
+          image_assets.source_metadata_json,
           image_assets.image_role,
           image_assets.image_index,
           image_assets.original_width,
@@ -350,22 +371,23 @@ def list_collection_image_assets(
         ExportImageAsset(
             image_asset_id=int(row[0]),
             provider=row[1],
-            object_id=int(row[2]),
+            object_id=normalize_source_object_id(row[2]),
             source_image_url=row[3],
-            image_role=row[4],
-            image_index=row[5],
-            original_width=int(row[6]),
-            original_height=int(row[7]),
-            standard_path=Path(row[8]),
-            thumb_path=Path(row[9]),
-            title=row[10],
-            object_name=row[11],
-            artist_display_name=row[12],
-            object_url=row[13],
-            rights_and_reproduction=row[14],
-            metadata_date=row[15],
-            object_is_favorite=bool(row[16]),
-            image_is_favorite=bool(row[17]),
+            source_metadata=parse_source_metadata(row[4]),
+            image_role=row[5],
+            image_index=row[6],
+            original_width=int(row[7]),
+            original_height=int(row[8]),
+            standard_path=Path(row[9]),
+            thumb_path=Path(row[10]),
+            title=row[11],
+            object_name=row[12],
+            artist_display_name=row[13],
+            object_url=row[14],
+            rights_and_reproduction=row[15],
+            metadata_date=row[16],
+            object_is_favorite=bool(row[17]),
+            image_is_favorite=bool(row[18]),
         )
         for row in rows
     ]
@@ -383,6 +405,7 @@ def list_user_library_image_assets(
           image_assets.provider,
           image_assets.object_id,
           image_assets.source_image_url,
+          image_assets.source_metadata_json,
           image_assets.image_role,
           image_assets.image_index,
           image_assets.original_width,
@@ -426,22 +449,23 @@ def list_user_library_image_assets(
         ExportImageAsset(
             image_asset_id=int(row[0]),
             provider=row[1],
-            object_id=int(row[2]),
+            object_id=normalize_source_object_id(row[2]),
             source_image_url=row[3],
-            image_role=row[4],
-            image_index=row[5],
-            original_width=int(row[6]),
-            original_height=int(row[7]),
-            standard_path=Path(row[8]),
-            thumb_path=Path(row[9]),
-            title=row[10],
-            object_name=row[11],
-            artist_display_name=row[12],
-            object_url=row[13],
-            rights_and_reproduction=row[14],
-            metadata_date=row[15],
-            object_is_favorite=bool(row[16]),
-            image_is_favorite=bool(row[17]),
+            source_metadata=parse_source_metadata(row[4]),
+            image_role=row[5],
+            image_index=row[6],
+            original_width=int(row[7]),
+            original_height=int(row[8]),
+            standard_path=Path(row[9]),
+            thumb_path=Path(row[10]),
+            title=row[11],
+            object_name=row[12],
+            artist_display_name=row[13],
+            object_url=row[14],
+            rights_and_reproduction=row[15],
+            metadata_date=row[16],
+            object_is_favorite=bool(row[17]),
+            image_is_favorite=bool(row[18]),
         )
         for row in rows
     ]
@@ -518,7 +542,14 @@ def build_export_rows(
                     "image_asset_id": image_asset.image_asset_id,
                     "provider": image_asset.provider,
                     "object_id": image_asset.object_id,
-                    "source_image_url": image_asset.source_image_url,
+                    "source_type": export_source_type(image_asset),
+                    "source_identity": export_source_identity(image_asset),
+                    "source_object_identity": export_source_object_identity(image_asset),
+                    "source_image_url": export_source_image_url(image_asset),
+                    "source_image_identity": export_source_image_identity(image_asset),
+                    "source_system_number": export_source_system_number(image_asset),
+                    "source_iiif_image_url": export_source_iiif_image_url(image_asset),
+                    "source_sensitive_image": export_source_sensitive_image(image_asset),
                     "image_role": image_asset.image_role,
                     "image_index": image_asset.image_index,
                     "original_width": image_asset.original_width,
@@ -568,13 +599,80 @@ def missing_derivative_reason(image_asset: ExportImageAsset) -> str | None:
     standard_exists = image_asset.standard_path.is_file()
     thumb_exists = image_asset.thumb_path.is_file()
 
-    if standard_exists and thumb_exists:
-        return None
     if not standard_exists and not thumb_exists:
         return "missing_standard_and_thumb_derivatives"
     if not standard_exists:
         return "missing_standard_derivative"
-    return "missing_thumb_derivative"
+    if not thumb_exists:
+        return "missing_thumb_derivative"
+    if not validate_image_derivative(
+        path=image_asset.standard_path,
+        settings=EXPORT_STANDARD_SETTINGS,
+    ) or not validate_image_derivative(
+        path=image_asset.thumb_path,
+        settings=EXPORT_THUMB_SETTINGS,
+    ):
+        return "invalid_derivative"
+    return None
+
+
+def export_source_image_url(image_asset: ExportImageAsset) -> str:
+    if image_asset.provider == LOCAL_FOLDER_PROVIDER:
+        return ""
+    return image_asset.source_image_url
+
+
+def export_source_type(image_asset: ExportImageAsset) -> str:
+    if image_asset.provider == LOCAL_FOLDER_PROVIDER:
+        return "local-folder"
+    return "online-provider"
+
+
+def export_source_identity(image_asset: ExportImageAsset) -> str:
+    if image_asset.provider == LOCAL_FOLDER_PROVIDER:
+        return export_source_image_identity(image_asset)
+    return (
+        f"{export_source_type(image_asset)}:"
+        f"{export_source_object_identity(image_asset)}:"
+        f"{image_asset.source_image_url}"
+    )
+
+
+def export_source_object_identity(image_asset: ExportImageAsset) -> str:
+    return f"{image_asset.provider}:{image_asset.object_id}"
+
+
+def export_source_image_identity(image_asset: ExportImageAsset) -> str:
+    if image_asset.provider == LOCAL_FOLDER_PROVIDER:
+        return image_asset.source_image_url
+    return f"{image_asset.provider}:{image_asset.source_image_url}"
+
+
+def export_source_system_number(image_asset: ExportImageAsset) -> str:
+    if image_asset.provider == "vam":
+        return str(image_asset.object_id)
+    return ""
+
+
+def export_source_iiif_image_url(image_asset: ExportImageAsset) -> str:
+    if image_asset.provider == "vam":
+        return image_asset.source_image_url
+    return ""
+
+
+def export_source_sensitive_image(image_asset: ExportImageAsset) -> bool | None:
+    value = image_asset.source_metadata.get("sensitive_image")
+    return value if isinstance(value, bool) else None
+
+
+def parse_source_metadata(value: object) -> dict[str, object]:
+    if not isinstance(value, str):
+        return {}
+    try:
+        metadata = json.loads(value)
+    except json.JSONDecodeError:
+        return {}
+    return metadata if isinstance(metadata, dict) else {}
 
 
 def get_export_matches(
@@ -582,8 +680,9 @@ def get_export_matches(
     connection: sqlite3.Connection,
     collection_slug: str,
     provider: str,
-    object_id: int,
+    object_id: SourceObjectId | int,
 ) -> list[ExportMatch]:
+    source_object_id = normalize_source_object_id(object_id)
     rows = connection.execute(
         """
         SELECT DISTINCT
@@ -603,7 +702,7 @@ def get_export_matches(
           AND object_matches.object_id = ?
         ORDER BY object_matches.search_term
         """,
-        (collection_slug, provider, object_id),
+        (collection_slug, provider, source_object_id),
     ).fetchall()
 
     return [
@@ -620,8 +719,9 @@ def get_user_library_export_matches(
     *,
     connection: sqlite3.Connection,
     provider: str,
-    object_id: int,
+    object_id: SourceObjectId | int,
 ) -> list[ExportMatch]:
+    source_object_id = normalize_source_object_id(object_id)
     rows = connection.execute(
         """
         SELECT DISTINCT
@@ -634,7 +734,7 @@ def get_user_library_export_matches(
           AND object_matches.object_id = ?
         ORDER BY object_matches.search_term
         """,
-        (provider, object_id),
+        (provider, source_object_id),
     ).fetchall()
 
     return [
@@ -651,8 +751,9 @@ def get_export_descriptors(
     *,
     connection: sqlite3.Connection,
     provider: str,
-    object_id: int,
+    object_id: SourceObjectId | int,
 ) -> list[ExportDescriptor]:
+    source_object_id = normalize_source_object_id(object_id)
     rows = connection.execute(
         """
         SELECT provider, descriptor_type, value, normalized_value, source_field
@@ -660,7 +761,7 @@ def get_export_descriptors(
         WHERE provider = ? AND object_id = ?
         ORDER BY descriptor_type, value, source_field
         """,
-        (provider, object_id),
+        (provider, source_object_id),
     ).fetchall()
 
     return [
@@ -763,6 +864,13 @@ def write_csv_metadata(*, path: Path, rows: list[dict[str, object]]) -> None:
     columns = [
         "collection_slug",
         "collection_title",
+        "source_type",
+        "source_identity",
+        "source_object_identity",
+        "source_image_identity",
+        "source_system_number",
+        "source_iiif_image_url",
+        "source_sensitive_image",
         "provider",
         "object_id",
         "image_asset_id",
@@ -805,6 +913,15 @@ def flatten_export_row(row: dict[str, object]) -> dict[str, object]:
     return {
         "collection_slug": collection["slug"],
         "collection_title": collection["title"],
+        "source_type": image_asset["source_type"],
+        "source_identity": image_asset["source_identity"],
+        "source_object_identity": image_asset["source_object_identity"],
+        "source_image_identity": image_asset["source_image_identity"],
+        "source_system_number": image_asset["source_system_number"],
+        "source_iiif_image_url": image_asset["source_iiif_image_url"],
+        "source_sensitive_image": csv_bool_or_empty(
+            image_asset["source_sensitive_image"]
+        ),
         "provider": image_asset["provider"],
         "object_id": image_asset["object_id"],
         "image_asset_id": image_asset["image_asset_id"],
@@ -836,6 +953,12 @@ def flatten_export_row(row: dict[str, object]) -> dict[str, object]:
         ),
         "semantic_text": row["semantic_text"],
     }
+
+
+def csv_bool_or_empty(value: object) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return ""
 
 
 def copy_package_images(*, export_path: Path, image_copies: list[PackageImageCopy]) -> None:

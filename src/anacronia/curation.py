@@ -2,6 +2,14 @@ from dataclasses import dataclass
 from pathlib import Path
 import sqlite3
 
+from anacronia.provider_identity import (
+    ProviderObjectIdValue,
+    SourceObjectId,
+    normalize_source_object_id,
+    provider_object_id_value,
+)
+from anacronia.schema_migrations import ensure_object_id_text_column
+
 
 @dataclass(frozen=True)
 class CollectionMembershipBackfillSummary:
@@ -13,14 +21,14 @@ class CollectionMembershipBackfillSummary:
 class CollectionObjectMembership:
     search_set_slug: str
     provider: str
-    object_id: int
+    object_id: ProviderObjectIdValue
 
 
 @dataclass(frozen=True)
 class CollectionImageAssetMembership:
     search_set_slug: str
     provider: str
-    object_id: int
+    object_id: ProviderObjectIdValue
     source_image_url: str
 
 
@@ -71,23 +79,28 @@ def ensure_curation_schema(connection: sqlite3.Connection) -> None:
         CREATE TABLE IF NOT EXISTS object_favorites (
           id INTEGER PRIMARY KEY,
           provider TEXT NOT NULL,
-          object_id INTEGER NOT NULL,
+          object_id TEXT NOT NULL,
           created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
           UNIQUE (provider, object_id)
         )
         """
     )
+    ensure_object_id_text_column(connection=connection, table_name="object_favorites")
     connection.execute(
         """
         CREATE TABLE IF NOT EXISTS image_asset_favorites (
           id INTEGER PRIMARY KEY,
           provider TEXT NOT NULL,
-          object_id INTEGER NOT NULL,
+          object_id TEXT NOT NULL,
           source_image_url TEXT NOT NULL,
           created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
           UNIQUE (provider, object_id, source_image_url)
         )
         """
+    )
+    ensure_object_id_text_column(
+        connection=connection,
+        table_name="image_asset_favorites",
     )
     connection.execute(
         """
@@ -95,7 +108,7 @@ def ensure_curation_schema(connection: sqlite3.Connection) -> None:
           id INTEGER PRIMARY KEY,
           search_set_id INTEGER NOT NULL,
           provider TEXT NOT NULL,
-          object_id INTEGER NOT NULL,
+          object_id TEXT NOT NULL,
           active INTEGER NOT NULL DEFAULT 1,
           created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (search_set_id) REFERENCES search_sets(id),
@@ -103,13 +116,17 @@ def ensure_curation_schema(connection: sqlite3.Connection) -> None:
         )
         """
     )
+    ensure_object_id_text_column(
+        connection=connection,
+        table_name="collection_object_memberships",
+    )
     connection.execute(
         """
         CREATE TABLE IF NOT EXISTS collection_image_asset_memberships (
           id INTEGER PRIMARY KEY,
           search_set_id INTEGER NOT NULL,
           provider TEXT NOT NULL,
-          object_id INTEGER NOT NULL,
+          object_id TEXT NOT NULL,
           source_image_url TEXT NOT NULL,
           active INTEGER NOT NULL DEFAULT 1,
           created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -118,15 +135,20 @@ def ensure_curation_schema(connection: sqlite3.Connection) -> None:
         )
         """
     )
+    ensure_object_id_text_column(
+        connection=connection,
+        table_name="collection_image_asset_memberships",
+    )
 
 
 def set_object_favorite(
     *,
     database_path: Path,
     provider: str,
-    object_id: int,
+    object_id: SourceObjectId | int,
     is_favorite: bool,
 ) -> bool:
+    source_object_id = normalize_source_object_id(object_id)
     with sqlite3.connect(database_path) as connection:
         ensure_curation_schema(connection)
         if is_favorite:
@@ -135,7 +157,7 @@ def set_object_favorite(
                 INSERT OR IGNORE INTO object_favorites (provider, object_id)
                 VALUES (?, ?)
                 """,
-                (provider, object_id),
+                (provider, source_object_id),
             )
         else:
             connection.execute(
@@ -143,7 +165,7 @@ def set_object_favorite(
                 DELETE FROM object_favorites
                 WHERE provider = ? AND object_id = ?
                 """,
-                (provider, object_id),
+                (provider, source_object_id),
             )
 
     return is_favorite
@@ -154,9 +176,10 @@ def add_collection_object_exclusion(
     database_path: Path,
     search_set_slug: str,
     provider: str,
-    object_id: int,
+    object_id: SourceObjectId | int,
     reason: str,
 ) -> None:
+    source_object_id = normalize_source_object_id(object_id)
     with sqlite3.connect(database_path) as connection:
         ensure_curation_schema(connection)
         connection.execute(
@@ -171,7 +194,7 @@ def add_collection_object_exclusion(
             FROM search_sets
             WHERE slug = ?
             """,
-            (provider, object_id, reason, search_set_slug),
+            (provider, source_object_id, reason, search_set_slug),
         )
 
 
@@ -180,10 +203,11 @@ def add_collection_image_asset_exclusion(
     database_path: Path,
     search_set_slug: str,
     provider: str,
-    object_id: int,
+    object_id: SourceObjectId | int,
     source_image_url: str,
     reason: str,
 ) -> None:
+    source_object_id = normalize_source_object_id(object_id)
     with sqlite3.connect(database_path) as connection:
         ensure_curation_schema(connection)
         connection.execute(
@@ -199,7 +223,7 @@ def add_collection_image_asset_exclusion(
             FROM search_sets
             WHERE slug = ?
             """,
-            (provider, object_id, source_image_url, reason, search_set_slug),
+            (provider, source_object_id, source_image_url, reason, search_set_slug),
         )
 
 
@@ -208,16 +232,17 @@ def get_collection_import_exclusions(
     connection: sqlite3.Connection,
     search_set_id: int,
     provider: str,
-    object_id: int,
+    object_id: SourceObjectId | int,
 ) -> CollectionImportExclusions:
     ensure_curation_schema(connection)
+    source_object_id = normalize_source_object_id(object_id)
     object_excluded = connection.execute(
         """
         SELECT 1
         FROM collection_object_exclusions
         WHERE search_set_id = ? AND provider = ? AND object_id = ?
         """,
-        (search_set_id, provider, object_id),
+        (search_set_id, provider, source_object_id),
     ).fetchone() is not None
     image_rows = connection.execute(
         """
@@ -225,11 +250,63 @@ def get_collection_import_exclusions(
         FROM collection_image_asset_exclusions
         WHERE search_set_id = ? AND provider = ? AND object_id = ?
         """,
-        (search_set_id, provider, object_id),
+        (search_set_id, provider, source_object_id),
     ).fetchall()
     return CollectionImportExclusions(
         object_excluded=object_excluded,
         image_source_urls=frozenset(row[0] for row in image_rows),
+    )
+
+
+def add_collection_object_membership(
+    *,
+    connection: sqlite3.Connection,
+    search_set_id: int,
+    provider: str,
+    object_id: SourceObjectId | int,
+) -> None:
+    ensure_curation_schema(connection)
+    source_object_id = normalize_source_object_id(object_id)
+    connection.execute(
+        """
+        INSERT INTO collection_object_memberships (
+          search_set_id,
+          provider,
+          object_id,
+          active
+        )
+        VALUES (?, ?, ?, 1)
+        ON CONFLICT(search_set_id, provider, object_id) DO UPDATE SET
+          active = 1
+        """,
+        (search_set_id, provider, source_object_id),
+    )
+
+
+def add_collection_image_asset_membership(
+    *,
+    connection: sqlite3.Connection,
+    search_set_id: int,
+    provider: str,
+    object_id: SourceObjectId | int,
+    source_image_url: str,
+) -> None:
+    ensure_curation_schema(connection)
+    source_object_id = normalize_source_object_id(object_id)
+    connection.execute(
+        """
+        INSERT INTO collection_image_asset_memberships (
+          search_set_id,
+          provider,
+          object_id,
+          source_image_url,
+          active
+        )
+        VALUES (?, ?, ?, ?, 1)
+        ON CONFLICT(search_set_id, provider, object_id, source_image_url) DO UPDATE SET
+          active = 1
+        """,
+        (search_set_id, provider, source_object_id, source_image_url),
     )
 
 
@@ -238,8 +315,9 @@ def remove_object_from_collection(
     database_path: Path,
     search_set_slug: str,
     provider: str,
-    object_id: int,
+    object_id: SourceObjectId | int,
 ) -> bool:
+    source_object_id = normalize_source_object_id(object_id)
     with sqlite3.connect(database_path) as connection:
         ensure_collection_memberships(connection)
         search_set_row = connection.execute(
@@ -264,7 +342,7 @@ def remove_object_from_collection(
               AND object_id = ?
               AND active = 1
             """,
-            (search_set_id, provider, object_id),
+            (search_set_id, provider, source_object_id),
         )
         image_cursor = connection.execute(
             """
@@ -276,7 +354,7 @@ def remove_object_from_collection(
               AND object_id = ?
               AND active = 1
             """,
-            (search_set_id, provider, object_id),
+            (search_set_id, provider, source_object_id),
         )
         connection.execute(
             """
@@ -288,7 +366,7 @@ def remove_object_from_collection(
             )
             VALUES (?, ?, ?, ?)
             """,
-            (search_set_id, provider, object_id, "removed_from_collection"),
+            (search_set_id, provider, source_object_id, "removed_from_collection"),
         )
 
     return object_cursor.rowcount > 0 or image_cursor.rowcount > 0
@@ -318,7 +396,7 @@ def remove_image_asset_from_collection(
             return False
         search_set_id = int(search_set_row[0])
         provider = image_asset_row[0]
-        object_id = int(image_asset_row[1])
+        object_id = normalize_source_object_id(image_asset_row[1])
         source_image_url = image_asset_row[2]
         ensure_collection_not_busy(
             connection=connection,
@@ -592,19 +670,19 @@ def _plan_collection_material_deletion(
     ).fetchall()
     deleted_image_asset_ids: list[int] = []
     file_paths: list[str] = []
-    deleted_objects: set[tuple[str, int]] = set()
-    preserved_shared_objects: set[tuple[str, int]] = set()
-    preserved_favorite_objects: set[tuple[str, int]] = set()
+    deleted_objects: set[tuple[str, SourceObjectId]] = set()
+    preserved_shared_objects: set[tuple[str, SourceObjectId]] = set()
+    preserved_favorite_objects: set[tuple[str, SourceObjectId]] = set()
     preserved_shared_image_asset_ids: set[int] = set()
     preserved_favorite_image_asset_ids: set[int] = set()
 
-    object_image_asset_ids: dict[tuple[str, int], list[int]] = {}
-    deleted_image_asset_ids_by_object: dict[tuple[str, int], list[int]] = {}
+    object_image_asset_ids: dict[tuple[str, SourceObjectId], list[int]] = {}
+    deleted_image_asset_ids_by_object: dict[tuple[str, SourceObjectId], list[int]] = {}
 
     for row in image_rows:
         image_asset_id = int(row[0])
         provider = row[1]
-        object_id = int(row[2])
+        object_id = normalize_source_object_id(row[2])
         object_key = (provider, object_id)
         object_image_asset_ids.setdefault(object_key, []).append(image_asset_id)
         object_shared = bool(row[6])
@@ -649,7 +727,7 @@ def _apply_collection_material_deletion(
     *,
     connection: sqlite3.Connection,
     image_asset_ids: list[int],
-    objects: set[tuple[str, int]],
+    objects: set[tuple[str, SourceObjectId]],
 ) -> None:
     if image_asset_ids:
         placeholders = ",".join("?" for _ in image_asset_ids)
@@ -777,7 +855,7 @@ def set_image_asset_favorite(
                 )
                 VALUES (?, ?, ?)
                 """,
-                (row[0], int(row[1]), row[2]),
+                (row[0], normalize_source_object_id(row[1]), row[2]),
             )
         else:
             connection.execute(
@@ -785,7 +863,7 @@ def set_image_asset_favorite(
                 DELETE FROM image_asset_favorites
                 WHERE provider = ? AND object_id = ? AND source_image_url = ?
                 """,
-                (row[0], int(row[1]), row[2]),
+                (row[0], normalize_source_object_id(row[1]), row[2]),
             )
 
     return is_favorite
@@ -814,8 +892,9 @@ def mark_object_deleted(
     *,
     database_path: Path,
     provider: str,
-    object_id: int,
+    object_id: SourceObjectId | int,
 ) -> bool:
+    source_object_id = normalize_source_object_id(object_id)
     with sqlite3.connect(database_path) as connection:
         ensure_curation_schema(connection)
         cursor = connection.execute(
@@ -824,7 +903,7 @@ def mark_object_deleted(
             SET active = 0, deleted_at = CURRENT_TIMESTAMP
             WHERE provider = ? AND object_id = ? AND active = 1
             """,
-            (provider, object_id),
+            (provider, source_object_id),
         )
         if cursor.rowcount > 0:
             connection.execute(
@@ -833,7 +912,7 @@ def mark_object_deleted(
                 SET active = 0, deleted_at = CURRENT_TIMESTAMP
                 WHERE provider = ? AND object_id = ? AND active = 1
                 """,
-                (provider, object_id),
+                (provider, source_object_id),
             )
 
     return cursor.rowcount > 0
@@ -875,7 +954,7 @@ def delete_image_asset_from_anacronia(
         return False
 
     provider = row[0]
-    object_id = int(row[1])
+    object_id = normalize_source_object_id(row[1])
     source_image_url = row[2]
     for path_text in (row[3], row[4]):
         delete_local_file(path_text)
@@ -951,8 +1030,9 @@ def delete_object_from_anacronia(
     *,
     database_path: Path,
     provider: str,
-    object_id: int,
+    object_id: SourceObjectId | int,
 ) -> bool:
+    source_object_id = normalize_source_object_id(object_id)
     with sqlite3.connect(database_path) as connection:
         ensure_curation_schema(connection)
         ensure_no_provider_search_running(connection)
@@ -962,7 +1042,7 @@ def delete_object_from_anacronia(
             FROM museum_objects
             WHERE provider = ? AND object_id = ? AND active = 1
             """,
-            (provider, object_id),
+            (provider, source_object_id),
         ).fetchone()
         image_rows = connection.execute(
             """
@@ -970,7 +1050,7 @@ def delete_object_from_anacronia(
             FROM image_assets
             WHERE provider = ? AND object_id = ? AND imported = 1 AND active = 1
             """,
-            (provider, object_id),
+            (provider, source_object_id),
         ).fetchall()
     if object_row is None and not image_rows:
         return False
@@ -987,7 +1067,7 @@ def delete_object_from_anacronia(
             SET active = 0
             WHERE provider = ? AND object_id = ? AND active = 1
             """,
-            (provider, object_id),
+            (provider, source_object_id),
         )
         connection.execute(
             """
@@ -995,7 +1075,7 @@ def delete_object_from_anacronia(
             SET active = 0
             WHERE provider = ? AND object_id = ? AND active = 1
             """,
-            (provider, object_id),
+            (provider, source_object_id),
         )
         connection.execute(
             """
@@ -1003,7 +1083,7 @@ def delete_object_from_anacronia(
             SET active = 0, deleted_at = CURRENT_TIMESTAMP
             WHERE provider = ? AND object_id = ? AND active = 1
             """,
-            (provider, object_id),
+            (provider, source_object_id),
         )
         connection.execute(
             """
@@ -1011,21 +1091,21 @@ def delete_object_from_anacronia(
             SET active = 0, deleted_at = CURRENT_TIMESTAMP
             WHERE provider = ? AND object_id = ? AND active = 1
             """,
-            (provider, object_id),
+            (provider, source_object_id),
         )
         connection.execute(
             """
             DELETE FROM image_asset_favorites
             WHERE provider = ? AND object_id = ?
             """,
-            (provider, object_id),
+            (provider, source_object_id),
         )
         connection.execute(
             """
             DELETE FROM object_favorites
             WHERE provider = ? AND object_id = ?
             """,
-            (provider, object_id),
+            (provider, source_object_id),
         )
 
     return True
@@ -1189,7 +1269,7 @@ def list_collection_object_memberships(
         CollectionObjectMembership(
             search_set_slug=row[0],
             provider=row[1],
-            object_id=int(row[2]),
+            object_id=provider_object_id_value(provider=row[1], value=row[2]),
         )
         for row in rows
     ]
@@ -1224,7 +1304,7 @@ def list_collection_image_asset_memberships(
         CollectionImageAssetMembership(
             search_set_slug=row[0],
             provider=row[1],
-            object_id=int(row[2]),
+            object_id=provider_object_id_value(provider=row[1], value=row[2]),
             source_image_url=row[3],
         )
         for row in rows

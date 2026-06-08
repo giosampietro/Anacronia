@@ -1,3 +1,5 @@
+import sqlite3
+
 from anacronia.search_sets import (
     create_or_continue_search_set,
     deactivate_search_set_term,
@@ -50,6 +52,31 @@ def test_existing_collection_slug_keeps_locked_terms(tmp_path):
     assert search_set.display_name == "Snake Studies"
     assert search_set.slug == "snake-studies"
     assert [term.term for term in search_set.terms] == ["snake", "anaconda"]
+
+
+def test_creates_search_set_with_requested_initial_provider(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+
+    create_or_continue_search_set(
+        database_path=storage.database_path,
+        display_name="Bed Studies",
+        terms_text="bed",
+        provider="vam",
+    )
+
+    with sqlite3.connect(storage.database_path) as connection:
+        rows = connection.execute(
+            """
+            SELECT provider_collections.provider
+            FROM provider_collections
+            JOIN search_sets
+              ON search_sets.id = provider_collections.search_set_id
+            WHERE search_sets.slug = ?
+            """,
+            ("bed-studies",),
+        ).fetchall()
+
+    assert rows == [("vam",)]
 
 
 def test_deactivates_search_set_term_without_deleting_it(tmp_path):

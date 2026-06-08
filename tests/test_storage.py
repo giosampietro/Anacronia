@@ -4,7 +4,11 @@ from anacronia.storage import (
     initialize_storage,
     met_image_derivative_path,
     met_raw_object_path,
+    provider_image_derivative_path,
+    provider_raw_record_path,
+    provider_temporary_original_path,
     resolve_data_root,
+    source_object_path_segment,
 )
 
 
@@ -71,3 +75,27 @@ def test_builds_met_additional_image_derivative_path_with_padded_index(tmp_path)
     )
 
     assert path == tmp_path / "data" / "met" / "images" / "436000-436999" / "436535" / "additional-001-thumb-256.jpg"
+
+
+def test_builds_provider_paths_with_sanitized_string_source_object_ids(tmp_path):
+    data_root = tmp_path / "data"
+
+    assert source_object_path_segment("../O:10") == "..%2FO%3A10"
+    assert provider_raw_record_path(
+        data_root=data_root,
+        provider="vam",
+        object_id="../O:10",
+    ) == data_root / "vam" / "raw-api" / "objects" / "..%2FO%3A10.json"
+    assert provider_image_derivative_path(
+        data_root=data_root,
+        provider="vam",
+        object_id="../O:10",
+        image_role="primary",
+        derivative="standard-1024",
+    ) == data_root / "vam" / "images" / "..%2FO%3A10" / "primary-standard-1024.jpg"
+    assert provider_temporary_original_path(
+        data_root=data_root,
+        provider="vam",
+        object_id="../O:10",
+        image_role="primary",
+    ) == data_root / "temp" / "vam" / "images" / "..%2FO%3A10" / "primary-source-original"

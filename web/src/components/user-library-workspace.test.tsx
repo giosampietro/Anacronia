@@ -18,7 +18,7 @@ const imageAssets: LibraryImageAssetSummary[] = [
   {
     image_asset_id: 9,
     provider: "met",
-    object_id: 40,
+    object_id: "40",
     title: "Coiled Snake Bowl",
     object_name: "Bowl",
     artist_display_name: "Unknown maker",
@@ -39,7 +39,7 @@ const imageAssets: LibraryImageAssetSummary[] = [
   {
     image_asset_id: 4,
     provider: "met",
-    object_id: 20,
+    object_id: "20",
     title: "Snake Vessel",
     object_name: "Vessel",
     artist_display_name: "Met Workshop",
@@ -59,7 +59,7 @@ const imageAssets: LibraryImageAssetSummary[] = [
 const objects: LibraryObjectSummary[] = [
   {
     provider: "met",
-    object_id: 40,
+    object_id: "40",
     title: "Coiled Snake Bowl",
     object_name: "Bowl",
     artist_display_name: "Unknown maker",
@@ -77,7 +77,7 @@ const objects: LibraryObjectSummary[] = [
   },
   {
     provider: "met",
-    object_id: 20,
+    object_id: "20",
     title: "Snake Vessel",
     object_name: "Vessel",
     artist_display_name: "Met Workshop",
@@ -96,7 +96,7 @@ function createImageAsset(index: number): LibraryImageAssetSummary {
   return {
     image_asset_id: index,
     provider: "met",
-    object_id: 1000 + index,
+    object_id: String(1000 + index),
     title: `Library Image ${index}`,
     object_name: "Object",
     artist_display_name: "Unknown maker",

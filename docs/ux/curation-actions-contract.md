@@ -175,7 +175,7 @@ Confirmation:
 - Confirm button: `Delete`
 - If file deletion partially fails, the action fails and remains retryable.
 - Deleted inactive rows are hidden from User Library and have no restore UI in the first curation implementation.
-- If deleted material is imported again later, Anacronia reactivates/updates the old inactive provider-identity row rather than creating a duplicate row.
+- If deleted material is imported again later, Anacronia reactivates/updates the old inactive Source Identity row rather than creating a duplicate row.
 
 ## Favorite
 

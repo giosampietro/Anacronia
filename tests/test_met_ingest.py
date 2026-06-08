@@ -8,10 +8,12 @@ from anacronia.met_ingest import (
     get_met_matches,
     get_met_museum_objects,
     get_met_skipped_image_references,
+    ensure_met_ingest_schema,
     ingest_met_run,
     rebuild_met_descriptors,
     select_met_image_references,
 )
+from anacronia.curation import ensure_curation_schema
 from anacronia.search_sets import create_or_continue_search_set, get_search_set
 from anacronia.storage import met_raw_object_path
 
@@ -74,6 +76,127 @@ def ppm_image_bytes(*, width: int, height: int) -> bytes:
     header = f"P6\n{width} {height}\n255\n".encode("ascii")
     row = bytes([180, 40, 120]) * width
     return header + row * height
+
+
+def object_id_column_type(connection: sqlite3.Connection, table_name: str) -> str:
+    row = next(
+        row
+        for row in connection.execute(f"PRAGMA table_info({table_name})").fetchall()
+        if row[1] == "object_id"
+    )
+    return row[2].upper()
+
+
+def test_shared_provider_identity_tables_migrate_integer_object_ids_to_text(tmp_path):
+    database_path = tmp_path / "anacronia.sqlite"
+
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE run_candidates (
+              id INTEGER PRIMARY KEY,
+              run_id INTEGER NOT NULL,
+              object_id INTEGER NOT NULL,
+              source_term TEXT NOT NULL,
+              source_term_index INTEGER NOT NULL,
+              provider_position INTEGER NOT NULL,
+              run_position INTEGER NOT NULL,
+              UNIQUE (run_id, object_id)
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO run_candidates (
+              run_id, object_id, source_term, source_term_index, provider_position, run_position
+            )
+            VALUES (1, 40, 'snake', 0, 0, 0)
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE museum_objects (
+              id INTEGER PRIMARY KEY,
+              provider TEXT NOT NULL,
+              object_id INTEGER NOT NULL,
+              title TEXT NOT NULL,
+              object_name TEXT NOT NULL,
+              artist_display_name TEXT NOT NULL,
+              object_url TEXT NOT NULL,
+              is_public_domain INTEGER NOT NULL,
+              rights_and_reproduction TEXT NOT NULL,
+              metadata_date TEXT NOT NULL,
+              raw_record_path TEXT NOT NULL,
+              UNIQUE (provider, object_id)
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO museum_objects (
+              provider, object_id, title, object_name, artist_display_name, object_url,
+              is_public_domain, rights_and_reproduction, metadata_date, raw_record_path
+            )
+            VALUES ('met', 40, 'Coiled Snake Bowl', 'Bowl', '', '', 1, '', '', 'raw.json')
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE image_assets (
+              id INTEGER PRIMARY KEY,
+              provider TEXT NOT NULL,
+              object_id INTEGER NOT NULL,
+              source_image_url TEXT NOT NULL,
+              image_role TEXT NOT NULL,
+              image_index INTEGER,
+              primary_image_small_url TEXT NOT NULL,
+              original_width INTEGER NOT NULL,
+              original_height INTEGER NOT NULL,
+              standard_path TEXT NOT NULL,
+              thumb_path TEXT NOT NULL,
+              imported INTEGER NOT NULL,
+              UNIQUE (provider, object_id, source_image_url)
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO image_assets (
+              provider, object_id, source_image_url, image_role, image_index,
+              primary_image_small_url, original_width, original_height, standard_path,
+              thumb_path, imported
+            )
+            VALUES ('met', 40, 'https://images.metmuseum.org/40.jpg', 'primary', NULL, '', 1600, 800, 'standard.jpg', 'thumb.jpg', 1)
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE object_favorites (
+              id INTEGER PRIMARY KEY,
+              provider TEXT NOT NULL,
+              object_id INTEGER NOT NULL,
+              created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              UNIQUE (provider, object_id)
+            )
+            """
+        )
+        connection.execute(
+            "INSERT INTO object_favorites (provider, object_id) VALUES ('met', 40)"
+        )
+
+        ensure_met_ingest_schema(connection)
+        ensure_curation_schema(connection)
+
+        assert object_id_column_type(connection, "run_candidates") == "TEXT"
+        assert object_id_column_type(connection, "museum_objects") == "TEXT"
+        assert object_id_column_type(connection, "image_assets") == "TEXT"
+        assert object_id_column_type(connection, "object_favorites") == "TEXT"
+        assert connection.execute(
+            "SELECT object_id FROM museum_objects WHERE provider = 'met'"
+        ).fetchone()[0] == "40"
+        assert connection.execute(
+            "SELECT object_id FROM image_assets WHERE provider = 'met'"
+        ).fetchone()[0] == "40"
 
 
 def test_selects_met_image_references_by_source_url_identity_primary_role_and_limit():

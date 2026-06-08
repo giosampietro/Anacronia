@@ -1,21 +1,41 @@
+from dataclasses import dataclass
 import json
 from pathlib import Path
+import sqlite3
 
 import pytest
 from fastapi.testclient import TestClient
+from PIL import Image
 
 from anacronia.api import DEFAULT_CANDIDATE_LIMIT, DEFAULT_MAX_IMAGES_PER_OBJECT, create_app
-from anacronia.collection_runs import get_candidate_run
+from anacronia.collection_runs import discover_provider_candidates, get_candidate_run
+from anacronia.curation import ensure_curation_schema
+from anacronia.local_folder_picker import (
+    LocalFolderPickerCancelled,
+    LocalFolderPickerUnavailable,
+    PICKER_UNAVAILABLE_MESSAGE,
+)
 from anacronia.worker import (
     cancel_collect_job,
     complete_collect_job,
     get_collect_job,
     mark_collect_candidate_processed,
     pause_collect_job,
+    process_running_collect_job,
     start_collect_job,
 )
-from anacronia.met_ingest import get_met_matches, get_met_museum_objects
+from anacronia.met_ingest import (
+    ensure_met_ingest_schema,
+    get_met_matches,
+    get_met_museum_objects,
+)
+from anacronia.provider_adapters import ProviderIngestRequest
 from anacronia.storage import initialize_storage
+
+
+def write_local_test_image(path: Path, *, size: tuple[int, int] = (640, 320)) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    Image.new("RGB", size, color=(40, 130, 180)).save(path)
 
 
 class FakeMetCandidateClient:
@@ -28,6 +48,71 @@ class FakeMetCandidateClient:
             "snake": [10, 20],
             "anaconda": [20, 30],
         }[term]
+
+
+class FakeVamCandidateClient:
+    def __init__(self) -> None:
+        self.queries: list[str] = []
+
+    def search_object_ids(self, term: str) -> list[str]:
+        self.queries.append(term)
+        return {
+            "snake": ["O:10", "O:20"],
+            "anaconda": ["O:20", "O:30"],
+        }[term]
+
+
+@dataclass(frozen=True)
+class FakeSkippedCandidate:
+    object_id: str
+    reason: str
+
+
+@dataclass(frozen=True)
+class FakeProviderIngestSummary:
+    run_id: int
+    fetched_object_ids: list[str]
+    imported_object_ids: list[str]
+    imported_image_count: int
+    skipped_candidates: list[FakeSkippedCandidate]
+
+
+class FakeVamProviderAdapter:
+    provider = "vam"
+    display_name = "V&A"
+
+    def __init__(self) -> None:
+        self.candidate_client = FakeVamCandidateClient()
+        self.ingest_requests: list[ProviderIngestRequest] = []
+
+    def discover_candidate_run(
+        self,
+        *,
+        database_path: Path,
+        search_set_slug: str,
+        candidate_offset: int,
+        candidate_limit: int,
+        batch_target: int,
+    ):
+        return discover_provider_candidates(
+            database_path=database_path,
+            search_set_slug=search_set_slug,
+            provider=self.provider,
+            candidate_offset=candidate_offset,
+            candidate_limit=candidate_limit,
+            candidate_client=self.candidate_client,
+            batch_target=batch_target,
+        )
+
+    def ingest_run(self, request: ProviderIngestRequest) -> FakeProviderIngestSummary:
+        self.ingest_requests.append(request)
+        return FakeProviderIngestSummary(
+            run_id=request.run_id,
+            fetched_object_ids=["O:10"],
+            imported_object_ids=["O:10"],
+            imported_image_count=1,
+            skipped_candidates=[FakeSkippedCandidate(object_id="O:20", reason="fixture_skip")],
+        )
 
 
 class FakeMetCandidateClientThatMakesWorkerBusy:
@@ -144,6 +229,41 @@ def test_health_reports_api_and_idle_worker(tmp_path):
     }
 
 
+def test_api_rejects_online_archive_collection_without_provider(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    client = TestClient(create_app(database_path=storage.database_path))
+
+    response = client.post(
+        "/search-sets",
+        json={
+            "display_name": "Snake Studies",
+            "terms_text": "snake, anaconda",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Provider is required."
+    assert client.get("/search-sets").json() == []
+
+
+def test_api_rejects_online_archive_collection_with_blank_provider(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    client = TestClient(create_app(database_path=storage.database_path))
+
+    response = client.post(
+        "/search-sets",
+        json={
+            "display_name": "Snake Studies",
+            "terms_text": "snake, anaconda",
+            "provider": "   ",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Provider is required."
+    assert client.get("/search-sets").json() == []
+
+
 def test_api_starts_locked_collection_with_initial_met_provider_source(tmp_path):
     storage = initialize_storage(project_root=tmp_path)
     client = TestClient(create_app(database_path=storage.database_path))
@@ -153,6 +273,7 @@ def test_api_starts_locked_collection_with_initial_met_provider_source(tmp_path)
         json={
             "display_name": "Snake Studies",
             "terms_text": "snake, anaconda",
+            "provider": "met",
         },
     )
 
@@ -189,6 +310,7 @@ def test_api_starts_locked_collection_with_initial_met_provider_source(tmp_path)
         json={
             "display_name": "snake studies",
             "terms_text": "Snake, cobra",
+            "provider": "met",
         },
     )
 
@@ -231,11 +353,11 @@ def test_api_rejects_collection_without_title_or_terms(tmp_path):
 
     missing_title = client.post(
         "/search-sets",
-        json={"display_name": "  ", "terms_text": "snake"},
+        json={"display_name": "  ", "terms_text": "snake", "provider": "met"},
     )
     missing_terms = client.post(
         "/search-sets",
-        json={"display_name": "Snake Studies", "terms_text": " , \n "},
+        json={"display_name": "Snake Studies", "terms_text": " , \n ", "provider": "met"},
     )
 
     assert missing_title.status_code == 422
@@ -250,7 +372,7 @@ def test_api_lists_search_sets(tmp_path):
     client = TestClient(create_app(database_path=storage.database_path))
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda"},
+        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda", "provider": "met"},
     )
 
     response = client.get("/search-sets")
@@ -268,12 +390,220 @@ def test_api_lists_search_sets(tmp_path):
     ]
 
 
+def test_api_creates_search_set_with_requested_provider_source(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    client = TestClient(create_app(database_path=storage.database_path))
+
+    response = client.post(
+        "/search-sets",
+        json={
+            "display_name": "Bed Studies",
+            "terms_text": "bed",
+            "provider": "vam",
+        },
+    )
+
+    assert response.status_code == 200
+    with sqlite3.connect(storage.database_path) as connection:
+        rows = connection.execute(
+            """
+            SELECT provider_collections.provider
+            FROM provider_collections
+            JOIN search_sets
+              ON search_sets.id = provider_collections.search_set_id
+            WHERE search_sets.slug = ?
+            """,
+            ("bed-studies",),
+        ).fetchall()
+
+    assert rows == [("vam",)]
+
+
+def test_api_rejects_unsupported_initial_provider_source(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    client = TestClient(create_app(database_path=storage.database_path))
+
+    response = client.post(
+        "/search-sets",
+        json={
+            "display_name": "Europeana Draft",
+            "terms_text": "bed",
+            "provider": "europeana",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Unsupported Provider: europeana"
+    assert client.get("/search-sets").json() == []
+
+
+def test_api_creates_local_folder_collection_and_exposes_results(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    folder = tmp_path / "incoming"
+    write_local_test_image(folder / "sketch.jpg")
+    client = TestClient(
+        create_app(database_path=storage.database_path, data_root=storage.data_root)
+    )
+
+    response = client.post(
+        "/local-folder-collections",
+        json={
+            "display_name": "Studio Folder",
+            "folder_path": str(folder),
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["search_set_slug"] == "studio-folder"
+    assert payload["discovered_file_count"] == 1
+    assert payload["imported_image_count"] == 1
+    assert payload["skipped_files"] == []
+    assert client.get("/search-sets").json() == [
+        {
+            "display_name": "Studio Folder",
+            "slug": "studio-folder",
+            "terms": [],
+        }
+    ]
+    result_set = client.get(
+        "/search-sets/studio-folder/local-result-set",
+        params={"provider": "local-folder", "view": "objects"},
+    )
+    assert result_set.status_code == 200
+    assert result_set.json()["counts"] == {"objects": 1, "images": 1}
+    local_object = result_set.json()["objects"][0]
+    detail = client.get(
+        f"/search-sets/studio-folder/objects/local-folder/{local_object['object_id']}"
+    ).json()
+    assert detail["images"][0]["source_image_url"].startswith("local-folder:sha256:")
+    assert detail["images"][0]["source_file_url"] == (
+        f"/image-assets/{detail['images'][0]['image_asset_id']}/source"
+    )
+    assert client.get(detail["images"][0]["source_file_url"]).status_code == 200
+    library_result_set = client.get(
+        "/library/local-result-set",
+        params={"provider": "local-folder", "view": "objects"},
+    )
+    assert library_result_set.status_code == 200
+    assert library_result_set.json()["counts"] == {"objects": 1, "images": 1}
+
+
+def test_api_imports_local_folder_into_existing_collection(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    folder = tmp_path / "incoming"
+    write_local_test_image(folder / "sketch.jpg")
+    client = TestClient(
+        create_app(database_path=storage.database_path, data_root=storage.data_root)
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
+    )
+
+    response = client.post(
+        "/search-sets/snake-study/local-folder-imports",
+        json={"folder_path": str(folder)},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["imported_image_count"] == 1
+    dashboard = client.get("/dashboard").json()
+    assert sorted(
+        provider_collection["provider"]
+        for provider_collection in dashboard["search_sets"][0]["provider_collections"]
+    ) == ["local-folder", "met"]
+
+
+def test_api_rejects_invalid_local_folder_path(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    client = TestClient(
+        create_app(database_path=storage.database_path, data_root=storage.data_root)
+    )
+
+    response = client.post(
+        "/local-folder-collections",
+        json={
+            "display_name": "Missing Folder",
+            "folder_path": str(tmp_path / "missing"),
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Local folder path must be an existing folder."
+    assert client.get("/search-sets").json() == []
+
+
+def test_api_chooses_local_folder_path(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    folder = tmp_path / "incoming"
+    folder.mkdir()
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            local_folder_picker=lambda: folder,
+        )
+    )
+
+    response = client.post("/local-folder-picker")
+
+    assert response.status_code == 200
+    assert response.json() == {"folder_path": str(folder)}
+
+
+def test_api_returns_no_content_when_local_folder_picker_is_cancelled(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+
+    def cancelled_picker() -> Path:
+        raise LocalFolderPickerCancelled("cancelled")
+
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            local_folder_picker=cancelled_picker,
+        )
+    )
+
+    response = client.post("/local-folder-picker")
+
+    assert response.status_code == 204
+    assert response.content == b""
+
+
+def test_api_reports_unavailable_local_folder_picker(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    native_diagnostic = (
+        "2026-06-07 osascript[56029:18091055] Connection Invalid error for "
+        "service com.apple.hiservices-xpcservice"
+    )
+
+    def unavailable_picker() -> Path:
+        raise LocalFolderPickerUnavailable(native_diagnostic)
+
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            local_folder_picker=unavailable_picker,
+        )
+    )
+
+    response = client.post("/local-folder-picker")
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == PICKER_UNAVAILABLE_MESSAGE
+    assert "osascript" not in response.json()["detail"]
+    assert "Connection Invalid" not in response.json()["detail"]
+
+
 def test_api_renames_collection_display_name_without_changing_slug_or_terms(tmp_path):
     storage = initialize_storage(project_root=tmp_path)
     client = TestClient(create_app(database_path=storage.database_path))
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda"},
+        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda", "provider": "met"},
     )
 
     response = client.patch(
@@ -307,11 +637,11 @@ def test_api_deletes_empty_collection_and_removes_it_from_dashboard(tmp_path):
     client = TestClient(create_app(database_path=storage.database_path))
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Studies", "terms_text": "snake"},
+        json={"display_name": "Snake Studies", "terms_text": "snake", "provider": "met"},
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Bowl Study", "terms_text": "bowl"},
+        json={"display_name": "Bowl Study", "terms_text": "bowl", "provider": "met"},
     )
 
     response = client.delete("/search-sets/snake-studies")
@@ -346,7 +676,7 @@ def test_api_deletes_collection_with_exclusive_material_and_removes_local_files(
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
     run_response = client.post(
         "/search-sets/snake-study/provider-collections/met/runs",
@@ -380,7 +710,7 @@ def test_api_rejects_delete_collection_while_provider_search_is_running(tmp_path
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
     client.post(
         "/search-sets/snake-study/provider-collections/met/runs",
@@ -429,7 +759,7 @@ def test_api_reports_retryable_delete_collection_database_failure(tmp_path, monk
     client = TestClient(create_app(database_path=storage.database_path))
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
 
     failed_response = client.delete("/search-sets/snake-study")
@@ -453,11 +783,11 @@ def test_api_rejects_collection_rename_that_would_match_existing_slug(tmp_path):
     client = TestClient(create_app(database_path=storage.database_path))
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Studies", "terms_text": "snake"},
+        json={"display_name": "Snake Studies", "terms_text": "snake", "provider": "met"},
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Masks", "terms_text": "mask"},
+        json={"display_name": "Masks", "terms_text": "mask", "provider": "met"},
     )
 
     response = client.patch(
@@ -475,11 +805,11 @@ def test_api_rejects_collection_rename_that_would_match_existing_display_name(tm
     client = TestClient(create_app(database_path=storage.database_path))
     client.post(
         "/search-sets",
-        json={"display_name": "Masks", "terms_text": "mask"},
+        json={"display_name": "Masks", "terms_text": "mask", "provider": "met"},
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Studies", "terms_text": "snake"},
+        json={"display_name": "Snake Studies", "terms_text": "snake", "provider": "met"},
     )
     client.patch(
         "/search-sets/masks",
@@ -512,7 +842,7 @@ def test_api_does_not_expose_term_deactivation(tmp_path):
     client = TestClient(create_app(database_path=storage.database_path))
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda"},
+        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda", "provider": "met"},
     )
 
     response = client.post(
@@ -531,7 +861,7 @@ def test_api_discovers_met_candidates_without_listing_runs_as_search_sets(tmp_pa
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda"},
+        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda", "provider": "met"},
     )
 
     response = client.post(
@@ -553,14 +883,14 @@ def test_api_discovers_met_candidates_without_listing_runs_as_search_sets(tmp_pa
         "status": "discovered",
         "candidates": [
             {
-                "object_id": 20,
+                "object_id": "20",
                 "source_term": "snake",
                 "source_term_index": 0,
                 "provider_position": 1,
                 "run_position": 0,
             },
             {
-                "object_id": 30,
+                "object_id": "30",
                 "source_term": "anaconda",
                 "source_term_index": 1,
                 "provider_position": 1,
@@ -581,6 +911,85 @@ def test_api_discovers_met_candidates_without_listing_runs_as_search_sets(tmp_pa
     ]
 
 
+def test_api_discovers_registered_provider_candidates_with_string_ids(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    vam_adapter = FakeVamProviderAdapter()
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            provider_adapters={"vam": vam_adapter},
+        )
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda", "provider": "vam"},
+    )
+
+    response = client.post(
+        "/search-sets/snake-studies/provider-collections/vam/runs",
+        json={"candidate_offset": 1, "candidate_limit": 2},
+    )
+
+    assert response.status_code == 200
+    assert vam_adapter.candidate_client.queries == ["snake", "anaconda"]
+    assert response.json()["provider"] == "vam"
+    assert response.json()["candidates"] == [
+        {
+            "object_id": "O:20",
+            "source_term": "snake",
+            "source_term_index": 0,
+            "provider_position": 1,
+            "run_position": 0,
+        },
+        {
+            "object_id": "O:30",
+            "source_term": "anaconda",
+            "source_term_index": 1,
+            "provider_position": 1,
+            "run_position": 1,
+        },
+    ]
+
+
+def test_api_ingests_registered_provider_run_with_generic_summary(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    vam_adapter = FakeVamProviderAdapter()
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            provider_adapters={"vam": vam_adapter},
+        )
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Snake Studies", "terms_text": "snake", "provider": "vam"},
+    )
+    run_response = client.post(
+        "/search-sets/snake-studies/provider-collections/vam/runs",
+        json={"candidate_offset": 0, "candidate_limit": 1},
+    )
+
+    response = client.post(
+        f"/provider-collections/vam/runs/{run_response.json()['run_id']}/ingest"
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "run_id": run_response.json()["run_id"],
+        "fetched_object_ids": ["O:10"],
+        "imported_object_ids": ["O:10"],
+        "skipped_candidates": [
+            {
+                "object_id": "O:20",
+                "reason": "fixture_skip",
+            }
+        ],
+    }
+    assert len(vam_adapter.ingest_requests) == 1
+    assert vam_adapter.ingest_requests[0].data_root == storage.data_root
+
+
 def test_api_starts_met_collect_job_from_search_set(tmp_path):
     storage = initialize_storage(project_root=tmp_path)
     met_client = FakeMetCandidateClient()
@@ -593,7 +1002,7 @@ def test_api_starts_met_collect_job_from_search_set(tmp_path):
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda"},
+        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda", "provider": "met"},
     )
 
     response = client.post(
@@ -636,7 +1045,7 @@ def test_api_starts_met_search_from_batch_target(tmp_path, batch_target):
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda"},
+        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda", "provider": "met"},
     )
 
     response = client.post(
@@ -677,7 +1086,7 @@ def test_api_rejects_unsupported_met_batch_targets(tmp_path):
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Studies", "terms_text": "snake"},
+        json={"display_name": "Snake Studies", "terms_text": "snake", "provider": "met"},
     )
 
     response = client.post(
@@ -699,7 +1108,7 @@ def test_api_requests_running_met_search_to_stop(tmp_path):
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda"},
+        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda", "provider": "met"},
     )
     client.post(
         "/search-sets/snake-studies/provider-collections/met/collects",
@@ -725,6 +1134,72 @@ def test_api_requests_running_met_search_to_stop(tmp_path):
     assert dashboard["search_sets"][0]["provider_collections"][0]["collect_status"] == "stopping"
 
 
+def test_api_stopping_search_blocks_start_and_resume_until_safe_stop(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            met_candidate_client=FakeMetCandidateClient(),
+            met_record_client=FakeMetRecordClient(),
+        )
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Snake Studies", "terms_text": "snake", "provider": "met"},
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Third Study", "terms_text": "snake", "provider": "met"},
+    )
+    paused_response = client.post(
+        "/search-sets/snake-studies/provider-collections/met/collects",
+        json={"batch_target": 100},
+    )
+    pause_collect_job(
+        database_path=storage.database_path,
+        job_id=paused_response.json()["collect_job_id"],
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Other Study", "terms_text": "snake", "provider": "met"},
+    )
+    stopping_response = client.post(
+        "/search-sets/other-study/provider-collections/met/collects",
+        json={"batch_target": 100},
+    )
+    client.post("/search-sets/other-study/provider-collections/met/collects/stop")
+
+    blocked_start_response = client.post(
+        "/search-sets/third-study/provider-collections/met/collects",
+        json={"batch_target": 100},
+    )
+    blocked_resume_response = client.post(
+        "/search-sets/snake-studies/provider-collections/met/collects/resume",
+        json={"batch_target": 100},
+    )
+
+    assert get_collect_job(
+        database_path=storage.database_path,
+        job_id=stopping_response.json()["collect_job_id"],
+    ).status == "stopping"
+    assert blocked_start_response.status_code == 409
+    assert blocked_start_response.json()["detail"] == "Another search is already active."
+    assert blocked_resume_response.status_code == 409
+    process_running_collect_job(
+        database_path=storage.database_path,
+        data_root=storage.data_root,
+        met_client=FakeMetRecordClient(),
+    )
+    released_start_response = client.post(
+        "/search-sets/third-study/provider-collections/met/collects",
+        json={"batch_target": 100},
+    )
+
+    assert released_start_response.status_code == 200
+    assert released_start_response.json()["status"] == "running"
+
+
 def test_api_keeps_met_searching_from_next_safe_candidate_after_completed_batch(tmp_path):
     storage = initialize_storage(project_root=tmp_path)
     met_client = FakeMetCandidateClient()
@@ -737,7 +1212,7 @@ def test_api_keeps_met_searching_from_next_safe_candidate_after_completed_batch(
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda"},
+        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda", "provider": "met"},
     )
     first_response = client.post(
         "/search-sets/snake-studies/provider-collections/met/collects",
@@ -764,8 +1239,55 @@ def test_api_keeps_met_searching_from_next_safe_candidate_after_completed_batch(
         run_id=second_response.json()["run_id"],
     )
     assert second_run.candidate_offset == 1
-    assert [candidate.object_id for candidate in second_run.candidates] == [20, 30]
+    assert [candidate.object_id for candidate in second_run.candidates] == ["20", "30"]
     assert second_response.json()["status"] == "running"
+
+
+def test_api_rejects_keep_searching_after_provider_is_exhausted(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            met_candidate_client=FakeMetCandidateClient(),
+            met_record_client=FakeMetRecordClient(),
+            download_image_bytes=lambda _url: ppm_image_bytes(width=1600, height=800),
+        )
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Anaconda Studies", "terms_text": "anaconda", "provider": "met"},
+    )
+    start_response = client.post(
+        "/search-sets/anaconda-studies/provider-collections/met/collects",
+        json={"batch_target": 100},
+    )
+    process_running_collect_job(
+        database_path=storage.database_path,
+        data_root=storage.data_root,
+        met_client=FakeMetRecordClient(),
+        download_image_bytes=lambda _url: ppm_image_bytes(width=1600, height=800),
+    )
+
+    exhausted_response = client.post(
+        "/search-sets/anaconda-studies/provider-collections/met/collects",
+        json={"batch_target": 100},
+    )
+
+    assert start_response.status_code == 200
+    assert get_collect_job(
+        database_path=storage.database_path,
+        job_id=start_response.json()["collect_job_id"],
+    ).status == "no_more_results"
+    assert exhausted_response.status_code == 409
+    assert exhausted_response.json()["detail"] == (
+        "Met has no more results for this Collection."
+    )
+    dashboard = client.get("/dashboard").json()
+    assert (
+        dashboard["search_sets"][0]["provider_collections"][0]["collect_status"]
+        == "no_more_results"
+    )
 
 
 def test_api_resumes_paused_met_search_and_exposes_pause_reason(tmp_path):
@@ -779,7 +1301,7 @@ def test_api_resumes_paused_met_search_and_exposes_pause_reason(tmp_path):
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda"},
+        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda", "provider": "met"},
     )
     start_response = client.post(
         "/search-sets/snake-studies/provider-collections/met/collects",
@@ -806,7 +1328,7 @@ def test_api_resumes_paused_met_search_and_exposes_pause_reason(tmp_path):
 
     client.post(
         "/search-sets",
-        json={"display_name": "Other Study", "terms_text": "snake"},
+        json={"display_name": "Other Study", "terms_text": "snake", "provider": "met"},
     )
     other_response = client.post(
         "/search-sets/other-study/provider-collections/met/collects",
@@ -855,7 +1377,7 @@ def test_api_caps_met_collect_to_three_images_per_object(tmp_path):
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Studies", "terms_text": "snake"},
+        json={"display_name": "Snake Studies", "terms_text": "snake", "provider": "met"},
     )
 
     response = client.post(
@@ -882,7 +1404,7 @@ def test_health_reports_running_worker_when_collect_job_is_active(tmp_path):
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda"},
+        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda", "provider": "met"},
     )
     client.post(
         "/search-sets/snake-studies/provider-collections/met/collects",
@@ -919,7 +1441,7 @@ def test_api_rejects_met_collect_before_discovery_when_collect_job_is_active(tmp
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda"},
+        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda", "provider": "met"},
     )
     client.post(
         "/search-sets/snake-studies/provider-collections/met/collects",
@@ -958,7 +1480,7 @@ def test_api_rejects_met_collect_without_leaving_discovered_run_when_worker_beco
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Studies", "terms_text": "snake"},
+        json={"display_name": "Snake Studies", "terms_text": "snake", "provider": "met"},
     )
 
     response = client.post(
@@ -998,7 +1520,7 @@ def test_api_ingests_met_records_for_a_candidate_run(tmp_path):
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda"},
+        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda", "provider": "met"},
     )
     run_response = client.post(
         "/search-sets/snake-studies/provider-collections/met/runs",
@@ -1012,10 +1534,10 @@ def test_api_ingests_met_records_for_a_candidate_run(tmp_path):
     assert response.status_code == 200
     assert response.json() == {
         "run_id": 1,
-        "fetched_object_ids": [20, 30],
-        "imported_object_ids": [20],
+        "fetched_object_ids": ["20", "30"],
+        "imported_object_ids": ["20"],
         "skipped_candidates": [
-            {"object_id": 30, "reason": "not_public_domain"},
+            {"object_id": "30", "reason": "not_public_domain"},
         ],
     }
     assert [(museum_object.object_id, museum_object.title) for museum_object in get_met_museum_objects(database_path=storage.database_path)] == [
@@ -1039,7 +1561,7 @@ def test_api_returns_operational_dashboard(tmp_path):
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda"},
+        json={"display_name": "Snake Studies", "terms_text": "snake, anaconda", "provider": "met"},
     )
     run_response = client.post(
         "/search-sets/snake-studies/provider-collections/met/runs",
@@ -1095,7 +1617,7 @@ def test_api_returns_collection_objects_newest_first(tmp_path):
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
     run_response = client.post(
         "/search-sets/snake-study/provider-collections/met/runs",
@@ -1107,10 +1629,10 @@ def test_api_returns_collection_objects_newest_first(tmp_path):
 
     assert response.status_code == 200
     objects = response.json()["objects"]
-    assert [museum_object["object_id"] for museum_object in objects] == [40, 20]
+    assert [museum_object["object_id"] for museum_object in objects] == ["40", "20"]
     assert objects[0] == {
         "provider": "met",
-        "object_id": 40,
+        "object_id": "40",
         "title": "Coiled Snake Bowl",
         "object_name": "Bowl",
         "artist_display_name": "Unknown maker",
@@ -1139,7 +1661,7 @@ def test_api_paginates_collection_objects_with_total_count(tmp_path):
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
     run_response = client.post(
         "/search-sets/snake-study/provider-collections/met/runs",
@@ -1151,7 +1673,7 @@ def test_api_paginates_collection_objects_with_total_count(tmp_path):
 
     assert response.status_code == 200
     payload = response.json()
-    assert [museum_object["object_id"] for museum_object in payload["objects"]] == [20]
+    assert [museum_object["object_id"] for museum_object in payload["objects"]] == ["20"]
     assert payload["pagination"] == {
         "total": 2,
         "count": 1,
@@ -1174,7 +1696,7 @@ def test_api_returns_collection_image_assets_newest_first(tmp_path):
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
     run_response = client.post(
         "/search-sets/snake-study/provider-collections/met/runs",
@@ -1186,12 +1708,12 @@ def test_api_returns_collection_image_assets_newest_first(tmp_path):
 
     assert response.status_code == 200
     image_assets = response.json()["image_assets"]
-    assert [asset["object_id"] for asset in image_assets] == [40, 40, 40, 20]
+    assert [asset["object_id"] for asset in image_assets] == ["40", "40", "40", "20"]
     assert len({asset["image_asset_id"] for asset in image_assets}) == 4
     assert image_assets[0] == {
         "image_asset_id": image_assets[0]["image_asset_id"],
         "provider": "met",
-        "object_id": 40,
+        "object_id": "40",
         "title": "Coiled Snake Bowl",
         "object_name": "Bowl",
         "artist_display_name": "Unknown maker",
@@ -1239,7 +1761,7 @@ def test_api_returns_read_only_collection_local_result_set_with_query_counts_and
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
     run_response = client.post(
         "/search-sets/snake-study/provider-collections/met/runs",
@@ -1262,7 +1784,7 @@ def test_api_returns_read_only_collection_local_result_set_with_query_counts_and
     assert payload["provider_facets"] == [
         {"provider": "met", "object_count": 1, "image_count": 3}
     ]
-    assert [museum_object["object_id"] for museum_object in payload["objects"]] == [40]
+    assert [museum_object["object_id"] for museum_object in payload["objects"]] == ["40"]
     assert payload["image_assets"] == []
     assert payload["pagination"] == {
         "total": 1,
@@ -1299,7 +1821,7 @@ def test_api_returns_read_only_collection_local_result_set_with_query_counts_and
 
     assert paged_response.status_code == 200
     paged_payload = paged_response.json()
-    assert [asset["object_id"] for asset in paged_payload["image_assets"]] == [40, 40]
+    assert [asset["object_id"] for asset in paged_payload["image_assets"]] == ["40", "40"]
     assert paged_payload["pagination"] == {
         "total": 3,
         "count": 2,
@@ -1330,7 +1852,7 @@ def test_api_returns_user_library_image_assets_once_with_collection_membership(t
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
     snake_run_response = client.post(
         "/search-sets/snake-study/provider-collections/met/runs",
@@ -1339,7 +1861,7 @@ def test_api_returns_user_library_image_assets_once_with_collection_membership(t
     client.post(f"/provider-collections/met/runs/{snake_run_response.json()['run_id']}/ingest")
     client.post(
         "/search-sets",
-        json={"display_name": "Bowl Study", "terms_text": "bowl"},
+        json={"display_name": "Bowl Study", "terms_text": "bowl", "provider": "met"},
     )
     bowl_run_response = client.post(
         "/search-sets/bowl-study/provider-collections/met/runs",
@@ -1354,12 +1876,12 @@ def test_api_returns_user_library_image_assets_once_with_collection_membership(t
     dashboard_provider = client.get("/dashboard").json()["provider_focus"][0]
     assert dashboard_provider["imported_image_count"] == 4
     assert len(image_assets) == dashboard_provider["imported_image_count"]
-    assert [asset["object_id"] for asset in image_assets] == [40, 40, 40, 20]
+    assert [asset["object_id"] for asset in image_assets] == ["40", "40", "40", "20"]
     assert len({asset["image_asset_id"] for asset in image_assets}) == 4
     assert image_assets[0] == {
         "image_asset_id": image_assets[0]["image_asset_id"],
         "provider": "met",
-        "object_id": 40,
+        "object_id": "40",
         "title": "Coiled Snake Bowl",
         "object_name": "Bowl",
         "artist_display_name": "Unknown maker",
@@ -1382,9 +1904,9 @@ def test_api_returns_user_library_image_assets_once_with_collection_membership(t
 
     assert filtered_response.status_code == 200
     assert [asset["object_id"] for asset in filtered_response.json()["image_assets"]] == [
-        40,
-        40,
-        40,
+        "40",
+        "40",
+        "40",
     ]
 
 
@@ -1409,7 +1931,7 @@ def test_api_returns_user_library_objects_once_with_collection_membership(tmp_pa
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
     snake_run_response = client.post(
         "/search-sets/snake-study/provider-collections/met/runs",
@@ -1418,7 +1940,7 @@ def test_api_returns_user_library_objects_once_with_collection_membership(tmp_pa
     client.post(f"/provider-collections/met/runs/{snake_run_response.json()['run_id']}/ingest")
     client.post(
         "/search-sets",
-        json={"display_name": "Bowl Study", "terms_text": "bowl"},
+        json={"display_name": "Bowl Study", "terms_text": "bowl", "provider": "met"},
     )
     bowl_run_response = client.post(
         "/search-sets/bowl-study/provider-collections/met/runs",
@@ -1430,10 +1952,10 @@ def test_api_returns_user_library_objects_once_with_collection_membership(tmp_pa
 
     assert response.status_code == 200
     objects = response.json()["objects"]
-    assert [museum_object["object_id"] for museum_object in objects] == [40, 20]
+    assert [museum_object["object_id"] for museum_object in objects] == ["40", "20"]
     assert objects[0] == {
         "provider": "met",
-        "object_id": 40,
+        "object_id": "40",
         "title": "Coiled Snake Bowl",
         "object_name": "Bowl",
         "artist_display_name": "Unknown maker",
@@ -1454,7 +1976,7 @@ def test_api_returns_user_library_objects_once_with_collection_membership(tmp_pa
     filtered_response = client.get("/library/objects?filter=Bowl%20Study")
 
     assert filtered_response.status_code == 200
-    assert [museum_object["object_id"] for museum_object in filtered_response.json()["objects"]] == [40]
+    assert [museum_object["object_id"] for museum_object in filtered_response.json()["objects"]] == ["40"]
 
 
 def test_api_object_favorites_are_global_and_filterable(tmp_path):
@@ -1478,7 +2000,7 @@ def test_api_object_favorites_are_global_and_filterable(tmp_path):
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
     snake_run_response = client.post(
         "/search-sets/snake-study/provider-collections/met/runs",
@@ -1487,7 +2009,7 @@ def test_api_object_favorites_are_global_and_filterable(tmp_path):
     client.post(f"/provider-collections/met/runs/{snake_run_response.json()['run_id']}/ingest")
     client.post(
         "/search-sets",
-        json={"display_name": "Bowl Study", "terms_text": "bowl"},
+        json={"display_name": "Bowl Study", "terms_text": "bowl", "provider": "met"},
     )
     bowl_run_response = client.post(
         "/search-sets/bowl-study/provider-collections/met/runs",
@@ -1500,7 +2022,7 @@ def test_api_object_favorites_are_global_and_filterable(tmp_path):
     assert favorite_response.status_code == 200
     assert favorite_response.json() == {
         "provider": "met",
-        "object_id": 40,
+        "object_id": "40",
         "is_favorite": True,
     }
     snake_objects = client.get("/search-sets/snake-study/objects").json()["objects"]
@@ -1509,24 +2031,24 @@ def test_api_object_favorites_are_global_and_filterable(tmp_path):
     assert [
         (museum_object["object_id"], museum_object["is_favorite"])
         for museum_object in snake_objects
-    ] == [(40, True), (20, False)]
+    ] == [("40", True), ("20", False)]
     assert [
         (museum_object["object_id"], museum_object["is_favorite"])
         for museum_object in bowl_objects
-    ] == [(40, True)]
+    ] == [("40", True)]
     assert [
         (museum_object["object_id"], museum_object["is_favorite"])
         for museum_object in library_objects
-    ] == [(40, True), (20, False)]
+    ] == [("40", True), ("20", False)]
 
     favorite_only = client.get("/library/objects?favorite=true").json()["objects"]
     collection_favorite_only = client.get(
         "/search-sets/snake-study/local-result-set?view=objects&favorite=true"
     ).json()
 
-    assert [museum_object["object_id"] for museum_object in favorite_only] == [40]
+    assert [museum_object["object_id"] for museum_object in favorite_only] == ["40"]
     assert [museum_object["object_id"] for museum_object in collection_favorite_only["objects"]] == [
-        40
+        "40"
     ]
     assert collection_favorite_only["counts"] == {"objects": 1, "images": 0}
 
@@ -1535,7 +2057,7 @@ def test_api_object_favorites_are_global_and_filterable(tmp_path):
     assert unfavorite_response.status_code == 200
     assert unfavorite_response.json() == {
         "provider": "met",
-        "object_id": 40,
+        "object_id": "40",
         "is_favorite": False,
     }
     assert client.get("/library/objects?favorite=true").json()["objects"] == []
@@ -1562,7 +2084,7 @@ def test_api_image_favorites_are_separate_filterable_and_exported(tmp_path):
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
     snake_run_response = client.post(
         "/search-sets/snake-study/provider-collections/met/runs",
@@ -1571,7 +2093,7 @@ def test_api_image_favorites_are_separate_filterable_and_exported(tmp_path):
     client.post(f"/provider-collections/met/runs/{snake_run_response.json()['run_id']}/ingest")
     client.post(
         "/search-sets",
-        json={"display_name": "Bowl Study", "terms_text": "bowl"},
+        json={"display_name": "Bowl Study", "terms_text": "bowl", "provider": "met"},
     )
     bowl_run_response = client.post(
         "/search-sets/bowl-study/provider-collections/met/runs",
@@ -1680,7 +2202,7 @@ def test_api_object_detail_includes_object_and_image_favorite_state(tmp_path):
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
     run_response = client.post(
         "/search-sets/snake-study/provider-collections/met/runs",
@@ -1724,7 +2246,7 @@ def test_api_removes_selected_object_from_collection_without_deleting_library(tm
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
     run_response = client.post(
         "/search-sets/snake-study/provider-collections/met/runs",
@@ -1736,7 +2258,7 @@ def test_api_removes_selected_object_from_collection_without_deleting_library(tm
         "/search-sets/snake-study/remove-from-collection",
         json={
             "selection": {
-                "objects": [{"provider": "met", "object_id": 40}],
+                "objects": [{"provider": "met", "object_id": "40"}],
             },
         },
     )
@@ -1752,8 +2274,8 @@ def test_api_removes_selected_object_from_collection_without_deleting_library(tm
     library_objects = client.get("/library/local-result-set?view=objects").json()[
         "objects"
     ]
-    assert [museum_object["object_id"] for museum_object in collection_objects] == [20]
-    assert [museum_object["object_id"] for museum_object in library_objects] == [40, 20]
+    assert [museum_object["object_id"] for museum_object in collection_objects] == ["20"]
+    assert [museum_object["object_id"] for museum_object in library_objects] == ["40", "20"]
 
 
 def test_api_filters_user_library_to_no_collection_material(tmp_path):
@@ -1769,7 +2291,7 @@ def test_api_filters_user_library_to_no_collection_material(tmp_path):
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
     run_response = client.post(
         "/search-sets/snake-study/provider-collections/met/runs",
@@ -1781,7 +2303,7 @@ def test_api_filters_user_library_to_no_collection_material(tmp_path):
         "/search-sets/snake-study/remove-from-collection",
         json={
             "selection": {
-                "objects": [{"provider": "met", "object_id": 40}],
+                "objects": [{"provider": "met", "object_id": "40"}],
             },
         },
     )
@@ -1798,22 +2320,22 @@ def test_api_filters_user_library_to_no_collection_material(tmp_path):
     all_library_objects = client.get("/library/local-result-set?view=objects").json()
 
     assert [museum_object["object_id"] for museum_object in orphan_objects["objects"]] == [
-        40
+        "40"
     ]
     assert orphan_objects["counts"] == {"objects": 1, "images": 3}
     assert [image_asset["object_id"] for image_asset in orphan_images["image_assets"]] == [
-        40,
-        40,
-        40,
+        "40",
+        "40",
+        "40",
     ]
     assert orphan_images["counts"] == {"objects": 1, "images": 3}
     assert [
         museum_object["object_id"]
         for museum_object in favorite_orphan_objects["objects"]
-    ] == [40]
+    ] == ["40"]
     assert [museum_object["object_id"] for museum_object in all_library_objects["objects"]] == [
-        40,
-        20,
+        "40",
+        "20",
     ]
 
 
@@ -1830,7 +2352,7 @@ def test_api_exports_selected_user_library_orphan_object(tmp_path):
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
     run_response = client.post(
         "/search-sets/snake-study/provider-collections/met/runs",
@@ -1846,7 +2368,7 @@ def test_api_exports_selected_user_library_orphan_object(tmp_path):
         "/search-sets/snake-study/remove-from-collection",
         json={
             "selection": {
-                "objects": [{"provider": "met", "object_id": 40}],
+                "objects": [{"provider": "met", "object_id": "40"}],
             },
         },
     )
@@ -1856,7 +2378,7 @@ def test_api_exports_selected_user_library_orphan_object(tmp_path):
         json={
             "format": "jsonl",
             "selection": {
-                "objects": [{"provider": "met", "object_id": 40}],
+                "objects": [{"provider": "met", "object_id": "40"}],
             },
         },
     )
@@ -1871,7 +2393,7 @@ def test_api_exports_selected_user_library_orphan_object(tmp_path):
         .read_text(encoding="utf-8")
         .splitlines()
     ]
-    assert {row["image_asset"]["object_id"] for row in rows} == {40}
+    assert {row["image_asset"]["object_id"] for row in rows} == {"40"}
     assert {row["collection"]["scope"] for row in rows} == {"user-library"}
     assert {row["collection"]["slug"] for row in rows} == {"user-library"}
     assert {row["museum_object"]["is_favorite"] for row in rows} == {True}
@@ -1891,7 +2413,7 @@ def test_api_deletes_selected_image_asset_globally_and_removes_local_files(tmp_p
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
     run_response = client.post(
         "/search-sets/snake-study/provider-collections/met/runs",
@@ -1990,7 +2512,7 @@ def test_api_returns_user_library_object_detail_without_collection_slug(tmp_path
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
     snake_run_response = client.post(
         "/search-sets/snake-study/provider-collections/met/runs",
@@ -1999,7 +2521,7 @@ def test_api_returns_user_library_object_detail_without_collection_slug(tmp_path
     client.post(f"/provider-collections/met/runs/{snake_run_response.json()['run_id']}/ingest")
     client.post(
         "/search-sets",
-        json={"display_name": "Bowl Study", "terms_text": "bowl"},
+        json={"display_name": "Bowl Study", "terms_text": "bowl", "provider": "met"},
     )
     bowl_run_response = client.post(
         "/search-sets/bowl-study/provider-collections/met/runs",
@@ -2011,7 +2533,7 @@ def test_api_returns_user_library_object_detail_without_collection_slug(tmp_path
 
     assert response.status_code == 200
     detail = response.json()
-    assert detail["object"]["object_id"] == 40
+    assert detail["object"]["object_id"] == "40"
     assert detail["object"]["title"] == "Coiled Snake Bowl"
     assert [image["image_role"] for image in detail["images"]] == [
         "primary",
@@ -2056,7 +2578,7 @@ def test_api_returns_user_library_local_result_set_with_counts_and_facets(tmp_pa
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
     snake_run_response = client.post(
         "/search-sets/snake-study/provider-collections/met/runs",
@@ -2065,7 +2587,7 @@ def test_api_returns_user_library_local_result_set_with_counts_and_facets(tmp_pa
     client.post(f"/provider-collections/met/runs/{snake_run_response.json()['run_id']}/ingest")
     client.post(
         "/search-sets",
-        json={"display_name": "Bowl Study", "terms_text": "bowl"},
+        json={"display_name": "Bowl Study", "terms_text": "bowl", "provider": "met"},
     )
     bowl_run_response = client.post(
         "/search-sets/bowl-study/provider-collections/met/runs",
@@ -2084,7 +2606,7 @@ def test_api_returns_user_library_local_result_set_with_counts_and_facets(tmp_pa
     assert payload["provider_facets"] == [
         {"provider": "met", "object_count": 1, "image_count": 3}
     ]
-    assert [museum_object["object_id"] for museum_object in payload["objects"]] == [40]
+    assert [museum_object["object_id"] for museum_object in payload["objects"]] == ["40"]
     assert payload["objects"][0]["collections"] == [
         {"slug": "bowl-study", "display_name": "Bowl Study"},
         {"slug": "snake-study", "display_name": "Snake Study"},
@@ -2123,7 +2645,7 @@ def test_api_returns_user_library_local_result_set_with_counts_and_facets(tmp_pa
 
     assert paged_response.status_code == 200
     paged_payload = paged_response.json()
-    assert [asset["object_id"] for asset in paged_payload["image_assets"]] == [40, 40]
+    assert [asset["object_id"] for asset in paged_payload["image_assets"]] == ["40", "40"]
     assert paged_payload["pagination"] == {
         "total": 3,
         "count": 2,
@@ -2154,7 +2676,7 @@ def test_api_paginates_filtered_user_library_after_searching_all_assets(tmp_path
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
     snake_run_response = client.post(
         "/search-sets/snake-study/provider-collections/met/runs",
@@ -2163,7 +2685,7 @@ def test_api_paginates_filtered_user_library_after_searching_all_assets(tmp_path
     client.post(f"/provider-collections/met/runs/{snake_run_response.json()['run_id']}/ingest")
     client.post(
         "/search-sets",
-        json={"display_name": "Bowl Study", "terms_text": "bowl"},
+        json={"display_name": "Bowl Study", "terms_text": "bowl", "provider": "met"},
     )
     bowl_run_response = client.post(
         "/search-sets/bowl-study/provider-collections/met/runs",
@@ -2175,7 +2697,7 @@ def test_api_paginates_filtered_user_library_after_searching_all_assets(tmp_path
 
     assert response.status_code == 200
     payload = response.json()
-    assert [asset["object_id"] for asset in payload["image_assets"]] == [40, 40]
+    assert [asset["object_id"] for asset in payload["image_assets"]] == ["40", "40"]
     assert payload["pagination"] == {
         "total": 3,
         "count": 2,
@@ -2206,7 +2728,7 @@ def test_api_counts_only_processed_collection_matches_not_future_candidates(tmp_
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
     first_run_response = client.post(
         "/search-sets/snake-study/provider-collections/met/runs",
@@ -2215,7 +2737,7 @@ def test_api_counts_only_processed_collection_matches_not_future_candidates(tmp_
     client.post(f"/provider-collections/met/runs/{first_run_response.json()['run_id']}/ingest")
     client.post(
         "/search-sets",
-        json={"display_name": "Hands", "terms_text": "hand"},
+        json={"display_name": "Hands", "terms_text": "hand", "provider": "met"},
     )
     client.post(
         "/search-sets/hands/provider-collections/met/runs",
@@ -2249,7 +2771,7 @@ def test_api_returns_collection_object_detail_for_overlay(tmp_path):
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
     run_response = client.post(
         "/search-sets/snake-study/provider-collections/met/runs",
@@ -2263,7 +2785,7 @@ def test_api_returns_collection_object_detail_for_overlay(tmp_path):
     detail = response.json()
     assert detail["object"] == {
         "provider": "met",
-        "object_id": 40,
+        "object_id": "40",
         "title": "Coiled Snake Bowl",
         "object_name": "Bowl",
         "artist_display_name": "Unknown maker",
@@ -2309,6 +2831,137 @@ def test_api_returns_collection_object_detail_for_overlay(tmp_path):
     ]
 
 
+def test_api_returns_collection_object_detail_for_string_provider_object_id(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    client = TestClient(
+        create_app(database_path=storage.database_path, data_root=storage.data_root)
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "VAM Study", "terms_text": "ceramic", "provider": "vam"},
+    )
+
+    with sqlite3.connect(storage.database_path) as connection:
+        ensure_met_ingest_schema(connection)
+        ensure_curation_schema(connection)
+        search_set_id = int(
+            connection.execute(
+                "SELECT id FROM search_sets WHERE slug = ?",
+                ("vam-study",),
+            ).fetchone()[0]
+        )
+        source_image_url = (
+            "https://framemark.vam.ac.uk/collections/O9138/full/full/0/default.jpg"
+        )
+        connection.execute(
+            """
+            INSERT INTO museum_objects (
+              provider,
+              object_id,
+              title,
+              object_name,
+              artist_display_name,
+              object_url,
+              is_public_domain,
+              rights_and_reproduction,
+              metadata_date,
+              raw_record_path,
+              active,
+              deleted_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "vam",
+                "O9138",
+                "V&A Ceramic Study",
+                "Bowl",
+                "",
+                "https://collections.vam.ac.uk/item/O9138",
+                0,
+                "V&A source rights retained",
+                "",
+                str(storage.data_root / "vam-raw-O9138.json"),
+                1,
+                None,
+            ),
+        )
+        connection.execute(
+            """
+            INSERT INTO image_assets (
+              provider,
+              object_id,
+              source_image_url,
+              image_role,
+              image_index,
+              primary_image_small_url,
+              original_width,
+              original_height,
+              standard_path,
+              thumb_path,
+              imported,
+              active,
+              deleted_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "vam",
+                "O9138",
+                source_image_url,
+                "primary",
+                None,
+                "",
+                1200,
+                900,
+                str(storage.data_root / "vam" / "O9138-standard.jpg"),
+                str(storage.data_root / "vam" / "O9138-thumb.jpg"),
+                1,
+                1,
+                None,
+            ),
+        )
+        connection.execute(
+            """
+            INSERT INTO collection_object_memberships (
+              search_set_id,
+              provider,
+              object_id,
+              active
+            )
+            VALUES (?, ?, ?, ?)
+            """,
+            (search_set_id, "vam", "O9138", 1),
+        )
+        connection.execute(
+            """
+            INSERT INTO collection_image_asset_memberships (
+              search_set_id,
+              provider,
+              object_id,
+              source_image_url,
+              active
+            )
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (search_set_id, "vam", "O9138", source_image_url, 1),
+        )
+
+    detail_response = client.get("/search-sets/vam-study/objects/vam/O9138")
+    result_set_response = client.get(
+        "/search-sets/vam-study/local-result-set?view=objects&q=O9138"
+    )
+
+    assert detail_response.status_code == 200
+    assert detail_response.json()["object"]["object_id"] == "O9138"
+    assert detail_response.json()["object"]["provider"] == "vam"
+    assert detail_response.json()["images"][0]["source_image_url"].startswith(
+        "https://framemark.vam.ac.uk/"
+    )
+    assert result_set_response.status_code == 200
+    assert result_set_response.json()["objects"][0]["object_id"] == "O9138"
+
+
 def test_api_serves_local_image_derivatives(tmp_path):
     storage = initialize_storage(project_root=tmp_path)
     client = TestClient(
@@ -2322,7 +2975,7 @@ def test_api_serves_local_image_derivatives(tmp_path):
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
     run_response = client.post(
         "/search-sets/snake-study/provider-collections/met/runs",
@@ -2357,7 +3010,7 @@ def test_api_exports_collection_jsonl_with_absolute_path(tmp_path):
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
     run_response = client.post(
         "/search-sets/snake-study/provider-collections/met/runs",
@@ -2390,7 +3043,7 @@ def test_api_exports_selected_image_assets_only(tmp_path):
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
     run_response = client.post(
         "/search-sets/snake-study/provider-collections/met/runs",
@@ -2437,7 +3090,7 @@ def test_api_exports_selected_objects_as_image_asset_rows(tmp_path):
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
     run_response = client.post(
         "/search-sets/snake-study/provider-collections/met/runs",
@@ -2450,7 +3103,7 @@ def test_api_exports_selected_objects_as_image_asset_rows(tmp_path):
         json={
             "format": "jsonl",
             "selection": {
-                "objects": [{"provider": "met", "object_id": 40}],
+                "objects": [{"provider": "met", "object_id": "40"}],
             },
         },
     )
@@ -2464,7 +3117,7 @@ def test_api_exports_selected_objects_as_image_asset_rows(tmp_path):
         .read_text(encoding="utf-8")
         .splitlines()
     ]
-    assert {row["image_asset"]["object_id"] for row in rows} == {40}
+    assert {row["image_asset"]["object_id"] for row in rows} == {"40"}
 
 
 def test_api_rejects_export_for_zero_image_collection(tmp_path):
@@ -2472,7 +3125,7 @@ def test_api_rejects_export_for_zero_image_collection(tmp_path):
     client = TestClient(create_app(database_path=storage.database_path, data_root=storage.data_root))
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
 
     response = client.post("/search-sets/snake-study/exports", json={"format": "jsonl"})
@@ -2494,7 +3147,7 @@ def test_api_rejects_export_while_collection_search_is_running(tmp_path):
     )
     client.post(
         "/search-sets",
-        json={"display_name": "Snake Study", "terms_text": "snake"},
+        json={"display_name": "Snake Study", "terms_text": "snake", "provider": "met"},
     )
     run_response = client.post(
         "/search-sets/snake-study/provider-collections/met/runs",

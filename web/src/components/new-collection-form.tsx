@@ -1,8 +1,11 @@
 "use client";
 
-import { type ReactNode, useState } from "react";
+import {
+  type ReactNode,
+  useState,
+} from "react";
 import { useFormStatus } from "react-dom";
-import { Check, Play } from "lucide-react";
+import { Archive, FolderOpen, Play } from "lucide-react";
 
 import { BatchTargetControl } from "@/components/batch-target-control";
 import { Button } from "@/components/ui/button";
@@ -14,11 +17,11 @@ import {
 } from "@/components/ui/card";
 import {
   Field,
-  FieldDescription,
   FieldError,
   FieldLabel,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -29,18 +32,21 @@ import {
 import { announceProviderSearchRefresh } from "@/lib/dashboard-refresh";
 
 export type NewCollectionServerError = "duplicate_name";
+type CreationTrajectory = "online-archive" | "local-folder";
 
 type NewCollectionFormProps = {
-  action: (formData: FormData) => void | Promise<void>;
+  initialTrajectory?: CreationTrajectory | null;
+  localFolderAction: (formData: FormData) => void | Promise<void>;
+  onlineArchiveAction: (formData: FormData) => void | Promise<void>;
   existingCollections?: ExistingCollectionIdentity[];
   serverError?: NewCollectionServerError | null;
 };
 
 const providerSources = [
   { label: "Met", value: "met", disabled: false },
-  { label: "V&A", value: "vna", disabled: true },
-  { label: "Europeana", value: "europeana", disabled: true },
+  { label: "V&A", value: "vam", disabled: false },
 ] as const;
+type ProviderSourceValue = (typeof providerSources)[number]["value"];
 
 function StepNumber({ children }: { children: ReactNode }) {
   return (
@@ -61,7 +67,7 @@ function StepCard({
 }) {
   return (
     <Card className="gap-3" size="sm">
-      <CardHeader className="gap-3">
+      <CardHeader className="flex flex-row items-center gap-3">
         <StepNumber>{number}</StepNumber>
         <CardTitle className="text-sm">{title}</CardTitle>
       </CardHeader>
@@ -70,32 +76,75 @@ function StepCard({
   );
 }
 
-function ImageSourceControl() {
+function TrajectoryButton({
+  active,
+  children,
+  icon,
+  onClick,
+  title,
+}: {
+  active: boolean;
+  children: ReactNode;
+  icon: ReactNode;
+  onClick: () => void;
+  title: string;
+}) {
   return (
-    <div aria-label="Image source" className="flex flex-wrap gap-2" role="group">
-      {providerSources.map((provider) => {
-        const selected = provider.value === "met";
-
-        return (
-          <Button
-            aria-pressed={selected}
-            disabled={provider.disabled}
-            key={provider.value}
-            size="sm"
-            title={provider.disabled ? "Not available yet" : undefined}
-            type="button"
-            variant={selected ? "default" : "outline"}
-          >
-            {selected ? <Check data-icon="inline-start" /> : null}
-            {provider.label}
-          </Button>
-        );
-      })}
-    </div>
+    <button
+      aria-pressed={active}
+      className={[
+        "grid min-h-28 gap-3 rounded-lg border bg-background p-4 text-left transition-colors",
+        active ? "border-primary ring-2 ring-primary/20" : "hover:bg-muted/50",
+      ].join(" ")}
+      onClick={onClick}
+      type="button"
+    >
+      <span className="flex items-center gap-2 text-sm font-medium">
+        {icon}
+        {title}
+      </span>
+      <span className="text-sm text-muted-foreground">{children}</span>
+    </button>
   );
 }
 
-function StartSearchButton({ disabled }: { disabled: boolean }) {
+function ProviderSelect({
+  onSelect,
+  selectedProvider,
+}: {
+  onSelect: (provider: ProviderSourceValue | "") => void;
+  selectedProvider: ProviderSourceValue | "";
+}) {
+  return (
+    <NativeSelect
+      aria-label="Provider"
+      className="w-full"
+      name="provider"
+      onChange={(event) =>
+        onSelect(event.currentTarget.value as ProviderSourceValue | "")
+      }
+      required
+      value={selectedProvider}
+    >
+      <NativeSelectOption value="">Choose provider</NativeSelectOption>
+      {providerSources.map((provider) => (
+        <NativeSelectOption key={provider.value} value={provider.value}>
+          {provider.label}
+        </NativeSelectOption>
+      ))}
+    </NativeSelect>
+  );
+}
+
+function SubmitTrajectoryButton({
+  disabled,
+  idleLabel,
+  pendingLabel,
+}: {
+  disabled: boolean;
+  idleLabel: string;
+  pendingLabel: string;
+}) {
   const { pending } = useFormStatus();
 
   return (
@@ -111,17 +160,32 @@ function StartSearchButton({ disabled }: { disabled: boolean }) {
       ) : (
         <Play data-icon="inline-start" />
       )}
-      {pending ? "Starting..." : "Start search"}
+      {pending ? pendingLabel : idleLabel}
     </Button>
   );
 }
 
+function localFolderDisplayName(folderPath: string): string {
+  const normalizedPath = folderPath.trim();
+  const segments = normalizedPath.split(/[\\/]+/).filter((segment) => segment !== "");
+  return segments.at(-1) ?? normalizedPath;
+}
+
 export function NewCollectionForm({
-  action,
+  initialTrajectory = null,
+  localFolderAction,
+  onlineArchiveAction,
   existingCollections = [],
   serverError = null,
 }: NewCollectionFormProps) {
+  const [trajectory, setTrajectory] = useState<CreationTrajectory | null>(
+    initialTrajectory,
+  );
   const [displayName, setDisplayName] = useState("");
+  const [folderPath, setFolderPath] = useState("");
+  const [folderPathDisplay, setFolderPathDisplay] = useState("");
+  const [folderPickerError, setFolderPickerError] = useState("");
+  const [providerSource, setProviderSource] = useState<ProviderSourceValue | "">("");
   const [termsText, setTermsText] = useState("");
   const duplicateName = isDuplicateCollectionName(displayName, existingCollections);
   const serverDuplicateName = serverError === "duplicate_name" && displayName.trim() === "";
@@ -132,17 +196,43 @@ export function NewCollectionForm({
     displayName,
     termsText,
     existingCollections,
-  );
+  ) && providerSource !== "";
+  const canImportFolder =
+    displayName.trim() !== "" &&
+    folderPath.trim() !== "" &&
+    !isDuplicateCollectionName(displayName, existingCollections);
+  const activeAction =
+    trajectory === "local-folder" ? localFolderAction : onlineArchiveAction;
+
+  async function chooseLocalFolder() {
+    setFolderPickerError("");
+    const response = await fetch("/api/local-folder-picker", { method: "POST" });
+    if (response.status === 204) {
+      return;
+    }
+    if (!response.ok) {
+      setFolderPickerError("Folder picker could not open. Paste a folder path manually.");
+      return;
+    }
+
+    const payload = (await response.json()) as { folder_path?: unknown };
+    if (typeof payload.folder_path !== "string" || payload.folder_path.trim() === "") {
+      return;
+    }
+    const selectedFolderPath = payload.folder_path.trim();
+    setFolderPath(selectedFolderPath);
+    setFolderPathDisplay(localFolderDisplayName(selectedFolderPath));
+  }
 
   return (
     <form
-      action={action}
+      action={activeAction}
       autoComplete="off"
       className="mx-auto flex w-full max-w-4xl flex-col gap-4"
     >
       <input name="display_name" type="hidden" value={displayName} />
       <StepCard number={1} title="Name the Collection">
-        <Field data-invalid={Boolean(nameError)}>
+        <Field className="md:w-1/2" data-invalid={Boolean(nameError)}>
           <FieldLabel className="sr-only" htmlFor="collection_name_entry">
             Collection name
           </FieldLabel>
@@ -163,38 +253,109 @@ export function NewCollectionForm({
         </Field>
       </StepCard>
 
-      <StepCard number={2} title="Add search terms">
-        <Field>
-          <FieldLabel className="sr-only" htmlFor="terms_text">
-            Search terms
-          </FieldLabel>
-          <Textarea
-            className="min-h-28 resize-y"
-            id="terms_text"
-            name="terms_text"
-            onChange={(event) => setTermsText(event.currentTarget.value)}
-            placeholder={"snake\nserpent\ncobra"}
-            required
-            value={termsText}
-          />
-          <FieldDescription>
-            Use a new line for each term, or separate several terms with commas.
-          </FieldDescription>
-        </Field>
-      </StepCard>
-
-      <StepCard number={3} title="Search image source">
-        <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px] md:items-end">
-          <Field className="gap-2">
-            <ImageSourceControl />
-          </Field>
-          <BatchTargetControl idPrefix="new_collection" />
+      <StepCard number={2} title="Choose source">
+        <div className="grid gap-3 md:grid-cols-2">
+          <TrajectoryButton
+            active={trajectory === "online-archive"}
+            icon={<Archive className="size-4" />}
+            onClick={() => setTrajectory("online-archive")}
+            title="Online archive"
+          >
+            Choose a museum archive, then search by keywords
+          </TrajectoryButton>
+          <TrajectoryButton
+            active={trajectory === "local-folder"}
+            icon={<FolderOpen className="size-4" />}
+            onClick={() => setTrajectory("local-folder")}
+            title="Local folder"
+          >
+            Import a local image folder
+          </TrajectoryButton>
         </div>
       </StepCard>
 
-      <div className="flex justify-end">
-        <StartSearchButton disabled={!canStart} />
-      </div>
+      {trajectory === "online-archive" ? (
+        <>
+          <StepCard number={3} title="Search and import online archive">
+            <Field className="md:w-1/2">
+              <FieldLabel className="sr-only" htmlFor="terms_text">
+                Search terms
+              </FieldLabel>
+              <Textarea
+                className="min-h-20 resize-y"
+                id="terms_text"
+                name="terms_text"
+                onChange={(event) => setTermsText(event.currentTarget.value)}
+                placeholder="Add search terms, separated by commas or new lines"
+                required
+                value={termsText}
+              />
+            </Field>
+
+            <div className="grid gap-3 md:w-1/2">
+              <Field className="gap-2">
+                <ProviderSelect
+                  onSelect={setProviderSource}
+                  selectedProvider={providerSource}
+                />
+              </Field>
+              <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3">
+                <BatchTargetControl
+                  idPrefix="new_collection"
+                  showLabel={false}
+                />
+                <SubmitTrajectoryButton
+                  disabled={!canStart}
+                  idleLabel="Start search"
+                  pendingLabel="Starting..."
+                />
+              </div>
+            </div>
+          </StepCard>
+        </>
+      ) : null}
+
+      {trajectory === "local-folder" ? (
+        <>
+          <StepCard number={3} title="Import folder">
+            <div className="grid gap-3 md:grid-cols-[auto_minmax(0,1fr)_auto] md:items-end">
+              <Button
+                onClick={chooseLocalFolder}
+                size="lg"
+                type="button"
+                variant="outline"
+              >
+                <FolderOpen data-icon="inline-start" />
+                Choose folder
+              </Button>
+              <input name="folder_path" type="hidden" value={folderPath} />
+              <Field>
+                <FieldLabel className="sr-only" htmlFor="folder_path_display">
+                  Folder path
+                </FieldLabel>
+                <Input
+                  autoComplete="off"
+                  id="folder_path_display"
+                  onChange={(event) => {
+                    setFolderPickerError("");
+                    setFolderPath(event.currentTarget.value);
+                    setFolderPathDisplay(event.currentTarget.value);
+                  }}
+                  required
+                  spellCheck={false}
+                  value={folderPathDisplay}
+                />
+                <FieldError>{folderPickerError}</FieldError>
+              </Field>
+              <SubmitTrajectoryButton
+                disabled={!canImportFolder}
+                idleLabel="Import"
+                pendingLabel="Importing..."
+              />
+            </div>
+          </StepCard>
+        </>
+      ) : null}
     </form>
   );
 }
