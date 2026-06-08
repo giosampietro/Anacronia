@@ -20,6 +20,8 @@ When available, provider record versioning or timestamp fields should be retaine
 
 Online Providers can have provider-specific terms, rights statements, and reuse expectations. Anacronia should preserve provider source statements and may show provider-specific notices, but it is a private local testing/research tool and does not enforce provider terms beyond provider-specific ingestion filters that Anacronia explicitly implements.
 
+When an online Provider object contributes usable local material to a Collection, its complete provider record should be treated as local source canon: write the complete provider data locally before reducing it into normalized fields, image details, Descriptors, matches, rights decisions, or UI display choices. Derived mappings can change; the raw provider record should remain the auditable source for future remapping. Fetched candidates that do not become imported Collection material do not need to enter this source canon.
+
 The Met is the MVP permanent local-ingestion Provider. V&A is the next museum Provider to use for testing the multi-provider scaffolding. For that test, V&A should create the same local `standard-1024` and `thumb-256` derivatives as Met so the shared Collection, User Library, export, curation, and future analysis paths can be exercised.
 
 ### User-Imported Local Material

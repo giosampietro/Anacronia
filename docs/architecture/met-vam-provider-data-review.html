@@ -1,0 +1,1148 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Anacronia Provider Data Review: Met and V&amp;A</title>
+    <link rel="icon" href="data:," />
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f6f7f4;
+        --panel: #ffffff;
+        --ink: #1f2522;
+        --muted: #5d665f;
+        --line: #d9ded6;
+        --soft: #edf1ec;
+        --met: #c7352a;
+        --vam: #21766d;
+        --raw: #6f5a91;
+        --show: #1f6f43;
+        --store: #866316;
+        --gap: #a13d2d;
+        --shadow: 0 12px 30px rgba(31, 37, 34, 0.08);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+        line-height: 1.45;
+      }
+
+      a {
+        color: inherit;
+        text-decoration-thickness: 0.08em;
+        text-underline-offset: 0.18em;
+      }
+
+      header {
+        border-bottom: 1px solid var(--line);
+        background: var(--panel);
+      }
+
+      .wrap {
+        width: min(1500px, calc(100% - 32px));
+        margin: 0 auto;
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 24px;
+        padding: 28px 0 22px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(28px, 4vw, 46px);
+        line-height: 1;
+        letter-spacing: 0;
+      }
+
+      h2 {
+        margin: 0 0 12px;
+        font-size: 22px;
+        letter-spacing: 0;
+      }
+
+      h3 {
+        margin: 0 0 8px;
+        font-size: 17px;
+        letter-spacing: 0;
+      }
+
+      p {
+        margin: 0;
+      }
+
+      .subtitle {
+        max-width: 930px;
+        margin-top: 14px;
+        color: var(--muted);
+        font-size: 16px;
+      }
+
+      .stamp {
+        align-self: start;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--soft);
+        padding: 12px;
+        color: var(--muted);
+        font-size: 13px;
+        min-width: 240px;
+      }
+
+      main {
+        padding: 22px 0 48px;
+      }
+
+      section {
+        margin-top: 22px;
+      }
+
+      .cards {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .card {
+        min-width: 0;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        padding: 14px;
+        box-shadow: var(--shadow);
+      }
+
+      .card strong {
+        display: block;
+        margin-bottom: 6px;
+        font-size: 14px;
+      }
+
+      .card p,
+      .note,
+      .source-list {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .toolbar {
+        position: sticky;
+        top: 0;
+        z-index: 5;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.94);
+        padding: 10px;
+        box-shadow: var(--shadow);
+      }
+
+      .toolbar input {
+        min-width: min(100%, 320px);
+        flex: 1 1 320px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 9px 10px;
+        color: var(--ink);
+        font: inherit;
+      }
+
+      button {
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: var(--panel);
+        color: var(--ink);
+        cursor: pointer;
+        font: inherit;
+        font-size: 13px;
+        padding: 8px 10px;
+      }
+
+      button.active {
+        background: var(--ink);
+        border-color: var(--ink);
+        color: white;
+      }
+
+      .table-shell {
+        overflow: auto;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        box-shadow: var(--shadow);
+      }
+
+      table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+        min-width: 1080px;
+      }
+
+      caption {
+        caption-side: top;
+        padding: 14px;
+        text-align: left;
+        font-weight: 700;
+      }
+
+      th,
+      td {
+        border-bottom: 1px solid var(--line);
+        border-right: 1px solid var(--line);
+        padding: 10px;
+        vertical-align: top;
+        font-size: 13px;
+      }
+
+      th {
+        position: sticky;
+        top: 55px;
+        z-index: 3;
+        background: #e8ece6;
+        text-align: left;
+        font-size: 12px;
+        text-transform: uppercase;
+      }
+
+      td:first-child,
+      th:first-child {
+        position: sticky;
+        left: 0;
+        z-index: 4;
+        background: #f8faf7;
+        width: 150px;
+        min-width: 150px;
+      }
+
+      th:first-child {
+        z-index: 6;
+        background: #e8ece6;
+      }
+
+      tr:last-child td {
+        border-bottom: 0;
+      }
+
+      td:last-child,
+      th:last-child {
+        border-right: 0;
+      }
+
+      code {
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        background: var(--soft);
+        padding: 1px 4px;
+        font-family:
+          ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 12px;
+      }
+
+      ul {
+        margin: 0;
+        padding-left: 18px;
+      }
+
+      li + li {
+        margin-top: 4px;
+      }
+
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+      }
+
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: var(--soft);
+        padding: 2px 7px;
+        font-size: 12px;
+        white-space: nowrap;
+      }
+
+      .chip.met {
+        border-color: rgba(199, 53, 42, 0.35);
+        background: rgba(199, 53, 42, 0.09);
+        color: var(--met);
+      }
+
+      .chip.vam {
+        border-color: rgba(33, 118, 109, 0.35);
+        background: rgba(33, 118, 109, 0.09);
+        color: var(--vam);
+      }
+
+      .chip.raw {
+        border-color: rgba(111, 90, 145, 0.35);
+        background: rgba(111, 90, 145, 0.1);
+        color: var(--raw);
+      }
+
+      .chip.show {
+        border-color: rgba(31, 111, 67, 0.35);
+        background: rgba(31, 111, 67, 0.1);
+        color: var(--show);
+      }
+
+      .chip.store {
+        border-color: rgba(134, 99, 22, 0.35);
+        background: rgba(134, 99, 22, 0.1);
+        color: var(--store);
+      }
+
+      .chip.gap {
+        border-color: rgba(161, 61, 45, 0.35);
+        background: rgba(161, 61, 45, 0.1);
+        color: var(--gap);
+      }
+
+      .compact-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .source-list {
+        columns: 2;
+        column-gap: 28px;
+      }
+
+      .muted {
+        color: var(--muted);
+      }
+
+      .hidden {
+        display: none;
+      }
+
+      @media (max-width: 980px) {
+        .hero,
+        .cards,
+        .compact-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .stamp {
+          width: 100%;
+        }
+
+        th {
+          top: 104px;
+        }
+
+        .source-list {
+          columns: 1;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="wrap hero">
+        <div>
+          <h1>Met and V&amp;A Provider Data Review</h1>
+          <p class="subtitle">
+            Compact audit of what each provider API offers, what Anacronia imports
+            into local Museum Object and Image Asset records, what reaches the
+            object detail overlay, and what is currently preserved only in raw JSON
+            or left unused.
+          </p>
+        </div>
+        <div class="stamp">
+          <strong>Review date</strong><br />
+          June 8, 2026<br /><br />
+          <strong>Scope</strong><br />
+          Online Provider Search for Met and V&amp;A. Local folder import is out of
+          scope.
+        </div>
+      </div>
+    </header>
+
+    <main class="wrap">
+      <section class="cards" aria-label="Headline findings">
+        <article class="card">
+          <strong>Met is image-rights strict</strong>
+          <p>
+            We search with <code>hasImages=true</code>, fetch full object records,
+            require <code>isPublicDomain === true</code>, then import up to three
+            full JPEG image URLs.
+          </p>
+        </article>
+        <article class="card">
+          <strong>V&amp;A is metadata-richer but flatter in UI</strong>
+          <p>
+            V&amp;A records expose nested production, place, content, warning,
+            location, and image metadata. The current detail view shows only part
+            of that richness.
+          </p>
+        </article>
+        <article class="card">
+          <strong>Imported records are the source canon</strong>
+          <p>
+            Everything that becomes imported Collection/User Library material
+            should keep its complete provider record on disk, not only the mapped
+            fields.
+          </p>
+        </article>
+        <article class="card">
+          <strong>Main design gap</strong>
+          <p>
+            The detail overlay has useful essentials, but the chosen priority set
+            underuses place, production context, structured maker roles, warnings,
+            and descriptor provenance.
+          </p>
+        </article>
+      </section>
+
+      <section class="card">
+        <h2>Imported Material Source Canon</h2>
+        <p class="note">
+          The raw provider record is the auditable source canon for imported
+          online material.
+          Anacronia can make opinionated choices for grid cards, detail overlays,
+          descriptors, rights display, and derivatives, but those choices must not
+          be the only copy of what the museum gave us for objects that become
+          imported Collection/User Library material. The target rule is
+          import-canon: if a Provider object contributes usable local Image
+          Assets, write the complete provider object record locally and treat
+          mapped fields as derived data.
+        </p>
+        <p class="note" style="margin-top: 10px">
+          Current status: Met and V&amp;A records that import into local material are
+          preserved as raw JSON. Fetched candidates that fail eligibility checks,
+          image processing, or other import requirements can remain skipped
+          candidates rather than becoming part of this source canon. The practical
+          test is whether the object actually adds usable material to a Collection.
+        </p>
+      </section>
+
+      <section>
+        <div class="toolbar" aria-label="Table filters">
+          <input
+            id="filterText"
+            type="search"
+            placeholder="Filter rows by field, table, provider, or gap..."
+            aria-label="Filter rows"
+          />
+          <button class="active" data-filter="all" type="button">All rows</button>
+          <button data-filter="shown" type="button">Shown in detail</button>
+          <button data-filter="raw" type="button">Raw only</button>
+          <button data-filter="gap" type="button">Gaps</button>
+          <button data-filter="image" type="button">Images</button>
+        </div>
+      </section>
+
+      <section>
+        <div class="table-shell">
+          <table id="mappingTable">
+            <caption>
+              Provider field mapping and display audit
+            </caption>
+            <thead>
+              <tr>
+                <th>Layer</th>
+                <th>Question</th>
+                <th>Met current behavior</th>
+                <th>V&amp;A current behavior</th>
+                <th>What detail view shows</th>
+                <th>What is left out or weak</th>
+                <th>Priority read</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr data-tags="shown store">
+                <td>Candidate search</td>
+                <td>How do we find candidate object IDs?</td>
+                <td>
+                  <span class="chip met">Met</span>
+                  <code>/public/collection/v1/search</code> with
+                  <code>q={term}</code> and <code>hasImages=true</code>. Only the
+                  returned <code>objectIDs</code> list is used.
+                </td>
+                <td>
+                  <span class="chip vam">V&amp;A</span>
+                  <code>/v2/objects/search</code> with <code>q={term}</code>,
+                  <code>images_exist=1</code>, page, and page size. Only
+                  <code>systemNumber</code> is kept from the search result.
+                </td>
+                <td>
+                  The user sees the Provider Source, result counts, matched terms
+                  after import, and local objects. Search-page ranking details are
+                  not shown.
+                </td>
+                <td>
+                  <span class="chip gap">Gap</span>
+                  Provider search filters are not exposed or persisted as a rich
+                  query model. Met filters such as department, title-only, tags,
+                  artist/culture, medium, geolocation, date range, and on-view are
+                  unused. V&amp;A filter richness is also unused.
+                </td>
+                <td>Good MVP simplification, but weak for controlled research sets.</td>
+              </tr>
+
+              <tr data-tags="raw store">
+                <td>Full record fetch</td>
+                <td>What object payload do we fetch?</td>
+                <td>
+                  Fetches the full Met object JSON from
+                  <code>/objects/{objectID}</code>. Live sampled records expose
+                  about sixty top-level fields including identity, public-domain
+                  flag, images, department, maker, date, medium, measurements,
+                  geography, classification, tags, links, and metadata date.
+                </td>
+                <td>
+                  Fetches V&amp;A <code>/v2/object/{systemNumber}</code>, storing a
+                  top-level <code>record</code> plus <code>meta</code>. Live
+                  sampled records expose nested people, organisations, places,
+                  dates, materials, techniques, content, warnings, locations,
+                  dimensions, labels, object history, image refs, and links.
+                </td>
+                <td>
+                  Detail view receives a small normalized object contract plus
+                  image, match, and skipped-image arrays.
+                </td>
+                <td>
+                  <span class="chip raw">Raw only</span>
+                  The full record is not browsable in-app. Most provider-specific
+                  structure is available only by opening the raw JSON file on disk.
+                </td>
+                <td>Raw preservation is strong. In-app inspection is too narrow.</td>
+              </tr>
+
+              <tr data-tags="store raw">
+                <td>Raw JSON storage</td>
+                <td>Where is source truth retained?</td>
+                <td>
+                  Writes one raw record per object under
+                  <code>data/met/raw-api/objects/{range}/{objectID}.json</code>.
+                  Numeric range folders keep Met directories readable.
+                </td>
+                <td>
+                  Writes one raw record per object under
+                  <code>data/vam/raw-api/objects/{encoded-systemNumber}.json</code>.
+                  The provider-generic path handles string object IDs.
+                </td>
+                <td>
+                  Detail loaders read raw JSON back to populate extra fields such
+                  as accession, medium, dimensions, repository, and tags.
+                </td>
+                <td>
+                  The UI does not provide an "open raw record" affordance, and
+                  descriptors are not displayed even though they are extracted.
+                </td>
+                <td>Keep. Add a raw-record/debug link in a future developer view.</td>
+              </tr>
+
+              <tr data-tags="shown store">
+                <td>Museum Object core</td>
+                <td>Which normalized object fields are stored?</td>
+                <td>
+                  <code>provider</code>, <code>object_id</code>, <code>title</code>,
+                  <code>object_name</code>, <code>artist_display_name</code>,
+                  <code>object_url</code>, <code>is_public_domain=1</code>,
+                  <code>rights_and_reproduction</code>, <code>metadata_date</code>,
+                  <code>raw_record_path</code>.
+                </td>
+                <td>
+                  Same table shape. Title comes from first
+                  <code>record.titles[].title</code>, then
+                  <code>_primaryTitle</code>, then object type or ID. Artist joins
+                  person, people, and organisation maker names. Public domain is
+                  stored as false because V&amp;A is not checked through a Met-style
+                  gate.
+                </td>
+                <td>
+                  Header title, provider label, object ID, object name, artist,
+                  provider URL, rights, metadata date, favorite state.
+                </td>
+                <td>
+                  <span class="chip gap">Gap</span>
+                  One normalized object shape hides provider-specific meaning:
+                  V&amp;A maker roles and Met constituent roles are flattened to a
+                  single artist display string.
+                </td>
+                <td>Good for grid. Too shallow for serious object review.</td>
+              </tr>
+
+              <tr data-tags="shown">
+                <td>Object facts</td>
+                <td>Which extra object fields appear in the overlay?</td>
+                <td>
+                  From raw Met JSON: <code>artistDisplayBio</code>,
+                  <code>artistNationality</code>, <code>department</code>,
+                  <code>objectDate</code>, <code>medium</code>,
+                  <code>dimensions</code>, <code>classification</code>,
+                  <code>creditLine</code>, <code>accessionNumber</code>,
+                  <code>repository</code>, and <code>tags.term</code>.
+                </td>
+                <td>
+                  From raw V&amp;A JSON: production date, materials summary or
+                  materials, dimensions, categories as classification, credit line,
+                  accession number, hard-coded repository, and tags from
+                  categories/materials/techniques/styles. Artist bio, nationality,
+                  and department usually remain empty because no V&amp;A mapping
+                  fills them.
+                </td>
+                <td>
+                  Object facts card plus expanded Provider metadata sections:
+                  Identity, Catalog description, Rights and record state, Provider
+                  tags, Provider image references.
+                </td>
+                <td>
+                  V&amp;A <code>briefDescription</code>,
+                  <code>summaryDescription</code>, <code>placesOfOrigin</code>,
+                  <code>objectHistory</code>, <code>physicalDescription</code>,
+                  <code>galleryLabels</code>, and <code>galleryLocations</code> are
+                  not shown. Met geography and timeline fields are mostly not
+                  shown.
+                </td>
+                <td>Essentials are covered. Interpretive context is underweighted.</td>
+              </tr>
+
+              <tr data-tags="image shown store">
+                <td>Image selection</td>
+                <td>Which provider image URLs become Image Assets?</td>
+                <td>
+                  Selects <code>primaryImage</code> first, then unique
+                  <code>additionalImages</code>. Imports up to
+                  <code>DEFAULT_MAX_IMAGES_PER_OBJECT</code>, currently three.
+                  <code>primaryImageSmall</code> is stored as metadata only for the
+                  primary image.
+                </td>
+                <td>
+                  Builds asset refs from <code>record.images</code>, then
+                  <code>meta.images._images_meta[].assetRef</code>, then the
+                  primary IIIF image URL tail. The first ref is primary; later refs
+                  are additional. Imports up to three.
+                </td>
+                <td>
+                  Standard image carousel, thumbnail preblur, image count control,
+                  active image card, source image link, provider image references,
+                  skipped image references.
+                </td>
+                <td>
+                  <span class="chip gap">Gap</span>
+                  Per-image V&amp;A copyright is aggregated to object rights, not
+                  retained per image in <code>source_metadata_json</code>. Met image
+                  URL provenance is stored, but no source filename or image service
+                  metadata is captured beyond dimensions and URLs.
+                </td>
+                <td>Works for local analysis. Per-image provenance should improve.</td>
+              </tr>
+
+              <tr data-tags="image store">
+                <td>Image derivatives</td>
+                <td>What local image files are generated?</td>
+                <td>
+                  Downloads the source JPEG, creates permanent
+                  <code>standard-1024</code> and <code>thumb-256</code> derivatives,
+                  validates both, captures original width and height, then discards
+                  the temporary original.
+                </td>
+                <td>
+                  Same derivative threshold using IIIF full JPEG URLs such as
+                  <code>https://framemark.vam.ac.uk/collections/{assetRef}/full/full/0/default.jpg</code>.
+                </td>
+                <td>
+                  Detail view uses <code>standard-1024</code> for inspection and
+                  <code>thumb-256</code> for loading/thumbnail support.
+                </td>
+                <td>
+                  Source originals and IIIF <code>info.json</code> dimensions,
+                  supported sizes, tiles, and service profile are not retained. V&amp;A
+                  imageResolution is not stored.
+                </td>
+                <td>Correct MVP tradeoff. IIIF metadata would help image QA.</td>
+              </tr>
+
+              <tr data-tags="image shown store">
+                <td>Skipped images</td>
+                <td>Do we explain related provider images that are not imported?</td>
+                <td>
+                  Stores skipped Met image references for
+                  <code>beyond_max_images_per_object</code>,
+                  <code>collection_image_excluded</code>, or
+                  <code>image_processing_failed</code>.
+                </td>
+                <td>
+                  Same skipped-reference table and reasons for V&amp;A generated
+                  IIIF source URLs.
+                </td>
+                <td>
+                  Rights card says how many related provider images were not
+                  imported. Expanded provider image references list skipped URLs
+                  and reasons.
+                </td>
+                <td>
+                  Skipped references are not collection-scoped in the detail query,
+                  so an object imported across collections can show skipped-image
+                  history beyond the current Collection context.
+                </td>
+                <td>Useful and visible. Scope semantics need care later.</td>
+              </tr>
+
+              <tr data-tags="shown store">
+                <td>Rights</td>
+                <td>How are rights and reuse signals handled?</td>
+                <td>
+                  Met requires <code>isPublicDomain === true</code> before import.
+                  It stores <code>rightsAndReproduction</code>, often empty on
+                  public-domain records, and shows "Public domain" if no rights
+                  statement is present.
+                </td>
+                <td>
+                  V&amp;A has no public-domain gate in this MVP path. It aggregates
+                  non-empty copyright strings from image metadata into the object
+                  rights statement; otherwise it uses a private-local-testing
+                  notice.
+                </td>
+                <td>
+                  Rights card and Provider metadata "Rights and record state".
+                  V&amp;A public-domain status appears as "Not checked".
+                </td>
+                <td>
+                  <span class="chip gap">Gap</span>
+                  V&amp;A source terms are shown as general text, not as a structured
+                  policy object. Per-image copyright is not shown beside each image.
+                  Met CC0/open-access context is not explicitly explained in detail.
+                </td>
+                <td>Meets current ADRs. Needs more precise user-facing language.</td>
+              </tr>
+
+              <tr data-tags="shown store">
+                <td>Matches</td>
+                <td>How do we explain why an object appeared?</td>
+                <td>
+                  Verifies search terms against title, objectName, tags, medium,
+                  culture, period, classification, and artistDisplayName.
+                </td>
+                <td>
+                  Verifies search terms against titles, object type, maker person,
+                  maker people, maker organisations, materials, techniques,
+                  categories, styles, summaryDescription, and briefDescription.
+                </td>
+                <td>
+                  Expanded "Why this object appeared" panel shows each term,
+                  verified/unverified status, and matched field names.
+                </td>
+                <td>
+                  Match field names are raw provider field paths, not friendly
+                  labels. V&amp;A place/date/content fields are not used for match
+                  verification even when the provider search may have matched them.
+                </td>
+                <td>High-value feature. Needs human-readable field labels.</td>
+              </tr>
+
+              <tr data-tags="raw store">
+                <td>Descriptors</td>
+                <td>What data supports local search across providers?</td>
+                <td>
+                  Extracts descriptors from title, objectName, tags.term, medium,
+                  culture, period, classification, artistDisplayName, department,
+                  objectDate, country, region, and city.
+                </td>
+                <td>
+                  Extracts descriptors from titles, objectType, artistMakerPerson,
+                  artistMakerPeople, materials, techniques, categories, styles,
+                  placesOfOrigin, and productionDates.
+                </td>
+                <td>
+                  Descriptors are used by local result filtering. They are not
+                  listed in the detail overlay.
+                </td>
+                <td>
+                  <span class="chip gap">Gap</span>
+                  V&amp;A maker organisations are used for match verification but
+                  omitted from descriptors. V&amp;A content concepts/people/places,
+                  associated entities, summary/brief description, and object history
+                  are omitted. Met dynasty/reign/excavation/geographyType are
+                  omitted.
+                </td>
+                <td>Important technical layer. Should be visible for audit.</td>
+              </tr>
+
+              <tr data-tags="raw">
+                <td>People and makers</td>
+                <td>How much structured maker data is retained?</td>
+                <td>
+                  Raw Met record includes display fields plus constituents with
+                  role, name, ULAN URL, Wikidata URL, and gender when available.
+                  The normalized table stores only <code>artistDisplayName</code>.
+                </td>
+                <td>
+                  Raw V&amp;A record separates maker persons, groups, and
+                  organisations, each with association and notes. The normalized
+                  table joins names into one display string.
+                </td>
+                <td>
+                  Artist string, artist bio/nationality for Met, mostly empty
+                  equivalents for V&amp;A.
+                </td>
+                <td>
+                  Role, attribution, association, authority IDs, notes, multiple
+                  maker ordering, and organisation-vs-person distinctions are not
+                  visible.
+                </td>
+                <td>Flattening is okay for grid, poor for research inspection.</td>
+              </tr>
+
+              <tr data-tags="raw gap">
+                <td>Place and production</td>
+                <td>How do origin and chronology differ?</td>
+                <td>
+                  Met exposes geographic scalar fields such as geographyType, city,
+                  state, county, country, region, subregion, locale, locus, river,
+                  excavation, plus period, dynasty, reign, objectDate, objectBeginDate,
+                  and objectEndDate.
+                </td>
+                <td>
+                  V&amp;A exposes nested placesOfOrigin with association and note,
+                  associated/content places, productionDates with earliest/latest,
+                  production and productionType, plus accession year.
+                </td>
+                <td>
+                  Detail mainly shows Date. V&amp;A place is currently not shown as a
+                  fact. Some Met geography can participate in descriptor search but
+                  is not displayed.
+                </td>
+                <td>
+                  <span class="chip gap">Gap</span>
+                  This is one of the largest information-design misses. Place and
+                  production context are central to visual research but mostly
+                  absent from the object detail panel.
+                </td>
+                <td>High-priority improvement.</td>
+              </tr>
+
+              <tr data-tags="raw gap">
+                <td>Descriptions and interpretation</td>
+                <td>Do we show provider prose?</td>
+                <td>
+                  Met sampled API records are more field-based; the current mapping
+                  shows facts and tags but no long description field.
+                </td>
+                <td>
+                  V&amp;A often has <code>briefDescription</code>,
+                  <code>summaryDescription</code>, <code>physicalDescription</code>,
+                  <code>objectHistory</code>, <code>historicalContext</code>, and
+                  <code>galleryLabels</code>.
+                </td>
+                <td>
+                  None of these V&amp;A prose fields appear as a dedicated
+                  description block.
+                </td>
+                <td>
+                  <span class="chip gap">Gap</span>
+                  V&amp;A loses a lot of interpretive value in the current detail
+                  priority set. Even a compact description excerpt would improve
+                  review quality.
+                </td>
+                <td>High-priority for V&amp;A.</td>
+              </tr>
+
+              <tr data-tags="raw gap">
+                <td>Warnings and sensitivity</td>
+                <td>What sensitive-content data survives?</td>
+                <td>
+                  No equivalent first-class Met warning mapping in the current
+                  importer.
+                </td>
+                <td>
+                  V&amp;A search records expose warning types and image warning
+                  summaries. Full records expose content warnings. Image metadata
+                  can include <code>sensitiveImage</code>.
+                </td>
+                <td>
+                  Only per-image <code>sensitive_image</code> is stored in
+                  <code>source_metadata_json</code> and shown on the Active image
+                  card when present.
+                </td>
+                <td>
+                  Object-level content warnings and search-result warning summaries
+                  are not stored as normalized metadata and not shown.
+                </td>
+                <td>Medium-high. Important for future responsible datasets.</td>
+              </tr>
+
+              <tr data-tags="shown store">
+                <td>Grid summary</td>
+                <td>What is visible before opening detail?</td>
+                <td>
+                  Provider, object ID route, title, object name, artist display
+                  name, image count, cover image asset, cover dimensions, favorite
+                  state.
+                </td>
+                <td>
+                  Same normalized grid summary, using V&amp;A title/objectType/maker
+                  mapping.
+                </td>
+                <td>
+                  Object-first grid tile with thumbnail cover, title/object signals,
+                  and sibling-image indicator.
+                </td>
+                <td>
+                  Provider-specific confidence signals such as V&amp;A image
+                  resolution, warnings, location, or Met public-domain certainty are
+                  not present in the grid.
+                </td>
+                <td>Appropriate for dense browsing. Keep grid restrained.</td>
+              </tr>
+
+              <tr data-tags="shown">
+                <td>Detail actions</td>
+                <td>What review workflow can the user perform?</td>
+                <td>
+                  Open provider record, open source image, favorite object or
+                  active image, remove from Collection, delete, navigate carousel,
+                  and navigate adjacent objects.
+                </td>
+                <td>Same actions.</td>
+                <td>
+                  Action buttons are in the overlay header and cards. The image
+                  stage is object-first with carousel controls when siblings exist.
+                </td>
+                <td>
+                  No "open raw JSON", "show descriptor provenance", or "copy source
+                  identity" action.
+                </td>
+                <td>Good operational base. Add audit actions later.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="compact-grid" aria-label="Data model difference summary">
+        <article class="card">
+          <h3>Met model shape</h3>
+          <p class="note">
+            Mostly flat object records. Images are direct JPEG URLs. Rights are
+            object-level through <code>isPublicDomain</code> and open-access image
+            availability. Geographic and maker fields are mostly scalar display
+            fields plus optional structured constituents.
+          </p>
+        </article>
+        <article class="card">
+          <h3>V&amp;A model shape</h3>
+          <p class="note">
+            Nested object record plus metadata wrapper. Images are asset identifiers
+            and IIIF services. Makers, places, dates, descriptions, content,
+            warnings, and dimensions are often repeating structured arrays with
+            associations and notes.
+          </p>
+        </article>
+        <article class="card">
+          <h3>Anacronia model shape</h3>
+          <p class="note">
+            Deliberately small shared tables:
+            <code>museum_objects</code>, <code>image_assets</code>,
+            <code>object_matches</code>, <code>descriptors</code>,
+            <code>skipped_candidates</code>, and
+            <code>skipped_image_references</code>. This keeps the app consistent but
+            compresses provider meaning.
+          </p>
+        </article>
+      </section>
+
+      <section>
+        <div class="table-shell">
+          <table>
+            <caption>
+              Recommended information-design priorities
+            </caption>
+            <thead>
+              <tr>
+                <th>Priority</th>
+                <th>Change</th>
+                <th>Why it matters</th>
+                <th>Likely implementation path</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><span class="chip gap">High</span></td>
+                <td>Add a visible Place and production section.</td>
+                <td>
+                  Met and V&amp;A expose this differently, but it is central to
+                  comparing objects across providers and collections.
+                </td>
+                <td>
+                  Extend provider raw field mapping in
+                  <code>collection_objects.py</code>. Keep normalized fields compact:
+                  production date, place made, period/culture, and source field
+                  provenance.
+                </td>
+              </tr>
+              <tr>
+                <td><span class="chip gap">High</span></td>
+                <td>Show V&amp;A description prose when present.</td>
+                <td>
+                  Current V&amp;A detail loses useful <code>briefDescription</code>
+                  and related context that explains what the image/object is.
+                </td>
+                <td>
+                  Add a Provider description card using V&amp;A
+                  <code>briefDescription</code>, then
+                  <code>summaryDescription</code>. Keep it collapsed or visually
+                  compact for dense review.
+                </td>
+              </tr>
+              <tr>
+                <td><span class="chip store">Medium</span></td>
+                <td>Retain per-image V&amp;A copyright in image metadata.</td>
+                <td>
+                  Current object-level aggregation can hide image-level differences
+                  when an object has multiple images.
+                </td>
+                <td>
+                  Store <code>copyright_text</code> in
+                  <code>image_assets.source_metadata_json</code> and show it on the
+                  Active image card.
+                </td>
+              </tr>
+              <tr>
+                <td><span class="chip store">Medium</span></td>
+                <td>Display descriptor provenance in detail.</td>
+                <td>
+                  Descriptors drive local search, but the user cannot see what
+                  Anacronia extracted or which provider fields produced it.
+                </td>
+                <td>
+                  Add descriptors to the detail API and render a compact grouped
+                  list by descriptor type/source field.
+                </td>
+              </tr>
+              <tr>
+                <td><span class="chip store">Medium</span></td>
+                <td>Fix V&amp;A descriptor asymmetry for maker organisations.</td>
+                <td>
+                  V&amp;A organisation makers can verify matches but are not stored
+                  as descriptors, so local search is weaker than match explanation.
+                </td>
+                <td>
+                  Add <code>record.artistMakerOrganisations.name.text</code> to
+                  <code>extract_vam_descriptors</code>.
+                </td>
+              </tr>
+              <tr>
+                <td><span class="chip raw">Low</span></td>
+                <td>Add a developer/audit link to raw JSON.</td>
+                <td>
+                  The raw record is already local and valuable when checking mapping
+                  decisions.
+                </td>
+                <td>
+                  Add a backend endpoint gated to local file paths or expose a safe
+                  "raw record path" copy affordance in development mode.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Source Links</h2>
+        <ul class="source-list">
+          <li>
+            Met API docs:
+            <a href="https://metmuseum.github.io/">metmuseum.github.io</a>
+          </li>
+          <li>
+            V&amp;A result field docs:
+            <a href="https://developers.vam.ac.uk/guide/v2/results/object-fields-brief.html"
+              >developers.vam.ac.uk field summary</a
+            >
+          </li>
+          <li>
+            V&amp;A image docs:
+            <a href="https://developers.vam.ac.uk/guide/v2/images/introduction.html"
+              >V&amp;A images introduction</a
+            >
+          </li>
+          <li>
+            V&amp;A IIIF docs:
+            <a href="https://developers.vam.ac.uk/guide/v2/images/iiif.html"
+              >V&amp;A IIIF guide</a
+            >
+          </li>
+          <li>
+            Met importer:
+            <a href="../../src/anacronia/met_ingest.py">src/anacronia/met_ingest.py</a>
+          </li>
+          <li>
+            V&amp;A importer:
+            <a href="../../src/anacronia/vam_adapter.py">src/anacronia/vam_adapter.py</a>
+          </li>
+          <li>
+            Detail API projection:
+            <a href="../../src/anacronia/collection_objects.py"
+              >src/anacronia/collection_objects.py</a
+            >
+          </li>
+          <li>
+            React detail overlay:
+            <a href="../../web/src/components/collection-object-detail-overlay.tsx"
+              >web/src/components/collection-object-detail-overlay.tsx</a
+            >
+          </li>
+        </ul>
+      </section>
+    </main>
+
+    <script>
+      const input = document.querySelector("#filterText");
+      const buttons = Array.from(document.querySelectorAll("[data-filter]"));
+      const rows = Array.from(document.querySelectorAll("#mappingTable tbody tr"));
+      let activeFilter = "all";
+
+      function rowMatches(row) {
+        const text = input.value.trim().toLowerCase();
+        const tags = row.dataset.tags || "";
+        const filterMatches =
+          activeFilter === "all" ||
+          (activeFilter === "shown" && tags.includes("shown")) ||
+          (activeFilter === "raw" && tags.includes("raw")) ||
+          (activeFilter === "gap" && tags.includes("gap")) ||
+          (activeFilter === "image" && tags.includes("image"));
+        const textMatches = !text || row.textContent.toLowerCase().includes(text);
+        return filterMatches && textMatches;
+      }
+
+      function applyFilters() {
+        rows.forEach((row) => {
+          row.classList.toggle("hidden", !rowMatches(row));
+        });
+      }
+
+      input.addEventListener("input", applyFilters);
+      buttons.forEach((button) => {
+        button.addEventListener("click", () => {
+          activeFilter = button.dataset.filter;
+          buttons.forEach((item) => item.classList.toggle("active", item === button));
+          applyFilters();
+        });
+      });
+    </script>
+  </body>
+</html>
