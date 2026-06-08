@@ -431,6 +431,12 @@ function ActiveImageCard({
       value: activeImage.source_image_url,
     });
   }
+  if (activeImage.sensitive_image !== null) {
+    activeImageFields.push({
+      label: "Sensitive image",
+      value: activeImage.sensitive_image ? "Yes" : "No",
+    });
+  }
 
   return (
     <DetailCard icon={<ImageIcon className="size-4" />} title="Active image">

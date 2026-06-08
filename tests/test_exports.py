@@ -24,6 +24,7 @@ from tests.test_met_ingest import ppm_image_bytes
 from tests.test_vam_adapter import (
     FakeVamCandidateClient,
     FakeVamRecordClient,
+    SensitiveVamRecordClient,
     ppm_image_bytes as vam_ppm_image_bytes,
 )
 
@@ -88,8 +89,9 @@ def build_exportable_collection(tmp_path):
     return storage
 
 
-def build_vam_exportable_collection(tmp_path):
+def build_vam_exportable_collection(tmp_path, *, record_client=None):
     storage = initialize_storage(project_root=tmp_path)
+    resolved_record_client = record_client or FakeVamRecordClient()
     create_or_continue_search_set(
         database_path=storage.database_path,
         display_name="Bed Study",
@@ -109,7 +111,7 @@ def build_vam_exportable_collection(tmp_path):
         database_path=storage.database_path,
         data_root=storage.data_root,
         run_id=run.run_id,
-        vam_client=FakeVamRecordClient(),
+        vam_client=resolved_record_client,
         download_image_bytes=lambda _url: vam_ppm_image_bytes(width=1600, height=800),
         max_images_per_object=2,
         batch_target=2,
@@ -257,7 +259,10 @@ def test_exports_local_folder_without_source_url_or_rights_implication(tmp_path)
 
 
 def test_exports_vam_package_with_source_identity_and_iiif_metadata(tmp_path):
-    storage = build_vam_exportable_collection(tmp_path)
+    storage = build_vam_exportable_collection(
+        tmp_path,
+        record_client=SensitiveVamRecordClient(),
+    )
     iiif_image_url = (
         "https://framemark.vam.ac.uk/collections/2006AL3614/full/full/0/default.jpg"
     )
@@ -288,6 +293,8 @@ def test_exports_vam_package_with_source_identity_and_iiif_metadata(tmp_path):
     assert manifest_rows[0]["image_asset"]["source_image_url"] == iiif_image_url
     assert manifest_rows[0]["image_asset"]["source_system_number"] == "O9138"
     assert manifest_rows[0]["image_asset"]["source_iiif_image_url"] == iiif_image_url
+    assert manifest_rows[0]["image_asset"]["source_sensitive_image"] is True
+    assert manifest_rows[1]["image_asset"]["source_sensitive_image"] is False
 
     with (result.export_path / "metadata.csv").open(encoding="utf-8", newline="") as handle:
         csv_rows = list(csv.DictReader(handle))
@@ -299,6 +306,8 @@ def test_exports_vam_package_with_source_identity_and_iiif_metadata(tmp_path):
     assert csv_rows[0]["source_image_identity"] == f"vam:{iiif_image_url}"
     assert csv_rows[0]["source_system_number"] == "O9138"
     assert csv_rows[0]["source_iiif_image_url"] == iiif_image_url
+    assert csv_rows[0]["source_sensitive_image"] == "true"
+    assert csv_rows[1]["source_sensitive_image"] == "false"
 
 
 def test_exports_selected_image_asset_jsonl_rows_only_selected_asset(tmp_path):

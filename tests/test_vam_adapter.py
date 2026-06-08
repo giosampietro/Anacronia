@@ -23,6 +23,29 @@ class FakeVamRecordClient:
         return vam_record_fixture()
 
 
+class SensitiveVamRecordClient:
+    def fetch_object_record(self, object_id: str) -> dict[str, object]:
+        assert object_id == "O9138"
+        record = vam_record_fixture()
+        images_meta = record["meta"]["images"]["_images_meta"]
+        assert isinstance(images_meta, list)
+        assert isinstance(images_meta[0], dict)
+        images_meta[0]["sensitiveImage"] = True
+        return record
+
+
+class MissingSensitivityVamRecordClient:
+    def fetch_object_record(self, object_id: str) -> dict[str, object]:
+        assert object_id == "O9138"
+        record = vam_record_fixture()
+        images_meta = record["meta"]["images"]["_images_meta"]
+        assert isinstance(images_meta, list)
+        for item in images_meta:
+            assert isinstance(item, dict)
+            item.pop("sensitiveImage", None)
+        return record
+
+
 def ppm_image_bytes(*, width: int, height: int) -> bytes:
     header = f"P6\n{width} {height}\n255\n".encode("ascii")
     row = bytes([40, 130, 180]) * width
@@ -192,6 +215,7 @@ def test_vam_import_creates_private_permanent_derivatives_and_collection_detail(
     assert [image.image_role for image in detail.images] == ["primary", "additional"]
     assert detail.skipped_image_references[0].reason == "beyond_max_images_per_object"
     assert detail.matches[0].verified is True
+    assert [image.sensitive_image for image in detail.images] == [False, False]
 
     for image in detail.images:
         standard_path = storage.data_root / "vam" / "images" / "O9138" / (
@@ -218,3 +242,81 @@ def test_vam_import_creates_private_permanent_derivatives_and_collection_detail(
                 jpeg_quality=75,
             ),
         )
+
+
+def test_vam_import_surfaces_sensitive_image_source_provenance(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    create_or_continue_search_set(
+        database_path=storage.database_path,
+        display_name="Bed Studies",
+        terms_text="bed",
+        provider="vam",
+    )
+    run = discover_provider_candidates(
+        database_path=storage.database_path,
+        search_set_slug="bed-studies",
+        provider="vam",
+        candidate_offset=0,
+        candidate_limit=1,
+        candidate_client=FakeVamCandidateClient(),
+        batch_target=1,
+    )
+
+    ingest_vam_run(
+        database_path=storage.database_path,
+        data_root=storage.data_root,
+        run_id=run.run_id,
+        vam_client=SensitiveVamRecordClient(),
+        download_image_bytes=lambda _url: ppm_image_bytes(width=1600, height=800),
+        max_images_per_object=1,
+        batch_target=1,
+    )
+
+    detail = get_collection_object_detail(
+        database_path=storage.database_path,
+        search_set_slug="bed-studies",
+        provider="vam",
+        object_id="O9138",
+    )
+
+    assert detail is not None
+    assert detail.images[0].sensitive_image is True
+
+
+def test_vam_import_allows_missing_sensitive_image_source_provenance(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    create_or_continue_search_set(
+        database_path=storage.database_path,
+        display_name="Bed Studies",
+        terms_text="bed",
+        provider="vam",
+    )
+    run = discover_provider_candidates(
+        database_path=storage.database_path,
+        search_set_slug="bed-studies",
+        provider="vam",
+        candidate_offset=0,
+        candidate_limit=1,
+        candidate_client=FakeVamCandidateClient(),
+        batch_target=1,
+    )
+
+    ingest_vam_run(
+        database_path=storage.database_path,
+        data_root=storage.data_root,
+        run_id=run.run_id,
+        vam_client=MissingSensitivityVamRecordClient(),
+        download_image_bytes=lambda _url: ppm_image_bytes(width=1600, height=800),
+        max_images_per_object=1,
+        batch_target=1,
+    )
+
+    detail = get_collection_object_detail(
+        database_path=storage.database_path,
+        search_set_slug="bed-studies",
+        provider="vam",
+        object_id="O9138",
+    )
+
+    assert detail is not None
+    assert detail.images[0].sensitive_image is None

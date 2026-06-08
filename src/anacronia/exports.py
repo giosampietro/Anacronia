@@ -67,6 +67,7 @@ class ExportImageAsset:
     provider: str
     object_id: SourceObjectId
     source_image_url: str
+    source_metadata: dict[str, object]
     image_role: str
     image_index: int | None
     original_width: int
@@ -312,6 +313,7 @@ def list_collection_image_assets(
           image_assets.provider,
           image_assets.object_id,
           image_assets.source_image_url,
+          image_assets.source_metadata_json,
           image_assets.image_role,
           image_assets.image_index,
           image_assets.original_width,
@@ -371,20 +373,21 @@ def list_collection_image_assets(
             provider=row[1],
             object_id=normalize_source_object_id(row[2]),
             source_image_url=row[3],
-            image_role=row[4],
-            image_index=row[5],
-            original_width=int(row[6]),
-            original_height=int(row[7]),
-            standard_path=Path(row[8]),
-            thumb_path=Path(row[9]),
-            title=row[10],
-            object_name=row[11],
-            artist_display_name=row[12],
-            object_url=row[13],
-            rights_and_reproduction=row[14],
-            metadata_date=row[15],
-            object_is_favorite=bool(row[16]),
-            image_is_favorite=bool(row[17]),
+            source_metadata=parse_source_metadata(row[4]),
+            image_role=row[5],
+            image_index=row[6],
+            original_width=int(row[7]),
+            original_height=int(row[8]),
+            standard_path=Path(row[9]),
+            thumb_path=Path(row[10]),
+            title=row[11],
+            object_name=row[12],
+            artist_display_name=row[13],
+            object_url=row[14],
+            rights_and_reproduction=row[15],
+            metadata_date=row[16],
+            object_is_favorite=bool(row[17]),
+            image_is_favorite=bool(row[18]),
         )
         for row in rows
     ]
@@ -402,6 +405,7 @@ def list_user_library_image_assets(
           image_assets.provider,
           image_assets.object_id,
           image_assets.source_image_url,
+          image_assets.source_metadata_json,
           image_assets.image_role,
           image_assets.image_index,
           image_assets.original_width,
@@ -447,20 +451,21 @@ def list_user_library_image_assets(
             provider=row[1],
             object_id=normalize_source_object_id(row[2]),
             source_image_url=row[3],
-            image_role=row[4],
-            image_index=row[5],
-            original_width=int(row[6]),
-            original_height=int(row[7]),
-            standard_path=Path(row[8]),
-            thumb_path=Path(row[9]),
-            title=row[10],
-            object_name=row[11],
-            artist_display_name=row[12],
-            object_url=row[13],
-            rights_and_reproduction=row[14],
-            metadata_date=row[15],
-            object_is_favorite=bool(row[16]),
-            image_is_favorite=bool(row[17]),
+            source_metadata=parse_source_metadata(row[4]),
+            image_role=row[5],
+            image_index=row[6],
+            original_width=int(row[7]),
+            original_height=int(row[8]),
+            standard_path=Path(row[9]),
+            thumb_path=Path(row[10]),
+            title=row[11],
+            object_name=row[12],
+            artist_display_name=row[13],
+            object_url=row[14],
+            rights_and_reproduction=row[15],
+            metadata_date=row[16],
+            object_is_favorite=bool(row[17]),
+            image_is_favorite=bool(row[18]),
         )
         for row in rows
     ]
@@ -544,6 +549,7 @@ def build_export_rows(
                     "source_image_identity": export_source_image_identity(image_asset),
                     "source_system_number": export_source_system_number(image_asset),
                     "source_iiif_image_url": export_source_iiif_image_url(image_asset),
+                    "source_sensitive_image": export_source_sensitive_image(image_asset),
                     "image_role": image_asset.image_role,
                     "image_index": image_asset.image_index,
                     "original_width": image_asset.original_width,
@@ -652,6 +658,21 @@ def export_source_iiif_image_url(image_asset: ExportImageAsset) -> str:
     if image_asset.provider == "vam":
         return image_asset.source_image_url
     return ""
+
+
+def export_source_sensitive_image(image_asset: ExportImageAsset) -> bool | None:
+    value = image_asset.source_metadata.get("sensitive_image")
+    return value if isinstance(value, bool) else None
+
+
+def parse_source_metadata(value: object) -> dict[str, object]:
+    if not isinstance(value, str):
+        return {}
+    try:
+        metadata = json.loads(value)
+    except json.JSONDecodeError:
+        return {}
+    return metadata if isinstance(metadata, dict) else {}
 
 
 def get_export_matches(
@@ -849,6 +870,7 @@ def write_csv_metadata(*, path: Path, rows: list[dict[str, object]]) -> None:
         "source_image_identity",
         "source_system_number",
         "source_iiif_image_url",
+        "source_sensitive_image",
         "provider",
         "object_id",
         "image_asset_id",
@@ -897,6 +919,9 @@ def flatten_export_row(row: dict[str, object]) -> dict[str, object]:
         "source_image_identity": image_asset["source_image_identity"],
         "source_system_number": image_asset["source_system_number"],
         "source_iiif_image_url": image_asset["source_iiif_image_url"],
+        "source_sensitive_image": csv_bool_or_empty(
+            image_asset["source_sensitive_image"]
+        ),
         "provider": image_asset["provider"],
         "object_id": image_asset["object_id"],
         "image_asset_id": image_asset["image_asset_id"],
@@ -928,6 +953,12 @@ def flatten_export_row(row: dict[str, object]) -> dict[str, object]:
         ),
         "semantic_text": row["semantic_text"],
     }
+
+
+def csv_bool_or_empty(value: object) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return ""
 
 
 def copy_package_images(*, export_path: Path, image_copies: list[PackageImageCopy]) -> None:

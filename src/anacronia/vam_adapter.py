@@ -87,7 +87,7 @@ class VamImageReference:
     image_index: int | None
     primary_image_small_url: str
     copyright_text: str
-    sensitive_image: bool
+    sensitive_image: bool | None
 
 
 @dataclass(frozen=True)
@@ -325,6 +325,11 @@ def ingest_vam_run(
                         standard_path=processed.standard_path,
                         thumb_path=processed.thumb_path,
                         imported=processed.imported,
+                        source_metadata=(
+                            {"sensitive_image": image_reference.sensitive_image}
+                            if image_reference.sensitive_image is not None
+                            else {}
+                        ),
                     ),
                 )
             )
@@ -443,7 +448,7 @@ def select_vam_image_references(
                     image_index=image_index,
                     primary_image_small_url=primary_thumbnail if image_role == "primary" else "",
                     copyright_text=copyright_by_asset_ref.get(asset_ref, ""),
-                    sensitive_image=sensitive_by_asset_ref.get(asset_ref, False),
+                    sensitive_image=sensitive_by_asset_ref.get(asset_ref),
                 )
             )
             continue
@@ -516,7 +521,7 @@ def vam_image_sensitive_by_asset_ref(record: dict[str, object]) -> dict[str, boo
         if not isinstance(item, dict):
             continue
         asset_ref = string_value(item.get("assetRef"))
-        if asset_ref:
+        if asset_ref and "sensitiveImage" in item:
             values[asset_ref] = item.get("sensitiveImage") is True
     return values
 

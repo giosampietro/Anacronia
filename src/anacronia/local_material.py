@@ -37,6 +37,7 @@ class LocalImageAsset:
     thumb_path: Path
     imported: bool
     source_file_path: str = ""
+    source_metadata: dict[str, object] | None = None
 
 
 @dataclass(frozen=True)
@@ -147,10 +148,11 @@ def record_local_image_asset(
           thumb_path,
           imported,
           source_file_path,
+          source_metadata_json,
           active,
           deleted_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(provider, object_id, source_image_url) DO UPDATE SET
           image_role = excluded.image_role,
           image_index = excluded.image_index,
@@ -161,6 +163,7 @@ def record_local_image_asset(
           thumb_path = excluded.thumb_path,
           imported = excluded.imported,
           source_file_path = excluded.source_file_path,
+          source_metadata_json = excluded.source_metadata_json,
           active = 1,
           deleted_at = NULL
         """,
@@ -177,6 +180,7 @@ def record_local_image_asset(
             str(image_asset.thumb_path),
             int(image_asset.imported),
             image_asset.source_file_path,
+            json.dumps(image_asset.source_metadata or {}, sort_keys=True),
             1,
             None,
         ),
@@ -413,6 +417,7 @@ def ensure_local_material_schema(connection: sqlite3.Connection) -> None:
           thumb_path TEXT NOT NULL,
           imported INTEGER NOT NULL,
           source_file_path TEXT NOT NULL DEFAULT '',
+          source_metadata_json TEXT NOT NULL DEFAULT '{}',
           active INTEGER NOT NULL DEFAULT 1,
           deleted_at TEXT,
           UNIQUE (provider, object_id, source_image_url)
@@ -427,6 +432,7 @@ def ensure_local_material_schema(connection: sqlite3.Connection) -> None:
             "active": "INTEGER NOT NULL DEFAULT 1",
             "deleted_at": "TEXT",
             "source_file_path": "TEXT NOT NULL DEFAULT ''",
+            "source_metadata_json": "TEXT NOT NULL DEFAULT '{}'",
         },
     )
     connection.execute(

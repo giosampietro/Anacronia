@@ -391,6 +391,7 @@ def serialize_collection_object_image(image: CollectionObjectImage) -> dict[str,
             if image.source_file_path.strip()
             else None
         ),
+        "sensitive_image": image.sensitive_image,
         "image_role": image.image_role,
         "image_index": image.image_index,
         "original_width": image.original_width,

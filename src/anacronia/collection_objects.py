@@ -60,6 +60,7 @@ class CollectionObjectImage:
     image_asset_id: int
     source_image_url: str
     source_file_path: str
+    sensitive_image: bool | None
     image_role: str
     image_index: int | None
     original_width: int
@@ -316,6 +317,18 @@ def load_raw_record(raw_record_path: str) -> dict[str, object]:
     if not isinstance(data, dict):
         return {}
     return data
+
+
+def source_metadata_bool(source_metadata_json: str, key: str) -> bool | None:
+    try:
+        metadata = json.loads(source_metadata_json)
+    except json.JSONDecodeError:
+        return None
+
+    if not isinstance(metadata, dict):
+        return None
+    value = metadata.get(key)
+    return value if isinstance(value, bool) else None
 
 
 def normalized_local_query(query_text: str) -> str:
@@ -1203,6 +1216,7 @@ def get_collection_object_detail(
               image_assets.image_index,
               image_assets.original_width,
               image_assets.original_height,
+              image_assets.source_metadata_json,
               EXISTS (
                 SELECT 1
                 FROM image_asset_favorites
@@ -1346,11 +1360,12 @@ def get_collection_object_detail(
                 image_asset_id=int(row[0]),
                 source_image_url=row[1],
                 source_file_path=row[2],
+                sensitive_image=source_metadata_bool(row[7], "sensitive_image"),
                 image_role=row[3],
                 image_index=row[4],
                 original_width=int(row[5]),
                 original_height=int(row[6]),
-                is_favorite=bool(row[7]),
+                is_favorite=bool(row[8]),
             )
             for row in image_rows
         ],
@@ -1432,6 +1447,7 @@ def get_library_object_detail(
               image_assets.image_index,
               image_assets.original_width,
               image_assets.original_height,
+              image_assets.source_metadata_json,
               EXISTS (
                 SELECT 1
                 FROM image_asset_favorites
@@ -1555,11 +1571,12 @@ def get_library_object_detail(
                 image_asset_id=int(row[0]),
                 source_image_url=row[1],
                 source_file_path=row[2],
+                sensitive_image=source_metadata_bool(row[7], "sensitive_image"),
                 image_role=row[3],
                 image_index=row[4],
                 original_width=int(row[5]),
                 original_height=int(row[6]),
-                is_favorite=bool(row[7]),
+                is_favorite=bool(row[8]),
             )
             for row in image_rows
         ],
