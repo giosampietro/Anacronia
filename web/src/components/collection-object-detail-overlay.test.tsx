@@ -17,7 +17,7 @@ function createDetail(
   const detail: CollectionObjectDetail = {
     object: {
       provider: "met",
-      object_id: 40,
+      object_id: "40",
       title: "Coiled Snake Bowl",
       object_name: "Bowl",
       artist_display_name: "Known maker",
@@ -43,6 +43,7 @@ function createDetail(
         image_asset_id: 7,
         source_image_url: "https://images.metmuseum.org/40-primary.jpg",
         source_file_url: null,
+        sensitive_image: null,
         image_role: "primary",
         image_index: null,
         original_width: 1600,
@@ -55,6 +56,7 @@ function createDetail(
         image_asset_id: 8,
         source_image_url: "https://images.metmuseum.org/40-detail-a.jpg",
         source_file_url: null,
+        sensitive_image: null,
         image_role: "additional",
         image_index: 1,
         original_width: 1600,
@@ -194,6 +196,7 @@ describe("CollectionObjectDetailOverlay", () => {
               source_image_url:
                 "https://framemark.vam.ac.uk/collections/2006AL3614/full/full/0/default.jpg",
               source_file_url: null,
+              sensitive_image: true,
               image_role: "primary",
               image_index: null,
               original_width: 2500,
@@ -210,6 +213,8 @@ describe("CollectionObjectDetailOverlay", () => {
 
     expect(html).toContain("V&amp;A");
     expect(html).toContain("Not checked");
+    expect(html).toContain("Sensitive image");
+    expect(html).toContain(">Yes</dd>");
     expect(html).not.toContain("<dd>No</dd>");
   });
 
@@ -236,6 +241,7 @@ describe("CollectionObjectDetailOverlay", () => {
               source_image_url:
                 "local-folder:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
               source_file_url: null,
+              sensitive_image: null,
               image_role: "primary",
               image_index: null,
               original_width: 640,
@@ -284,6 +290,7 @@ describe("CollectionObjectDetailOverlay", () => {
               source_image_url:
                 "local-folder:sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
               source_file_url: "/image-assets/11/source",
+              sensitive_image: null,
               image_role: "primary",
               image_index: null,
               original_width: 640,
