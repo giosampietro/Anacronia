@@ -399,13 +399,104 @@ def test_export_skips_assets_with_missing_derivatives_and_writes_warnings(tmp_pa
     assert result.row_count == 1
     assert result.skipped_image_asset_count == 1
     assert result.skipped_image_assets[0].reason == "missing_thumb_derivative"
-    warnings = json.loads((result.export_path / "export-warnings.json").read_text(encoding="utf-8"))
+    warnings = json.loads(
+        (result.export_path / "export-warnings.json").read_text(encoding="utf-8")
+    )
     assert warnings["skipped_image_assets"][0]["reason"] == "missing_thumb_derivative"
     rows = [
         json.loads(line)
         for line in (result.export_path / "manifest.jsonl").read_text(encoding="utf-8").splitlines()
     ]
     assert rows[0]["image_asset"]["source_image_url"] == "https://images.metmuseum.org/40-detail-a.jpg"
+
+
+def test_export_skips_assets_with_corrupt_derivatives_and_writes_warnings(tmp_path):
+    storage = build_exportable_collection(tmp_path)
+    corrupt_standard = next(
+        storage.data_root.glob("met/images/*/40/primary-standard-1024.jpg")
+    )
+    corrupt_standard.write_bytes(b"not a valid jpeg")
+
+    result = export_collection(
+        database_path=storage.database_path,
+        data_root=storage.data_root,
+        search_set_slug="snake-study",
+        export_format="jsonl",
+        timestamp="260530-1234Z",
+    )
+
+    assert result.row_count == 1
+    assert result.skipped_image_asset_count == 1
+    assert result.skipped_image_assets[0].reason == "invalid_derivative"
+    warnings = json.loads(
+        (result.export_path / "export-warnings.json").read_text(encoding="utf-8")
+    )
+    assert warnings["skipped_image_assets"][0]["reason"] == "invalid_derivative"
+    rows = [
+        json.loads(line)
+        for line in (result.export_path / "manifest.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert rows[0]["image_asset"]["source_image_url"] == "https://images.metmuseum.org/40-detail-a.jpg"
+
+
+def test_csv_export_skips_assets_with_wrong_size_derivatives_and_writes_warnings(tmp_path):
+    storage = build_exportable_collection(tmp_path)
+    wrong_size_thumb = next(
+        storage.data_root.glob("met/images/*/40/primary-thumb-256.jpg")
+    )
+    write_export_test_image(wrong_size_thumb, size=(64, 32))
+
+    result = export_collection(
+        database_path=storage.database_path,
+        data_root=storage.data_root,
+        search_set_slug="snake-study",
+        export_format="csv",
+        timestamp="260530-1234Z",
+    )
+
+    assert result.row_count == 1
+    assert result.skipped_image_asset_count == 1
+    assert result.skipped_image_assets[0].reason == "invalid_derivative"
+    warnings = json.loads(
+        (result.export_path / "export-warnings.json").read_text(encoding="utf-8")
+    )
+    assert warnings["skipped_image_assets"][0]["reason"] == "invalid_derivative"
+    with (result.export_path / "metadata.csv").open(encoding="utf-8", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    assert [row["source_image_url"] for row in rows] == [
+        "https://images.metmuseum.org/40-detail-a.jpg"
+    ]
+
+
+def test_package_export_skips_invalid_derivatives_without_copying_them(tmp_path):
+    storage = build_exportable_collection(tmp_path)
+    corrupt_thumb = next(
+        storage.data_root.glob("met/images/*/40/primary-thumb-256.jpg")
+    )
+    corrupt_thumb.write_bytes(b"not a valid jpeg")
+
+    result = export_collection(
+        database_path=storage.database_path,
+        data_root=storage.data_root,
+        search_set_slug="snake-study",
+        export_format="package",
+        timestamp="260530-1234Z",
+    )
+
+    assert result.row_count == 1
+    assert result.skipped_image_asset_count == 1
+    assert result.skipped_image_assets[0].reason == "invalid_derivative"
+    warnings = json.loads((result.export_path / "export-warnings.json").read_text(encoding="utf-8"))
+    assert warnings["skipped_image_assets"][0]["reason"] == "invalid_derivative"
+    rows = [
+        json.loads(line)
+        for line in (result.export_path / "manifest.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert [row["image_asset"]["source_image_url"] for row in rows] == [
+        "https://images.metmuseum.org/40-detail-a.jpg"
+    ]
+    assert len(list((result.export_path / "images" / "standard-1024").glob("*.jpg"))) == 1
+    assert len(list((result.export_path / "images" / "thumb-256").glob("*.jpg"))) == 1
 
 
 def test_export_raises_without_creating_empty_files_when_all_derivatives_are_missing(tmp_path):

@@ -11,12 +11,20 @@ from typing import Literal
 
 from anacronia.collection_runs import ensure_collection_run_schema
 from anacronia.curation import ensure_collection_memberships
+from anacronia.image_pipeline import (
+    ImageDerivativeSettings,
+    STANDARD_1024_SETTINGS,
+    THUMB_256_SETTINGS,
+    validate_image_derivative,
+)
 from anacronia.local_folder_import import LOCAL_FOLDER_PROVIDER
 from anacronia.met_ingest import ensure_met_ingest_schema
 from anacronia.provider_identity import SourceObjectId, normalize_source_object_id
 
 
 ExportFormat = Literal["jsonl", "csv", "package"]
+EXPORT_STANDARD_SETTINGS = ImageDerivativeSettings(**STANDARD_1024_SETTINGS)
+EXPORT_THUMB_SETTINGS = ImageDerivativeSettings(**THUMB_256_SETTINGS)
 
 
 @dataclass(frozen=True)
@@ -580,13 +588,21 @@ def missing_derivative_reason(image_asset: ExportImageAsset) -> str | None:
     standard_exists = image_asset.standard_path.is_file()
     thumb_exists = image_asset.thumb_path.is_file()
 
-    if standard_exists and thumb_exists:
-        return None
     if not standard_exists and not thumb_exists:
         return "missing_standard_and_thumb_derivatives"
     if not standard_exists:
         return "missing_standard_derivative"
-    return "missing_thumb_derivative"
+    if not thumb_exists:
+        return "missing_thumb_derivative"
+    if not validate_image_derivative(
+        path=image_asset.standard_path,
+        settings=EXPORT_STANDARD_SETTINGS,
+    ) or not validate_image_derivative(
+        path=image_asset.thumb_path,
+        settings=EXPORT_THUMB_SETTINGS,
+    ):
+        return "invalid_derivative"
+    return None
 
 
 def export_source_image_url(image_asset: ExportImageAsset) -> str:
