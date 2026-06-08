@@ -537,8 +537,13 @@ def build_export_rows(
                     "image_asset_id": image_asset.image_asset_id,
                     "provider": image_asset.provider,
                     "object_id": image_asset.object_id,
+                    "source_type": export_source_type(image_asset),
+                    "source_identity": export_source_identity(image_asset),
+                    "source_object_identity": export_source_object_identity(image_asset),
                     "source_image_url": export_source_image_url(image_asset),
                     "source_image_identity": export_source_image_identity(image_asset),
+                    "source_system_number": export_source_system_number(image_asset),
+                    "source_iiif_image_url": export_source_iiif_image_url(image_asset),
                     "image_role": image_asset.image_role,
                     "image_index": image_asset.image_index,
                     "original_width": image_asset.original_width,
@@ -611,8 +616,40 @@ def export_source_image_url(image_asset: ExportImageAsset) -> str:
     return image_asset.source_image_url
 
 
+def export_source_type(image_asset: ExportImageAsset) -> str:
+    if image_asset.provider == LOCAL_FOLDER_PROVIDER:
+        return "local-folder"
+    return "online-provider"
+
+
+def export_source_identity(image_asset: ExportImageAsset) -> str:
+    if image_asset.provider == LOCAL_FOLDER_PROVIDER:
+        return export_source_image_identity(image_asset)
+    return (
+        f"{export_source_type(image_asset)}:"
+        f"{export_source_object_identity(image_asset)}:"
+        f"{image_asset.source_image_url}"
+    )
+
+
+def export_source_object_identity(image_asset: ExportImageAsset) -> str:
+    return f"{image_asset.provider}:{image_asset.object_id}"
+
+
 def export_source_image_identity(image_asset: ExportImageAsset) -> str:
     if image_asset.provider == LOCAL_FOLDER_PROVIDER:
+        return image_asset.source_image_url
+    return f"{image_asset.provider}:{image_asset.source_image_url}"
+
+
+def export_source_system_number(image_asset: ExportImageAsset) -> str:
+    if image_asset.provider == "vam":
+        return str(image_asset.object_id)
+    return ""
+
+
+def export_source_iiif_image_url(image_asset: ExportImageAsset) -> str:
+    if image_asset.provider == "vam":
         return image_asset.source_image_url
     return ""
 
@@ -806,11 +843,16 @@ def write_csv_metadata(*, path: Path, rows: list[dict[str, object]]) -> None:
     columns = [
         "collection_slug",
         "collection_title",
+        "source_type",
+        "source_identity",
+        "source_object_identity",
+        "source_image_identity",
+        "source_system_number",
+        "source_iiif_image_url",
         "provider",
         "object_id",
         "image_asset_id",
         "source_image_url",
-        "source_image_identity",
         "image_role",
         "image_index",
         "standard_path",
@@ -849,11 +891,16 @@ def flatten_export_row(row: dict[str, object]) -> dict[str, object]:
     return {
         "collection_slug": collection["slug"],
         "collection_title": collection["title"],
+        "source_type": image_asset["source_type"],
+        "source_identity": image_asset["source_identity"],
+        "source_object_identity": image_asset["source_object_identity"],
+        "source_image_identity": image_asset["source_image_identity"],
+        "source_system_number": image_asset["source_system_number"],
+        "source_iiif_image_url": image_asset["source_iiif_image_url"],
         "provider": image_asset["provider"],
         "object_id": image_asset["object_id"],
         "image_asset_id": image_asset["image_asset_id"],
         "source_image_url": image_asset["source_image_url"],
-        "source_image_identity": image_asset["source_image_identity"],
         "image_role": image_asset["image_role"],
         "image_index": "" if image_asset["image_index"] is None else image_asset["image_index"],
         "standard_path": image_asset["standard_path"],

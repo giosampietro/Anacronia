@@ -5,7 +5,10 @@ import sqlite3
 import pytest
 from PIL import Image
 
-from anacronia.collection_runs import discover_met_candidates
+from anacronia.collection_runs import (
+    discover_met_candidates,
+    discover_provider_candidates,
+)
 from anacronia.exports import (
     NoExportableAssetsError,
     export_collection,
@@ -15,8 +18,14 @@ from anacronia.local_folder_import import create_local_folder_collection
 from anacronia.met_ingest import ingest_met_run
 from anacronia.search_sets import create_or_continue_search_set
 from anacronia.storage import initialize_storage
+from anacronia.vam_adapter import ingest_vam_run
 
 from tests.test_met_ingest import ppm_image_bytes
+from tests.test_vam_adapter import (
+    FakeVamCandidateClient,
+    FakeVamRecordClient,
+    ppm_image_bytes as vam_ppm_image_bytes,
+)
 
 
 def write_export_test_image(path, *, size=(640, 320)):
@@ -60,6 +69,7 @@ def build_exportable_collection(tmp_path):
         database_path=storage.database_path,
         display_name="Snake Study",
         terms_text="snake",
+        provider="met",
     )
     run = discover_met_candidates(
         database_path=storage.database_path,
@@ -74,6 +84,35 @@ def build_exportable_collection(tmp_path):
         run_id=run.run_id,
         met_client=ExportRecordClient(),
         download_image_bytes=lambda _url: ppm_image_bytes(width=1600, height=800),
+    )
+    return storage
+
+
+def build_vam_exportable_collection(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    create_or_continue_search_set(
+        database_path=storage.database_path,
+        display_name="Bed Study",
+        terms_text="bed",
+        provider="vam",
+    )
+    run = discover_provider_candidates(
+        database_path=storage.database_path,
+        search_set_slug="bed-study",
+        provider="vam",
+        candidate_offset=0,
+        candidate_limit=1,
+        candidate_client=FakeVamCandidateClient(),
+        batch_target=2,
+    )
+    ingest_vam_run(
+        database_path=storage.database_path,
+        data_root=storage.data_root,
+        run_id=run.run_id,
+        vam_client=FakeVamRecordClient(),
+        download_image_bytes=lambda _url: vam_ppm_image_bytes(width=1600, height=800),
+        max_images_per_object=2,
+        batch_target=2,
     )
     return storage
 
@@ -115,8 +154,17 @@ def test_exports_collection_jsonl_rows_with_descriptors_and_semantic_text(tmp_pa
     }
     assert rows[0]["image_asset"]["provider"] == "met"
     assert rows[0]["image_asset"]["object_id"] == "40"
+    assert rows[0]["image_asset"]["source_type"] == "online-provider"
+    assert rows[0]["image_asset"]["source_identity"] == (
+        "online-provider:met:40:https://images.metmuseum.org/40-primary.jpg"
+    )
+    assert rows[0]["image_asset"]["source_object_identity"] == "met:40"
     assert rows[0]["image_asset"]["source_image_url"] == "https://images.metmuseum.org/40-primary.jpg"
-    assert rows[0]["image_asset"]["source_image_identity"] == ""
+    assert rows[0]["image_asset"]["source_image_identity"] == (
+        "met:https://images.metmuseum.org/40-primary.jpg"
+    )
+    assert rows[0]["image_asset"]["source_system_number"] == ""
+    assert rows[0]["image_asset"]["source_iiif_image_url"] == ""
     assert rows[0]["image_asset"]["standard_path"].endswith("/primary-standard-1024.jpg")
     assert rows[0]["image_asset"]["thumb_path"].endswith("/primary-thumb-256.jpg")
     assert rows[0]["image_asset"]["is_favorite"] is False
@@ -181,10 +229,18 @@ def test_exports_local_folder_without_source_url_or_rights_implication(tmp_path)
         (jsonl_result.export_path / "manifest.jsonl").read_text(encoding="utf-8")
     )
     assert manifest_row["image_asset"]["provider"] == "local-folder"
+    assert manifest_row["image_asset"]["source_type"] == "local-folder"
+    assert manifest_row["image_asset"]["source_object_identity"].startswith(
+        "local-folder:sha256-"
+    )
     assert manifest_row["image_asset"]["source_image_url"] == ""
     assert manifest_row["image_asset"]["source_image_identity"].startswith(
         "local-folder:sha256:"
     )
+    assert manifest_row["image_asset"]["source_identity"] == (
+        manifest_row["image_asset"]["source_image_identity"]
+    )
+    assert str(folder.resolve()) not in json.dumps(manifest_row)
     assert manifest_row["museum_object"]["object_url"] == ""
     assert manifest_row["museum_object"]["rights_and_reproduction"] == ""
     assert manifest_row["matches"] == []
@@ -192,8 +248,57 @@ def test_exports_local_folder_without_source_url_or_rights_implication(tmp_path)
 
     with (csv_result.export_path / "metadata.csv").open(encoding="utf-8") as handle:
         rows = list(csv.DictReader(handle))
+    assert rows[0]["source_type"] == "local-folder"
+    assert rows[0]["source_object_identity"].startswith("local-folder:sha256-")
     assert rows[0]["source_image_url"] == ""
     assert rows[0]["source_image_identity"].startswith("local-folder:sha256:")
+    assert rows[0]["source_identity"] == rows[0]["source_image_identity"]
+    assert str(folder.resolve()) not in json.dumps(rows[0])
+
+
+def test_exports_vam_package_with_source_identity_and_iiif_metadata(tmp_path):
+    storage = build_vam_exportable_collection(tmp_path)
+    iiif_image_url = (
+        "https://framemark.vam.ac.uk/collections/2006AL3614/full/full/0/default.jpg"
+    )
+
+    result = export_collection(
+        database_path=storage.database_path,
+        data_root=storage.data_root,
+        search_set_slug="bed-study",
+        export_format="package",
+        timestamp="260530-1234Z",
+    )
+
+    assert result.row_count == 2
+    manifest_rows = [
+        json.loads(line)
+        for line in (result.export_path / "manifest.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert manifest_rows[0]["image_asset"]["provider"] == "vam"
+    assert manifest_rows[0]["image_asset"]["object_id"] == "O9138"
+    assert manifest_rows[0]["image_asset"]["source_type"] == "online-provider"
+    assert manifest_rows[0]["image_asset"]["source_identity"] == (
+        f"online-provider:vam:O9138:{iiif_image_url}"
+    )
+    assert manifest_rows[0]["image_asset"]["source_object_identity"] == "vam:O9138"
+    assert manifest_rows[0]["image_asset"]["source_image_identity"] == (
+        f"vam:{iiif_image_url}"
+    )
+    assert manifest_rows[0]["image_asset"]["source_image_url"] == iiif_image_url
+    assert manifest_rows[0]["image_asset"]["source_system_number"] == "O9138"
+    assert manifest_rows[0]["image_asset"]["source_iiif_image_url"] == iiif_image_url
+
+    with (result.export_path / "metadata.csv").open(encoding="utf-8", newline="") as handle:
+        csv_rows = list(csv.DictReader(handle))
+    assert csv_rows[0]["source_type"] == "online-provider"
+    assert csv_rows[0]["source_identity"] == (
+        f"online-provider:vam:O9138:{iiif_image_url}"
+    )
+    assert csv_rows[0]["source_object_identity"] == "vam:O9138"
+    assert csv_rows[0]["source_image_identity"] == f"vam:{iiif_image_url}"
+    assert csv_rows[0]["source_system_number"] == "O9138"
+    assert csv_rows[0]["source_iiif_image_url"] == iiif_image_url
 
 
 def test_exports_selected_image_asset_jsonl_rows_only_selected_asset(tmp_path):
@@ -277,6 +382,16 @@ def test_exports_collection_csv_with_flat_stable_columns(tmp_path):
 
     assert rows[0]["collection_slug"] == "snake-study"
     assert rows[0]["collection_title"] == "Snake Study"
+    assert rows[0]["source_type"] == "online-provider"
+    assert rows[0]["source_identity"] == (
+        "online-provider:met:40:https://images.metmuseum.org/40-primary.jpg"
+    )
+    assert rows[0]["source_object_identity"] == "met:40"
+    assert rows[0]["source_image_identity"] == (
+        "met:https://images.metmuseum.org/40-primary.jpg"
+    )
+    assert rows[0]["source_system_number"] == ""
+    assert rows[0]["source_iiif_image_url"] == ""
     assert rows[0]["provider"] == "met"
     assert rows[0]["object_id"] == "40"
     assert rows[0]["source_image_url"] == "https://images.metmuseum.org/40-primary.jpg"
