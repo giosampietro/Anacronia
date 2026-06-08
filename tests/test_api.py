@@ -21,6 +21,7 @@ from anacronia.worker import (
     get_collect_job,
     mark_collect_candidate_processed,
     pause_collect_job,
+    process_running_collect_job,
     start_collect_job,
 )
 from anacronia.met_ingest import (
@@ -1133,6 +1134,72 @@ def test_api_requests_running_met_search_to_stop(tmp_path):
     assert dashboard["search_sets"][0]["provider_collections"][0]["collect_status"] == "stopping"
 
 
+def test_api_stopping_search_blocks_start_and_resume_until_safe_stop(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            met_candidate_client=FakeMetCandidateClient(),
+            met_record_client=FakeMetRecordClient(),
+        )
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Snake Studies", "terms_text": "snake", "provider": "met"},
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Third Study", "terms_text": "snake", "provider": "met"},
+    )
+    paused_response = client.post(
+        "/search-sets/snake-studies/provider-collections/met/collects",
+        json={"batch_target": 100},
+    )
+    pause_collect_job(
+        database_path=storage.database_path,
+        job_id=paused_response.json()["collect_job_id"],
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Other Study", "terms_text": "snake", "provider": "met"},
+    )
+    stopping_response = client.post(
+        "/search-sets/other-study/provider-collections/met/collects",
+        json={"batch_target": 100},
+    )
+    client.post("/search-sets/other-study/provider-collections/met/collects/stop")
+
+    blocked_start_response = client.post(
+        "/search-sets/third-study/provider-collections/met/collects",
+        json={"batch_target": 100},
+    )
+    blocked_resume_response = client.post(
+        "/search-sets/snake-studies/provider-collections/met/collects/resume",
+        json={"batch_target": 100},
+    )
+
+    assert get_collect_job(
+        database_path=storage.database_path,
+        job_id=stopping_response.json()["collect_job_id"],
+    ).status == "stopping"
+    assert blocked_start_response.status_code == 409
+    assert blocked_start_response.json()["detail"] == "Another search is already active."
+    assert blocked_resume_response.status_code == 409
+    process_running_collect_job(
+        database_path=storage.database_path,
+        data_root=storage.data_root,
+        met_client=FakeMetRecordClient(),
+    )
+    released_start_response = client.post(
+        "/search-sets/third-study/provider-collections/met/collects",
+        json={"batch_target": 100},
+    )
+
+    assert released_start_response.status_code == 200
+    assert released_start_response.json()["status"] == "running"
+
+
 def test_api_keeps_met_searching_from_next_safe_candidate_after_completed_batch(tmp_path):
     storage = initialize_storage(project_root=tmp_path)
     met_client = FakeMetCandidateClient()
@@ -1174,6 +1241,53 @@ def test_api_keeps_met_searching_from_next_safe_candidate_after_completed_batch(
     assert second_run.candidate_offset == 1
     assert [candidate.object_id for candidate in second_run.candidates] == ["20", "30"]
     assert second_response.json()["status"] == "running"
+
+
+def test_api_rejects_keep_searching_after_provider_is_exhausted(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            met_candidate_client=FakeMetCandidateClient(),
+            met_record_client=FakeMetRecordClient(),
+            download_image_bytes=lambda _url: ppm_image_bytes(width=1600, height=800),
+        )
+    )
+    client.post(
+        "/search-sets",
+        json={"display_name": "Anaconda Studies", "terms_text": "anaconda", "provider": "met"},
+    )
+    start_response = client.post(
+        "/search-sets/anaconda-studies/provider-collections/met/collects",
+        json={"batch_target": 100},
+    )
+    process_running_collect_job(
+        database_path=storage.database_path,
+        data_root=storage.data_root,
+        met_client=FakeMetRecordClient(),
+        download_image_bytes=lambda _url: ppm_image_bytes(width=1600, height=800),
+    )
+
+    exhausted_response = client.post(
+        "/search-sets/anaconda-studies/provider-collections/met/collects",
+        json={"batch_target": 100},
+    )
+
+    assert start_response.status_code == 200
+    assert get_collect_job(
+        database_path=storage.database_path,
+        job_id=start_response.json()["collect_job_id"],
+    ).status == "no_more_results"
+    assert exhausted_response.status_code == 409
+    assert exhausted_response.json()["detail"] == (
+        "Met has no more results for this Collection."
+    )
+    dashboard = client.get("/dashboard").json()
+    assert (
+        dashboard["search_sets"][0]["provider_collections"][0]["collect_status"]
+        == "no_more_results"
+    )
 
 
 def test_api_resumes_paused_met_search_and_exposes_pause_reason(tmp_path):

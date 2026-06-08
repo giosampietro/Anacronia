@@ -311,6 +311,75 @@ def test_paused_collect_job_can_resume_to_running(tmp_path):
     assert get_worker_status(database_path=database_path).status == "running"
 
 
+def test_worker_resumes_paused_search_after_last_processed_candidate(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    from anacronia.search_sets import create_or_continue_search_set
+
+    class ThreeCandidateClient:
+        def search_object_ids(self, term: str) -> list[int]:
+            assert term == "snake"
+            return [10, 20, 30]
+
+    class TrackingRecordClient(FakeMetRecordClient):
+        def __init__(self) -> None:
+            self.fetched_object_ids: list[int] = []
+
+        def fetch_object_record(self, object_id: int) -> dict[str, object]:
+            self.fetched_object_ids.append(object_id)
+            record = super().fetch_object_record(object_id)
+            return {
+                **record,
+                "objectID": object_id,
+                "primaryImage": f"https://images.metmuseum.org/{object_id}.jpg",
+            }
+
+    create_or_continue_search_set(
+        database_path=storage.database_path,
+        display_name="Snake Studies",
+        terms_text="snake",
+    )
+    run = discover_met_candidates(
+        database_path=storage.database_path,
+        search_set_slug="snake-studies",
+        candidate_offset=0,
+        candidate_limit=3,
+        batch_target=2,
+        met_client=ThreeCandidateClient(),
+    )
+    job = start_collect_job(
+        database_path=storage.database_path,
+        run_id=run.run_id,
+        candidate_offset=run.candidate_offset,
+        candidate_limit=run.candidate_limit,
+        candidate_progress_total=run.candidate_progress_total,
+        batch_target=run.batch_target,
+        max_images_per_object=1,
+        available_disk_bytes=10_000_000,
+    )
+    mark_collect_candidate_processed(
+        database_path=storage.database_path,
+        job_id=job.job_id,
+        run_position=0,
+    )
+    pause_collect_job(database_path=storage.database_path, job_id=job.job_id)
+    resume_collect_job(database_path=storage.database_path, job_id=job.job_id)
+    record_client = TrackingRecordClient()
+
+    summary = process_running_collect_job(
+        database_path=storage.database_path,
+        data_root=storage.data_root,
+        met_client=record_client,
+        download_image_bytes=lambda _url: ppm_image_bytes(width=1600, height=800),
+    )
+
+    assert summary is not None
+    assert record_client.fetched_object_ids == [20, 30]
+    assert summary.imported_object_ids == [20, 30]
+    completed_job = get_collect_job(database_path=storage.database_path, job_id=job.job_id)
+    assert completed_job.status == "completed"
+    assert completed_job.last_processed_run_position == 2
+
+
 def test_continue_after_cancel_proposes_next_offset_after_last_processed_candidate(tmp_path):
     database_path = tmp_path / "anacronia.sqlite"
     job = start_collect_job(
