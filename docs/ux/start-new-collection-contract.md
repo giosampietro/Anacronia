@@ -10,7 +10,7 @@ Approved for PRD and issue reconciliation.
 - PRD/spec: `docs/prd/anacronia-mvp-prd.md`
 - Issues: GitHub issues #3, #4, #7, #8, #9, #10, #15, #26, #27
 - Existing UI/prototype: `web/src/app/page.tsx`, `docs/ux/` mockups and notes
-- Constraints: local-first MVP, one active search job at a time, shadcn/ui Rhea visual system, Met-only provider in MVP
+- Constraints: local-first MVP, one active search job at a time, shadcn/ui Rhea visual system, explicit Provider selection, Met and V&A available in current multi-provider work
 
 ## Contract Changes From Current Docs
 
@@ -24,14 +24,14 @@ Approved for PRD and issue reconciliation.
 
 ## Workflow Boundary
 
-- User goal: create a named Collection from explicit terms and begin searching Met for usable local image material.
+- User goal: create a named Collection from explicit terms and begin searching the selected online Provider for usable local image material.
 - Entry point: sidebar action `New Collection`.
 - Success outcome: a saved, locked Collection exists and displays imported objects/images as they arrive.
-- Out of scope: editing Collection title, editing or adding terms after start, term deactivation, local result search, deletion, adding future providers, provider-specific structured filters.
+- Out of scope: editing Collection title, editing or adding terms after start, term deactivation, local result search, deletion, adding another Provider Source to an existing Collection, providers beyond the current Met/V&A scope, provider-specific structured filters.
 
 ## Domain Language
 
-- Use: `Collection`, `Provider Source`, `Provider`, `Met`, `Start search`, `Stop search`, `Resume search`, `Keep searching`, `No more results`, `Objects`, `Images`.
+- Use: `Collection`, `Provider Source`, `Provider`, `Choose provider`, `Met`, `V&A`, `Start search`, `Stop search`, `Resume search`, `Keep searching`, `No more results`, `Objects`, `Images`.
 - Avoid in primary UI: `Search Set`, `Provider Collection`, `Run`, `Candidate`, `Candidate offset`, `Candidate limit`, `Collect`, `Import`, `Match` in buttons.
 - Internal terms can remain in code/API where needed until a safe implementation rename exists.
 
@@ -45,8 +45,8 @@ Fields and controls:
 | --- | --- |
 | Collection title | Required, user-entered, no auto-generated title. |
 | Terms textarea | Required; at least one valid term after parsing. |
-| Provider | MVP shows `Met` as selected. It is not switchable because no alternative provider exists. |
-| Batch dropdown | Values `5`, `10`, `20`, `30`, `100`, `500`, `1000`; default `100`. |
+| Provider | Required for `Online archive`. Shows `Choose provider` until selected; current choices are `Met` and `V&A`. |
+| Batch dropdown | Values `5`, `10`, `20`, `30`, `100`, `500`, `1000`; default `10`. |
 | Primary action | `Start search`. |
 
 Validation:
@@ -88,7 +88,7 @@ The compact Collection header includes:
 
 - Collection title.
 - Locked term chips, purely informational in MVP.
-- Selected provider text, currently `Met`.
+- Selected provider text, for example `Met` or `V&A`.
 - Always-visible counters: `Objects N` and `Images N`.
 - State/action area.
 
@@ -134,7 +134,7 @@ While searching:
 - Header shows spinner plus stable counters, e.g. `Objects 0`, `Images 0`, then increasing values.
 - No percentage progress.
 - No candidate count.
-- No secondary line such as `Scanning Met records`.
+- No secondary line such as `Scanning provider records`.
 - New objects appear in the grid immediately as they are downloaded, newest first.
 - New objects auto-insert at the top immediately.
 

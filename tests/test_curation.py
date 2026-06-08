@@ -966,7 +966,7 @@ def test_delete_collection_preserves_shared_material_and_other_collection_exclus
             WHERE provider = 'met' AND object_id = 40
             """
         ).fetchone()
-    assert exclusion_rows == [("bowl-study", 40)]
+    assert exclusion_rows == [("bowl-study", "40")]
     assert object_40_active == (1, None)
 
 
@@ -1435,7 +1435,7 @@ def test_delete_collection_database_failure_preserves_shared_favorite_and_exclus
             ORDER BY search_sets.slug, collection_object_exclusions.object_id
             """
         ).fetchall()
-    assert exclusion_rows == [("bowl-study", 40)]
+        assert exclusion_rows == [("bowl-study", "40")]
 
 
 def test_object_exclusion_prevents_import_and_does_not_count_batch_target(tmp_path):

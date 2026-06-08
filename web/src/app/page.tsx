@@ -46,7 +46,15 @@ import { readAppVersionStamp } from "@/lib/app-version";
 import {
   getActionFormDataString,
   getActionFormDataValue,
+  getActionFormDataValues,
+  getRequiredActionFormDataString,
 } from "@/lib/action-form-data";
+import {
+  isUploadedFile,
+  parseFolderUploadManifest,
+  removeUploadedLocalFolder,
+  writeUploadedLocalFolderFiles,
+} from "@/lib/local-folder-upload";
 import {
   COLLECT_STATE_CHANGED_NOTICE,
   canStartCollect,
@@ -344,11 +352,13 @@ async function getCollectionObjectDetail(
   apiPort: number,
   slug: string,
   provider: string,
-  objectId: number,
+  objectId: string,
 ): Promise<CollectionObjectDetail | null> {
   try {
+    const encodedProvider = encodeURIComponent(provider);
+    const encodedObjectId = encodeURIComponent(objectId);
     const response = await fetch(
-      `http://127.0.0.1:${apiPort}/search-sets/${slug}/objects/${provider}/${objectId}`,
+      `http://127.0.0.1:${apiPort}/search-sets/${slug}/objects/${encodedProvider}/${encodedObjectId}`,
       { cache: "no-store" },
     );
 
@@ -365,11 +375,13 @@ async function getCollectionObjectDetail(
 async function getLibraryObjectDetail(
   apiPort: number,
   provider: string,
-  objectId: number,
+  objectId: string,
 ): Promise<CollectionObjectDetail | null> {
   try {
+    const encodedProvider = encodeURIComponent(provider);
+    const encodedObjectId = encodeURIComponent(objectId);
     const response = await fetch(
-      `http://127.0.0.1:${apiPort}/library/objects/${provider}/${objectId}`,
+      `http://127.0.0.1:${apiPort}/library/objects/${encodedProvider}/${encodedObjectId}`,
       { cache: "no-store" },
     );
 
@@ -431,17 +443,28 @@ function objectProviderDisplayLabel(provider: string): string {
   if (provider === "met") {
     return "Met";
   }
+  if (provider === "vam") {
+    return "V&A";
+  }
+  if (provider === "local-folder") {
+    return "Local folder";
+  }
 
   return provider.trim() || "Unknown";
 }
 
-async function createSearchSetAndCollectFromMet(formData: FormData) {
+async function createSearchSetAndCollect(formData: FormData) {
   "use server";
 
   const apiPort = getPort("ANACRONIA_API_PORT", DEFAULT_API_PORT);
   const apiBaseUrl = `http://127.0.0.1:${apiPort}`;
   const displayName = getActionFormDataString(formData, "display_name");
   const termsText = getActionFormDataString(formData, "terms_text");
+  const provider = getActionFormDataString(formData, "provider").trim();
+  if (provider === "") {
+    revalidatePath("/");
+    return;
+  }
   const batchTarget = normalizeBatchTarget(
     getActionFormDataValue(formData, "batch_target"),
   );
@@ -451,6 +474,7 @@ async function createSearchSetAndCollectFromMet(formData: FormData) {
     body: JSON.stringify({
       display_name: displayName,
       terms_text: termsText,
+      provider,
     }),
   });
 
@@ -465,7 +489,7 @@ async function createSearchSetAndCollectFromMet(formData: FormData) {
   }
 
   const searchSet = (await searchSetResponse.json()) as { slug: string };
-  const collectResponse = await fetch(`${apiBaseUrl}/search-sets/${searchSet.slug}/provider-collections/met/collects`, {
+  const collectResponse = await fetch(`${apiBaseUrl}/search-sets/${searchSet.slug}/provider-collections/${encodeURIComponent(provider)}/collects`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -484,16 +508,68 @@ async function createSearchSetAndCollectFromMet(formData: FormData) {
   redirect(`/?search_set=${searchSet.slug}`);
 }
 
-async function startMetCollect(formData: FormData) {
+async function createLocalFolderCollection(formData: FormData) {
+  "use server";
+
+  const apiPort = getPort("ANACRONIA_API_PORT", DEFAULT_API_PORT);
+  const apiBaseUrl = `http://127.0.0.1:${apiPort}`;
+  const displayName = getActionFormDataString(formData, "display_name");
+  const uploadedFiles = getActionFormDataValues(formData, "folder_files")
+    .filter(isUploadedFile)
+    .filter((file) => file.name.trim() !== "");
+  const uploadManifest = parseFolderUploadManifest(
+    getActionFormDataString(formData, "folder_upload_manifest"),
+  );
+  const uploadedFolderPath = uploadedFiles.length > 0
+    ? await writeUploadedLocalFolderFiles(uploadedFiles, uploadManifest)
+    : null;
+  const folderPath = uploadedFolderPath ?? getActionFormDataString(formData, "folder_path");
+  let response: Response;
+  try {
+    response = await fetch(`${apiBaseUrl}/local-folder-collections`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        display_name: displayName,
+        folder_path: folderPath,
+        store_source_file_links: uploadedFolderPath === null,
+      }),
+    });
+  } finally {
+    if (uploadedFolderPath !== null) {
+      await removeUploadedLocalFolder(uploadedFolderPath);
+    }
+  }
+
+  if (response.status === 409) {
+    revalidatePath("/");
+    redirect("/?mode=new-search-set&collection_error=duplicate_name");
+  }
+
+  revalidatePath("/");
+  if (!response.ok) {
+    return;
+  }
+
+  const summary = (await response.json()) as { search_set_slug: string };
+  redirect(`/?search_set=${summary.search_set_slug}&provider=local-folder`);
+}
+
+async function startProviderCollect(formData: FormData) {
   "use server";
 
   const apiPort = getPort("ANACRONIA_API_PORT", DEFAULT_API_PORT);
   const slug = getActionFormDataString(formData, "slug");
+  const provider = getRequiredActionFormDataString(formData, "provider");
+  if (provider === null) {
+    revalidatePath("/");
+    redirect(`/?search_set=${slug}&collect_notice=${COLLECT_STATE_CHANGED_NOTICE}`);
+  }
   const batchTarget = normalizeBatchTarget(
     getActionFormDataValue(formData, "batch_target"),
   );
 
-  const response = await fetch(`http://127.0.0.1:${apiPort}/search-sets/${slug}/provider-collections/met/collects`, {
+  const response = await fetch(`http://127.0.0.1:${apiPort}/search-sets/${slug}/provider-collections/${encodeURIComponent(provider)}/collects`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -508,16 +584,21 @@ async function startMetCollect(formData: FormData) {
   redirect(`/?search_set=${slug}`);
 }
 
-async function resumeMetCollect(formData: FormData) {
+async function resumeProviderCollect(formData: FormData) {
   "use server";
 
   const apiPort = getPort("ANACRONIA_API_PORT", DEFAULT_API_PORT);
   const slug = getActionFormDataString(formData, "slug");
+  const provider = getRequiredActionFormDataString(formData, "provider");
+  if (provider === null) {
+    revalidatePath("/");
+    redirect(`/?search_set=${slug}&collect_notice=${COLLECT_STATE_CHANGED_NOTICE}`);
+  }
   const batchTarget = normalizeBatchTarget(
     getActionFormDataValue(formData, "batch_target"),
   );
 
-  const response = await fetch(`http://127.0.0.1:${apiPort}/search-sets/${slug}/provider-collections/met/collects/resume`, {
+  const response = await fetch(`http://127.0.0.1:${apiPort}/search-sets/${slug}/provider-collections/${encodeURIComponent(provider)}/collects/resume`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -532,13 +613,18 @@ async function resumeMetCollect(formData: FormData) {
   redirect(`/?search_set=${slug}`);
 }
 
-async function stopMetCollect(formData: FormData) {
+async function stopProviderCollect(formData: FormData) {
   "use server";
 
   const apiPort = getPort("ANACRONIA_API_PORT", DEFAULT_API_PORT);
   const slug = getActionFormDataString(formData, "slug");
+  const provider = getRequiredActionFormDataString(formData, "provider");
+  if (provider === null) {
+    revalidatePath("/");
+    redirect(`/?search_set=${slug}&collect_notice=${COLLECT_STATE_CHANGED_NOTICE}`);
+  }
 
-  const response = await fetch(`http://127.0.0.1:${apiPort}/search-sets/${slug}/provider-collections/met/collects/stop`, {
+  const response = await fetch(`http://127.0.0.1:${apiPort}/search-sets/${slug}/provider-collections/${encodeURIComponent(provider)}/collects/stop`, {
     method: "POST",
   });
 
@@ -576,8 +662,9 @@ function NewSearchSetWorkspace({
   return (
     <div className="mx-auto flex max-w-4xl flex-col gap-4">
       <NewCollectionForm
-        action={createSearchSetAndCollectFromMet}
         existingCollections={existingCollections}
+        localFolderAction={createLocalFolderCollection}
+        onlineArchiveAction={createSearchSetAndCollect}
         serverError={serverError}
       />
     </div>
@@ -592,6 +679,10 @@ function isSubmittableProviderSearchAction(
   action: ProviderSearchAction,
 ): action is SubmittableProviderSearchAction {
   return action.kind === "start" || action.kind === "stop" || action.kind === "resume";
+}
+
+function isOnlineProvider(provider: string): boolean {
+  return provider === "met" || provider === "vam";
 }
 
 function ProviderSourceHeaderControls({
@@ -614,9 +705,10 @@ function ProviderSourceHeaderControls({
         }}
         actionAvailable={collectAvailable}
         batchTarget={DEFAULT_BATCH_TARGET}
-        formAction={startMetCollect}
+        formAction={startProviderCollect}
         idPrefix={`${searchSet.slug}_met`}
         inline
+        provider="met"
         searchSetSlug={searchSet.slug}
       />
     );
@@ -625,6 +717,9 @@ function ProviderSourceHeaderControls({
   return (
     <>
       {providerCollections.map((providerCollection) => {
+        if (!isOnlineProvider(providerCollection.provider)) {
+          return null;
+        }
         const action = providerSearchAction(providerCollection.status);
         const submittableAction = isSubmittableProviderSearchAction(action) ? action : null;
         const actionAvailable =
@@ -635,10 +730,10 @@ function ProviderSourceHeaderControls({
           });
         const formAction =
           submittableAction?.kind === "resume"
-            ? resumeMetCollect
+            ? resumeProviderCollect
             : submittableAction?.kind === "stop"
-              ? stopMetCollect
-              : startMetCollect;
+              ? stopProviderCollect
+              : startProviderCollect;
 
         if (submittableAction === null) {
           return null;
@@ -653,6 +748,7 @@ function ProviderSourceHeaderControls({
             idPrefix={`${searchSet.slug}_${providerCollection.provider}`}
             inline
             key={`${searchSet.slug}-${providerCollection.provider}`}
+            provider={providerCollection.provider}
             searchSetSlug={searchSet.slug}
           />
         );
@@ -681,13 +777,12 @@ export default async function Home({ searchParams }: HomeProps) {
   const requestedGridViewMode = getFirstParam(resolvedSearchParams?.view);
   const activeSearchSetSlug = getFirstParam(resolvedSearchParams?.search_set);
   const legacyObjectProvider = getFirstParam(resolvedSearchParams?.object_provider);
-  const legacyObjectId = Number.parseInt(
-    getFirstParam(resolvedSearchParams?.object_id) ?? "",
-    10,
-  );
+  const legacyObjectId = getFirstParam(resolvedSearchParams?.object_id)?.trim();
   const selectedObjectRoute =
     parseObjectRouteKey(getFirstParam(resolvedSearchParams?.object)) ??
-    (legacyObjectProvider !== undefined && Number.isFinite(legacyObjectId)
+    (legacyObjectProvider !== undefined &&
+    legacyObjectId !== undefined &&
+    legacyObjectId !== ""
       ? { objectId: legacyObjectId, provider: legacyObjectProvider }
       : null);
   const selectedImageAssetId = Number.parseInt(

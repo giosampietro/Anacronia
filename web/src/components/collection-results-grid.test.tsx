@@ -17,7 +17,7 @@ vi.mock("next/navigation", () => ({
 const objects: CollectionObjectSummary[] = [
   {
     provider: "met",
-    object_id: 40,
+    object_id: "40",
     title: "Coiled Snake Bowl",
     object_name: "Bowl",
     artist_display_name: "Unknown maker",
@@ -35,7 +35,7 @@ const imageAssets: LibraryImageAssetSummary[] = [
   {
     image_asset_id: 9,
     provider: "met",
-    object_id: 40,
+    object_id: "40",
     title: "Coiled Snake Bowl",
     object_name: "Bowl",
     artist_display_name: "Unknown maker",
@@ -53,7 +53,7 @@ const imageAssets: LibraryImageAssetSummary[] = [
   {
     image_asset_id: 8,
     provider: "met",
-    object_id: 40,
+    object_id: "40",
     title: "Coiled Snake Bowl",
     object_name: "Bowl",
     artist_display_name: "Unknown maker",

@@ -72,6 +72,12 @@ function providerLabel(provider: string): string {
   if (provider === "met") {
     return "Met";
   }
+  if (provider === "vam") {
+    return "V&A";
+  }
+  if (provider === "local-folder") {
+    return "Local folder";
+  }
 
   return provider.trim() || "Unknown";
 }
@@ -82,6 +88,10 @@ function presentValue(value: string | number | null | undefined): string {
 }
 
 function rightsStatement(object: CollectionObjectDetail["object"]): string {
+  if (object.provider === "local-folder") {
+    return "Private local material";
+  }
+
   if (object.rights_and_reproduction.trim() !== "") {
     return object.rights_and_reproduction;
   }
@@ -91,6 +101,32 @@ function rightsStatement(object: CollectionObjectDetail["object"]): string {
   }
 
   return "No rights statement provided.";
+}
+
+function publicDomainStatus(object: CollectionObjectDetail["object"]): string {
+  if (object.provider === "vam" || object.provider === "local-folder") {
+    return "Not checked";
+  }
+
+  return object.is_public_domain ? "Yes" : "No";
+}
+
+function isLocalFolderObject(object: CollectionObjectDetail["object"]): boolean {
+  return object.provider === "local-folder";
+}
+
+function isExternalSourceUrl(value: string): boolean {
+  return value.startsWith("http://") || value.startsWith("https://");
+}
+
+function sourceFileHref(
+  apiBaseUrl: string,
+  image: CollectionObjectImage | undefined,
+): string | null {
+  if (!image?.source_file_url) {
+    return null;
+  }
+  return imageUrl(apiBaseUrl, image.source_file_url);
 }
 
 function imageReferenceLabel(image: CollectionObjectImage, index: number): string {
@@ -167,17 +203,24 @@ function createProviderMetadataSections(
   detail: CollectionObjectDetail,
   displayRightsStatement: string,
 ): ProviderMetadataSection[] {
+  const identityFields: MetadataField[] = [
+    { label: "Provider", value: providerLabel(detail.object.provider) },
+    { label: "Title", value: detail.object.title },
+    { label: "Object name", value: detail.object.object_name },
+    { label: "Accession", value: detail.object.accession_number },
+    { label: "Repository", value: detail.object.repository },
+  ];
+  if (!isLocalFolderObject(detail.object)) {
+    identityFields.splice(1, 0, {
+      label: "Object ID",
+      value: detail.object.object_id,
+    });
+  }
+
   return [
     {
       title: "Identity",
-      fields: [
-        { label: "Provider", value: providerLabel(detail.object.provider) },
-        { label: "Object ID", value: detail.object.object_id },
-        { label: "Title", value: detail.object.title },
-        { label: "Object name", value: detail.object.object_name },
-        { label: "Accession", value: detail.object.accession_number },
-        { label: "Repository", value: detail.object.repository },
-      ],
+      fields: identityFields,
     },
     {
       title: "Catalog description",
@@ -199,7 +242,7 @@ function createProviderMetadataSections(
         { label: "Rights", value: displayRightsStatement },
         {
           label: "Public domain",
-          value: detail.object.is_public_domain ? "Yes" : "No",
+          value: publicDomainStatus(detail.object),
         },
         { label: "Metadata date", value: detail.object.metadata_date },
         { label: "Provider URL", value: detail.object.object_url },
@@ -209,9 +252,11 @@ function createProviderMetadataSections(
 }
 
 function ProviderMetadata({
+  apiBaseUrl,
   detail,
   displayRightsStatement,
 }: {
+  apiBaseUrl: string;
   detail: CollectionObjectDetail;
   displayRightsStatement: string;
 }) {
@@ -256,7 +301,23 @@ function ProviderMetadata({
               <dt className="text-xs font-medium uppercase tracking-normal text-muted-foreground">
                 {imageReferenceLabel(image, index)}
               </dt>
-              <dd className="break-all text-sm">{image.source_image_url}</dd>
+              <dd className="break-all text-sm">
+                {sourceFileHref(apiBaseUrl, image) !== null ? (
+                  <a
+                    className="inline-flex items-center gap-2 text-foreground underline-offset-4 hover:underline"
+                    href={sourceFileHref(apiBaseUrl, image) ?? undefined}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    <ExternalLink data-icon="inline-start" />
+                    Open original file
+                  </a>
+                ) : isExternalSourceUrl(image.source_image_url) ? (
+                  image.source_image_url
+                ) : (
+                  "Private local image"
+                )}
+              </dd>
               <dd className="text-xs text-muted-foreground">
                 {image.original_width} x {image.original_height}
               </dd>
@@ -270,7 +331,11 @@ function ProviderMetadata({
               <dt className="text-xs font-medium uppercase tracking-normal text-muted-foreground">
                 Skipped image {index + 1}
               </dt>
-              <dd className="break-all text-sm">{image.source_image_url}</dd>
+              <dd className="break-all text-sm">
+                {isExternalSourceUrl(image.source_image_url)
+                  ? image.source_image_url
+                  : "Private local image"}
+              </dd>
               <dd className="text-xs text-muted-foreground">
                 {presentValue(image.reason)}
               </dd>
@@ -344,43 +409,58 @@ function ActiveImageCard({
   if (!activeImage) {
     return null;
   }
+  const activeImageFields: MetadataField[] = [
+    { label: "Image Asset ID", value: activeImage.image_asset_id },
+    { label: "Image number", value: activeImageIndex + 1 },
+    { label: "Role", value: imageRoleLabel(activeImage) },
+    {
+      label: "Provider index",
+      value: activeImage.image_index === null ? "Primary" : activeImage.image_index,
+    },
+    {
+      label: "Dimensions",
+      value:
+        activeImage.original_width > 0 && activeImage.original_height > 0
+          ? `${activeImage.original_width} x ${activeImage.original_height}`
+          : "Unknown",
+    },
+  ];
+  if (isExternalSourceUrl(activeImage.source_image_url)) {
+    activeImageFields.push({
+      label: "Source image URL",
+      value: activeImage.source_image_url,
+    });
+  }
+  if (activeImage.sensitive_image !== null) {
+    activeImageFields.push({
+      label: "Sensitive image",
+      value: activeImage.sensitive_image ? "Yes" : "No",
+    });
+  }
 
   return (
     <DetailCard icon={<ImageIcon className="size-4" />} title="Active image">
-      <MetadataGrid
-        fields={[
-          { label: "Image Asset ID", value: activeImage.image_asset_id },
-          { label: "Image number", value: activeImageIndex + 1 },
-          { label: "Role", value: imageRoleLabel(activeImage) },
-          {
-            label: "Provider index",
-            value: activeImage.image_index === null ? "Primary" : activeImage.image_index,
-          },
-          {
-            label: "Dimensions",
-            value:
-              activeImage.original_width > 0 && activeImage.original_height > 0
-                ? `${activeImage.original_width} x ${activeImage.original_height}`
-                : "Unknown",
-          },
-          { label: "Source image URL", value: activeImage.source_image_url },
-        ]}
-      />
+      <MetadataGrid fields={activeImageFields} />
     </DetailCard>
   );
 }
 
 function ProviderRecordCard({ detail }: { detail: CollectionObjectDetail }) {
+  const providerRecordFields: MetadataField[] = [
+    { label: "Provider", value: providerLabel(detail.object.provider) },
+    { label: "Metadata date", value: detail.object.metadata_date },
+    { label: "Repository", value: detail.object.repository },
+  ];
+  if (!isLocalFolderObject(detail.object)) {
+    providerRecordFields.splice(1, 0, {
+      label: "Object ID",
+      value: detail.object.object_id,
+    });
+  }
+
   return (
     <DetailCard icon={<ExternalLink className="size-4" />} title="Provider record">
-      <MetadataGrid
-        fields={[
-          { label: "Provider", value: providerLabel(detail.object.provider) },
-          { label: "Object ID", value: detail.object.object_id },
-          { label: "Metadata date", value: detail.object.metadata_date },
-          { label: "Repository", value: detail.object.repository },
-        ]}
-      />
+      <MetadataGrid fields={providerRecordFields} />
     </DetailCard>
   );
 }
@@ -428,9 +508,11 @@ function RightsCard({
 }
 
 function MatchDisclosure({
+  apiBaseUrl,
   detail,
   displayRightsStatement,
 }: {
+  apiBaseUrl: string;
   detail: CollectionObjectDetail;
   displayRightsStatement: string;
 }) {
@@ -487,6 +569,7 @@ function MatchDisclosure({
 
         <Separator />
         <ProviderMetadata
+          apiBaseUrl={apiBaseUrl}
           detail={detail}
           displayRightsStatement={displayRightsStatement}
         />
@@ -670,6 +753,7 @@ export function CollectionObjectDetailOverlay({
   const displayRightsStatement = rightsStatement(detail.object);
   const actionNoun = detailKind === "image" ? "image" : "object";
   const activeFavorite = detailKind === "image" ? activeImageFavorite : objectFavorite;
+  const activeImageSourceFileHref = sourceFileHref(apiBaseUrl, activeImage);
 
   const closeOverlay = useCallback(() => {
     document.getElementById(returnFocusId)?.focus();
@@ -926,7 +1010,18 @@ export function CollectionObjectDetailOverlay({
                 Open provider record
               </a>
             ) : null}
-            {activeImage?.source_image_url ? (
+            {activeImageSourceFileHref !== null ? (
+              <a
+                className={topActionClassName}
+                href={activeImageSourceFileHref}
+                rel="noreferrer"
+                target="_blank"
+              >
+                <ImageIcon data-icon="inline-start" />
+                Original file
+              </a>
+            ) : activeImage?.source_image_url &&
+              isExternalSourceUrl(activeImage.source_image_url) ? (
               <a
                 className={topActionClassName}
                 href={activeImage.source_image_url}
@@ -1015,6 +1110,7 @@ export function CollectionObjectDetailOverlay({
           </div>
 
           <MatchDisclosure
+            apiBaseUrl={apiBaseUrl}
             detail={detail}
             displayRightsStatement={displayRightsStatement}
           />

@@ -97,7 +97,7 @@ describe("selected collection export request", () => {
     expect(
       createSelectedCollectionExportRequest({
         format: "jsonl",
-        selectedIds: ["object:met:40", "object:va:100", "image:9"],
+        selectedIds: ["object:met:40", "object:vam:O9138", "image:9"],
         viewMode: "objects",
       }),
     ).toEqual({
@@ -105,8 +105,8 @@ describe("selected collection export request", () => {
       selection: {
         image_asset_ids: [],
         objects: [
-          { provider: "met", object_id: 40 },
-          { provider: "va", object_id: 100 },
+          { provider: "met", object_id: "40" },
+          { provider: "vam", object_id: "O9138" },
         ],
       },
     });

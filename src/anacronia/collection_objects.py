@@ -5,14 +5,21 @@ import sqlite3
 
 from anacronia.collection_runs import ensure_collection_run_schema
 from anacronia.curation import ensure_collection_memberships
+from anacronia.local_material import ensure_local_material_schema
 from anacronia.met_ingest import ensure_met_ingest_schema
+from anacronia.provider_identity import (
+    ProviderObjectIdValue,
+    SourceObjectId,
+    normalize_source_object_id,
+    provider_object_id_value,
+)
 from anacronia.search_sets import normalize_search_term
 
 
 @dataclass(frozen=True)
 class CollectionObjectSummary:
     provider: str
-    object_id: int
+    object_id: ProviderObjectIdValue
     title: str
     object_name: str
     artist_display_name: str
@@ -26,7 +33,7 @@ class CollectionObjectSummary:
 @dataclass(frozen=True)
 class CollectionObjectMetadata:
     provider: str
-    object_id: int
+    object_id: ProviderObjectIdValue
     title: str
     object_name: str
     artist_display_name: str
@@ -52,6 +59,8 @@ class CollectionObjectMetadata:
 class CollectionObjectImage:
     image_asset_id: int
     source_image_url: str
+    source_file_path: str
+    sensitive_image: bool | None
     image_role: str
     image_index: int | None
     original_width: int
@@ -83,7 +92,7 @@ class LibraryImageAssetCollection:
 @dataclass(frozen=True)
 class LibraryObjectSummary:
     provider: str
-    object_id: int
+    object_id: ProviderObjectIdValue
     title: str
     object_name: str
     artist_display_name: str
@@ -99,7 +108,7 @@ class LibraryObjectSummary:
 class LibraryImageAssetSummary:
     image_asset_id: int
     provider: str
-    object_id: int
+    object_id: ProviderObjectIdValue
     title: str
     object_name: str
     artist_display_name: str
@@ -177,6 +186,128 @@ def raw_tags(record: dict[str, object]) -> list[str]:
     return values
 
 
+def provider_raw_string(
+    *,
+    provider: str,
+    record: dict[str, object],
+    key: str,
+) -> str:
+    if provider == "vam":
+        return vam_raw_string(record=record, key=key)
+    return raw_string(record, key)
+
+
+def provider_raw_tags(*, provider: str, record: dict[str, object]) -> list[str]:
+    if provider == "vam":
+        return vam_raw_tags(record)
+    return raw_tags(record)
+
+
+def vam_raw_string(*, record: dict[str, object], key: str) -> str:
+    payload = vam_record_payload(record)
+    if key == "objectDate":
+        return first_nested_text(payload, ["productionDates"], ("date", "text"))
+    if key == "medium":
+        return raw_string(payload, "materialsAndTechniques") or ", ".join(
+            text_values(payload.get("materials"))
+        )
+    if key == "dimensions":
+        return vam_dimensions(payload)
+    if key == "classification":
+        return ", ".join(text_values(payload.get("categories")))
+    if key == "creditLine":
+        return raw_string(payload, "creditLine")
+    if key == "accessionNumber":
+        return raw_string(payload, "accessionNumber")
+    if key == "repository":
+        return "Victoria and Albert Museum"
+    return raw_string(payload, key)
+
+
+def vam_record_payload(record: dict[str, object]) -> dict[str, object]:
+    payload = record.get("record")
+    return payload if isinstance(payload, dict) else {}
+
+
+def first_nested_text(
+    payload: dict[str, object],
+    list_path: list[str],
+    key_path: tuple[str, str],
+) -> str:
+    items = nested_raw_value(payload, list_path)
+    if not isinstance(items, list):
+        return ""
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        text = nested_raw_string(item, [key_path[0], key_path[1]])
+        if text:
+            return text
+    return ""
+
+
+def nested_raw_value(value: object, path: list[str]) -> object:
+    current = value
+    for path_item in path:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(path_item)
+    return current
+
+
+def nested_raw_string(value: object, path: list[str]) -> str:
+    nested = nested_raw_value(value, path)
+    return nested.strip() if isinstance(nested, str) else ""
+
+
+def text_values(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    values: list[str] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        text = item.get("text")
+        if isinstance(text, str) and text.strip():
+            values.append(text.strip())
+    return values
+
+
+def vam_dimensions(payload: dict[str, object]) -> str:
+    dimensions = payload.get("dimensions")
+    if not isinstance(dimensions, list):
+        return ""
+    values: list[str] = []
+    for dimension in dimensions:
+        if not isinstance(dimension, dict):
+            continue
+        name = raw_string(dimension, "dimension")
+        value = raw_string(dimension, "value")
+        unit = raw_string(dimension, "unit")
+        if not name or not value:
+            continue
+        values.append(" ".join(part for part in [name, value, unit] if part))
+    return "; ".join(values)
+
+
+def vam_raw_tags(record: dict[str, object]) -> list[str]:
+    payload = vam_record_payload(record)
+    seen: set[str] = set()
+    tags: list[str] = []
+    for value in (
+        text_values(payload.get("categories"))
+        + text_values(payload.get("materials"))
+        + text_values(payload.get("techniques"))
+        + text_values(payload.get("styles"))
+    ):
+        key = value.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        tags.append(value)
+    return tags
+
+
 def load_raw_record(raw_record_path: str) -> dict[str, object]:
     try:
         data = json.loads(Path(raw_record_path).read_text(encoding="utf-8"))
@@ -186,6 +317,18 @@ def load_raw_record(raw_record_path: str) -> dict[str, object]:
     if not isinstance(data, dict):
         return {}
     return data
+
+
+def source_metadata_bool(source_metadata_json: str, key: str) -> bool | None:
+    try:
+        metadata = json.loads(source_metadata_json)
+    except json.JSONDecodeError:
+        return None
+
+    if not isinstance(metadata, dict):
+        return None
+    value = metadata.get(key)
+    return value if isinstance(value, bool) else None
 
 
 def normalized_local_query(query_text: str) -> str:
@@ -360,7 +503,7 @@ def list_collection_objects(
     return [
         CollectionObjectSummary(
             provider=row[0],
-            object_id=int(row[1]),
+            object_id=provider_object_id_value(provider=row[0], value=row[1]),
             title=row[2],
             object_name=row[3],
             artist_display_name=row[4],
@@ -463,7 +606,7 @@ def list_library_image_assets(
             image_assets[image_asset_id] = LibraryImageAssetSummary(
                 image_asset_id=image_asset_id,
                 provider=row[1],
-                object_id=int(row[2]),
+                object_id=provider_object_id_value(provider=row[1], value=row[2]),
                 title=row[3],
                 object_name=row[4],
                 artist_display_name=row[5],
@@ -630,7 +773,7 @@ def list_collection_image_assets(
         LibraryImageAssetSummary(
             image_asset_id=int(row[0]),
             provider=row[1],
-            object_id=int(row[2]),
+            object_id=provider_object_id_value(provider=row[1], value=row[2]),
             title=row[3],
             object_name=row[4],
             artist_display_name=row[5],
@@ -655,7 +798,7 @@ def create_collection_provider_facets(
     image_assets: list[LibraryImageAssetSummary],
 ) -> list[CollectionProviderFacet]:
     image_counts_by_provider: dict[str, int] = {}
-    object_keys_by_provider: dict[str, set[tuple[str, int]]] = {}
+    object_keys_by_provider: dict[str, set[tuple[str, ProviderObjectIdValue]]] = {}
 
     for image_asset in image_assets:
         image_counts_by_provider[image_asset.provider] = (
@@ -905,9 +1048,9 @@ def list_library_objects(
             """
         ).fetchall()
 
-    collections_by_object: dict[tuple[str, int], list[LibraryImageAssetCollection]] = {}
+    collections_by_object: dict[tuple[str, ProviderObjectIdValue], list[LibraryImageAssetCollection]] = {}
     for row in collection_rows:
-        key = (row[0], int(row[1]))
+        key = (row[0], provider_object_id_value(provider=row[0], value=row[1]))
         collections_by_object.setdefault(key, []).append(
             LibraryImageAssetCollection(
                 slug=row[2],
@@ -918,7 +1061,7 @@ def list_library_objects(
     library_objects = [
         LibraryObjectSummary(
             provider=row[0],
-            object_id=int(row[1]),
+            object_id=provider_object_id_value(provider=row[0], value=row[1]),
             title=row[2],
             object_name=row[3],
             artist_display_name=row[4],
@@ -927,7 +1070,10 @@ def list_library_objects(
             cover_original_width=int(row[7]),
             cover_original_height=int(row[8]),
             is_favorite=bool(row[9]),
-            collections=collections_by_object.get((row[0], int(row[1])), []),
+            collections=collections_by_object.get(
+                (row[0], provider_object_id_value(provider=row[0], value=row[1])),
+                [],
+            ),
         )
         for row in object_rows
     ]
@@ -1004,9 +1150,11 @@ def get_collection_object_detail(
     database_path: Path,
     search_set_slug: str,
     provider: str,
-    object_id: int,
+    object_id: SourceObjectId | int,
 ) -> CollectionObjectDetail | None:
+    source_object_id = normalize_source_object_id(object_id)
     with sqlite3.connect(database_path) as connection:
+        ensure_local_material_schema(connection)
         ensure_collection_memberships(connection)
         object_row = connection.execute(
             """
@@ -1052,7 +1200,7 @@ def get_collection_object_detail(
               AND image_assets.imported = 1
               AND image_assets.active = 1
             """,
-            (search_set_slug, provider, object_id),
+            (search_set_slug, provider, source_object_id),
         ).fetchone()
         if object_row is None:
             return None
@@ -1063,10 +1211,12 @@ def get_collection_object_detail(
             SELECT DISTINCT
               image_assets.id,
               image_assets.source_image_url,
+              image_assets.source_file_path,
               image_assets.image_role,
               image_assets.image_index,
               image_assets.original_width,
               image_assets.original_height,
+              image_assets.source_metadata_json,
               EXISTS (
                 SELECT 1
                 FROM image_asset_favorites
@@ -1099,7 +1249,7 @@ def get_collection_object_detail(
               COALESCE(image_assets.image_index, 0),
               image_assets.id
             """,
-            (search_set_slug, provider, object_id),
+            (search_set_slug, provider, source_object_id),
         ).fetchall()
 
         match_rows = connection.execute(
@@ -1121,7 +1271,7 @@ def get_collection_object_detail(
               AND object_matches.object_id = ?
             ORDER BY object_matches.search_term
             """,
-            (search_set_slug, provider, object_id),
+            (search_set_slug, provider, source_object_id),
         ).fetchall()
 
         skipped_rows = connection.execute(
@@ -1135,28 +1285,71 @@ def get_collection_object_detail(
               source_image_url,
               reason
             """,
-            (provider, object_id),
+            (provider, source_object_id),
         ).fetchall()
 
     return CollectionObjectDetail(
         object=CollectionObjectMetadata(
             provider=object_row[0],
-            object_id=int(object_row[1]),
+            object_id=provider_object_id_value(
+                provider=object_row[0],
+                value=object_row[1],
+            ),
             title=object_row[2],
             object_name=object_row[3],
             artist_display_name=object_row[4],
             object_url=object_row[5],
-            artist_display_bio=raw_string(raw_record, "artistDisplayBio"),
-            artist_nationality=raw_string(raw_record, "artistNationality"),
-            department=raw_string(raw_record, "department"),
-            object_date=raw_string(raw_record, "objectDate"),
-            medium=raw_string(raw_record, "medium"),
-            dimensions=raw_string(raw_record, "dimensions"),
-            classification=raw_string(raw_record, "classification"),
-            credit_line=raw_string(raw_record, "creditLine"),
-            accession_number=raw_string(raw_record, "accessionNumber"),
-            repository=raw_string(raw_record, "repository"),
-            tags=raw_tags(raw_record),
+            artist_display_bio=provider_raw_string(
+                provider=object_row[0],
+                record=raw_record,
+                key="artistDisplayBio",
+            ),
+            artist_nationality=provider_raw_string(
+                provider=object_row[0],
+                record=raw_record,
+                key="artistNationality",
+            ),
+            department=provider_raw_string(
+                provider=object_row[0],
+                record=raw_record,
+                key="department",
+            ),
+            object_date=provider_raw_string(
+                provider=object_row[0],
+                record=raw_record,
+                key="objectDate",
+            ),
+            medium=provider_raw_string(
+                provider=object_row[0],
+                record=raw_record,
+                key="medium",
+            ),
+            dimensions=provider_raw_string(
+                provider=object_row[0],
+                record=raw_record,
+                key="dimensions",
+            ),
+            classification=provider_raw_string(
+                provider=object_row[0],
+                record=raw_record,
+                key="classification",
+            ),
+            credit_line=provider_raw_string(
+                provider=object_row[0],
+                record=raw_record,
+                key="creditLine",
+            ),
+            accession_number=provider_raw_string(
+                provider=object_row[0],
+                record=raw_record,
+                key="accessionNumber",
+            ),
+            repository=provider_raw_string(
+                provider=object_row[0],
+                record=raw_record,
+                key="repository",
+            ),
+            tags=provider_raw_tags(provider=object_row[0], record=raw_record),
             is_public_domain=bool(object_row[6]),
             rights_and_reproduction=object_row[7],
             metadata_date=object_row[8],
@@ -1166,11 +1359,13 @@ def get_collection_object_detail(
             CollectionObjectImage(
                 image_asset_id=int(row[0]),
                 source_image_url=row[1],
-                image_role=row[2],
-                image_index=row[3],
-                original_width=int(row[4]),
-                original_height=int(row[5]),
-                is_favorite=bool(row[6]),
+                source_file_path=row[2],
+                sensitive_image=source_metadata_bool(row[7], "sensitive_image"),
+                image_role=row[3],
+                image_index=row[4],
+                original_width=int(row[5]),
+                original_height=int(row[6]),
+                is_favorite=bool(row[8]),
             )
             for row in image_rows
         ],
@@ -1198,9 +1393,11 @@ def get_library_object_detail(
     *,
     database_path: Path,
     provider: str,
-    object_id: int,
+    object_id: SourceObjectId | int,
 ) -> CollectionObjectDetail | None:
+    source_object_id = normalize_source_object_id(object_id)
     with sqlite3.connect(database_path) as connection:
+        ensure_local_material_schema(connection)
         ensure_collection_run_schema(connection)
         ensure_met_ingest_schema(connection)
         object_row = connection.execute(
@@ -1234,7 +1431,7 @@ def get_library_object_detail(
               AND image_assets.imported = 1
               AND image_assets.active = 1
             """,
-            (provider, object_id),
+            (provider, source_object_id),
         ).fetchone()
         if object_row is None:
             return None
@@ -1245,10 +1442,12 @@ def get_library_object_detail(
             SELECT DISTINCT
               image_assets.id,
               image_assets.source_image_url,
+              image_assets.source_file_path,
               image_assets.image_role,
               image_assets.image_index,
               image_assets.original_width,
               image_assets.original_height,
+              image_assets.source_metadata_json,
               EXISTS (
                 SELECT 1
                 FROM image_asset_favorites
@@ -1268,7 +1467,7 @@ def get_library_object_detail(
               COALESCE(image_assets.image_index, 0),
               image_assets.id
             """,
-            (provider, object_id),
+            (provider, source_object_id),
         ).fetchall()
 
         match_rows = connection.execute(
@@ -1283,7 +1482,7 @@ def get_library_object_detail(
               AND object_matches.object_id = ?
             ORDER BY object_matches.search_term
             """,
-            (provider, object_id),
+            (provider, source_object_id),
         ).fetchall()
 
         skipped_rows = connection.execute(
@@ -1297,28 +1496,71 @@ def get_library_object_detail(
               source_image_url,
               reason
             """,
-            (provider, object_id),
+            (provider, source_object_id),
         ).fetchall()
 
     return CollectionObjectDetail(
         object=CollectionObjectMetadata(
             provider=object_row[0],
-            object_id=int(object_row[1]),
+            object_id=provider_object_id_value(
+                provider=object_row[0],
+                value=object_row[1],
+            ),
             title=object_row[2],
             object_name=object_row[3],
             artist_display_name=object_row[4],
             object_url=object_row[5],
-            artist_display_bio=raw_string(raw_record, "artistDisplayBio"),
-            artist_nationality=raw_string(raw_record, "artistNationality"),
-            department=raw_string(raw_record, "department"),
-            object_date=raw_string(raw_record, "objectDate"),
-            medium=raw_string(raw_record, "medium"),
-            dimensions=raw_string(raw_record, "dimensions"),
-            classification=raw_string(raw_record, "classification"),
-            credit_line=raw_string(raw_record, "creditLine"),
-            accession_number=raw_string(raw_record, "accessionNumber"),
-            repository=raw_string(raw_record, "repository"),
-            tags=raw_tags(raw_record),
+            artist_display_bio=provider_raw_string(
+                provider=object_row[0],
+                record=raw_record,
+                key="artistDisplayBio",
+            ),
+            artist_nationality=provider_raw_string(
+                provider=object_row[0],
+                record=raw_record,
+                key="artistNationality",
+            ),
+            department=provider_raw_string(
+                provider=object_row[0],
+                record=raw_record,
+                key="department",
+            ),
+            object_date=provider_raw_string(
+                provider=object_row[0],
+                record=raw_record,
+                key="objectDate",
+            ),
+            medium=provider_raw_string(
+                provider=object_row[0],
+                record=raw_record,
+                key="medium",
+            ),
+            dimensions=provider_raw_string(
+                provider=object_row[0],
+                record=raw_record,
+                key="dimensions",
+            ),
+            classification=provider_raw_string(
+                provider=object_row[0],
+                record=raw_record,
+                key="classification",
+            ),
+            credit_line=provider_raw_string(
+                provider=object_row[0],
+                record=raw_record,
+                key="creditLine",
+            ),
+            accession_number=provider_raw_string(
+                provider=object_row[0],
+                record=raw_record,
+                key="accessionNumber",
+            ),
+            repository=provider_raw_string(
+                provider=object_row[0],
+                record=raw_record,
+                key="repository",
+            ),
+            tags=provider_raw_tags(provider=object_row[0], record=raw_record),
             is_public_domain=bool(object_row[6]),
             rights_and_reproduction=object_row[7],
             metadata_date=object_row[8],
@@ -1328,11 +1570,13 @@ def get_library_object_detail(
             CollectionObjectImage(
                 image_asset_id=int(row[0]),
                 source_image_url=row[1],
-                image_role=row[2],
-                image_index=row[3],
-                original_width=int(row[4]),
-                original_height=int(row[5]),
-                is_favorite=bool(row[6]),
+                source_file_path=row[2],
+                sensitive_image=source_metadata_bool(row[7], "sensitive_image"),
+                image_role=row[3],
+                image_index=row[4],
+                original_width=int(row[5]),
+                original_height=int(row[6]),
+                is_favorite=bool(row[8]),
             )
             for row in image_rows
         ],
@@ -1378,3 +1622,27 @@ def get_image_asset_derivative_path(
         ).fetchone()
 
     return None if row is None else Path(row[0])
+
+
+def get_image_asset_source_file_path(
+    *,
+    database_path: Path,
+    image_asset_id: int,
+) -> Path | None:
+    with sqlite3.connect(database_path) as connection:
+        ensure_local_material_schema(connection)
+        row = connection.execute(
+            """
+            SELECT source_file_path
+            FROM image_assets
+            WHERE id = ? AND imported = 1
+            """,
+            (image_asset_id,),
+        ).fetchone()
+
+    if row is None:
+        return None
+    source_file_path = str(row[0]).strip()
+    if source_file_path == "":
+        return None
+    return Path(source_file_path)

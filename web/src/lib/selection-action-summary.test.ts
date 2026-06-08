@@ -9,7 +9,7 @@ import { selectionActionSummary } from "./selection-action-summary";
 
 const collectionObject: CollectionObjectSummary = {
   provider: "met",
-  object_id: 40,
+  object_id: "40",
   title: "Coiled Snake Bowl",
   object_name: "Bowl",
   artist_display_name: "Unknown maker",
@@ -34,7 +34,7 @@ const libraryObject: LibraryObjectSummary = {
 const orphanImage: LibraryImageAssetSummary = {
   image_asset_id: 8,
   provider: "met",
-  object_id: 40,
+  object_id: "40",
   title: "Coiled Snake Bowl",
   object_name: "Bowl",
   artist_display_name: "Unknown maker",

@@ -3,6 +3,9 @@ import os
 from pathlib import Path
 import sqlite3
 from typing import Mapping
+from urllib.parse import quote
+
+from anacronia.provider_identity import ProviderObjectIdValue, normalize_source_object_id
 
 
 DEFAULT_DATABASE_FILENAME = "anacronia.sqlite"
@@ -67,6 +70,109 @@ def met_image_derivative_filename(
         return f"additional-{image_index:03d}-{derivative}.jpg"
 
     return f"{image_role}-{derivative}.jpg"
+
+
+def source_object_path_segment(object_id: ProviderObjectIdValue) -> str:
+    source_object_id = normalize_source_object_id(object_id)
+    if not source_object_id:
+        raise ValueError("Source object ID is required.")
+    return quote(source_object_id, safe="")
+
+
+def provider_raw_record_path(
+    *,
+    data_root: Path,
+    provider: str,
+    object_id: ProviderObjectIdValue,
+) -> Path:
+    provider_key = provider_path_segment(provider)
+    return (
+        data_root
+        / provider_key
+        / "raw-api"
+        / "objects"
+        / f"{source_object_path_segment(object_id)}.json"
+    )
+
+
+def provider_image_derivative_path(
+    *,
+    data_root: Path,
+    provider: str,
+    object_id: ProviderObjectIdValue,
+    image_role: str,
+    derivative: str,
+    image_index: int | None = None,
+) -> Path:
+    return (
+        data_root
+        / provider_path_segment(provider)
+        / "images"
+        / source_object_path_segment(object_id)
+        / provider_image_derivative_filename(
+            image_role=image_role,
+            derivative=derivative,
+            image_index=image_index,
+        )
+    )
+
+
+def provider_temporary_original_path(
+    *,
+    data_root: Path,
+    provider: str,
+    object_id: ProviderObjectIdValue,
+    image_role: str,
+    image_index: int | None = None,
+) -> Path:
+    return (
+        data_root
+        / "temp"
+        / provider_path_segment(provider)
+        / "images"
+        / source_object_path_segment(object_id)
+        / provider_temporary_original_filename(
+            image_role=image_role,
+            image_index=image_index,
+        )
+    )
+
+
+def provider_image_derivative_filename(
+    *,
+    image_role: str,
+    derivative: str,
+    image_index: int | None = None,
+) -> str:
+    safe_image_role = quote(image_role.strip() or "image", safe="")
+    safe_derivative = quote(derivative.strip() or "derivative", safe="")
+    if image_role == "additional":
+        if image_index is None:
+            raise ValueError("Additional image derivatives require an image index.")
+        return f"additional-{image_index:03d}-{safe_derivative}.jpg"
+
+    return f"{safe_image_role}-{safe_derivative}.jpg"
+
+
+def provider_temporary_original_filename(
+    *,
+    image_role: str,
+    image_index: int | None = None,
+) -> str:
+    safe_image_role = quote(image_role.strip() or "image", safe="")
+    if image_role == "additional":
+        if image_index is None:
+            raise ValueError("Additional image originals require an image index.")
+        return f"additional-{image_index:03d}-source-original"
+
+    return f"{safe_image_role}-source-original"
+
+
+def provider_path_segment(provider: str) -> str:
+    provider_key = provider.strip()
+    if not provider_key:
+        raise ValueError("Provider is required.")
+    return quote(provider_key, safe="")
 
 
 def resolve_data_root(

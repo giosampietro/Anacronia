@@ -2,13 +2,15 @@
 
 Anacronia is a local-first tool for building museum image collections for later visual analysis, AI, OpenCV, machine learning, clustering, and semantic enrichment.
 
-The MVP targets the Metropolitan Museum of Art collection API. It collects public-domain museum records, stores raw provider metadata, generates local image derivatives, extracts searchable descriptors, and exposes the result through a dense operational web interface.
+The MVP starts from the Metropolitan Museum of Art collection API and is expanding into a multi-source local collection builder with V&A Provider Search and plain local folder import. It stores source metadata where available, generates local image derivatives, extracts searchable descriptors, and exposes the result through a dense operational web interface.
 
 ## Current Status
 
 This repository now contains the local app shell plus planning artifacts:
 
 - `CONTEXT.md` - domain vocabulary and decisions
+- `docs/adr/` - architecture decision records
+- `docs/architecture/health-check-2026-06-08.md` - current architecture health check and open architecture issues
 - `docs/prd/anacronia-mvp-prd.md` - MVP product requirements
 - `src/anacronia/` - FastAPI backend, Python worker, CLI, and storage foundation
 - `web/` - Next.js and shadcn/ui interface
@@ -22,8 +24,9 @@ This repository now contains the local app shell plus planning artifacts:
 - Python 3.12 worker and image pipeline
 - SQLite database
 - `standard-1024` and `thumb-256` local image derivatives
-- Met provider first
-- One active collect job at a time
+- Met provider first, with V&A used to test multi-provider scaffolding
+- Plain local folder import for private user material
+- One actively running Provider Search at a time
 
 ## Data Directory
 

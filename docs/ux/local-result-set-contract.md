@@ -175,7 +175,7 @@ Selection counts:
 ## Navigation and Layout
 
 - The Local Result Set appears as the main workspace surface beside persistent Collection navigation.
-- Search, Object/Image controls, and Provider facets live in one compact bar above the grid.
+- Search, Object/Image controls, and Source/Provider facets live in one compact bar above the grid.
 - Counts live inside the controls. Do not reintroduce separate metric cards for the same facts.
 - The grid is full-width and production-style. Do not add debug rails, state cards, or detail anchor cards to the user-facing surface.
 - Detail opens through the existing pending detail overlay pattern.
@@ -186,20 +186,20 @@ Selection counts:
 - Required data:
   - active scope and Collection identity
   - result identities and projection type
-  - Provider identity and display name
-  - thumbnail URL, title, provider label, collection labels where needed
-  - Object/Image counts for scope/query/provider projection
+  - Source Type, Source Identity, and Provider display name when the source is an online Provider
+  - thumbnail URL, title, source/provider label, collection labels where needed
+  - Object/Image counts for scope/query/source/provider projection
   - detail preview data for Object and Image overlays
 - Derived counts/status:
   - total Objects and Images in active scope
-  - shown Objects and Images after `q` and Provider
-  - Provider facet counts computed before current Provider filter
+  - shown Objects and Images after `q` and Source/Provider filters
+  - Source/Provider facet counts computed before the current Source/Provider filter
   - selected count
 - Provider/API dependencies:
   - Production should query local storage, not live provider APIs, for this workflow.
   - Search should use canonical fields and Descriptors, not arbitrary raw provider JSON.
 - Persistence expectations:
-  - URL persists scope, Collection, local query, view, Provider, and detail.
+  - URL persists scope, Collection, local query, view, Source/Provider filters, and detail.
   - Selection is client UI state. Do not persist selection across reloads unless a future workflow explicitly needs it.
 
 ## Empty, Loading, Error, and Recovery Copy

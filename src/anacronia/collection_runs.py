@@ -4,6 +4,12 @@ from pathlib import Path
 import sqlite3
 from typing import Protocol
 
+from anacronia.provider_identity import (
+    ProviderObjectIdValue,
+    SourceObjectId,
+    normalize_source_object_id,
+)
+from anacronia.schema_migrations import ensure_object_id_text_column
 from anacronia.search_sets import (
     ensure_provider_collection,
     ensure_provider_collection_schema,
@@ -15,6 +21,11 @@ MET_PROVIDER = "met"
 DEFAULT_BATCH_TARGET = 10
 
 
+class ProviderCandidateClient(Protocol):
+    def search_object_ids(self, term: str) -> list[ProviderObjectIdValue]:
+        pass
+
+
 class MetCandidateClient(Protocol):
     def search_object_ids(self, term: str) -> list[int]:
         pass
@@ -22,7 +33,7 @@ class MetCandidateClient(Protocol):
 
 @dataclass(frozen=True)
 class RunCandidate:
-    object_id: int
+    object_id: SourceObjectId
     source_term: str
     source_term_index: int
     provider_position: int
@@ -52,19 +63,43 @@ def discover_met_candidates(
     met_client: MetCandidateClient,
     batch_target: int = DEFAULT_BATCH_TARGET,
 ) -> CandidateRun:
+    return discover_provider_candidates(
+        database_path=database_path,
+        search_set_slug=search_set_slug,
+        provider=MET_PROVIDER,
+        candidate_offset=candidate_offset,
+        candidate_limit=candidate_limit,
+        candidate_client=met_client,
+        batch_target=batch_target,
+    )
+
+
+def discover_provider_candidates(
+    *,
+    database_path: Path,
+    search_set_slug: str,
+    provider: str,
+    candidate_offset: int,
+    candidate_limit: int,
+    candidate_client: ProviderCandidateClient,
+    batch_target: int = DEFAULT_BATCH_TARGET,
+) -> CandidateRun:
     if candidate_offset < 0:
         raise ValueError("Candidate offset must be 0 or greater.")
     if candidate_limit < 1:
         raise ValueError("Candidate limit must be 1 or greater.")
+    if not provider.strip():
+        raise ValueError("Provider is required.")
 
     search_set = get_search_set(database_path=database_path, slug=search_set_slug)
     term_snapshot = [term.term for term in search_set.terms if term.active]
-    merged_candidates = merge_met_candidate_object_ids(
+    merged_candidates = merge_provider_candidate_object_ids(
         term_snapshot=term_snapshot,
-        met_client=met_client,
+        candidate_client=candidate_client,
     )
     selected_candidates = merged_candidates[candidate_offset : candidate_offset + candidate_limit]
     effective_candidate_limit = len(selected_candidates)
+    normalized_provider = provider.strip()
 
     with sqlite3.connect(database_path) as connection:
         ensure_collection_run_schema(connection)
@@ -75,7 +110,7 @@ def discover_met_candidates(
         provider_collection_id = ensure_provider_collection(
             connection=connection,
             search_set_id=search_set_id,
-            provider=MET_PROVIDER,
+            provider=normalized_provider,
         )
         cursor = connection.execute(
             """
@@ -93,7 +128,7 @@ def discover_met_candidates(
             """,
             (
                 provider_collection_id,
-                MET_PROVIDER,
+                normalized_provider,
                 json.dumps(term_snapshot),
                 candidate_offset,
                 effective_candidate_limit,
@@ -135,18 +170,30 @@ def merge_met_candidate_object_ids(
     term_snapshot: list[str],
     met_client: MetCandidateClient,
 ) -> list[RunCandidate]:
+    return merge_provider_candidate_object_ids(
+        term_snapshot=term_snapshot,
+        candidate_client=met_client,
+    )
+
+
+def merge_provider_candidate_object_ids(
+    *,
+    term_snapshot: list[str],
+    candidate_client: ProviderCandidateClient,
+) -> list[RunCandidate]:
     candidates: list[RunCandidate] = []
-    seen_object_ids: set[int] = set()
+    seen_object_ids: set[SourceObjectId] = set()
 
     for term_index, term in enumerate(term_snapshot):
-        for provider_position, object_id in enumerate(met_client.search_object_ids(term)):
-            if object_id in seen_object_ids:
+        for provider_position, object_id in enumerate(candidate_client.search_object_ids(term)):
+            source_object_id = normalize_source_object_id(object_id)
+            if source_object_id in seen_object_ids:
                 continue
 
-            seen_object_ids.add(object_id)
+            seen_object_ids.add(source_object_id)
             candidates.append(
                 RunCandidate(
-                    object_id=object_id,
+                    object_id=source_object_id,
                     source_term=term,
                     source_term_index=term_index,
                     provider_position=provider_position,
@@ -262,12 +309,11 @@ def ensure_collection_run_schema(connection: sqlite3.Connection) -> None:
             ADD COLUMN batch_target INTEGER NOT NULL DEFAULT 10
             """
         )
-    connection.execute(
-        """
+    run_candidates_create_sql = """
         CREATE TABLE IF NOT EXISTS run_candidates (
           id INTEGER PRIMARY KEY,
           run_id INTEGER NOT NULL,
-          object_id INTEGER NOT NULL,
+          object_id TEXT NOT NULL,
           source_term TEXT NOT NULL,
           source_term_index INTEGER NOT NULL,
           provider_position INTEGER NOT NULL,
@@ -276,4 +322,8 @@ def ensure_collection_run_schema(connection: sqlite3.Connection) -> None:
           UNIQUE (run_id, object_id)
         )
         """
+    connection.execute(run_candidates_create_sql)
+    ensure_object_id_text_column(
+        connection=connection,
+        table_name="run_candidates",
     )

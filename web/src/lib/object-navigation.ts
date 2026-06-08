@@ -1,11 +1,11 @@
 type ObjectNavigationItem = {
-  object_id: number;
+  object_id: string;
   provider: string;
 };
 
 type CreateAdjacentObjectHrefsOptions<TItem extends ObjectNavigationItem> = {
   createHref: (item: TItem) => string;
-  currentObjectId: number;
+  currentObjectId: string;
   currentProvider: string;
   isCurrentItem?: (item: TItem) => boolean;
   items: TItem[];
@@ -87,7 +87,7 @@ function findAdjacentObjectItem<TItem extends ObjectNavigationItem>(
 function isSameObject(
   item: ObjectNavigationItem,
   provider: string,
-  objectId: number,
+  objectId: string,
 ): boolean {
   return item.provider === provider && item.object_id === objectId;
 }

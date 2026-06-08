@@ -1,5 +1,7 @@
 # New Search Set UX Notes
 
+> Historical note: this document describes the earlier Search Set / collect prototype. Current implementation planning uses `Collection`, `Provider Search`, explicit Provider selection, and the live contract in `docs/ux/start-new-collection-contract.md`.
+
 Use this with `docs/ux/new-search-set-mockup.html`.
 
 ## Sources Reviewed
