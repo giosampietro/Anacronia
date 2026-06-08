@@ -471,6 +471,7 @@ def ensure_local_material_schema(connection: sqlite3.Connection) -> None:
             "source_metadata_json": "TEXT NOT NULL DEFAULT '{}'",
         },
     )
+    backfill_image_asset_provenance(connection)
     connection.execute(
         """
         CREATE TABLE IF NOT EXISTS skipped_image_references (
@@ -510,6 +511,91 @@ def ensure_local_material_schema(connection: sqlite3.Connection) -> None:
         """
     )
     ensure_object_id_text_column(connection=connection, table_name="descriptors")
+
+
+def backfill_image_asset_provenance(connection: sqlite3.Connection) -> None:
+    connection.execute(
+        """
+        UPDATE image_assets
+        SET source_rights_statement = (
+          SELECT museum_objects.rights_and_reproduction
+          FROM museum_objects
+          WHERE
+            museum_objects.provider = image_assets.provider
+            AND museum_objects.object_id = image_assets.object_id
+            AND TRIM(museum_objects.rights_and_reproduction) != ''
+        )
+        WHERE
+          provider = 'vam'
+          AND TRIM(source_rights_statement) = ''
+          AND EXISTS (
+            SELECT 1
+            FROM museum_objects
+            WHERE
+              museum_objects.provider = image_assets.provider
+              AND museum_objects.object_id = image_assets.object_id
+              AND TRIM(museum_objects.rights_and_reproduction) != ''
+          )
+        """
+    )
+
+    rows = connection.execute(
+        """
+        SELECT id, source_image_url
+        FROM image_assets
+        WHERE
+          provider = 'vam'
+          AND (
+            TRIM(source_image_id) = ''
+            OR TRIM(source_iiif_service_url) = ''
+          )
+        """
+    ).fetchall()
+
+    for row in rows:
+        asset_ref = vam_asset_ref_from_source_image_url(row[1])
+        if not asset_ref:
+            continue
+        connection.execute(
+            """
+            UPDATE image_assets
+            SET
+              source_image_id = CASE
+                WHEN TRIM(source_image_id) = '' THEN ?
+                ELSE source_image_id
+              END,
+              source_iiif_service_url = CASE
+                WHEN TRIM(source_iiif_service_url) = '' THEN ?
+                ELSE source_iiif_service_url
+              END
+            WHERE id = ?
+            """,
+            (
+                asset_ref,
+                vam_iiif_service_url_from_asset_ref(asset_ref),
+                row[0],
+            ),
+        )
+
+    connection.execute(
+        """
+        UPDATE image_assets
+        SET source_image_id = source_image_url
+        WHERE TRIM(source_image_id) = ''
+        """
+    )
+
+
+def vam_asset_ref_from_source_image_url(source_image_url: str) -> str:
+    marker = "/collections/"
+    if marker not in source_image_url:
+        return ""
+    tail = source_image_url.split(marker, 1)[1]
+    return tail.split("/", 1)[0].strip()
+
+
+def vam_iiif_service_url_from_asset_ref(asset_ref: str) -> str:
+    return f"https://framemark.vam.ac.uk/collections/{asset_ref}"
 
 
 def ensure_table_columns(

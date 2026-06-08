@@ -3,6 +3,7 @@ import sqlite3
 from anacronia.collection_objects import get_collection_object_detail
 from anacronia.collection_runs import discover_provider_candidates
 from anacronia.image_pipeline import ImageDerivativeSettings, validate_image_derivative
+from anacronia.local_material import ensure_local_material_schema
 from anacronia.search_sets import create_or_continue_search_set
 from anacronia.storage import initialize_storage, provider_raw_record_path
 from anacronia.vam_adapter import (
@@ -46,6 +47,93 @@ class MissingSensitivityVamRecordClient:
             assert isinstance(item, dict)
             item.pop("sensitiveImage", None)
         return record
+
+
+def test_vam_legacy_image_asset_provenance_is_backfilled(tmp_path):
+    database_path = tmp_path / "anacronia.sqlite"
+
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE museum_objects (
+              id INTEGER PRIMARY KEY,
+              provider TEXT NOT NULL,
+              object_id TEXT NOT NULL,
+              title TEXT NOT NULL,
+              object_name TEXT NOT NULL,
+              artist_display_name TEXT NOT NULL,
+              object_url TEXT NOT NULL,
+              is_public_domain INTEGER NOT NULL,
+              rights_and_reproduction TEXT NOT NULL,
+              metadata_date TEXT NOT NULL,
+              raw_record_path TEXT NOT NULL,
+              UNIQUE (provider, object_id)
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO museum_objects (
+              provider, object_id, title, object_name, artist_display_name, object_url,
+              is_public_domain, rights_and_reproduction, metadata_date, raw_record_path
+            )
+            VALUES (
+              'vam', 'O9138', 'Great Bed of Ware', 'Bed', '',
+              'https://collections.vam.ac.uk/item/O9138/', 0,
+              '© Victoria and Albert Museum, London', '', 'raw.json'
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE image_assets (
+              id INTEGER PRIMARY KEY,
+              provider TEXT NOT NULL,
+              object_id TEXT NOT NULL,
+              source_image_url TEXT NOT NULL,
+              image_role TEXT NOT NULL,
+              image_index INTEGER,
+              primary_image_small_url TEXT NOT NULL,
+              original_width INTEGER NOT NULL,
+              original_height INTEGER NOT NULL,
+              standard_path TEXT NOT NULL,
+              thumb_path TEXT NOT NULL,
+              imported INTEGER NOT NULL,
+              UNIQUE (provider, object_id, source_image_url)
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO image_assets (
+              provider, object_id, source_image_url, image_role, image_index,
+              primary_image_small_url, original_width, original_height, standard_path,
+              thumb_path, imported
+            )
+            VALUES (
+              'vam', 'O9138',
+              'https://framemark.vam.ac.uk/collections/2006AL3614/full/full/0/default.jpg',
+              'primary', NULL, '', 1600, 800, 'standard.jpg', 'thumb.jpg', 1
+            )
+            """
+        )
+
+        ensure_local_material_schema(connection)
+
+        assert connection.execute(
+            """
+            SELECT
+              source_image_id,
+              source_iiif_service_url,
+              source_rights_statement
+            FROM image_assets
+            WHERE provider = 'vam'
+            """
+        ).fetchone() == (
+            "2006AL3614",
+            "https://framemark.vam.ac.uk/collections/2006AL3614",
+            "© Victoria and Albert Museum, London",
+        )
 
 
 def ppm_image_bytes(*, width: int, height: int) -> bytes:

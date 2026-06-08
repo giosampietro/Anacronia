@@ -197,6 +197,9 @@ def test_shared_provider_identity_tables_migrate_integer_object_ids_to_text(tmp_
         assert connection.execute(
             "SELECT object_id FROM image_assets WHERE provider = 'met'"
         ).fetchone()[0] == "40"
+        assert connection.execute(
+            "SELECT source_image_id FROM image_assets WHERE provider = 'met'"
+        ).fetchone()[0] == "https://images.metmuseum.org/40.jpg"
 
 
 def test_selects_met_image_references_by_source_url_identity_primary_role_and_limit():
