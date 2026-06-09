@@ -172,7 +172,8 @@ describe("normalizeExportedLatentMapViewerData", () => {
               page_path: "viewer/atlases/32px/page-000.png",
               source_thumbnail_path: "thumbnails/img_1.jpg",
               tile_rect: [0, 0, 32, 32],
-              uv_rect: [0.0078125, 0.0078125, 0.484375, 0.484375],
+              content_rect: [0, 4, 32, 24],
+              uv_rect: [0.0078125, 0.0703125, 0.484375, 0.359375],
               width: 100,
               height: 200,
             },
@@ -187,6 +188,12 @@ describe("normalizeExportedLatentMapViewerData", () => {
     expect(data.thumbnail_atlas?.items[0].source_thumbnail_path).toBe(
       "thumbnails/img_1.jpg",
     );
+    expect(data.thumbnail_atlas?.items[0].content_rect).toEqual([
+      0, 4, 32, 24,
+    ]);
+    expect(data.thumbnail_atlas?.items[0].uv_rect).toEqual([
+      0.0078125, 0.0703125, 0.484375, 0.359375,
+    ]);
   });
 
   it("normalizes selected-image FAISS neighbor responses", () => {

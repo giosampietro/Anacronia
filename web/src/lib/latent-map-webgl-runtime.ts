@@ -38,6 +38,7 @@ export type LatentMapWebglRuntime = {
 };
 
 const THUMBNAIL_WORLD_SIZE_PER_PIXEL = 0.13 / 64;
+export const LATENT_MAP_MAX_THUMBNAIL_SCREEN_SCALE = 2;
 
 function rgbToThreeColor([r, g, b]: [number, number, number]): THREE.Color {
   return new THREE.Color(r / 255, g / 255, b / 255);
@@ -125,26 +126,65 @@ function updatePointGeometry(
   geometry.getAttribute("color").needsUpdate = true;
 }
 
+function getThumbnailStateScaleMultiplier(point: LatentMapRenderablePoint) {
+  return point.point_state === "selected"
+    ? 1.36
+    : point.point_state === "neighbor"
+      ? 1.16
+      : 1;
+}
+
+export function getLatentMapThumbnailWorldScale({
+  point,
+  thumbnailSize,
+  viewportHeight,
+  zoom,
+}: {
+  point: LatentMapRenderablePoint;
+  thumbnailSize: LatentMapThumbnailSize;
+  viewportHeight: number;
+  zoom: number;
+}): [number, number] {
+  const sourceWidth = Math.max(point.width, 1);
+  const sourceHeight = Math.max(point.height, 1);
+  const aspect = sourceWidth / sourceHeight;
+  const scaleMultiplier = getThumbnailStateScaleMultiplier(point);
+  const longSideWorldSize =
+    thumbnailSize * THUMBNAIL_WORLD_SIZE_PER_PIXEL * scaleMultiplier;
+  let width =
+    aspect >= 1 ? longSideWorldSize : longSideWorldSize * aspect;
+  let height =
+    aspect >= 1 ? longSideWorldSize / aspect : longSideWorldSize;
+  const pixelsPerWorldUnit =
+    (Math.max(viewportHeight, 1) * Math.max(zoom, 0.001)) / 2;
+  const screenLongSide = Math.max(width, height) * pixelsPerWorldUnit;
+  const maxScreenLongSide =
+    thumbnailSize *
+    LATENT_MAP_MAX_THUMBNAIL_SCREEN_SCALE *
+    scaleMultiplier;
+
+  if (screenLongSide > maxScreenLongSide) {
+    const capMultiplier = maxScreenLongSide / screenLongSide;
+
+    width *= capMultiplier;
+    height *= capMultiplier;
+  }
+
+  return [width, height];
+}
+
 function getThumbnailScale(
   point: LatentMapRenderablePoint,
   thumbnailSize: LatentMapThumbnailSize,
+  view: LatentMapViewState,
+  viewportHeight: number,
 ): [number, number] {
-  const aspect = Math.max(point.width, 1) / Math.max(point.height, 1);
-  const scaleMultiplier =
-    point.point_state === "selected"
-      ? 1.36
-      : point.point_state === "neighbor"
-        ? 1.16
-        : 1;
-  const baseSize =
-    thumbnailSize * THUMBNAIL_WORLD_SIZE_PER_PIXEL * scaleMultiplier;
-  const boundedAspect = Math.min(1.45, Math.max(0.7, aspect));
-
-  if (boundedAspect >= 1) {
-    return [baseSize * boundedAspect, baseSize];
-  }
-
-  return [baseSize, baseSize / boundedAspect];
+  return getLatentMapThumbnailWorldScale({
+    point,
+    thumbnailSize,
+    viewportHeight,
+    zoom: view.zoom,
+  });
 }
 
 function getThumbnailLayer(point: LatentMapRenderablePoint): number {
@@ -173,10 +213,14 @@ function writeAtlasInstanceAttributes({
   geometry,
   page,
   thumbnailSize,
+  view,
+  viewportHeight,
 }: {
   geometry: THREE.InstancedBufferGeometry;
   page: LatentMapThumbnailAtlasPage;
   thumbnailSize: LatentMapThumbnailSize;
+  view: LatentMapViewState;
+  viewportHeight: number;
 }) {
   const instancePositions = new Float32Array(page.items.length * 3);
   const instanceScales = new Float32Array(page.items.length * 2);
@@ -184,7 +228,12 @@ function writeAtlasInstanceAttributes({
   const instanceStates = new Float32Array(page.items.length);
 
   page.items.forEach((item, index) => {
-    const [width, height] = getThumbnailScale(item.point, thumbnailSize);
+    const [width, height] = getThumbnailScale(
+      item.point,
+      thumbnailSize,
+      view,
+      viewportHeight,
+    );
 
     instancePositions[index * 3] = item.point.fitted_x;
     instancePositions[index * 3 + 1] = item.point.fitted_y;
@@ -218,15 +267,25 @@ function updateAtlasInstanceAttributes({
   geometry,
   page,
   thumbnailSize,
+  view,
+  viewportHeight,
 }: {
   geometry: THREE.InstancedBufferGeometry;
   page: LatentMapThumbnailAtlasPage;
   thumbnailSize: LatentMapThumbnailSize;
+  view: LatentMapViewState;
+  viewportHeight: number;
 }) {
   const instancePosition = geometry.getAttribute("instancePosition");
 
   if (!instancePosition || instancePosition.count !== page.items.length) {
-    writeAtlasInstanceAttributes({ geometry, page, thumbnailSize });
+    writeAtlasInstanceAttributes({
+      geometry,
+      page,
+      thumbnailSize,
+      view,
+      viewportHeight,
+    });
     return;
   }
 
@@ -237,7 +296,12 @@ function updateAtlasInstanceAttributes({
     .array as Float32Array;
 
   page.items.forEach((item, index) => {
-    const [width, height] = getThumbnailScale(item.point, thumbnailSize);
+    const [width, height] = getThumbnailScale(
+      item.point,
+      thumbnailSize,
+      view,
+      viewportHeight,
+    );
 
     instancePositions[index * 3] = item.point.fitted_x;
     instancePositions[index * 3 + 1] = item.point.fitted_y;
@@ -255,9 +319,13 @@ function updateAtlasInstanceAttributes({
 function createAtlasGeometry({
   page,
   thumbnailSize,
+  view,
+  viewportHeight,
 }: {
   page: LatentMapThumbnailAtlasPage;
   thumbnailSize: LatentMapThumbnailSize;
+  view: LatentMapViewState;
+  viewportHeight: number;
 }) {
   const geometry = new THREE.InstancedBufferGeometry();
   const positions = new Float32Array([
@@ -277,7 +345,13 @@ function createAtlasGeometry({
   geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
   geometry.setAttribute("uv", new THREE.BufferAttribute(uvs, 2));
   geometry.setIndex(indices);
-  writeAtlasInstanceAttributes({ geometry, page, thumbnailSize });
+  writeAtlasInstanceAttributes({
+    geometry,
+    page,
+    thumbnailSize,
+    view,
+    viewportHeight,
+  });
 
   return geometry;
 }
@@ -383,9 +457,13 @@ type AtlasPageMesh = {
 function createAtlasPageMesh({
   page,
   thumbnailSize,
+  view,
+  viewportHeight,
 }: {
   page: LatentMapThumbnailAtlasPage;
   thumbnailSize: LatentMapThumbnailSize;
+  view: LatentMapViewState;
+  viewportHeight: number;
 }): AtlasPageMesh {
   const canvas = document.createElement("canvas");
   const context = canvas.getContext("2d");
@@ -407,7 +485,12 @@ function createAtlasPageMesh({
   texture.generateMipmaps = false;
   texture.premultiplyAlpha = false;
 
-  const geometry = createAtlasGeometry({ page, thumbnailSize });
+  const geometry = createAtlasGeometry({
+    page,
+    thumbnailSize,
+    view,
+    viewportHeight,
+  });
   const material = createAtlasMaterial(texture);
   const mesh = new THREE.Mesh(geometry, material);
 
@@ -492,6 +575,8 @@ export function createLatentMapWebglRuntime({
   const atlasPages: AtlasPageMesh[] = [];
   const atlasImages: HTMLImageElement[] = [];
   let animationFrameId: number | null = null;
+  let currentRenderMode = renderMode;
+  let currentThumbnailPlan = thumbnailPlan;
   let currentThumbnailPlanSignature = "";
   let currentView = view;
   let isDisposed = false;
@@ -512,6 +597,10 @@ export function createLatentMapWebglRuntime({
 
   function reportDiagnostics() {
     onDiagnosticsChange?.(getDiagnostics());
+  }
+
+  function getViewportHeight() {
+    return Math.max(wrapper.getBoundingClientRect().height, 1);
   }
 
   function render() {
@@ -562,6 +651,8 @@ export function createLatentMapWebglRuntime({
       const atlasPage = createAtlasPageMesh({
         page,
         thumbnailSize: plan.thumbnailSize,
+        view: currentView,
+        viewportHeight: getViewportHeight(),
       });
 
       atlasPages.push(atlasPage);
@@ -654,6 +745,8 @@ export function createLatentMapWebglRuntime({
   }
 
   function updateAtlasInstances(plan: LatentMapThumbnailRenderPlan) {
+    const viewportHeight = getViewportHeight();
+
     plan.atlasPages.forEach((page, index) => {
       const atlasPage = atlasPages[index];
 
@@ -665,12 +758,16 @@ export function createLatentMapWebglRuntime({
         geometry: atlasPage.geometry,
         page,
         thumbnailSize: plan.thumbnailSize,
+        view: currentView,
+        viewportHeight,
       });
       atlasPage.page = page;
     });
   }
 
   function setRenderState(nextState: LatentMapRuntimeState) {
+    currentRenderMode = nextState.renderMode;
+    currentThumbnailPlan = nextState.thumbnailPlan;
     updatePointGeometry(pointGeometry, nextState.pointLayer.points);
     pointMaterial.size = nextState.pointLayer.pointSize;
 
@@ -695,6 +792,9 @@ export function createLatentMapWebglRuntime({
 
   function setView(nextView: LatentMapViewState) {
     currentView = nextView;
+    if (currentRenderMode === "thumbnails" && atlasPages.length > 0) {
+      updateAtlasInstances(currentThumbnailPlan);
+    }
     scheduleRender();
   }
 
@@ -711,9 +811,15 @@ export function createLatentMapWebglRuntime({
     typeof ResizeObserver === "undefined"
       ? null
       : new ResizeObserver(() => {
+          if (currentRenderMode === "thumbnails" && atlasPages.length > 0) {
+            updateAtlasInstances(currentThumbnailPlan);
+          }
           scheduleRender();
         });
   const resize = () => {
+    if (currentRenderMode === "thumbnails" && atlasPages.length > 0) {
+      updateAtlasInstances(currentThumbnailPlan);
+    }
     scheduleRender();
   };
 

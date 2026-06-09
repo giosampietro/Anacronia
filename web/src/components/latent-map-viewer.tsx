@@ -1,5 +1,6 @@
 "use client";
 
+import NextImage from "next/image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CircleDot, Images, Palette, RotateCcw, ScanSearch } from "lucide-react";
 
@@ -139,6 +140,30 @@ function createInitialDurableState({
   return fallback;
 }
 
+function getLatentMapPreviewBox({
+  height,
+  maxSize,
+  width,
+}: {
+  height: number;
+  maxSize: number;
+  width: number;
+}) {
+  const aspect = Math.max(width, 1) / Math.max(height, 1);
+
+  if (aspect >= 1) {
+    return {
+      height: Math.max(1, Math.round(maxSize / aspect)),
+      width: maxSize,
+    };
+  }
+
+  return {
+    height: maxSize,
+    width: Math.max(1, Math.round(maxSize * aspect)),
+  };
+}
+
 export function LatentMapViewer({
   className,
   data,
@@ -246,6 +271,13 @@ export function LatentMapViewer({
       null,
     [filteredData.points, hoveredImageId],
   );
+  const hoverPreviewBox = hoveredPoint
+    ? getLatentMapPreviewBox({
+        height: hoveredPoint.height,
+        maxSize: DEFAULT_LATENT_MAP_HOVER_PREVIEW_SIZE,
+        width: hoveredPoint.width,
+      })
+    : null;
   const thumbnailPlan = useMemo(
     () =>
       createLatentMapThumbnailRenderPlan({
@@ -363,13 +395,17 @@ export function LatentMapViewer({
           )
         : initialDurableState;
 
-    setClusterFilter(nextDurableState.clusterFilter);
-    setRenderMode(nextDurableState.renderMode);
-    setSelectedImageId(nextDurableState.selectedImageId);
-    setSourceFilter(nextDurableState.sourceFilter);
-    setThumbnailSize(nextDurableState.thumbnailSize);
-    setView(nextDurableState.view);
-    setUrlStateHydrated(true);
+    const frameId = window.requestAnimationFrame(() => {
+      setClusterFilter(nextDurableState.clusterFilter);
+      setRenderMode(nextDurableState.renderMode);
+      setSelectedImageId(nextDurableState.selectedImageId);
+      setSourceFilter(nextDurableState.sourceFilter);
+      setThumbnailSize(nextDurableState.thumbnailSize);
+      setView(nextDurableState.view);
+      setUrlStateHydrated(true);
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
   }, [data, dataMountKey, initialDurableState]);
 
   useEffect(() => {
@@ -998,27 +1034,29 @@ export function LatentMapViewer({
           ) : null}
         </div>
 
-        {hoveredPoint ? (
+        {hoveredPoint && hoverPreviewBox ? (
           <div
             className="pointer-events-none fixed z-50 overflow-hidden rounded-lg border bg-background shadow-xl"
             style={{
               left: Math.min(
                 hoverPosition.x + 14,
-                window.innerWidth - thumbnailPlan.hoverPreviewSize - 16,
+                window.innerWidth - hoverPreviewBox.width - 16,
               ),
               top: Math.min(
                 hoverPosition.y + 14,
-                window.innerHeight - thumbnailPlan.hoverPreviewSize - 16,
+                window.innerHeight - hoverPreviewBox.height - 16,
               ),
-              width: thumbnailPlan.hoverPreviewSize,
+              height: hoverPreviewBox.height,
+              width: hoverPreviewBox.width,
             }}
         >
-            <div
-              aria-hidden="true"
-              className="aspect-square w-full bg-cover bg-center"
-              style={{
-                backgroundImage: `url("${hoveredPoint.thumbnail_path}")`,
-              }}
+            <NextImage
+              alt=""
+              className="block size-full object-contain"
+              height={hoverPreviewBox.height}
+              src={hoveredPoint.thumbnail_path}
+              unoptimized
+              width={hoverPreviewBox.width}
             />
           </div>
         ) : null}
