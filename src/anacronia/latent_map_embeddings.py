@@ -9,24 +9,15 @@ from typing import Protocol
 import numpy as np
 from PIL import Image, ImageOps
 
-from anacronia.latent_map_runs import DINO_MEAN_PADDING_RGB, PRIMARY_DINO_MODEL
+from anacronia.latent_map_embedding_recipes import (
+    DINO_EMBEDDING_RECIPES,
+    EmbeddingRecipe,
+)
+from anacronia.latent_map_runs import DINO_MEAN_PADDING_RGB
 
 
 IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
-
-
-@dataclass(frozen=True)
-class EmbeddingRecipe:
-    name: str
-    long_edge: int
-    pad_to_multiple: int = 16
-
-
-DINO_EMBEDDING_RECIPES = {
-    "dinov3_vits_256": EmbeddingRecipe(name="dinov3_vits_256", long_edge=256),
-    "dinov3_vits_384": EmbeddingRecipe(name="dinov3_vits_384", long_edge=384),
-}
 
 
 @dataclass(frozen=True)
@@ -120,7 +111,10 @@ def embed_latent_map_run(
     recipe = DINO_EMBEDDING_RECIPES[recipe_name]
     rows = _read_jsonl(manifest_path)
     selected_rows = rows[:limit] if limit is not None else rows
-    resolved_embedder = embedder or DinoV3Embedder(model_id=PRIMARY_DINO_MODEL, device=device)
+    resolved_embedder = embedder or DinoImageEmbedder(
+        model_id=recipe.model_id,
+        device=device,
+    )
 
     started_at = time.perf_counter()
     vectors = _embed_manifest_rows(
@@ -142,7 +136,9 @@ def embed_latent_map_run(
         "run_id": run_id,
         "recipe_name": recipe.name,
         "recipe": {
+            "family": recipe.family,
             "long_edge": recipe.long_edge,
+            "model_id": recipe.model_id,
             "pad_to_multiple": recipe.pad_to_multiple,
             "padding_color_rgb": list(DINO_MEAN_PADDING_RGB),
             "preserve_aspect_ratio": True,
@@ -181,7 +177,7 @@ def embed_latent_map_run(
     )
 
 
-class DinoV3Embedder:
+class DinoImageEmbedder:
     def __init__(self, *, model_id: str, device: str = "auto") -> None:
         try:
             import torch
@@ -219,6 +215,9 @@ class DinoV3Embedder:
             array = (array - mean) / std
             arrays.append(np.transpose(array, (2, 0, 1)))
         return self._torch.from_numpy(np.stack(arrays)).to(self.device)
+
+
+DinoV3Embedder = DinoImageEmbedder
 
 
 def _embed_manifest_rows(

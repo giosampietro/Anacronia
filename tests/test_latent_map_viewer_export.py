@@ -164,6 +164,94 @@ def test_exports_viewer_data_with_generated_atlas_manifest_path(tmp_path):
     )
 
 
+def test_exports_selected_comparison_layout_and_cluster_metadata(tmp_path):
+    run = create_viewer_run(tmp_path)
+    (run.run_dir / "layouts" / "dinov3_vits_256_umap_n8_mindist0p3_seed7.json").write_text(
+        json.dumps(
+            {
+                "run_id": run.run_id,
+                "recipe_name": "dinov3_vits_256",
+                "layout_id": "umap_n8_mindist0p3_seed7",
+                "method": "umap",
+                "params": {
+                    "effective_n_neighbors": 8,
+                    "min_dist": 0.3,
+                    "metric": "cosine",
+                    "random_state": 7,
+                },
+                "points": [
+                    {"image_id": "img-a", "x": 10.0, "y": 20.0},
+                    {"image_id": "img-b", "x": 30.0, "y": 40.0},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (run.run_dir / "clusters" / "dinov3_vits_256_kmeans_k1_seed7.json").write_text(
+        json.dumps(
+            {
+                "run_id": run.run_id,
+                "recipe_name": "dinov3_vits_256",
+                "cluster_id": "kmeans_k1_seed7",
+                "method": "kmeans",
+                "cluster_count": 1,
+                "random_state": 7,
+                "points": [
+                    {"image_id": "img-a", "cluster_id": 0},
+                    {"image_id": "img-b", "cluster_id": 0},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    summary = export_viewer_data(
+        run_dir=run.run_dir,
+        recipe_name="dinov3_vits_256",
+        layout_id="umap_n8_mindist0p3_seed7",
+        cluster_id="kmeans_k1_seed7",
+    )
+
+    data = json.loads(summary.viewer_data_path.read_text(encoding="utf-8"))
+    assert summary.layout_id == "umap_n8_mindist0p3_seed7"
+    assert summary.cluster_id == "kmeans_k1_seed7"
+    assert data["layout_id"] == "umap_n8_mindist0p3_seed7"
+    assert data["cluster_id"] == "kmeans_k1_seed7"
+    assert data["points"][0]["x"] == 10.0
+    assert data["points"][0]["cluster_id"] == 0
+    assert data["available_layouts"] == [
+        {
+            "layout_id": "umap_n4_mindist0p05_seed42",
+            "method": "",
+            "params": {},
+        },
+        {
+            "layout_id": "umap_n8_mindist0p3_seed7",
+            "method": "umap",
+            "params": {
+                "effective_n_neighbors": 8,
+                "min_dist": 0.3,
+                "metric": "cosine",
+                "random_state": 7,
+            },
+        },
+    ]
+    assert data["available_clusters"] == [
+        {
+            "cluster_id": "kmeans_k1_seed7",
+            "cluster_count": 1,
+            "method": "kmeans",
+            "random_state": 7,
+        },
+        {
+            "cluster_id": "kmeans_k2_seed42",
+            "cluster_count": 2,
+            "method": "",
+            "random_state": None,
+        },
+    ]
+
+
 def test_export_rejects_missing_neighbor_references(tmp_path):
     run = create_viewer_run(tmp_path)
     (run.run_dir / "indexes" / "dinov3_vits_256_neighbors.jsonl").write_text(

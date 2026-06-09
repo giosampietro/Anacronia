@@ -9,6 +9,7 @@ from anacronia.cli import (
     run_latent_map_embed,
     run_latent_map_init,
     run_latent_map_layout,
+    run_latent_map_method_comparison,
     run_latent_map_scan,
     run_latent_map_result_export,
     run_latent_map_viewer_export,
@@ -404,6 +405,95 @@ def test_latent_map_viewer_export_cli_prints_summary(tmp_path, capsys):
     assert '"neighbor_data_path"' in output
 
 
+def test_latent_map_viewer_export_cli_prints_selected_comparison_ids(tmp_path, capsys):
+    import json
+
+    source_folder = tmp_path / "source-images"
+    source_folder.mkdir()
+    run_latent_map_init(
+        source_folder=source_folder,
+        runs_root=tmp_path / "runs",
+        run_name="J Shoot",
+    )
+    run_dir = next((tmp_path / "runs").iterdir())
+    manifest_rows = [
+        {
+            "image_id": "img-a",
+            "source_path": str(source_folder / "a.jpg"),
+            "relative_path": "a.jpg",
+            "thumbnail_path": "thumbnails/img-a.jpg",
+        },
+        {
+            "image_id": "img-b",
+            "source_path": str(source_folder / "b.jpg"),
+            "relative_path": "b.jpg",
+            "thumbnail_path": "thumbnails/img-b.jpg",
+        },
+    ]
+    (run_dir / "manifest.jsonl").write_text(
+        "".join(json.dumps(row) + "\n" for row in manifest_rows),
+        encoding="utf-8",
+    )
+    for layout_id, x in [
+        ("umap_n4_mindist0p05_seed42", 1.0),
+        ("umap_n8_mindist0p3_seed7", 10.0),
+    ]:
+        (run_dir / "layouts" / f"dinov3_vits_256_{layout_id}.json").write_text(
+            json.dumps(
+                {
+                    "layout_id": layout_id,
+                    "points": [
+                        {"image_id": "img-a", "x": x, "y": 2.0},
+                        {"image_id": "img-b", "x": x + 1.0, "y": 4.0},
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+    for cluster_id, cluster_value in [
+        ("kmeans_k2_seed42", 1),
+        ("kmeans_k1_seed7", 0),
+    ]:
+        (run_dir / "clusters" / f"dinov3_vits_256_{cluster_id}.json").write_text(
+            json.dumps(
+                {
+                    "cluster_id": cluster_id,
+                    "points": [
+                        {"image_id": "img-a", "cluster_id": cluster_value},
+                        {"image_id": "img-b", "cluster_id": cluster_value},
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+    (run_dir / "indexes" / "dinov3_vits_256_neighbors.jsonl").write_text(
+        json.dumps(
+            {
+                "image_id": "img-a",
+                "neighbor_rank": 1,
+                "neighbor_image_id": "img-b",
+                "score": 0.8,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    run_latent_map_viewer_export(
+        run_dir=run_dir,
+        recipe_name="dinov3_vits_256",
+        layout_id="umap_n8_mindist0p3_seed7",
+        cluster_id="kmeans_k1_seed7",
+    )
+
+    output = capsys.readouterr().out
+    data = json.loads((run_dir / "viewer" / "map-data.json").read_text(encoding="utf-8"))
+    assert '"layout_id": "umap_n8_mindist0p3_seed7"' in output
+    assert '"cluster_id": "kmeans_k1_seed7"' in output
+    assert data["points"][0]["x"] == 10.0
+    assert data["points"][0]["cluster_id"] == 0
+
+
 def test_latent_map_viewer_export_cli_prints_atlas_manifest_path(tmp_path, capsys):
     import json
 
@@ -564,3 +654,42 @@ def test_latent_map_result_export_cli_prints_summary(tmp_path, capsys):
     assert '"exact_duplicate_group_count": 1' in output
     assert '"faiss_candidate_count": 1' in output
     assert '"result_path"' in output
+
+
+def test_latent_map_method_comparison_cli_prints_summary(tmp_path, capsys):
+    import json
+
+    source_folder = tmp_path / "source-images"
+    source_folder.mkdir()
+    run_latent_map_init(
+        source_folder=source_folder,
+        runs_root=tmp_path / "runs",
+        run_name="J Shoot",
+    )
+    run_dir = next((tmp_path / "runs").iterdir())
+    (run_dir / "embeddings" / "dinov3_vits_256.json").write_text(
+        json.dumps(
+            {
+                "recipe_name": "dinov3_vits_256",
+                "recipe": {"family": "dinov3", "long_edge": 256},
+                "vector_count": 2,
+                "vector_dim": 384,
+            }
+        ),
+        encoding="utf-8",
+    )
+    (run_dir / "layouts" / "dinov3_vits_256_umap.json").write_text(
+        json.dumps({"layout_id": "umap", "points": [{"image_id": "img-a"}]}),
+        encoding="utf-8",
+    )
+    (run_dir / "clusters" / "dinov3_vits_256_kmeans.json").write_text(
+        json.dumps({"cluster_id": "kmeans", "cluster_count": 2, "points": []}),
+        encoding="utf-8",
+    )
+
+    run_latent_map_method_comparison(run_dir=run_dir)
+
+    output = capsys.readouterr().out
+    assert '"asset_kind": "latent-map-method-comparison"' in output
+    assert '"embedding_count": 1' in output
+    assert '"hdbscan_status": "deferred"' in output

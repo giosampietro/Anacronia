@@ -23,6 +23,8 @@ def export_viewer_data(
     *,
     run_dir: Path,
     recipe_name: str,
+    layout_id: str | None = None,
+    cluster_id: str | None = None,
     thumbnail_atlas_manifest_path: Path | None = None,
 ) -> ViewerDataExportSummary:
     resolved_run_dir = run_dir.expanduser().resolve()
@@ -33,14 +35,18 @@ def export_viewer_data(
     )
     manifest_rows = _load_jsonl(resolved_run_dir / "manifest.jsonl")
     manifest_by_id = {str(row["image_id"]): row for row in manifest_rows}
-    layout = _load_single_json(
+    layout = _load_selected_json(
         directory=resolved_run_dir / "layouts",
         pattern=f"{recipe_name}_*.json",
+        selected_id=layout_id,
+        id_key="layout_id",
         kind="layout",
     )
-    cluster = _load_single_json(
+    cluster = _load_selected_json(
         directory=resolved_run_dir / "clusters",
         pattern=f"{recipe_name}_*.json",
+        selected_id=cluster_id,
+        id_key="cluster_id",
         kind="cluster",
     )
     neighbor_rows = _load_jsonl(
@@ -85,6 +91,14 @@ def export_viewer_data(
         "recipe_name": recipe_name,
         "layout_id": str(layout.get("layout_id", "")),
         "cluster_id": str(cluster.get("cluster_id", "")),
+        "available_layouts": _list_available_layouts(
+            directory=resolved_run_dir / "layouts",
+            recipe_name=recipe_name,
+        ),
+        "available_clusters": _list_available_clusters(
+            directory=resolved_run_dir / "clusters",
+            recipe_name=recipe_name,
+        ),
         "point_count": len(points),
         "neighbor_index_path": neighbor_data_path.relative_to(
             resolved_run_dir
@@ -164,11 +178,63 @@ def _group_neighbors(
     return grouped
 
 
-def _load_single_json(*, directory: Path, pattern: str, kind: str) -> dict[str, object]:
+def _load_selected_json(
+    *,
+    directory: Path,
+    pattern: str,
+    selected_id: str | None,
+    id_key: str,
+    kind: str,
+) -> dict[str, object]:
     matches = sorted(directory.glob(pattern), key=lambda path: path.stat().st_mtime)
     if not matches:
         raise ValueError(f"No {kind} file found for pattern: {directory / pattern}")
-    return json.loads(matches[-1].read_text(encoding="utf-8"))
+    if selected_id is None:
+        return json.loads(matches[-1].read_text(encoding="utf-8"))
+
+    for path in matches:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if str(data.get(id_key, "")) == selected_id:
+            return data
+
+    raise ValueError(f"No {kind} file found with {id_key}: {selected_id}")
+
+
+def _list_available_layouts(
+    *,
+    directory: Path,
+    recipe_name: str,
+) -> list[dict[str, object]]:
+    layouts = []
+    for path in sorted(directory.glob(f"{recipe_name}_*.json")):
+        data = json.loads(path.read_text(encoding="utf-8"))
+        layouts.append(
+            {
+                "layout_id": str(data.get("layout_id", "")),
+                "method": str(data.get("method", "")),
+                "params": data.get("params", {}),
+            }
+        )
+    return sorted(layouts, key=lambda layout: str(layout["layout_id"]))
+
+
+def _list_available_clusters(
+    *,
+    directory: Path,
+    recipe_name: str,
+) -> list[dict[str, object]]:
+    clusters = []
+    for path in sorted(directory.glob(f"{recipe_name}_*.json")):
+        data = json.loads(path.read_text(encoding="utf-8"))
+        clusters.append(
+            {
+                "cluster_id": str(data.get("cluster_id", "")),
+                "cluster_count": data.get("cluster_count"),
+                "method": str(data.get("method", "")),
+                "random_state": data.get("random_state"),
+            }
+        )
+    return sorted(clusters, key=lambda cluster: str(cluster["cluster_id"]))
 
 
 def _load_jsonl(path: Path) -> list[dict[str, object]]:

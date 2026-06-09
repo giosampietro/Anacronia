@@ -18,6 +18,8 @@ export type LatentMapPoint = {
 
 export type LatentMapViewerData = {
   schema_version: 1;
+  available_clusters?: LatentMapAvailableCluster[];
+  available_layouts?: LatentMapAvailableLayout[];
   run_id: string;
   embedding_recipe: string;
   layout_id: string;
@@ -26,6 +28,19 @@ export type LatentMapViewerData = {
   neighbor_lookup_path?: string;
   thumbnail_atlas?: LatentMapGeneratedThumbnailAtlas;
   points: LatentMapPoint[];
+};
+
+export type LatentMapAvailableLayout = {
+  layout_id: string;
+  method: string;
+  params: Record<string, unknown>;
+};
+
+export type LatentMapAvailableCluster = {
+  cluster_count: number | null;
+  cluster_id: string;
+  method: string;
+  random_state: number | null;
 };
 
 export type LatentMapFittedPoint = LatentMapPoint & {

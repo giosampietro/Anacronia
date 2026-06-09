@@ -23,6 +23,8 @@ describe("LatentMapViewer", () => {
     expect(html).toContain("8 images");
     expect(html).toContain("3 clusters");
     expect(html).toContain("dinov3_vits_256");
+    expect(html).toContain("umap_n4_mindist0p05_seed42");
+    expect(html).toContain("kmeans_k3_seed42");
     expect(html).not.toContain("detail panel");
   });
 

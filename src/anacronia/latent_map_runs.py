@@ -6,10 +6,14 @@ import json
 import re
 from pathlib import Path
 
+from anacronia.latent_map_embedding_recipes import (
+    DINO_EMBEDDING_RECIPES,
+    PRIMARY_DINO_MODEL,
+)
+
 
 SUPPORTED_LATENT_MAP_FORMATS = ("jpg", "jpeg", "png", "webp")
 DINO_MEAN_PADDING_RGB = (124, 116, 104)
-PRIMARY_DINO_MODEL = "facebook/dinov3-vits16-pretrain-lvd1689m"
 RUN_SUBDIRECTORIES = (
     "thumbnails",
     "embeddings",
@@ -113,13 +117,12 @@ def _build_run_config(
             "padding_color_rgb": list(DINO_MEAN_PADDING_RGB),
             "recipes": [
                 {
-                    "name": "dinov3_vits_256",
-                    "long_edge": 256,
-                },
-                {
-                    "name": "dinov3_vits_384",
-                    "long_edge": 384,
-                },
+                    "name": recipe.name,
+                    "family": recipe.family,
+                    "model_id": recipe.model_id,
+                    "long_edge": recipe.long_edge,
+                }
+                for recipe in DINO_EMBEDDING_RECIPES.values()
             ],
         },
         "outputs": {

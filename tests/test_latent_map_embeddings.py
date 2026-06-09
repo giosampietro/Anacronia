@@ -76,7 +76,9 @@ def test_embedding_run_writes_normalized_vectors_and_metadata(tmp_path):
     assert np.allclose(np.linalg.norm(vectors, axis=1), [1.0, 1.0])
     assert summary.vector_count == 2
     assert summary.vector_dim == 3
+    assert metadata["recipe"]["family"] == "dinov3"
     assert metadata["recipe"]["long_edge"] == 256
+    assert metadata["recipe"]["model_id"] == "facebook/dinov3-vits16-pretrain-lvd1689m"
     assert metadata["model_id"] == "fake-embedder"
     assert metadata["device"] == "fake"
     assert metadata["manifest_image_count"] == 2

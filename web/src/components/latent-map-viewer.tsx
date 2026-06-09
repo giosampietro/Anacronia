@@ -588,6 +588,8 @@ export function LatentMapViewer({
           ) : null}
           <Badge variant="outline">{stats.clusterCount} clusters</Badge>
           <Badge variant="outline">{data.embedding_recipe}</Badge>
+          <Badge variant="outline">{data.layout_id}</Badge>
+          <Badge variant="outline">{data.cluster_id}</Badge>
           {renderMode === "thumbnails" ? (
             <Badge variant="outline">
               {thumbnailPlan.thumbnailPoints.length}

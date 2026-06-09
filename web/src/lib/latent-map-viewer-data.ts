@@ -6,6 +6,17 @@ import type {
 } from "@/lib/latent-map-viewer";
 
 type ExportedLatentMapViewerData = {
+  available_clusters?: {
+    cluster_count?: unknown;
+    cluster_id?: unknown;
+    method?: unknown;
+    random_state?: unknown;
+  }[];
+  available_layouts?: {
+    layout_id?: unknown;
+    method?: unknown;
+    params?: unknown;
+  }[];
   cluster_id?: string;
   layout_id?: string;
   neighbor_index_path?: string;
@@ -48,6 +59,8 @@ export function normalizeExportedLatentMapViewerData({
   return {
     schema_version: 1,
     run_id: String(rawData.run_id ?? "external-run"),
+    available_clusters: normalizeAvailableClusters(rawData.available_clusters),
+    available_layouts: normalizeAvailableLayouts(rawData.available_layouts),
     embedding_recipe: String(rawData.recipe_name ?? "unknown_recipe"),
     layout_id: String(rawData.layout_id ?? "unknown_layout"),
     cluster_id: String(rawData.cluster_id ?? "unknown_cluster"),
@@ -87,6 +100,42 @@ export function normalizeExportedLatentMapViewerData({
       };
     }),
   };
+}
+
+function normalizeAvailableLayouts(
+  layouts: ExportedLatentMapViewerData["available_layouts"],
+): LatentMapViewerData["available_layouts"] {
+  return Array.isArray(layouts)
+    ? layouts.map((layout) => ({
+        layout_id: String(layout.layout_id ?? ""),
+        method: String(layout.method ?? ""),
+        params:
+          layout.params &&
+          typeof layout.params === "object" &&
+          !Array.isArray(layout.params)
+            ? (layout.params as Record<string, unknown>)
+            : {},
+      }))
+    : [];
+}
+
+function normalizeAvailableClusters(
+  clusters: ExportedLatentMapViewerData["available_clusters"],
+): LatentMapViewerData["available_clusters"] {
+  return Array.isArray(clusters)
+    ? clusters.map((cluster) => ({
+        cluster_count:
+          typeof cluster.cluster_count === "number"
+            ? cluster.cluster_count
+            : null,
+        cluster_id: String(cluster.cluster_id ?? ""),
+        method: String(cluster.method ?? ""),
+        random_state:
+          typeof cluster.random_state === "number"
+            ? cluster.random_state
+            : null,
+      }))
+    : [];
 }
 
 function normalizeThumbnailAtlas({

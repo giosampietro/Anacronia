@@ -47,9 +47,19 @@ def test_initializes_latent_map_run_contract(tmp_path):
     assert config["preprocessing"]["preserve_aspect_ratio"] is True
     assert config["preprocessing"]["pad_to_multiple"] == 16
     assert config["preprocessing"]["padding_color_rgb"] == list(DINO_MEAN_PADDING_RGB)
-    assert [recipe["long_edge"] for recipe in config["preprocessing"]["recipes"]] == [
-        256,
-        384,
+    assert config["preprocessing"]["recipes"] == [
+        {
+            "name": "dinov3_vits_256",
+            "family": "dinov3",
+            "model_id": "facebook/dinov3-vits16-pretrain-lvd1689m",
+            "long_edge": 256,
+        },
+        {
+            "name": "dinov3_vits_384",
+            "family": "dinov3",
+            "model_id": "facebook/dinov3-vits16-pretrain-lvd1689m",
+            "long_edge": 384,
+        },
     ]
 
     report = (run.run_dir / "report.md").read_text(encoding="utf-8")

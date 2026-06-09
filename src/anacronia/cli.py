@@ -15,6 +15,7 @@ from anacronia.latent_map_embeddings import DINO_EMBEDDING_RECIPES, embed_latent
 from anacronia.latent_map_atlas import generate_latent_map_thumbnail_atlas
 from anacronia.latent_map_faiss import build_faiss_index, query_faiss_neighbors
 from anacronia.latent_map_layout import build_latent_map_layout
+from anacronia.latent_map_method_comparison import export_method_comparison
 from anacronia.latent_map_result_exports import export_latent_map_results
 from anacronia.latent_map_runs import initialize_latent_map_run
 from anacronia.latent_map_scan import scan_latent_map_run
@@ -469,11 +470,15 @@ def run_latent_map_viewer_export(
     *,
     run_dir: Path,
     recipe_name: str,
+    layout_id: str | None = None,
+    cluster_id: str | None = None,
     thumbnail_atlas_manifest_path: Path | None = None,
 ) -> None:
     summary = export_viewer_data(
         run_dir=run_dir,
         recipe_name=recipe_name,
+        layout_id=layout_id,
+        cluster_id=cluster_id,
         thumbnail_atlas_manifest_path=thumbnail_atlas_manifest_path,
     )
     output = {
@@ -492,6 +497,24 @@ def run_latent_map_viewer_export(
             summary.thumbnail_atlas_manifest_path
         )
     print(json.dumps(output), flush=True)
+
+
+def run_latent_map_method_comparison(*, run_dir: Path) -> None:
+    summary = export_method_comparison(run_dir=run_dir)
+    print(
+        json.dumps(
+            {
+                "asset_kind": "latent-map-method-comparison",
+                "run_id": summary.run_id,
+                "comparison_path": str(summary.comparison_path),
+                "embedding_count": summary.embedding_count,
+                "layout_count": summary.layout_count,
+                "cluster_count": summary.cluster_count,
+                "hdbscan_status": summary.hdbscan_status,
+            }
+        ),
+        flush=True,
+    )
 
 
 def run_latent_map_result_export(
@@ -608,6 +631,16 @@ def main() -> None:
         "--thumbnail-atlas-manifest",
         type=Path,
     )
+    latent_map_viewer_export_parser.add_argument("--layout-id")
+    latent_map_viewer_export_parser.add_argument("--cluster-id")
+    latent_map_method_comparison_parser = latent_map_subparsers.add_parser(
+        "method-comparison"
+    )
+    latent_map_method_comparison_parser.add_argument(
+        "--run-dir",
+        required=True,
+        type=Path,
+    )
     latent_map_result_export_parser = latent_map_subparsers.add_parser("result-export")
     latent_map_result_export_parser.add_argument("--run-dir", required=True, type=Path)
     latent_map_result_export_parser.add_argument(
@@ -713,8 +746,14 @@ def main() -> None:
         run_latent_map_viewer_export(
             run_dir=args.run_dir,
             recipe_name=args.recipe,
+            layout_id=args.layout_id,
+            cluster_id=args.cluster_id,
             thumbnail_atlas_manifest_path=args.thumbnail_atlas_manifest,
         )
+        return
+
+    if args.command == "latent-map" and args.latent_map_command == "method-comparison":
+        run_latent_map_method_comparison(run_dir=args.run_dir)
         return
 
     if args.command == "latent-map" and args.latent_map_command == "result-export":

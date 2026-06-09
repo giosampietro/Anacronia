@@ -33,13 +33,10 @@ export HF_HOME="$(pwd)/.hf-cache"
 mkdir -p "$HF_HOME"
 
 .venv/bin/python - <<'PY'
-import time
-
 try:
     import torch
-    from PIL import Image
     from huggingface_hub import HfApi, get_token
-    from transformers import AutoConfig, AutoImageProcessor, AutoModel, DINOv3ViTConfig, DINOv3ViTModel
+    from transformers import AutoConfig, DINOv3ViTConfig, DINOv3ViTModel
 except Exception as exc:
     print("Missing image-embedding dependency.")
     print("Run batch-cmd/setup-dinov3-local.command first.")
@@ -47,7 +44,6 @@ except Exception as exc:
     raise
 
 dinov3_repo = "facebook/dinov3-vits16-pretrain-lvd1689m"
-smoke_repo = "facebook/dinov2-small"
 
 print(f"PyTorch: {torch.__version__}")
 print(f"MPS built: {torch.backends.mps.is_built()}")
@@ -97,38 +93,4 @@ if torch.backends.mps.is_available():
     print(f"pooler_output={tuple(outputs.pooler_output.shape)}")
     print()
 
-device_names = ["cpu"]
-if torch.backends.mps.is_available():
-    device_names.append("mps")
-
-print(f"Public smoke-test model: {smoke_repo}")
-processor = AutoImageProcessor.from_pretrained(smoke_repo)
-image = Image.new("RGB", (224, 224), (240, 240, 235))
-
-for device in device_names:
-    model = AutoModel.from_pretrained(smoke_repo).to(device).eval()
-    inputs = {
-        key: value.to(device)
-        for key, value in processor(images=image, return_tensors="pt").items()
-    }
-
-    for _ in range(2):
-        with torch.no_grad():
-            outputs = model(**inputs)
-    if device == "mps":
-        torch.mps.synchronize()
-
-    start = time.perf_counter()
-    with torch.no_grad():
-        for _ in range(20):
-            outputs = model(**inputs)
-    if device == "mps":
-        torch.mps.synchronize()
-    elapsed = time.perf_counter() - start
-
-    cls = outputs.last_hidden_state[:, 0]
-    print(
-        f"{device}: {elapsed / 20 * 1000:.2f} ms/image, "
-        f"embedding_dim={cls.shape[-1]}, norm={float(cls.norm().cpu()):.4f}"
-    )
 PY

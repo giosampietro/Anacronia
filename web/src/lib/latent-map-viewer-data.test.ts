@@ -14,6 +14,21 @@ describe("normalizeExportedLatentMapViewerData", () => {
         recipe_name: "dinov3_vits_256",
         layout_id: "layout-1",
         cluster_id: "cluster-1",
+        available_layouts: [
+          {
+            layout_id: "layout-1",
+            method: "umap",
+            params: { min_dist: 0.05 },
+          },
+        ],
+        available_clusters: [
+          {
+            cluster_id: "cluster-1",
+            cluster_count: 4,
+            method: "kmeans",
+            random_state: 42,
+          },
+        ],
         points: [
           {
             image_id: "img_1",
@@ -38,6 +53,21 @@ describe("normalizeExportedLatentMapViewerData", () => {
       layout_id: "layout-1",
       cluster_id: "cluster-1",
       source_folder: "/source/images",
+      available_layouts: [
+        {
+          layout_id: "layout-1",
+          method: "umap",
+          params: { min_dist: 0.05 },
+        },
+      ],
+      available_clusters: [
+        {
+          cluster_id: "cluster-1",
+          cluster_count: 4,
+          method: "kmeans",
+          random_state: 42,
+        },
+      ],
     });
     expect(data.points[0]).toMatchObject({
       image_id: "img_1",
