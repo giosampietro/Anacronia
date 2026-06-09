@@ -65,6 +65,40 @@ describe("latent map viewer model", () => {
     expect(plan.textureSources).not.toContain("fixture/a1.jpg");
   });
 
+  it("samples capped thumbnails across the fitted layout", () => {
+    const points = Array.from({ length: 25 }, (_, index) => {
+      const column = index % 5;
+      const row = Math.floor(index / 5);
+
+      return {
+        image_id: `img_${String(index).padStart(2, "0")}`,
+        x: column,
+        y: row,
+        fitted_x: column - 2,
+        fitted_y: row - 2,
+        cluster_id: 0,
+        thumbnail_path: `thumb-${index}.jpg`,
+        source_path: `source-${index}.jpg`,
+        relative_path: `source-${index}.jpg`,
+        width: 100,
+        height: 100,
+        neighbors: [],
+        color: [150, 156, 166] as [number, number, number],
+        point_state: "cluster" as const,
+      };
+    });
+    const plan = createLatentMapThumbnailRenderPlan({
+      maxThumbnails: 9,
+      points,
+    });
+
+    expect(plan.thumbnailPoints).toHaveLength(9);
+    expect(new Set(plan.thumbnailPoints.map((point) => point.fitted_x)).size)
+      .toBeGreaterThan(1);
+    expect(new Set(plan.thumbnailPoints.map((point) => point.fitted_y)).size)
+      .toBeGreaterThan(1);
+  });
+
   it("fits arbitrary UMAP coordinates into stable WebGL world space", () => {
     const fitted = fitLatentMapPoints(latentMapFixture.points);
     const xs = fitted.map((point) => point.fitted_x);

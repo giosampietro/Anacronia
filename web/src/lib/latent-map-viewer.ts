@@ -181,6 +181,66 @@ function getThumbnailPriority(point: LatentMapRenderablePoint): number {
   return 2;
 }
 
+function createSpatialThumbnailSample({
+  maxPoints,
+  points,
+}: {
+  maxPoints: number;
+  points: LatentMapRenderablePoint[];
+}): LatentMapRenderablePoint[] {
+  if (maxPoints <= 0 || points.length === 0) {
+    return [];
+  }
+
+  const minX = Math.min(...points.map((point) => point.fitted_x));
+  const maxX = Math.max(...points.map((point) => point.fitted_x));
+  const minY = Math.min(...points.map((point) => point.fitted_y));
+  const maxY = Math.max(...points.map((point) => point.fitted_y));
+  const spanX = Math.max(maxX - minX, 0.001);
+  const spanY = Math.max(maxY - minY, 0.001);
+  const gridSize = Math.max(4, Math.ceil(Math.sqrt(maxPoints)));
+  const cells = new Map<string, LatentMapRenderablePoint[]>();
+
+  for (const point of points) {
+    const cellX = Math.min(
+      gridSize - 1,
+      Math.max(0, Math.floor(((point.fitted_x - minX) / spanX) * gridSize)),
+    );
+    const cellY = Math.min(
+      gridSize - 1,
+      Math.max(0, Math.floor(((point.fitted_y - minY) / spanY) * gridSize)),
+    );
+    const key = `${cellY}:${cellX}`;
+
+    cells.set(key, [...(cells.get(key) ?? []), point]);
+  }
+
+  const queues = [...cells.entries()]
+    .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey))
+    .map(([, cellPoints]) =>
+      cellPoints.sort((left, right) => left.image_id.localeCompare(right.image_id)),
+    );
+  const sampled: LatentMapRenderablePoint[] = [];
+
+  while (sampled.length < maxPoints && queues.length > 0) {
+    for (let index = 0; index < queues.length && sampled.length < maxPoints;) {
+      const nextPoint = queues[index].shift();
+
+      if (nextPoint) {
+        sampled.push(nextPoint);
+      }
+
+      if (queues[index].length === 0) {
+        queues.splice(index, 1);
+      } else {
+        index += 1;
+      }
+    }
+  }
+
+  return sampled;
+}
+
 export function createLatentMapThumbnailRenderPlan({
   maxThumbnails = DEFAULT_LATENT_MAP_THUMBNAIL_CAP,
   points,
@@ -188,7 +248,7 @@ export function createLatentMapThumbnailRenderPlan({
   maxThumbnails?: number;
   points: LatentMapRenderablePoint[];
 }): LatentMapThumbnailRenderPlan {
-  const prioritizedPoints = [...points].sort((left, right) => {
+  const sortedPoints = [...points].sort((left, right) => {
     const priorityDelta = getThumbnailPriority(left) - getThumbnailPriority(right);
 
     if (priorityDelta !== 0) {
@@ -197,7 +257,18 @@ export function createLatentMapThumbnailRenderPlan({
 
     return left.image_id.localeCompare(right.image_id);
   });
-  const thumbnailPoints = prioritizedPoints.slice(0, maxThumbnails);
+  const requiredPoints = sortedPoints.filter(
+    (point) => point.point_state === "selected" || point.point_state === "neighbor",
+  );
+  const requiredIds = new Set(requiredPoints.map((point) => point.image_id));
+  const spatialPoints = createSpatialThumbnailSample({
+    maxPoints: Math.max(0, maxThumbnails - requiredPoints.length),
+    points: sortedPoints.filter((point) => !requiredIds.has(point.image_id)),
+  });
+  const thumbnailPoints = [...requiredPoints, ...spatialPoints].slice(
+    0,
+    maxThumbnails,
+  );
 
   return {
     capped: points.length > thumbnailPoints.length,
