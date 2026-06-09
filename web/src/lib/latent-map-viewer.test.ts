@@ -29,6 +29,27 @@ describe("latent map viewer model", () => {
     ).toEqual(["img_amber", "img_vermilion", "img_cobalt"]);
   });
 
+  it("selects FAISS neighbors from a separately loaded neighbor index", () => {
+    const splitFixture = structuredClone(latentMapFixture);
+    splitFixture.points.forEach((point) => {
+      delete point.neighbors;
+    });
+
+    expect(
+      [
+        ...createLatentMapNeighborSet(splitFixture, "img_saffron", {
+          img_saffron: [
+            { image_id: "img_amber", score: 0.94 },
+            { image_id: "img_vermilion", score: 0.82 },
+          ],
+        }),
+      ],
+    ).toEqual(["img_amber", "img_vermilion"]);
+    expect(
+      [...createLatentMapNeighborSet(splitFixture, "img_saffron")],
+    ).toEqual([]);
+  });
+
   it("marks selected and neighbor points before cluster colors", () => {
     const states = createLatentMapRenderState({
       clusterColorsEnabled: true,

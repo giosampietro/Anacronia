@@ -38,6 +38,7 @@ import {
   createLatentMapPointerHitRadius,
   createLatentMapSpatialIndex,
 } from "@/lib/latent-map-spatial-index";
+import { normalizeLatentMapNeighborResponse } from "@/lib/latent-map-viewer-data";
 import {
   createLatentMapWebglRuntime,
   type LatentMapRuntimeState,
@@ -90,6 +91,13 @@ export function LatentMapViewer({
   const [selectedImageId, setSelectedImageId] = useState<string | null>(
     initialSelectedImageId,
   );
+  const [neighborsByImageId, setNeighborsByImageId] = useState<
+    Record<string, NonNullable<LatentMapViewerData["points"][number]["neighbors"]>>
+  >({});
+  const [loadingNeighborImageId, setLoadingNeighborImageId] = useState<
+    string | null
+  >(null);
+  const [neighborError, setNeighborError] = useState<string | null>(null);
   const [renderMode, setRenderMode] =
     useState<LatentMapRenderMode>(initialRenderMode);
   const [runtimeRendererInfo, setRuntimeRendererInfo] =
@@ -104,9 +112,10 @@ export function LatentMapViewer({
       createLatentMapRenderState({
         clusterColorsEnabled,
         data,
+        neighborsByImageId,
         selectedImageId,
       }),
-    [clusterColorsEnabled, data, selectedImageId],
+    [clusterColorsEnabled, data, neighborsByImageId, selectedImageId],
   );
   const spatialIndex = useMemo(
     () => createLatentMapSpatialIndex(renderPoints),
@@ -275,6 +284,53 @@ export function LatentMapViewer({
     });
   }
 
+  async function loadNeighborsForImage(imageId: string) {
+    const selectedPoint = data.points.find((point) => point.image_id === imageId);
+
+    if (
+      (selectedPoint?.neighbors?.length ?? 0) > 0 ||
+      Object.hasOwn(neighborsByImageId, imageId)
+    ) {
+      setNeighborError(null);
+      return;
+    }
+
+    if (!data.neighbor_lookup_path) {
+      setNeighborError("FAISS neighbors are unavailable for this image.");
+      return;
+    }
+
+    const requestUrl = new URL(data.neighbor_lookup_path, window.location.origin);
+    requestUrl.searchParams.set("image_id", imageId);
+    setLoadingNeighborImageId(imageId);
+    setNeighborError(null);
+
+    try {
+      const response = await fetch(requestUrl);
+
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+
+      const neighbors = normalizeLatentMapNeighborResponse(
+        await response.json(),
+        imageId,
+      );
+
+      setNeighborsByImageId((current) => ({
+        ...current,
+        [imageId]: neighbors,
+      }));
+      setNeighborError(null);
+    } catch {
+      setNeighborError("FAISS neighbors are unavailable for this image.");
+    } finally {
+      setLoadingNeighborImageId((current) =>
+        current === imageId ? null : current,
+      );
+    }
+  }
+
   function handlePointerDown(event: React.PointerEvent<HTMLDivElement>) {
     try {
       event.currentTarget.setPointerCapture(event.pointerId);
@@ -347,12 +403,20 @@ export function LatentMapViewer({
       y: event.clientY,
     });
 
-    setSelectedImageId((currentSelectedImageId) =>
-      getNextLatentMapSelection({
-        currentSelectedImageId,
-        pickedImageId: nearestPoint?.image_id ?? null,
-      }),
-    );
+    const nextSelectedImageId = getNextLatentMapSelection({
+      currentSelectedImageId: selectedImageId,
+      pickedImageId: nearestPoint?.image_id ?? null,
+    });
+
+    setSelectedImageId(nextSelectedImageId);
+
+    if (!nextSelectedImageId) {
+      setNeighborError(null);
+      setLoadingNeighborImageId(null);
+      return;
+    }
+
+    void loadNeighborsForImage(nextSelectedImageId);
   }
 
   function handleWheel(event: React.WheelEvent<HTMLDivElement>) {
@@ -535,9 +599,23 @@ export function LatentMapViewer({
           {selectedPoint ? (
             <>
               <Badge className="bg-background/85 text-foreground" variant="outline">
-                {selectedPoint.neighbors.length} neighbors
+                {(
+                  neighborsByImageId[selectedPoint.image_id] ??
+                  selectedPoint.neighbors ??
+                  []
+                ).length} neighbors
               </Badge>
             </>
+          ) : null}
+          {loadingNeighborImageId ? (
+            <Badge className="bg-background/85 text-foreground" variant="outline">
+              Loading FAISS neighbors
+            </Badge>
+          ) : null}
+          {neighborError ? (
+            <Badge className="bg-background/85 text-foreground" variant="outline">
+              {neighborError}
+            </Badge>
           ) : null}
         </div>
 

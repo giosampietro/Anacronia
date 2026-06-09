@@ -1,5 +1,6 @@
 import type {
   LatentMapGeneratedThumbnailAtlas,
+  LatentMapNeighbor,
   LatentMapPoint,
   LatentMapViewerData,
 } from "@/lib/latent-map-viewer";
@@ -7,6 +8,7 @@ import type {
 type ExportedLatentMapViewerData = {
   cluster_id?: string;
   layout_id?: string;
+  neighbor_index_path?: string;
   points?: Partial<LatentMapPoint>[];
   recipe_name?: string;
   run_id?: string;
@@ -14,23 +16,25 @@ type ExportedLatentMapViewerData = {
   thumbnail_atlas_manifest_path?: string;
 };
 
-function createThumbnailUrl({
-  thumbnailApiPath,
-  thumbnailPath,
+function createResourceUrl({
+  apiPath,
+  resourcePath,
 }: {
-  thumbnailApiPath: string;
-  thumbnailPath: string;
+  apiPath: string;
+  resourcePath: string;
 }): string {
-  const separator = thumbnailApiPath.includes("?") ? "&" : "?";
+  const separator = apiPath.includes("?") ? "&" : "?";
 
-  return `${thumbnailApiPath}${separator}path=${encodeURIComponent(thumbnailPath)}`;
+  return `${apiPath}${separator}path=${encodeURIComponent(resourcePath)}`;
 }
 
 export function normalizeExportedLatentMapViewerData({
   rawData,
+  neighborApiPath = "/api/latent-map/neighbors",
   sourceFolder,
   thumbnailApiPath = "/api/latent-map/thumbnails",
 }: {
+  neighborApiPath?: string;
   rawData: ExportedLatentMapViewerData;
   sourceFolder: string;
   thumbnailApiPath?: string;
@@ -48,6 +52,15 @@ export function normalizeExportedLatentMapViewerData({
     layout_id: String(rawData.layout_id ?? "unknown_layout"),
     cluster_id: String(rawData.cluster_id ?? "unknown_cluster"),
     source_folder: sourceFolder,
+    ...(typeof rawData.neighbor_index_path === "string" &&
+    rawData.neighbor_index_path.length > 0
+      ? {
+          neighbor_lookup_path: createResourceUrl({
+            apiPath: neighborApiPath,
+            resourcePath: rawData.neighbor_index_path,
+          }),
+        }
+      : {}),
     ...(thumbnailAtlas ? { thumbnail_atlas: thumbnailAtlas } : {}),
     points: points.map((point): LatentMapPoint => {
       const thumbnailPath = String(point.thumbnail_path ?? "");
@@ -57,11 +70,11 @@ export function normalizeExportedLatentMapViewerData({
         x: Number(point.x ?? 0),
         y: Number(point.y ?? 0),
         cluster_id: Number(point.cluster_id ?? 0),
-        thumbnail_path: createThumbnailUrl({
-          thumbnailApiPath,
-          thumbnailPath,
+        thumbnail_path: createResourceUrl({
+          apiPath: thumbnailApiPath,
+          resourcePath: thumbnailPath,
         }),
-        source_path: String(point.source_path ?? ""),
+        source_path: "",
         relative_path: String(point.relative_path ?? ""),
         width: Number(point.width ?? 1),
         height: Number(point.height ?? 1),
@@ -99,9 +112,9 @@ function normalizeThumbnailAtlas({
       ? rawAtlas.pages.map((page) => ({
           height: Number(page.height ?? 0),
           index: Number(page.index ?? 0),
-          path: createThumbnailUrl({
-            thumbnailApiPath,
-            thumbnailPath: String(page.path ?? ""),
+          path: createResourceUrl({
+            apiPath: thumbnailApiPath,
+            resourcePath: String(page.path ?? ""),
           }),
           width: Number(page.width ?? 0),
         }))
@@ -132,4 +145,36 @@ function normalizeNumberTuple(
     numbers[2] ?? 0,
     numbers[3] ?? 0,
   ];
+}
+
+export function normalizeLatentMapNeighborResponse(
+  rawData: unknown,
+  selectedImageId: string,
+): LatentMapNeighbor[] {
+  if (!rawData || typeof rawData !== "object") {
+    throw new Error("FAISS neighbors are unavailable for the selected image.");
+  }
+
+  const response = rawData as {
+    image_id?: unknown;
+    neighbors?: unknown;
+  };
+  const imageId = String(response.image_id ?? "");
+
+  if (imageId !== selectedImageId) {
+    throw new Error("FAISS neighbor response mismatch.");
+  }
+
+  if (!Array.isArray(response.neighbors)) {
+    throw new Error("FAISS neighbors are unavailable for the selected image.");
+  }
+
+  return response.neighbors.map((neighbor) => {
+    const row = neighbor as { image_id?: unknown; score?: unknown };
+
+    return {
+      image_id: String(row.image_id ?? ""),
+      score: Number(row.score ?? 0),
+    };
+  });
 }

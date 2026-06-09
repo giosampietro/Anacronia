@@ -400,6 +400,7 @@ def test_latent_map_viewer_export_cli_prints_summary(tmp_path, capsys):
     output = capsys.readouterr().out
     assert '"point_count": 2' in output
     assert '"viewer_data_path"' in output
+    assert '"neighbor_data_path"' in output
 
 
 def test_latent_map_viewer_export_cli_prints_atlas_manifest_path(tmp_path, capsys):

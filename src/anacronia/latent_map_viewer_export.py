@@ -13,6 +13,9 @@ class ViewerDataExportSummary:
     cluster_id: str
     point_count: int
     viewer_data_path: Path
+    neighbor_data_path: Path
+    map_payload_bytes: int
+    neighbor_payload_bytes: int
     thumbnail_atlas_manifest_path: Path | None = None
 
 
@@ -67,39 +70,57 @@ def export_viewer_data(
                 "y": float(point["y"]),
                 "cluster_id": cluster_by_id[image_id],
                 "thumbnail_path": str(manifest.get("thumbnail_path", "")),
-                "source_path": str(manifest.get("source_path", "")),
                 "relative_path": str(manifest.get("relative_path", "")),
                 "width": manifest.get("width"),
                 "height": manifest.get("height"),
-                "neighbors": neighbors_by_id.get(image_id, []),
             }
         )
 
     viewer_dir = resolved_run_dir / "viewer"
     viewer_dir.mkdir(parents=True, exist_ok=True)
     viewer_data_path = viewer_dir / "map-data.json"
+    neighbor_data_path = viewer_dir / "neighbors.json"
     viewer_data = {
         "run_id": run_id,
         "recipe_name": recipe_name,
         "layout_id": str(layout.get("layout_id", "")),
         "cluster_id": str(cluster.get("cluster_id", "")),
         "point_count": len(points),
+        "neighbor_index_path": neighbor_data_path.relative_to(
+            resolved_run_dir
+        ).as_posix(),
         "points": points,
+    }
+    neighbor_data = {
+        "schema_version": 1,
+        "asset_kind": "latent-map-neighbors",
+        "run_id": run_id,
+        "recipe_name": recipe_name,
+        "neighbors_by_image_id": neighbors_by_id,
     }
     if resolved_atlas_manifest_path is not None:
         viewer_data["thumbnail_atlas_manifest_path"] = (
             resolved_atlas_manifest_path.relative_to(resolved_run_dir).as_posix()
         )
+    neighbor_data_path.write_text(
+        json.dumps(neighbor_data, indent=2) + "\n",
+        encoding="utf-8",
+    )
     viewer_data_path.write_text(
         json.dumps(viewer_data, indent=2) + "\n",
         encoding="utf-8",
     )
+    map_payload_bytes = viewer_data_path.stat().st_size
+    neighbor_payload_bytes = neighbor_data_path.stat().st_size
     _append_viewer_report(
         run_dir=resolved_run_dir,
         recipe_name=recipe_name,
         point_count=len(points),
         thumbnail_atlas_manifest_path=resolved_atlas_manifest_path,
         viewer_data_path=viewer_data_path,
+        neighbor_data_path=neighbor_data_path,
+        map_payload_bytes=map_payload_bytes,
+        neighbor_payload_bytes=neighbor_payload_bytes,
     )
 
     return ViewerDataExportSummary(
@@ -108,6 +129,9 @@ def export_viewer_data(
         layout_id=str(layout.get("layout_id", "")),
         cluster_id=str(cluster.get("cluster_id", "")),
         point_count=len(points),
+        neighbor_data_path=neighbor_data_path,
+        map_payload_bytes=map_payload_bytes,
+        neighbor_payload_bytes=neighbor_payload_bytes,
         thumbnail_atlas_manifest_path=resolved_atlas_manifest_path,
         viewer_data_path=viewer_data_path,
     )
@@ -188,9 +212,20 @@ def _append_viewer_report(
     point_count: int,
     thumbnail_atlas_manifest_path: Path | None,
     viewer_data_path: Path,
+    neighbor_data_path: Path,
+    map_payload_bytes: int,
+    neighbor_payload_bytes: int,
 ) -> None:
     report_path = run_dir / "report.md"
     existing_report = report_path.read_text(encoding="utf-8") if report_path.is_file() else ""
+    bytes_per_point = map_payload_bytes / max(point_count, 1)
+    estimated_payload_rows = [
+        (
+            f"- Estimated initial map payload at {label} images: "
+            f"{int(bytes_per_point * target):,} bytes"
+        )
+        for label, target in (("5k", 5_000), ("10k", 10_000), ("30k", 30_000))
+    ]
     addition = "\n".join(
         [
             "",
@@ -199,6 +234,10 @@ def _append_viewer_report(
             f"- Recipe: `{recipe_name}`",
             f"- Points: {point_count}",
             f"- File: `{viewer_data_path}`",
+            f"- Neighbor index: `{neighbor_data_path}`",
+            f"- Initial map payload: {map_payload_bytes:,} bytes",
+            f"- Neighbor payload: {neighbor_payload_bytes:,} bytes",
+            *estimated_payload_rows,
             *(
                 [
                     (

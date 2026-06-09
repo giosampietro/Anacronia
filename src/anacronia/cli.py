@@ -482,6 +482,9 @@ def run_latent_map_viewer_export(
         "cluster_id": summary.cluster_id,
         "point_count": summary.point_count,
         "viewer_data_path": str(summary.viewer_data_path),
+        "neighbor_data_path": str(summary.neighbor_data_path),
+        "map_payload_bytes": summary.map_payload_bytes,
+        "neighbor_payload_bytes": summary.neighbor_payload_bytes,
     }
     if summary.thumbnail_atlas_manifest_path is not None:
         output["thumbnail_atlas_manifest_path"] = str(

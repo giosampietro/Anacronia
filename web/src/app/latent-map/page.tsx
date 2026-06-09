@@ -61,6 +61,9 @@ async function loadLatentMapViewerData() {
   }
 
   return normalizeExportedLatentMapViewerData({
+    neighborApiPath: `/api/latent-map/neighbors?run=${encodeURIComponent(
+      path.basename(runDir),
+    )}`,
     rawData,
     sourceFolder,
     thumbnailApiPath: `/api/latent-map/thumbnails?run=${encodeURIComponent(

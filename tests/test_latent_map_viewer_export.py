@@ -99,7 +99,7 @@ def create_viewer_run(tmp_path):
     return run
 
 
-def test_exports_compact_viewer_data_with_neighbors(tmp_path):
+def test_exports_compact_viewer_data_with_separate_neighbor_index(tmp_path):
     run = create_viewer_run(tmp_path)
 
     summary = export_viewer_data(
@@ -113,24 +113,35 @@ def test_exports_compact_viewer_data_with_neighbors(tmp_path):
     assert data["recipe_name"] == "dinov3_vits_256"
     assert data["layout_id"] == "umap_n4_mindist0p05_seed42"
     assert data["cluster_id"] == "kmeans_k2_seed42"
+    assert data["neighbor_index_path"] == "viewer/neighbors.json"
     assert data["points"][0] == {
         "image_id": "img-a",
         "x": 1.0,
         "y": 2.0,
         "cluster_id": 0,
         "thumbnail_path": "thumbnails/img-a.jpg",
-        "source_path": str((tmp_path / "source-images" / "a.jpg").resolve()),
         "relative_path": "a.jpg",
         "width": 100,
         "height": 200,
-        "neighbors": [
-            {
-                "rank": 1,
-                "image_id": "img-b",
-                "score": 0.8,
-            }
-        ],
     }
+    assert "source_path" not in data["points"][0]
+    assert "neighbors" not in data["points"][0]
+    assert summary.neighbor_data_path == run.run_dir / "viewer" / "neighbors.json"
+    assert summary.map_payload_bytes > 0
+    assert summary.neighbor_payload_bytes > 0
+
+    neighbor_data = json.loads(summary.neighbor_data_path.read_text(encoding="utf-8"))
+    assert neighbor_data["asset_kind"] == "latent-map-neighbors"
+    assert neighbor_data["neighbors_by_image_id"]["img-a"] == [
+        {
+            "rank": 1,
+            "image_id": "img-b",
+            "score": 0.8,
+        }
+    ]
+    assert "Estimated initial map payload at 10k images" in (
+        run.run_dir / "report.md"
+    ).read_text(encoding="utf-8")
 
 
 def test_exports_viewer_data_with_generated_atlas_manifest_path(tmp_path):

@@ -9,11 +9,11 @@ export type LatentMapPoint = {
   y: number;
   cluster_id: number;
   thumbnail_path: string;
-  source_path: string;
+  source_path?: string;
   relative_path: string;
   width: number;
   height: number;
-  neighbors: LatentMapNeighbor[];
+  neighbors?: LatentMapNeighbor[];
 };
 
 export type LatentMapViewerData = {
@@ -23,6 +23,7 @@ export type LatentMapViewerData = {
   layout_id: string;
   cluster_id: string;
   source_folder: string;
+  neighbor_lookup_path?: string;
   thumbnail_atlas?: LatentMapGeneratedThumbnailAtlas;
   points: LatentMapPoint[];
 };
@@ -179,9 +180,18 @@ export function createLatentMapStats(data: LatentMapViewerData): {
 export function createLatentMapNeighborSet(
   data: LatentMapViewerData,
   selectedImageId: string | null,
+  loadedNeighborsByImageId: Record<string, LatentMapNeighbor[]> = {},
 ): Set<string> {
   if (!selectedImageId) {
     return new Set();
+  }
+
+  if (Object.hasOwn(loadedNeighborsByImageId, selectedImageId)) {
+    return new Set(
+      loadedNeighborsByImageId[selectedImageId].map(
+        (neighbor) => neighbor.image_id,
+      ),
+    );
   }
 
   const selectedPoint = data.points.find(
@@ -192,7 +202,9 @@ export function createLatentMapNeighborSet(
     return new Set();
   }
 
-  return new Set(selectedPoint.neighbors.map((neighbor) => neighbor.image_id));
+  return new Set(
+    (selectedPoint.neighbors ?? []).map((neighbor) => neighbor.image_id),
+  );
 }
 
 export function getNextLatentMapSelection({
@@ -235,13 +247,19 @@ export function fitLatentMapPoints(
 export function createLatentMapRenderState({
   clusterColorsEnabled,
   data,
+  neighborsByImageId,
   selectedImageId,
 }: {
   clusterColorsEnabled: boolean;
   data: LatentMapViewerData;
+  neighborsByImageId?: Record<string, LatentMapNeighbor[]>;
   selectedImageId: string | null;
 }): LatentMapRenderablePoint[] {
-  const neighborIds = createLatentMapNeighborSet(data, selectedImageId);
+  const neighborIds = createLatentMapNeighborSet(
+    data,
+    selectedImageId,
+    neighborsByImageId,
+  );
 
   return fitLatentMapPoints(data.points).map((point) => {
     if (point.image_id === selectedImageId) {

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { normalizeExportedLatentMapViewerData } from "@/lib/latent-map-viewer-data";
+import {
+  normalizeExportedLatentMapViewerData,
+  normalizeLatentMapNeighborResponse,
+} from "@/lib/latent-map-viewer-data";
 
 describe("normalizeExportedLatentMapViewerData", () => {
   it("loads exported map data through generated thumbnail URLs", () => {
@@ -22,9 +25,9 @@ describe("normalizeExportedLatentMapViewerData", () => {
             relative_path: "original.jpg",
             width: 800,
             height: 600,
-            neighbors: [{ image_id: "img_2", score: 0.91 }],
           },
         ],
+        neighbor_index_path: "viewer/neighbors.json",
       },
     });
 
@@ -40,10 +43,13 @@ describe("normalizeExportedLatentMapViewerData", () => {
       image_id: "img_1",
       thumbnail_path:
         "/api/latent-map/thumbnails?path=thumbnails%2Fimg_1.jpg",
-      source_path: "/source/images/original.jpg",
+      source_path: "",
       relative_path: "original.jpg",
-      neighbors: [{ image_id: "img_2", score: 0.91 }],
     });
+    expect(data.neighbor_lookup_path).toBe(
+      "/api/latent-map/neighbors?path=viewer%2Fneighbors.json",
+    );
+    expect(data.points[0].neighbors).toEqual([]);
     expect(data.points[0].thumbnail_path).not.toContain("original.jpg");
   });
 
@@ -63,6 +69,26 @@ describe("normalizeExportedLatentMapViewerData", () => {
 
     expect(data.points[0].thumbnail_path).toBe(
       "/api/latent-map/thumbnails?run=run-1&path=thumbnails%2Fimg_1.jpg",
+    );
+  });
+
+  it("preserves existing neighbor API query params", () => {
+    const data = normalizeExportedLatentMapViewerData({
+      sourceFolder: "/source/images",
+      neighborApiPath: "/api/latent-map/neighbors?run=run-1",
+      rawData: {
+        neighbor_index_path: "viewer/neighbors.json",
+        points: [
+          {
+            image_id: "img_1",
+            thumbnail_path: "thumbnails/img_1.jpg",
+          },
+        ],
+      },
+    });
+
+    expect(data.neighbor_lookup_path).toBe(
+      "/api/latent-map/neighbors?run=run-1&path=viewer%2Fneighbors.json",
     );
   });
 
@@ -115,5 +141,43 @@ describe("normalizeExportedLatentMapViewerData", () => {
     expect(data.thumbnail_atlas?.items[0].source_thumbnail_path).toBe(
       "thumbnails/img_1.jpg",
     );
+  });
+
+  it("normalizes selected-image FAISS neighbor responses", () => {
+    expect(
+      normalizeLatentMapNeighborResponse(
+        {
+          image_id: "img_1",
+          neighbors: [
+            { image_id: "img_2", score: "0.91" },
+            { image_id: "img_3", score: 0.75 },
+          ],
+        },
+        "img_1",
+      ),
+    ).toEqual([
+      { image_id: "img_2", score: 0.91 },
+      { image_id: "img_3", score: 0.75 },
+    ]);
+  });
+
+  it("rejects missing FAISS neighbor responses clearly", () => {
+    expect(() =>
+      normalizeLatentMapNeighborResponse(
+        {
+          image_id: "img_1",
+        },
+        "img_1",
+      ),
+    ).toThrow("FAISS neighbors are unavailable");
+    expect(() =>
+      normalizeLatentMapNeighborResponse(
+        {
+          image_id: "img_2",
+          neighbors: [],
+        },
+        "img_1",
+      ),
+    ).toThrow("FAISS neighbor response mismatch");
   });
 });
