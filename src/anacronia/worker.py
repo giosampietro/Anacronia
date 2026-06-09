@@ -1,9 +1,11 @@
 from dataclasses import dataclass
+import fcntl
+import os
 from pathlib import Path
 import shutil
 import sqlite3
 import time
-from typing import Callable, Mapping
+from typing import Callable, Mapping, TextIO
 
 from anacronia.collection_runs import DEFAULT_BATCH_TARGET, ensure_collection_run_schema
 from anacronia.met_adapter import MetProviderAdapter
@@ -60,6 +62,33 @@ class CollectJob:
     required_disk_bytes: int
     last_disk_available_bytes: int | None
     max_images_per_object: int
+
+
+@dataclass
+class WorkerRuntimeLock:
+    path: Path
+    handle: TextIO
+
+    def close(self) -> None:
+        fcntl.flock(self.handle.fileno(), fcntl.LOCK_UN)
+        self.handle.close()
+
+
+def acquire_worker_runtime_lock(data_root: Path) -> WorkerRuntimeLock:
+    data_root.mkdir(parents=True, exist_ok=True)
+    lock_path = data_root / ".anacronia-worker.lock"
+    lock_handle = lock_path.open("a+")
+    try:
+        fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError as error:
+        lock_handle.close()
+        raise RuntimeError("Anacronia worker is already running for this data folder.") from error
+
+    lock_handle.seek(0)
+    lock_handle.truncate()
+    lock_handle.write(str(os.getpid()))
+    lock_handle.flush()
+    return WorkerRuntimeLock(path=lock_path, handle=lock_handle)
 
 
 def create_idle_worker_status() -> dict[str, str]:
@@ -317,7 +346,12 @@ def resume_collect_job(
         connection.execute(
             """
             UPDATE collect_jobs
-            SET status = 'running', pause_reason = '', batch_target = ?
+            SET
+              status = 'running',
+              pause_reason = '',
+              batch_target = ?,
+              provider_failure_count = 0,
+              backoff_seconds = 0
             WHERE id = ?
             """,
             (job.batch_target if batch_target is None else batch_target, job_id),
@@ -383,13 +417,18 @@ def mark_collect_candidate_processed(
             """
             UPDATE collect_jobs
             SET last_processed_run_position = CASE
-              WHEN last_processed_run_position IS NULL THEN ?
-              WHEN last_processed_run_position < ? THEN ?
+              WHEN last_processed_run_position IS NULL THEN :run_position
+              WHEN last_processed_run_position < :run_position THEN :run_position
               ELSE last_processed_run_position
-            END
-            WHERE id = ?
+            END,
+            provider_failure_count = 0,
+            backoff_seconds = 0
+            WHERE id = :job_id
             """,
-            (run_position, run_position, run_position, job_id),
+            {
+                "run_position": run_position,
+                "job_id": job_id,
+            },
         )
 
     return get_collect_job(database_path=database_path, job_id=job_id)
@@ -807,31 +846,38 @@ def ensure_worker_schema(connection: sqlite3.Connection) -> None:
 def main() -> None:
     project_root = Path(__file__).resolve().parents[2]
     storage = initialize_storage(project_root=project_root)
+    try:
+        worker_lock = acquire_worker_runtime_lock(storage.data_root)
+    except RuntimeError:
+        return
     met_client = HttpMetCandidateClient()
     vam_client = HttpVamClient()
 
-    while True:
-        try:
-            process_running_collect_job(
-                database_path=storage.database_path,
-                data_root=storage.data_root,
-                met_client=met_client,
-                download_image_bytes=fetch_bytes_url,
-                provider_ingesters={
-                    "met": MetProviderAdapter(
-                        candidate_client=met_client,
-                        record_client=met_client,
-                        download_image_bytes=fetch_bytes_url,
-                    ),
-                    "vam": VamProviderAdapter(
-                        vam_client=vam_client,
-                        download_image_bytes=fetch_bytes_url,
-                    ),
-                },
-            )
-        except Exception:
-            pass
-        time.sleep(1)
+    try:
+        while True:
+            try:
+                process_running_collect_job(
+                    database_path=storage.database_path,
+                    data_root=storage.data_root,
+                    met_client=met_client,
+                    download_image_bytes=fetch_bytes_url,
+                    provider_ingesters={
+                        "met": MetProviderAdapter(
+                            candidate_client=met_client,
+                            record_client=met_client,
+                            download_image_bytes=fetch_bytes_url,
+                        ),
+                        "vam": VamProviderAdapter(
+                            vam_client=vam_client,
+                            download_image_bytes=fetch_bytes_url,
+                        ),
+                    },
+                )
+            except Exception:
+                pass
+            time.sleep(1)
+    finally:
+        worker_lock.close()
 
 
 if __name__ == "__main__":
