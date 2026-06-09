@@ -40,6 +40,7 @@ import {
   createLatentMapPointerHitRadius,
   createLatentMapSpatialIndex,
 } from "@/lib/latent-map-spatial-index";
+import { createLatentMapWheelZoomView } from "@/lib/latent-map-view-controls";
 import {
   createLatentMapFilterOptions,
   DEFAULT_LATENT_MAP_DURABLE_STATE,
@@ -437,6 +438,42 @@ export function LatentMapViewer({
     [],
   );
 
+  useEffect(() => {
+    const wrapper = wrapperRef.current;
+
+    if (!wrapper) {
+      return;
+    }
+
+    const handleNativeWheel = (event: WheelEvent) => {
+      if (event.cancelable) {
+        event.preventDefault();
+      }
+      const rect = wrapper.getBoundingClientRect();
+
+      setView((current) =>
+        createLatentMapWheelZoomView({
+          deltaMode: event.deltaMode,
+          deltaY: event.deltaY,
+          pointer: {
+            clientX: event.clientX,
+            clientY: event.clientY,
+          },
+          view: current,
+          viewport: rect,
+        }),
+      );
+    };
+
+    wrapper.addEventListener("wheel", handleNativeWheel, {
+      passive: false,
+    });
+
+    return () => {
+      wrapper.removeEventListener("wheel", handleNativeWheel);
+    };
+  }, []);
+
   function getNearestPointAt(pointer: PointerPosition) {
     const wrapper = wrapperRef.current;
     const worldPoint =
@@ -701,15 +738,6 @@ export function LatentMapViewer({
     }
 
     void loadNeighborsForImage(nextSelectedImageId);
-  }
-
-  function handleWheel(event: React.WheelEvent<HTMLDivElement>) {
-    const zoomFactor = event.deltaY > 0 ? 0.9 : 1.12;
-
-    setView((current) => ({
-      ...current,
-      zoom: Math.min(7, Math.max(0.45, current.zoom * zoomFactor)),
-    }));
   }
 
   return (
@@ -1017,7 +1045,6 @@ export function LatentMapViewer({
           }}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
-          onWheel={handleWheel}
           role="application"
         >
           <canvas className="block size-full" ref={canvasRef} />
