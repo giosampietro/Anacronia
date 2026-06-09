@@ -3,10 +3,12 @@ import pytest
 from anacronia.cli import (
     acquire_data_root_runtime_lock,
     build_startup_plan,
+    run_latent_map_embed,
     run_latent_map_init,
     run_latent_map_scan,
     validate_supported_runtime,
 )
+from anacronia.latent_map_scan import scan_latent_map_run
 
 
 def test_no_open_prints_url_without_opening_browser(tmp_path):
@@ -145,3 +147,34 @@ def test_latent_map_scan_cli_prints_scan_summary(tmp_path, capsys):
     output = capsys.readouterr().out
     assert '"supported_file_count": 0' in output
     assert '"manifest_image_count": 0' in output
+
+
+def test_latent_map_embed_cli_prints_embedding_summary(tmp_path, capsys):
+    class FakeEmbedder:
+        model_id = "fake-embedder"
+        device = "fake"
+
+        def embed_batch(self, images):
+            return [[float(image.width), float(image.height)] for image in images]
+
+    source_folder = tmp_path / "source-images"
+    source_folder.mkdir()
+    run_latent_map_init(
+        source_folder=source_folder,
+        runs_root=tmp_path / "runs",
+        run_name="J Shoot",
+    )
+    run_dir = next((tmp_path / "runs").iterdir())
+    scan_latent_map_run(run_dir)
+
+    run_latent_map_embed(
+        run_dir=run_dir,
+        recipe_name="dinov3_vits_256",
+        batch_size=8,
+        limit=None,
+        embedder=FakeEmbedder(),
+    )
+
+    output = capsys.readouterr().out
+    assert '"recipe_name": "dinov3_vits_256"' in output
+    assert '"vector_count": 0' in output

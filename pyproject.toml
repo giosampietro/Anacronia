@@ -11,6 +11,7 @@ requires-python = ">=3.12"
 authors = [{ name = "Giorgio Olivero / Gio Sampietro" }]
 dependencies = [
   "fastapi>=0.115,<1",
+  "numpy>=1.26,<3",
   "pillow>=10,<13",
   "uvicorn>=0.30,<1",
 ]
