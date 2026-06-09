@@ -543,8 +543,8 @@ function MobileFiltersMenu({
           {activeFilterCount > 0 ? <ProviderCount count={activeFilterCount} /> : null}
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-60">
-          <DropdownMenuLabel>Provider</DropdownMenuLabel>
           <DropdownMenuGroup>
+            <DropdownMenuLabel>Provider</DropdownMenuLabel>
             {options.map((option) => (
               <DropdownMenuItem
                 aria-current={
