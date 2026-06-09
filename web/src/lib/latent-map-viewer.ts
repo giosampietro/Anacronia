@@ -49,6 +49,7 @@ export type LatentMapThumbnailSize = 32 | 64 | 96;
 export type LatentMapThumbnailRenderPlan = {
   atlasPages: LatentMapThumbnailAtlasPage[];
   capped: boolean;
+  estimatedAtlasTextureBytes: number;
   hoverPreviewSize: number;
   maxThumbnails: number;
   strategy: "all-atlas" | "capped-sprites";
@@ -328,14 +329,16 @@ export function createLatentMapThumbnailRenderPlan({
           maxThumbnails,
           sortedPoints,
         });
+  const atlasPages = createLatentMapThumbnailAtlasPages({
+    atlasSize,
+    points: thumbnailPoints,
+    tileSize: thumbnailSize,
+  });
 
   return {
-    atlasPages: createLatentMapThumbnailAtlasPages({
-      atlasSize,
-      points: thumbnailPoints,
-      tileSize: thumbnailSize,
-    }),
+    atlasPages,
     capped: points.length > thumbnailPoints.length,
+    estimatedAtlasTextureBytes: atlasPages.length * atlasSize * atlasSize * 4,
     hoverPreviewSize,
     maxThumbnails,
     strategy,

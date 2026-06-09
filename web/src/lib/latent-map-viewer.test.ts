@@ -177,6 +177,46 @@ describe("latent map viewer model", () => {
     expect(createLatentMapThumbnailAtlasPages({ points, tileSize: 96 })).toHaveLength(8);
   });
 
+  it("estimates atlas texture budget for a synthetic 10k image map", () => {
+    const points = Array.from({ length: 10_000 }, (_, index) => ({
+      image_id: `img_${String(index).padStart(5, "0")}`,
+      x: index,
+      y: index,
+      fitted_x: 0,
+      fitted_y: 0,
+      cluster_id: 0,
+      thumbnail_path: `thumb-${index}.jpg`,
+      source_path: `source-${index}.jpg`,
+      relative_path: `source-${index}.jpg`,
+      width: 100,
+      height: 100,
+      neighbors: [],
+      color: [150, 156, 166] as [number, number, number],
+      point_state: "cluster" as const,
+    }));
+
+    const at32 = createLatentMapThumbnailRenderPlan({
+      points,
+      thumbnailSize: 32,
+    });
+    const at64 = createLatentMapThumbnailRenderPlan({
+      points,
+      thumbnailSize: 64,
+    });
+    const at96 = createLatentMapThumbnailRenderPlan({
+      points,
+      thumbnailSize: 96,
+    });
+    const atlasBytes = 2048 * 2048 * 4;
+
+    expect(at32.atlasPages).toHaveLength(3);
+    expect(at32.estimatedAtlasTextureBytes).toBe(3 * atlasBytes);
+    expect(at64.atlasPages).toHaveLength(10);
+    expect(at64.estimatedAtlasTextureBytes).toBe(10 * atlasBytes);
+    expect(at96.atlasPages).toHaveLength(23);
+    expect(at96.estimatedAtlasTextureBytes).toBe(23 * atlasBytes);
+  });
+
   it("summarizes runtime diagnostics from the render plan and renderer info", () => {
     const renderState = createLatentMapRenderState({
       clusterColorsEnabled: true,

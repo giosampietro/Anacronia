@@ -436,6 +436,11 @@ export function LatentMapViewer({
           data-thumbnail-atlas-page-count={
             renderMode === "thumbnails" ? thumbnailPlan.atlasPages.length : 0
           }
+          data-thumbnail-estimated-atlas-texture-bytes={
+            renderMode === "thumbnails"
+              ? thumbnailPlan.estimatedAtlasTextureBytes
+              : 0
+          }
           data-thumbnail-count={
             renderMode === "thumbnails"
               ? thumbnailPlan.thumbnailPoints.length
