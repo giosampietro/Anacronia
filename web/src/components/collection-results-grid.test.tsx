@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { renderToString } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
@@ -171,6 +172,35 @@ describe("CollectionResultsGrid", () => {
     expect(html).toContain("image=9");
     expect(html).toContain("image=8");
     expect(html).not.toContain("3 images");
+  });
+
+  it("keeps the mobile filter provider label inside a Base UI menu group", () => {
+    // The popup is portal-mounted, so server-render tests cannot inspect it.
+    const source = readFileSync(
+      new URL("./local-results-grid.tsx", import.meta.url),
+      "utf8",
+    );
+    const mobileFiltersMenu = source.slice(
+      source.indexOf("function MobileFiltersMenu"),
+    );
+    const contentIndex = mobileFiltersMenu.indexOf("<DropdownMenuContent");
+    const providerGroupIndex = mobileFiltersMenu.indexOf(
+      "<DropdownMenuGroup>",
+      contentIndex,
+    );
+    const providerLabelIndex = mobileFiltersMenu.indexOf(
+      "<DropdownMenuLabel>Provider</DropdownMenuLabel>",
+      contentIndex,
+    );
+    const providerOptionsIndex = mobileFiltersMenu.indexOf(
+      "{options.map((option) => (",
+      contentIndex,
+    );
+
+    expect(contentIndex).toBeGreaterThanOrEqual(0);
+    expect(providerGroupIndex).toBeGreaterThan(contentIndex);
+    expect(providerLabelIndex).toBeGreaterThan(providerGroupIndex);
+    expect(providerLabelIndex).toBeLessThan(providerOptionsIndex);
   });
 
   it("renders tile favorite markers only outside selection mode", () => {
