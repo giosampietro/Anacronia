@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { renderToString } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
@@ -229,5 +230,26 @@ describe("SidebarCollectionFilter", () => {
     expect(html).toContain("Exports will not be deleted.");
     expect(html).toContain("There is no undo.");
     expect(html).toContain("Delete Collection");
+  });
+
+  it("hard navigates after Collection deletion so sidebar data reloads", () => {
+    const source = readFileSync(
+      new URL("./sidebar-collection-filter.tsx", import.meta.url),
+      "utf8",
+    );
+    const deleteFunctionStart = source.indexOf("async function deleteSearchSet()");
+    const deleteSearchSetSource = source.slice(deleteFunctionStart);
+    const deleteSearchSetBody = deleteSearchSetSource.slice(
+      0,
+      deleteSearchSetSource.indexOf("return ("),
+    );
+
+    expect(deleteFunctionStart).toBeGreaterThanOrEqual(0);
+    expect(deleteSearchSetBody).toContain(
+      "window.location.href = createUserLibraryHref(filterText);",
+    );
+    expect(deleteSearchSetBody).not.toContain(
+      "router.push(createUserLibraryHref(filterText));",
+    );
   });
 });
