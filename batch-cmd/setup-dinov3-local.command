@@ -37,7 +37,9 @@ echo "Installing local image-embedding dependencies"
   "huggingface_hub" \
   "safetensors" \
   "numpy" \
-  "faiss-cpu"
+  "faiss-cpu" \
+  "umap-learn" \
+  "scikit-learn"
 
 echo
 echo "Checking Apple Silicon acceleration and DINOv3 access"

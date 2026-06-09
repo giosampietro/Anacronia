@@ -7,6 +7,7 @@ from anacronia.cli import (
     run_latent_map_faiss_query,
     run_latent_map_embed,
     run_latent_map_init,
+    run_latent_map_layout,
     run_latent_map_scan,
     validate_supported_runtime,
 )
@@ -226,3 +227,65 @@ def test_latent_map_faiss_cli_prints_build_and_query_summaries(tmp_path, capsys)
     output = capsys.readouterr().out
     assert '"index_kind": "IndexFlatIP"' in output
     assert '"image_id": "img-b"' in output
+
+
+def test_latent_map_layout_cli_prints_layout_summary(tmp_path, capsys):
+    import json
+
+    import numpy as np
+
+    class FakeReducer:
+        def fit_transform(self, vectors):
+            return vectors[:, :2]
+
+    class FakeClusterer:
+        def fit_predict(self, vectors):
+            return np.arange(vectors.shape[0]) % 3
+
+    source_folder = tmp_path / "source-images"
+    source_folder.mkdir()
+    run_latent_map_init(
+        source_folder=source_folder,
+        runs_root=tmp_path / "runs",
+        run_name="J Shoot",
+    )
+    run_dir = next((tmp_path / "runs").iterdir())
+    rows = [
+        {"image_id": f"img-{index}", "source_path": str(source_folder / f"{index}.jpg"), "relative_path": f"{index}.jpg"}
+        for index in range(6)
+    ]
+    (run_dir / "manifest.jsonl").write_text(
+        "".join(json.dumps(row) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+    embeddings_dir = run_dir / "embeddings"
+    embeddings_dir.mkdir(exist_ok=True)
+    np.save(
+        embeddings_dir / "dinov3_vits_256.npy",
+        np.asarray(
+            [
+                [1.0, 0.0, 0.0],
+                [0.9, 0.1, 0.0],
+                [0.0, 1.0, 0.0],
+                [0.0, 0.9, 0.1],
+                [0.0, 0.0, 1.0],
+                [0.1, 0.0, 0.9],
+            ],
+            dtype=np.float32,
+        ),
+    )
+
+    run_latent_map_layout(
+        run_dir=run_dir,
+        recipe_name="dinov3_vits_256",
+        n_neighbors=4,
+        min_dist=0.05,
+        cluster_count=3,
+        random_state=42,
+        reducer=FakeReducer(),
+        clusterer=FakeClusterer(),
+    )
+
+    output = capsys.readouterr().out
+    assert '"point_count": 6' in output
+    assert '"cluster_count": 3' in output
