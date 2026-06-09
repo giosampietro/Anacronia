@@ -1,6 +1,10 @@
 import type { DashboardSearchSetView } from "./dashboard";
 
-export type WorkspaceMode = "search-set" | "new-search-set" | "user-library";
+export type WorkspaceMode =
+  | "search-set"
+  | "new-search-set"
+  | "user-library"
+  | "missing-search-set";
 
 export function getFirstParam(value: string | string[] | undefined): string | undefined {
   if (Array.isArray(value)) {
@@ -22,15 +26,23 @@ export function createUserLibraryHref(filterText: string): string {
   return createWorkspaceHref({ collectionFilterText: filterText, mode: "user-library" });
 }
 
-export function createWorkspaceMode(
-  modeParam: string | undefined,
-  activeSearchSet: DashboardSearchSetView | null,
-): WorkspaceMode {
+export function createWorkspaceMode({
+  activeSearchSet,
+  modeParam,
+  searchSetSlug,
+}: {
+  activeSearchSet: DashboardSearchSetView | null;
+  modeParam: string | undefined;
+  searchSetSlug: string | undefined;
+}): WorkspaceMode {
   if (modeParam === "new-search-set") {
     return "new-search-set";
   }
   if (modeParam === "user-library") {
     return "user-library";
+  }
+  if (searchSetSlug !== undefined && activeSearchSet === null) {
+    return "missing-search-set";
   }
   return activeSearchSet === null ? "user-library" : "search-set";
 }
