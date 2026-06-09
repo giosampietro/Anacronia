@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { latentMapFixture } from "@/lib/latent-map-fixture";
 import {
+  createLatentMapRuntimeSnapshot,
   createLatentMapThumbnailAtlasPages,
   createLatentMapThumbnailRenderPlan,
   createLatentMapNeighborSet,
@@ -62,14 +63,39 @@ describe("latent map viewer model", () => {
     expect(plan.atlasPages).toHaveLength(1);
     expect(plan.atlasPages[0].tileSize).toBe(64);
     expect(plan.thumbnailPoints.map((point) => point.image_id).slice(0, 4)).toEqual([
-      "img_saffron",
       "img_amber",
       "img_cobalt",
-      "img_vermilion",
+      "img_glass",
+      "img_lime",
     ]);
     expect(plan.textureSources).toHaveLength(8);
     expect(plan.textureSources.every((source) => source.startsWith("data:image/png"))).toBe(true);
     expect(plan.textureSources).not.toContain("fixture/a1.jpg");
+  });
+
+  it("keeps all-image atlas thumbnail order stable when selection changes", () => {
+    const saffronState = createLatentMapRenderState({
+      clusterColorsEnabled: true,
+      data: latentMapFixture,
+      selectedImageId: "img_saffron",
+    });
+    const tealState = createLatentMapRenderState({
+      clusterColorsEnabled: true,
+      data: latentMapFixture,
+      selectedImageId: "img_teal",
+    });
+    const saffronPlan = createLatentMapThumbnailRenderPlan({
+      points: saffronState,
+      strategy: "all-atlas",
+    });
+    const tealPlan = createLatentMapThumbnailRenderPlan({
+      points: tealState,
+      strategy: "all-atlas",
+    });
+
+    expect(saffronPlan.thumbnailPoints.map((point) => point.image_id)).toEqual(
+      tealPlan.thumbnailPoints.map((point) => point.image_id),
+    );
   });
 
   it("keeps the old capped thumbnail sample available as an explicit fallback", () => {
@@ -149,6 +175,50 @@ describe("latent map viewer model", () => {
     expect(createLatentMapThumbnailAtlasPages({ points, tileSize: 32 })).toHaveLength(1);
     expect(createLatentMapThumbnailAtlasPages({ points, tileSize: 64 })).toHaveLength(4);
     expect(createLatentMapThumbnailAtlasPages({ points, tileSize: 96 })).toHaveLength(8);
+  });
+
+  it("summarizes runtime diagnostics from the render plan and renderer info", () => {
+    const renderState = createLatentMapRenderState({
+      clusterColorsEnabled: true,
+      data: latentMapFixture,
+      selectedImageId: "img_saffron",
+    });
+    const thumbnailPlan = createLatentMapThumbnailRenderPlan({
+      points: renderState,
+      thumbnailSize: 64,
+    });
+
+    expect(
+      createLatentMapRuntimeSnapshot({
+        loadedThumbnailCount: 5,
+        pointCount: renderState.length,
+        renderMode: "thumbnails",
+        rendererInfo: {
+          memory: {
+            geometries: 2,
+            textures: 1,
+          },
+          render: {
+            calls: 3,
+            points: 8,
+            triangles: 16,
+          },
+        },
+        thumbnailPlan,
+      }),
+    ).toEqual({
+      atlasPageCount: 1,
+      drawCalls: 3,
+      geometryCount: 2,
+      liveTextureCount: 1,
+      loadedThumbnailCount: 5,
+      pointCount: 8,
+      rendererPointCount: 8,
+      rendererTriangleCount: 16,
+      renderMode: "thumbnails",
+      thumbnailCount: 8,
+      thumbnailSize: 64,
+    });
   });
 
   it("fits arbitrary UMAP coordinates into stable WebGL world space", () => {

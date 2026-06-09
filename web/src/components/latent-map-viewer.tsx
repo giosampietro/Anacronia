@@ -1,8 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CircleDot, Images, Palette, RotateCcw, ScanSearch } from "lucide-react";
-import * as THREE from "three";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -21,6 +20,7 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import {
+  createLatentMapRuntimeSnapshot,
   createLatentMapThumbnailRenderPlan,
   createLatentMapRenderState,
   createLatentMapStats,
@@ -29,11 +29,16 @@ import {
   DEFAULT_LATENT_MAP_THUMBNAIL_SIZE,
   LATENT_MAP_THUMBNAIL_SIZE_OPTIONS,
   type LatentMapRenderMode,
-  type LatentMapRenderablePoint,
-  type LatentMapThumbnailAtlasPage,
+  type LatentMapRuntimeRendererInfo,
   type LatentMapThumbnailSize,
   type LatentMapViewerData,
 } from "@/lib/latent-map-viewer";
+import {
+  createLatentMapWebglRuntime,
+  type LatentMapRuntimeState,
+  type LatentMapViewState,
+  type LatentMapWebglRuntime,
+} from "@/lib/latent-map-webgl-runtime";
 
 type LatentMapViewerProps = {
   className?: string;
@@ -41,309 +46,17 @@ type LatentMapViewerProps = {
   initialRenderMode?: LatentMapRenderMode;
 };
 
-type ViewState = {
-  offsetX: number;
-  offsetY: number;
-  zoom: number;
-};
-
 type PointerPosition = {
   x: number;
   y: number;
 };
 
-const DEFAULT_VIEW: ViewState = {
+const DEFAULT_VIEW: LatentMapViewState = {
   offsetX: 0,
   offsetY: 0,
   zoom: 1,
 };
-const THUMBNAIL_WORLD_SIZE_PER_PIXEL = 0.13 / 64;
 const ATLAS_TEXTURE_SIZE = 2048;
-
-function rgbToThreeColor([r, g, b]: [number, number, number]): THREE.Color {
-  return new THREE.Color(r / 255, g / 255, b / 255);
-}
-
-function updateCamera({
-  camera,
-  height,
-  view,
-  width,
-}: {
-  camera: THREE.OrthographicCamera;
-  height: number;
-  view: ViewState;
-  width: number;
-}) {
-  const aspect = width / Math.max(height, 1);
-
-  camera.left = -aspect;
-  camera.right = aspect;
-  camera.top = 1;
-  camera.bottom = -1;
-  camera.position.x = view.offsetX;
-  camera.position.y = view.offsetY;
-  camera.zoom = view.zoom;
-  camera.updateProjectionMatrix();
-}
-
-function createPointGeometry(points: LatentMapRenderablePoint[]) {
-  const positions = new Float32Array(points.length * 3);
-  const colors = new Float32Array(points.length * 3);
-
-  points.forEach((point, index) => {
-    positions[index * 3] = point.fitted_x;
-    positions[index * 3 + 1] = point.fitted_y;
-    positions[index * 3 + 2] = point.point_state === "selected" ? 0.08 : 0;
-
-    const color = rgbToThreeColor(point.color);
-    colors[index * 3] = color.r;
-    colors[index * 3 + 1] = color.g;
-    colors[index * 3 + 2] = color.b;
-  });
-
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-
-  return geometry;
-}
-
-function getThumbnailScale(
-  point: LatentMapRenderablePoint,
-  thumbnailSize: LatentMapThumbnailSize,
-): [number, number] {
-  const aspect = Math.max(point.width, 1) / Math.max(point.height, 1);
-  const scaleMultiplier =
-    point.point_state === "selected" ? 1.36 : point.point_state === "neighbor" ? 1.16 : 1;
-  const baseSize = thumbnailSize * THUMBNAIL_WORLD_SIZE_PER_PIXEL * scaleMultiplier;
-  const boundedAspect = Math.min(1.45, Math.max(0.7, aspect));
-
-  if (boundedAspect >= 1) {
-    return [baseSize * boundedAspect, baseSize];
-  }
-
-  return [baseSize, baseSize / boundedAspect];
-}
-
-function getThumbnailLayer(point: LatentMapRenderablePoint): number {
-  if (point.point_state === "selected") {
-    return 0.32;
-  }
-  if (point.point_state === "neighbor") {
-    return 0.24;
-  }
-
-  return 0.16;
-}
-
-function getThumbnailStateValue(point: LatentMapRenderablePoint): number {
-  if (point.point_state === "selected") {
-    return 2;
-  }
-  if (point.point_state === "neighbor") {
-    return 1;
-  }
-
-  return 0;
-}
-
-function createAtlasGeometry({
-  page,
-  thumbnailSize,
-}: {
-  page: LatentMapThumbnailAtlasPage;
-  thumbnailSize: LatentMapThumbnailSize;
-}) {
-  const geometry = new THREE.InstancedBufferGeometry();
-  const positions = new Float32Array([
-    -0.5, -0.5, 0,
-    0.5, -0.5, 0,
-    -0.5, 0.5, 0,
-    0.5, 0.5, 0,
-  ]);
-  const uvs = new Float32Array([
-    0, 1,
-    1, 1,
-    0, 0,
-    1, 0,
-  ]);
-  const indices = [0, 1, 2, 2, 1, 3];
-  const instancePositions = new Float32Array(page.items.length * 3);
-  const instanceScales = new Float32Array(page.items.length * 2);
-  const instanceUvRects = new Float32Array(page.items.length * 4);
-  const instanceStates = new Float32Array(page.items.length);
-
-  page.items.forEach((item, index) => {
-    const [width, height] = getThumbnailScale(item.point, thumbnailSize);
-
-    instancePositions[index * 3] = item.point.fitted_x;
-    instancePositions[index * 3 + 1] = item.point.fitted_y;
-    instancePositions[index * 3 + 2] = getThumbnailLayer(item.point);
-    instanceScales[index * 2] = width;
-    instanceScales[index * 2 + 1] = height;
-    instanceUvRects.set(item.uvRect, index * 4);
-    instanceStates[index] = getThumbnailStateValue(item.point);
-  });
-
-  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-  geometry.setAttribute("uv", new THREE.BufferAttribute(uvs, 2));
-  geometry.setIndex(indices);
-  geometry.setAttribute(
-    "instancePosition",
-    new THREE.InstancedBufferAttribute(instancePositions, 3),
-  );
-  geometry.setAttribute(
-    "instanceScale",
-    new THREE.InstancedBufferAttribute(instanceScales, 2),
-  );
-  geometry.setAttribute(
-    "instanceUvRect",
-    new THREE.InstancedBufferAttribute(instanceUvRects, 4),
-  );
-  geometry.setAttribute(
-    "instanceState",
-    new THREE.InstancedBufferAttribute(instanceStates, 1),
-  );
-  geometry.instanceCount = page.items.length;
-
-  return geometry;
-}
-
-function createAtlasMaterial(texture: THREE.Texture) {
-  return new THREE.ShaderMaterial({
-    depthTest: true,
-    depthWrite: true,
-    transparent: false,
-    uniforms: {
-      atlasTexture: { value: texture },
-    },
-    vertexShader: `
-      attribute vec3 instancePosition;
-      attribute vec2 instanceScale;
-      attribute vec4 instanceUvRect;
-      attribute float instanceState;
-      varying vec2 vAtlasUv;
-      varying vec2 vLocalUv;
-      varying float vState;
-
-      void main() {
-        vLocalUv = uv;
-        vAtlasUv = instanceUvRect.xy + (uv * instanceUvRect.zw);
-        vState = instanceState;
-        vec3 transformed = vec3(
-          (position.xy * instanceScale) + instancePosition.xy,
-          instancePosition.z
-        );
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(transformed, 1.0);
-      }
-    `,
-    fragmentShader: `
-      uniform sampler2D atlasTexture;
-      varying vec2 vAtlasUv;
-      varying vec2 vLocalUv;
-      varying float vState;
-
-      void main() {
-        vec4 texel = texture2D(atlasTexture, vAtlasUv);
-        float edgeDistance = min(
-          min(vLocalUv.x, 1.0 - vLocalUv.x),
-          min(vLocalUv.y, 1.0 - vLocalUv.y)
-        );
-        float selected = step(1.5, vState);
-        float neighbor = step(0.5, vState) * (1.0 - selected);
-        float emphasis = max(selected, neighbor);
-        vec3 borderColor = mix(vec3(1.0, 0.62, 0.24), vec3(1.0), selected);
-        float border = (1.0 - step(0.045, edgeDistance)) * emphasis;
-        vec3 color = mix(texel.rgb, borderColor, border);
-
-        gl_FragColor = vec4(color, 1.0);
-      }
-    `,
-  });
-}
-
-function drawAtlasTile({
-  context,
-  image,
-  item,
-  tileSize,
-}: {
-  context: CanvasRenderingContext2D;
-  image: HTMLImageElement;
-  item: LatentMapThumbnailAtlasPage["items"][number];
-  tileSize: LatentMapThumbnailSize;
-}) {
-  const x = item.column * tileSize;
-  const y = item.row * tileSize;
-
-  context.fillStyle = "#101113";
-  context.fillRect(x, y, tileSize, tileSize);
-  context.drawImage(image, x, y, tileSize, tileSize);
-}
-
-function fillMissingAtlasTile({
-  context,
-  item,
-  tileSize,
-}: {
-  context: CanvasRenderingContext2D;
-  item: LatentMapThumbnailAtlasPage["items"][number];
-  tileSize: LatentMapThumbnailSize;
-}) {
-  const x = item.column * tileSize;
-  const y = item.row * tileSize;
-  const color = rgbToThreeColor(item.point.color);
-
-  context.fillStyle = `rgb(${Math.round(color.r * 255)}, ${Math.round(
-    color.g * 255,
-  )}, ${Math.round(color.b * 255)})`;
-  context.fillRect(x, y, tileSize, tileSize);
-}
-
-function createAtlasPageMesh({
-  page,
-  thumbnailSize,
-}: {
-  page: LatentMapThumbnailAtlasPage;
-  thumbnailSize: LatentMapThumbnailSize;
-}) {
-  const canvas = document.createElement("canvas");
-  const context = canvas.getContext("2d");
-
-  if (!context) {
-    throw new Error("Could not create latent-map thumbnail atlas canvas.");
-  }
-
-  canvas.width = page.atlasSize;
-  canvas.height = page.atlasSize;
-  context.fillStyle = "#101113";
-  context.fillRect(0, 0, canvas.width, canvas.height);
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.flipY = false;
-  texture.minFilter = THREE.LinearFilter;
-  texture.magFilter = THREE.LinearFilter;
-  texture.generateMipmaps = false;
-  texture.premultiplyAlpha = false;
-
-  const geometry = createAtlasGeometry({ page, thumbnailSize });
-  const material = createAtlasMaterial(texture);
-  const mesh = new THREE.Mesh(geometry, material);
-
-  mesh.frustumCulled = false;
-  mesh.renderOrder = 10 + page.index;
-
-  return {
-    canvas,
-    context,
-    geometry,
-    material,
-    mesh,
-    texture,
-  };
-}
 
 export function LatentMapViewer({
   className,
@@ -352,14 +65,13 @@ export function LatentMapViewer({
 }: LatentMapViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
-  const cameraRef = useRef<THREE.OrthographicCamera | null>(null);
-  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
-  const sceneRef = useRef<THREE.Scene | null>(null);
+  const runtimeRef = useRef<LatentMapWebglRuntime | null>(null);
+  const runtimeStateRef = useRef<LatentMapRuntimeState | null>(null);
   const dragStartRef = useRef<{
     pointer: PointerPosition;
-    view: ViewState;
+    view: LatentMapViewState;
   } | null>(null);
-  const viewRef = useRef<ViewState>(DEFAULT_VIEW);
+  const viewRef = useRef<LatentMapViewState>(DEFAULT_VIEW);
   const [clusterColorsEnabled, setClusterColorsEnabled] = useState(true);
   const [hoveredImageId, setHoveredImageId] = useState<string | null>(null);
   const [hoverPosition, setHoverPosition] = useState<PointerPosition>({
@@ -371,9 +83,12 @@ export function LatentMapViewer({
   );
   const [renderMode, setRenderMode] =
     useState<LatentMapRenderMode>(initialRenderMode);
+  const [runtimeRendererInfo, setRuntimeRendererInfo] =
+    useState<LatentMapRuntimeRendererInfo>();
+  const [loadedThumbnailCount, setLoadedThumbnailCount] = useState(0);
   const [thumbnailSize, setThumbnailSize] =
     useState<LatentMapThumbnailSize>(DEFAULT_LATENT_MAP_THUMBNAIL_SIZE);
-  const [view, setView] = useState<ViewState>(DEFAULT_VIEW);
+  const [view, setView] = useState<LatentMapViewState>(DEFAULT_VIEW);
   const stats = useMemo(() => createLatentMapStats(data), [data]);
   const renderPoints = useMemo(
     () =>
@@ -404,173 +119,90 @@ export function LatentMapViewer({
       }),
     [renderPoints, thumbnailSize],
   );
+  const runtimeState = useMemo<LatentMapRuntimeState>(
+    () => ({
+      points: renderPoints,
+      renderMode,
+      thumbnailPlan,
+    }),
+    [renderMode, renderPoints, thumbnailPlan],
+  );
+  const dataMountKey = useMemo(
+    () =>
+      [
+        data.run_id,
+        data.embedding_recipe,
+        data.layout_id,
+        data.cluster_id,
+        data.points.length,
+      ].join("|"),
+    [
+      data.cluster_id,
+      data.embedding_recipe,
+      data.layout_id,
+      data.points.length,
+      data.run_id,
+    ],
+  );
+  const runtimeSnapshot = useMemo(
+    () =>
+      createLatentMapRuntimeSnapshot({
+        loadedThumbnailCount,
+        pointCount: stats.pointCount,
+        renderMode,
+        rendererInfo: runtimeRendererInfo,
+        thumbnailPlan,
+      }),
+    [
+      loadedThumbnailCount,
+      renderMode,
+      runtimeRendererInfo,
+      stats.pointCount,
+      thumbnailPlan,
+    ],
+  );
 
-  const renderCurrentScene = useCallback(() => {
-    const camera = cameraRef.current;
-    const renderer = rendererRef.current;
-    const scene = sceneRef.current;
-    const wrapper = wrapperRef.current;
-
-    if (!camera || !renderer || !scene || !wrapper) {
-      return;
-    }
-
-    const { height, width } = wrapper.getBoundingClientRect();
-    renderer.setSize(width, height, false);
-    updateCamera({
-      camera,
-      height,
-      view: viewRef.current,
-      width,
-    });
-    renderer.render(scene, camera);
-  }, []);
+  useEffect(() => {
+    runtimeStateRef.current = runtimeState;
+    runtimeRef.current?.setRenderState(runtimeState);
+  }, [runtimeState]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     const wrapper = wrapperRef.current;
+    const initialRuntimeState = runtimeStateRef.current;
 
-    if (!canvas || !wrapper) {
+    if (!canvas || !wrapper || !initialRuntimeState) {
       return;
     }
 
-    const renderer = new THREE.WebGLRenderer({
-      antialias: true,
+    const runtime = createLatentMapWebglRuntime({
       canvas,
+      onDiagnosticsChange: (diagnostics) => {
+        setLoadedThumbnailCount(diagnostics.loadedThumbnailCount);
+        setRuntimeRendererInfo(diagnostics.rendererInfo);
+      },
+      view: viewRef.current,
+      wrapper,
+      ...initialRuntimeState,
     });
-    const scene = new THREE.Scene();
-    const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -100, 100);
-    const geometry = createPointGeometry(renderPoints);
-    const material = new THREE.PointsMaterial({
-      alphaTest: 0.2,
-      size: 9,
-      sizeAttenuation: false,
-      vertexColors: true,
-    });
-    const pointCloud = new THREE.Points(geometry, material);
-    const atlasPages: ReturnType<typeof createAtlasPageMesh>[] = [];
-    const atlasImages: HTMLImageElement[] = [];
-    let animationFrameId: number | null = null;
-    let isDisposed = false;
-
-    renderer.setClearColor(0x101113, 1);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    scene.add(pointCloud);
-
-    const scheduleRender = () => {
-      if (animationFrameId !== null) {
-        return;
-      }
-
-      animationFrameId = window.requestAnimationFrame(() => {
-        animationFrameId = null;
-        renderCurrentScene();
-      });
-    };
-
-    if (renderMode === "thumbnails") {
-      thumbnailPlan.atlasPages.forEach((page) => {
-        const atlasPage = createAtlasPageMesh({
-          page,
-          thumbnailSize: thumbnailPlan.thumbnailSize,
-        });
-
-        atlasPages.push(atlasPage);
-        scene.add(atlasPage.mesh);
-
-        page.items.forEach((item) => {
-          const image = new Image();
-
-          atlasImages.push(image);
-          image.decoding = "async";
-          image.onload = () => {
-            if (isDisposed) {
-              return;
-            }
-
-            drawAtlasTile({
-              context: atlasPage.context,
-              image,
-              item,
-              tileSize: page.tileSize,
-            });
-            atlasPage.texture.needsUpdate = true;
-            scheduleRender();
-          };
-          image.onerror = () => {
-            if (isDisposed) {
-              return;
-            }
-
-            fillMissingAtlasTile({
-              context: atlasPage.context,
-              item,
-              tileSize: page.tileSize,
-            });
-            atlasPage.texture.needsUpdate = true;
-            scheduleRender();
-          };
-          image.src = item.point.thumbnail_path;
-        });
-      });
-    }
-
-    camera.position.z = 4;
-    cameraRef.current = camera;
-    rendererRef.current = renderer;
-    sceneRef.current = scene;
-
-    const resize = () => {
-      renderCurrentScene();
-    };
-
-    resize();
-    window.addEventListener("resize", resize);
+    runtimeRef.current = runtime;
 
     return () => {
-      isDisposed = true;
-      window.removeEventListener("resize", resize);
-      if (animationFrameId !== null) {
-        window.cancelAnimationFrame(animationFrameId);
+      runtime.dispose();
+      if (runtimeRef.current === runtime) {
+        runtimeRef.current = null;
       }
-      atlasImages.forEach((image) => {
-        image.onload = null;
-        image.onerror = null;
-      });
-      cameraRef.current = null;
-      rendererRef.current = null;
-      sceneRef.current = null;
-      geometry.dispose();
-      material.dispose();
-      atlasPages.forEach((atlasPage) => {
-        scene.remove(atlasPage.mesh);
-        atlasPage.geometry.dispose();
-        atlasPage.material.dispose();
-        atlasPage.texture.dispose();
-      });
-      renderer.dispose();
     };
-  }, [renderCurrentScene, renderMode, renderPoints, thumbnailPlan]);
+  }, [dataMountKey]);
 
   useEffect(() => {
     viewRef.current = view;
-    renderCurrentScene();
-  }, [renderCurrentScene, view]);
+    runtimeRef.current?.setView(view);
+  }, [view]);
 
   function getWorldPointFromPointer(event: React.PointerEvent<HTMLDivElement>) {
-    const wrapper = wrapperRef.current;
-    const camera = cameraRef.current;
-
-    if (!wrapper || !camera) {
-      return null;
-    }
-
-    const rect = wrapper.getBoundingClientRect();
-    const ndcX = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-    const ndcY = -(((event.clientY - rect.top) / rect.height) * 2 - 1);
-    const vector = new THREE.Vector3(ndcX, ndcY, 0).unproject(camera);
-
-    return { x: vector.x, y: vector.y };
+    return runtimeRef.current?.getWorldPoint(event.clientX, event.clientY) ?? null;
   }
 
   function getNearestPoint(event: React.PointerEvent<HTMLDivElement>) {
@@ -728,6 +360,8 @@ export function LatentMapViewer({
             <NativeSelect
               aria-label="Thumbnail size"
               className="w-[84px]"
+              id="latent-map-thumbnail-size"
+              name="latent-map-thumbnail-size"
               onChange={(event) => {
                 const nextSize = Number(event.currentTarget.value);
 
@@ -791,6 +425,13 @@ export function LatentMapViewer({
           data-cluster-colors={clusterColorsEnabled}
           data-point-count={stats.pointCount}
           data-render-mode={renderMode}
+          data-runtime-atlas-page-count={runtimeSnapshot.atlasPageCount}
+          data-runtime-draw-calls={runtimeSnapshot.drawCalls}
+          data-runtime-geometries={runtimeSnapshot.geometryCount}
+          data-runtime-loaded-thumbnails={runtimeSnapshot.loadedThumbnailCount}
+          data-runtime-renderer-points={runtimeSnapshot.rendererPointCount}
+          data-runtime-renderer-triangles={runtimeSnapshot.rendererTriangleCount}
+          data-runtime-textures={runtimeSnapshot.liveTextureCount}
           data-selected-image-id={selectedImageId ?? undefined}
           data-thumbnail-atlas-page-count={
             renderMode === "thumbnails" ? thumbnailPlan.atlasPages.length : 0

@@ -13,6 +13,11 @@ describe("LatentMapViewer", () => {
     expect(html).toContain("data-testid=\"latent-map-canvas\"");
     expect(html).toContain("data-render-mode=\"points\"");
     expect(html).toContain("data-point-count=\"8\"");
+    expect(html).toContain("data-runtime-atlas-page-count=\"0\"");
+    expect(html).toContain("data-runtime-draw-calls=\"0\"");
+    expect(html).toContain("data-runtime-geometries=\"0\"");
+    expect(html).toContain("data-runtime-loaded-thumbnails=\"0\"");
+    expect(html).toContain("data-runtime-textures=\"0\"");
     expect(html).toContain("data-thumbnail-count=\"0\"");
     expect(html).toContain("data-selected-image-id=\"img_saffron\"");
     expect(html).toContain("8 images");
@@ -30,8 +35,10 @@ describe("LatentMapViewer", () => {
     ).replaceAll("<!-- -->", "");
 
     expect(html).toContain("data-render-mode=\"thumbnails\"");
+    expect(html).toContain("data-runtime-atlas-page-count=\"1\"");
     expect(html).toContain("data-thumbnail-count=\"8\"");
     expect(html).toContain("data-thumbnail-source-kind=\"generated\"");
+    expect(html).toContain("name=\"latent-map-thumbnail-size\"");
     expect(html).toContain("8 thumbnails");
     expect(html).not.toContain("fixture/a1.jpg");
   });

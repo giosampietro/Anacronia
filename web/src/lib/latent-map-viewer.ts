@@ -73,6 +73,32 @@ export type LatentMapThumbnailAtlasPage = {
   tileSize: LatentMapThumbnailSize;
 };
 
+export type LatentMapRuntimeRendererInfo = {
+  memory?: {
+    geometries?: number;
+    textures?: number;
+  };
+  render?: {
+    calls?: number;
+    points?: number;
+    triangles?: number;
+  };
+};
+
+export type LatentMapRuntimeSnapshot = {
+  atlasPageCount: number;
+  drawCalls: number;
+  geometryCount: number;
+  liveTextureCount: number;
+  loadedThumbnailCount: number;
+  pointCount: number;
+  rendererPointCount: number;
+  rendererTriangleCount: number;
+  renderMode: LatentMapRenderMode;
+  thumbnailCount: number;
+  thumbnailSize: LatentMapThumbnailSize;
+};
+
 export const DEFAULT_LATENT_MAP_THUMBNAIL_CAP = 420;
 export const DEFAULT_LATENT_MAP_THUMBNAIL_SIZE: LatentMapThumbnailSize = 64;
 export const DEFAULT_LATENT_MAP_HOVER_PREVIEW_SIZE = 256;
@@ -282,7 +308,12 @@ export function createLatentMapThumbnailRenderPlan({
   thumbnailSize?: LatentMapThumbnailSize;
 }): LatentMapThumbnailRenderPlan {
   const sortedPoints = [...points].sort((left, right) => {
-    const priorityDelta = getThumbnailPriority(left) - getThumbnailPriority(right);
+    if (strategy === "all-atlas") {
+      return left.image_id.localeCompare(right.image_id);
+    }
+
+    const priorityDelta =
+      getThumbnailPriority(left) - getThumbnailPriority(right);
 
     if (priorityDelta !== 0) {
       return priorityDelta;
@@ -311,6 +342,36 @@ export function createLatentMapThumbnailRenderPlan({
     thumbnailSize,
     thumbnailPoints,
     textureSources: thumbnailPoints.map((point) => point.thumbnail_path),
+  };
+}
+
+export function createLatentMapRuntimeSnapshot({
+  loadedThumbnailCount = 0,
+  pointCount,
+  renderMode,
+  rendererInfo,
+  thumbnailPlan,
+}: {
+  loadedThumbnailCount?: number;
+  pointCount: number;
+  renderMode: LatentMapRenderMode;
+  rendererInfo?: LatentMapRuntimeRendererInfo;
+  thumbnailPlan: LatentMapThumbnailRenderPlan;
+}): LatentMapRuntimeSnapshot {
+  return {
+    atlasPageCount:
+      renderMode === "thumbnails" ? thumbnailPlan.atlasPages.length : 0,
+    drawCalls: rendererInfo?.render?.calls ?? 0,
+    geometryCount: rendererInfo?.memory?.geometries ?? 0,
+    liveTextureCount: rendererInfo?.memory?.textures ?? 0,
+    loadedThumbnailCount,
+    pointCount,
+    rendererPointCount: rendererInfo?.render?.points ?? 0,
+    rendererTriangleCount: rendererInfo?.render?.triangles ?? 0,
+    renderMode,
+    thumbnailCount:
+      renderMode === "thumbnails" ? thumbnailPlan.thumbnailPoints.length : 0,
+    thumbnailSize: thumbnailPlan.thumbnailSize,
   };
 }
 
