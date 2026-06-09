@@ -19,7 +19,7 @@ describe("LatentMapViewer", () => {
     expect(html).toContain("data-runtime-loaded-thumbnails=\"0\"");
     expect(html).toContain("data-runtime-textures=\"0\"");
     expect(html).toContain("data-thumbnail-count=\"0\"");
-    expect(html).toContain("data-selected-image-id=\"img_saffron\"");
+    expect(html).not.toContain("data-selected-image-id=");
     expect(html).toContain("8 images");
     expect(html).toContain("3 clusters");
     expect(html).toContain("dinov3_vits_256");
@@ -41,5 +41,22 @@ describe("LatentMapViewer", () => {
     expect(html).toContain("name=\"latent-map-thumbnail-size\"");
     expect(html).toContain("8 thumbnails");
     expect(html).not.toContain("fixture/a1.jpg");
+  });
+
+  it("renders FAISS focus thumbnails over small background points", () => {
+    const html = renderToString(
+      <LatentMapViewer
+        data={latentMapFixture}
+        initialRenderMode="thumbnails"
+        initialSelectedImageId="img_saffron"
+      />,
+    ).replaceAll("<!-- -->", "");
+
+    expect(html).toContain("data-render-mode=\"thumbnails\"");
+    expect(html).toContain("data-selected-image-id=\"img_saffron\"");
+    expect(html).toContain("data-thumbnail-count=\"4\"");
+    expect(html).toContain("data-point-layer-visible=\"true\"");
+    expect(html).toContain("data-point-layer-size=\"3\"");
+    expect(html).toContain("4 thumbnails");
   });
 });

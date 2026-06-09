@@ -22,9 +22,10 @@ import { cn } from "@/lib/utils";
 import {
   createLatentMapRuntimeSnapshot,
   createLatentMapThumbnailRenderPlan,
+  createLatentMapPointLayerPlan,
   createLatentMapRenderState,
   createLatentMapStats,
-  findNearestLatentMapPoint,
+  getNextLatentMapSelection,
   DEFAULT_LATENT_MAP_HOVER_PREVIEW_SIZE,
   DEFAULT_LATENT_MAP_THUMBNAIL_SIZE,
   LATENT_MAP_THUMBNAIL_SIZE_OPTIONS,
@@ -33,6 +34,10 @@ import {
   type LatentMapThumbnailSize,
   type LatentMapViewerData,
 } from "@/lib/latent-map-viewer";
+import {
+  createLatentMapPointerHitRadius,
+  createLatentMapSpatialIndex,
+} from "@/lib/latent-map-spatial-index";
 import {
   createLatentMapWebglRuntime,
   type LatentMapRuntimeState,
@@ -44,6 +49,7 @@ type LatentMapViewerProps = {
   className?: string;
   data: LatentMapViewerData;
   initialRenderMode?: LatentMapRenderMode;
+  initialSelectedImageId?: string | null;
 };
 
 type PointerPosition = {
@@ -62,11 +68,14 @@ export function LatentMapViewer({
   className,
   data,
   initialRenderMode = "points",
+  initialSelectedImageId = null,
 }: LatentMapViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const runtimeRef = useRef<LatentMapWebglRuntime | null>(null);
   const runtimeStateRef = useRef<LatentMapRuntimeState | null>(null);
+  const hoverFrameRef = useRef<number | null>(null);
+  const hoverPointerRef = useRef<PointerPosition | null>(null);
   const dragStartRef = useRef<{
     pointer: PointerPosition;
     view: LatentMapViewState;
@@ -79,7 +88,7 @@ export function LatentMapViewer({
     y: 0,
   });
   const [selectedImageId, setSelectedImageId] = useState<string | null>(
-    data.points[0]?.image_id ?? null,
+    initialSelectedImageId,
   );
   const [renderMode, setRenderMode] =
     useState<LatentMapRenderMode>(initialRenderMode);
@@ -98,6 +107,10 @@ export function LatentMapViewer({
         selectedImageId,
       }),
     [clusterColorsEnabled, data, selectedImageId],
+  );
+  const spatialIndex = useMemo(
+    () => createLatentMapSpatialIndex(renderPoints),
+    [renderPoints],
   );
   const selectedPoint = useMemo(
     () =>
@@ -120,13 +133,23 @@ export function LatentMapViewer({
       }),
     [data.thumbnail_atlas, renderPoints, thumbnailSize],
   );
+  const pointLayer = useMemo(
+    () =>
+      createLatentMapPointLayerPlan({
+        points: renderPoints,
+        renderMode,
+        thumbnailPlan,
+      }),
+    [renderMode, renderPoints, thumbnailPlan],
+  );
   const runtimeState = useMemo<LatentMapRuntimeState>(
     () => ({
+      pointLayer,
       points: renderPoints,
       renderMode,
       thumbnailPlan,
     }),
-    [renderMode, renderPoints, thumbnailPlan],
+    [pointLayer, renderMode, renderPoints, thumbnailPlan],
   );
   const dataMountKey = useMemo(
     () =>
@@ -202,22 +225,53 @@ export function LatentMapViewer({
     runtimeRef.current?.setView(view);
   }, [view]);
 
-  function getWorldPointFromPointer(event: React.PointerEvent<HTMLDivElement>) {
-    return runtimeRef.current?.getWorldPoint(event.clientX, event.clientY) ?? null;
-  }
+  useEffect(
+    () => () => {
+      if (hoverFrameRef.current !== null) {
+        window.cancelAnimationFrame(hoverFrameRef.current);
+      }
+    },
+    [],
+  );
 
-  function getNearestPoint(event: React.PointerEvent<HTMLDivElement>) {
-    const worldPoint = getWorldPointFromPointer(event);
+  function getNearestPointAt(pointer: PointerPosition) {
+    const wrapper = wrapperRef.current;
+    const worldPoint =
+      runtimeRef.current?.getWorldPoint(pointer.x, pointer.y) ?? null;
 
-    if (!worldPoint) {
+    if (!wrapper || !worldPoint) {
       return null;
     }
+    const rect = wrapper.getBoundingClientRect();
 
-    return findNearestLatentMapPoint({
-      maxDistance: 0.065 / view.zoom,
-      points: renderPoints,
+    return spatialIndex.findNearest({
+      maxDistance: createLatentMapPointerHitRadius({
+        renderMode,
+        thumbnailSize,
+        viewportHeight: rect.height,
+        zoom: viewRef.current.zoom,
+      }),
       x: worldPoint.x,
       y: worldPoint.y,
+    });
+  }
+
+  function scheduleHoverLookup(pointer: PointerPosition) {
+    hoverPointerRef.current = pointer;
+
+    if (hoverFrameRef.current !== null) {
+      return;
+    }
+
+    hoverFrameRef.current = window.requestAnimationFrame(() => {
+      hoverFrameRef.current = null;
+      const nextPointer = hoverPointerRef.current;
+
+      if (!nextPointer) {
+        return;
+      }
+
+      setHoveredImageId(getNearestPointAt(nextPointer)?.image_id ?? null);
     });
   }
 
@@ -264,7 +318,10 @@ export function LatentMapViewer({
       return;
     }
 
-    setHoveredImageId(getNearestPoint(event)?.image_id ?? null);
+    scheduleHoverLookup({
+      x: event.clientX,
+      y: event.clientY,
+    });
   }
 
   function handlePointerUp(event: React.PointerEvent<HTMLDivElement>) {
@@ -285,11 +342,17 @@ export function LatentMapViewer({
       return;
     }
 
-    const nearestPoint = getNearestPoint(event);
+    const nearestPoint = getNearestPointAt({
+      x: event.clientX,
+      y: event.clientY,
+    });
 
-    if (nearestPoint) {
-      setSelectedImageId(nearestPoint.image_id);
-    }
+    setSelectedImageId((currentSelectedImageId) =>
+      getNextLatentMapSelection({
+        currentSelectedImageId,
+        pickedImageId: nearestPoint?.image_id ?? null,
+      }),
+    );
   }
 
   function handleWheel(event: React.WheelEvent<HTMLDivElement>) {
@@ -434,6 +497,8 @@ export function LatentMapViewer({
           data-runtime-renderer-triangles={runtimeSnapshot.rendererTriangleCount}
           data-runtime-textures={runtimeSnapshot.liveTextureCount}
           data-selected-image-id={selectedImageId ?? undefined}
+          data-point-layer-size={pointLayer.pointSize}
+          data-point-layer-visible={pointLayer.visible}
           data-thumbnail-atlas-page-count={
             renderMode === "thumbnails" ? thumbnailPlan.atlasPages.length : 0
           }
@@ -455,6 +520,7 @@ export function LatentMapViewer({
           onPointerDown={handlePointerDown}
           onPointerLeave={() => {
             dragStartRef.current = null;
+            hoverPointerRef.current = null;
             setHoveredImageId(null);
           }}
           onPointerMove={handlePointerMove}

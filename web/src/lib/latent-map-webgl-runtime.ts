@@ -3,12 +3,12 @@ import * as THREE from "three";
 import type {
   LatentMapRenderablePoint,
   LatentMapRenderMode,
+  LatentMapPointLayerPlan,
   LatentMapRuntimeRendererInfo,
   LatentMapThumbnailAtlasPage,
   LatentMapThumbnailRenderPlan,
   LatentMapThumbnailSize,
 } from "@/lib/latent-map-viewer";
-import { isLatentMapThumbnailFocusActive } from "@/lib/latent-map-viewer";
 
 export type LatentMapViewState = {
   offsetX: number;
@@ -22,6 +22,7 @@ export type LatentMapRuntimeDiagnostics = {
 };
 
 export type LatentMapRuntimeState = {
+  pointLayer: LatentMapPointLayerPlan;
   points: LatentMapRenderablePoint[];
   renderMode: LatentMapRenderMode;
   thumbnailPlan: LatentMapThumbnailRenderPlan;
@@ -281,20 +282,13 @@ function createAtlasGeometry({
   return geometry;
 }
 
-function createAtlasMaterial({
-  focusActive,
-  texture,
-}: {
-  focusActive: boolean;
-  texture: THREE.Texture;
-}) {
+function createAtlasMaterial(texture: THREE.Texture) {
   return new THREE.ShaderMaterial({
     depthTest: true,
     depthWrite: true,
-    transparent: true,
+    transparent: false,
     uniforms: {
       atlasTexture: { value: texture },
-      focusActive: { value: focusActive ? 1 : 0 },
     },
     vertexShader: `
       attribute vec3 instancePosition;
@@ -318,7 +312,6 @@ function createAtlasMaterial({
     `,
     fragmentShader: `
       uniform sampler2D atlasTexture;
-      uniform float focusActive;
       varying vec2 vAtlasUv;
       varying vec2 vLocalUv;
       varying float vState;
@@ -330,12 +323,10 @@ function createAtlasMaterial({
           min(vLocalUv.y, 1.0 - vLocalUv.y)
         );
         float selected = step(1.5, vState);
-        float nonFocus = 1.0 - step(0.5, vState);
         float focusRing = (1.0 - step(0.045, edgeDistance)) * selected;
-        float alpha = mix(1.0, 0.5, focusActive * nonFocus);
         vec3 color = mix(texel.rgb, vec3(1.0), focusRing);
 
-        gl_FragColor = vec4(color, alpha);
+        gl_FragColor = vec4(color, 1.0);
       }
     `,
   });
@@ -390,11 +381,9 @@ type AtlasPageMesh = {
 };
 
 function createAtlasPageMesh({
-  focusActive,
   page,
   thumbnailSize,
 }: {
-  focusActive: boolean;
   page: LatentMapThumbnailAtlasPage;
   thumbnailSize: LatentMapThumbnailSize;
 }): AtlasPageMesh {
@@ -419,7 +408,7 @@ function createAtlasPageMesh({
   texture.premultiplyAlpha = false;
 
   const geometry = createAtlasGeometry({ page, thumbnailSize });
-  const material = createAtlasMaterial({ focusActive, texture });
+  const material = createAtlasMaterial(texture);
   const mesh = new THREE.Mesh(geometry, material);
 
   mesh.frustumCulled = false;
@@ -474,6 +463,7 @@ function disposeAtlasPage(scene: THREE.Scene, atlasPage: AtlasPageMesh) {
 export function createLatentMapWebglRuntime({
   canvas,
   onDiagnosticsChange,
+  pointLayer,
   points,
   renderMode,
   thumbnailPlan,
@@ -491,10 +481,10 @@ export function createLatentMapWebglRuntime({
   });
   const scene = new THREE.Scene();
   const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -100, 100);
-  const pointGeometry = createPointGeometry(points);
+  const pointGeometry = createPointGeometry(pointLayer.points);
   const pointMaterial = new THREE.PointsMaterial({
     alphaTest: 0.2,
-    size: 9,
+    size: pointLayer.pointSize,
     sizeAttenuation: false,
     vertexColors: true,
   });
@@ -502,7 +492,6 @@ export function createLatentMapWebglRuntime({
   const atlasPages: AtlasPageMesh[] = [];
   const atlasImages: HTMLImageElement[] = [];
   let animationFrameId: number | null = null;
-  let currentRenderMode = renderMode;
   let currentThumbnailPlanSignature = "";
   let currentView = view;
   let isDisposed = false;
@@ -568,11 +557,9 @@ export function createLatentMapWebglRuntime({
 
   function loadAtlasPages(plan: LatentMapThumbnailRenderPlan) {
     unloadAtlasPages();
-    const focusActive = isLatentMapThumbnailFocusActive(plan.thumbnailPoints);
 
     plan.atlasPages.forEach((page) => {
       const atlasPage = createAtlasPageMesh({
-        focusActive,
         page,
         thumbnailSize: plan.thumbnailSize,
       });
@@ -667,8 +654,6 @@ export function createLatentMapWebglRuntime({
   }
 
   function updateAtlasInstances(plan: LatentMapThumbnailRenderPlan) {
-    const focusActive = isLatentMapThumbnailFocusActive(plan.thumbnailPoints);
-
     plan.atlasPages.forEach((page, index) => {
       const atlasPage = atlasPages[index];
 
@@ -682,13 +667,12 @@ export function createLatentMapWebglRuntime({
         thumbnailSize: plan.thumbnailSize,
       });
       atlasPage.page = page;
-      atlasPage.material.uniforms.focusActive.value = focusActive ? 1 : 0;
     });
   }
 
   function setRenderState(nextState: LatentMapRuntimeState) {
-    updatePointGeometry(pointGeometry, nextState.points);
-    currentRenderMode = nextState.renderMode;
+    updatePointGeometry(pointGeometry, nextState.pointLayer.points);
+    pointMaterial.size = nextState.pointLayer.pointSize;
 
     const nextSignature = createThumbnailPlanSignature(
       nextState.thumbnailPlan,
@@ -704,7 +688,7 @@ export function createLatentMapWebglRuntime({
       updateAtlasInstances(nextState.thumbnailPlan);
     }
 
-    pointCloud.visible = currentRenderMode === "points";
+    pointCloud.visible = nextState.pointLayer.visible;
     scheduleRender();
     reportDiagnostics();
   }
@@ -739,7 +723,7 @@ export function createLatentMapWebglRuntime({
     window.addEventListener("resize", resize);
   }
 
-  setRenderState({ points, renderMode, thumbnailPlan });
+  setRenderState({ pointLayer, points, renderMode, thumbnailPlan });
   render();
 
   return {
