@@ -1,11 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Palette, RotateCcw, ScanSearch } from "lucide-react";
+import { CircleDot, Images, Palette, RotateCcw, ScanSearch } from "lucide-react";
 import * as THREE from "three";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  ToggleGroup,
+  ToggleGroupItem,
+} from "@/components/ui/toggle-group";
 import {
   Tooltip,
   TooltipContent,
@@ -13,9 +17,12 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import {
+  createLatentMapThumbnailRenderPlan,
   createLatentMapRenderState,
   createLatentMapStats,
   findNearestLatentMapPoint,
+  DEFAULT_LATENT_MAP_THUMBNAIL_CAP,
+  type LatentMapRenderMode,
   type LatentMapRenderablePoint,
   type LatentMapViewerData,
 } from "@/lib/latent-map-viewer";
@@ -23,6 +30,7 @@ import {
 type LatentMapViewerProps = {
   className?: string;
   data: LatentMapViewerData;
+  initialRenderMode?: LatentMapRenderMode;
 };
 
 type ViewState = {
@@ -41,6 +49,7 @@ const DEFAULT_VIEW: ViewState = {
   offsetY: 0,
   zoom: 1,
 };
+const THUMBNAIL_BASE_WORLD_SIZE = 0.13;
 
 function rgbToThreeColor([r, g, b]: [number, number, number]): THREE.Color {
   return new THREE.Color(r / 255, g / 255, b / 255);
@@ -91,9 +100,45 @@ function createPointGeometry(points: LatentMapRenderablePoint[]) {
   return geometry;
 }
 
+function getThumbnailScale(point: LatentMapRenderablePoint): [number, number] {
+  const aspect = Math.max(point.width, 1) / Math.max(point.height, 1);
+  const scaleMultiplier =
+    point.point_state === "selected" ? 1.36 : point.point_state === "neighbor" ? 1.16 : 1;
+  const baseSize = THUMBNAIL_BASE_WORLD_SIZE * scaleMultiplier;
+  const boundedAspect = Math.min(1.45, Math.max(0.7, aspect));
+
+  if (boundedAspect >= 1) {
+    return [baseSize * boundedAspect, baseSize];
+  }
+
+  return [baseSize, baseSize / boundedAspect];
+}
+
+function createThumbnailSprite(point: LatentMapRenderablePoint) {
+  const material = new THREE.SpriteMaterial({
+    color: rgbToThreeColor(point.color),
+    opacity: point.point_state === "cluster" ? 0.88 : 0.98,
+    transparent: true,
+  });
+  const sprite = new THREE.Sprite(material);
+  const [width, height] = getThumbnailScale(point);
+
+  sprite.position.set(
+    point.fitted_x,
+    point.fitted_y,
+    point.point_state === "selected" ? 0.3 : 0.18,
+  );
+  sprite.scale.set(width, height, 1);
+  sprite.renderOrder =
+    point.point_state === "selected" ? 30 : point.point_state === "neighbor" ? 20 : 10;
+
+  return { material, sprite };
+}
+
 export function LatentMapViewer({
   className,
   data,
+  initialRenderMode = "points",
 }: LatentMapViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
@@ -114,6 +159,8 @@ export function LatentMapViewer({
   const [selectedImageId, setSelectedImageId] = useState<string | null>(
     data.points[0]?.image_id ?? null,
   );
+  const [renderMode, setRenderMode] =
+    useState<LatentMapRenderMode>(initialRenderMode);
   const [view, setView] = useState<ViewState>(DEFAULT_VIEW);
   const stats = useMemo(() => createLatentMapStats(data), [data]);
   const renderPoints = useMemo(
@@ -133,6 +180,14 @@ export function LatentMapViewer({
   const hoveredPoint = useMemo(
     () => data.points.find((point) => point.image_id === hoveredImageId) ?? null,
     [data.points, hoveredImageId],
+  );
+  const thumbnailPlan = useMemo(
+    () =>
+      createLatentMapThumbnailRenderPlan({
+        maxThumbnails: DEFAULT_LATENT_MAP_THUMBNAIL_CAP,
+        points: renderPoints,
+      }),
+    [renderPoints],
   );
 
   const renderCurrentScene = useCallback(() => {
@@ -178,10 +233,40 @@ export function LatentMapViewer({
       vertexColors: true,
     });
     const pointCloud = new THREE.Points(geometry, material);
+    const thumbnailMaterials: THREE.SpriteMaterial[] = [];
+    const thumbnailTextures: THREE.Texture[] = [];
+    let isDisposed = false;
 
     renderer.setClearColor(0x101113, 1);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     scene.add(pointCloud);
+
+    if (renderMode === "thumbnails") {
+      const textureLoader = new THREE.TextureLoader();
+
+      thumbnailPlan.thumbnailPoints.forEach((point) => {
+        const { material: spriteMaterial, sprite } = createThumbnailSprite(point);
+
+        thumbnailMaterials.push(spriteMaterial);
+        scene.add(sprite);
+        textureLoader.load(point.thumbnail_path, (texture) => {
+          if (isDisposed) {
+            texture.dispose();
+            return;
+          }
+
+          texture.colorSpace = THREE.SRGBColorSpace;
+          texture.flipY = false;
+          texture.minFilter = THREE.LinearFilter;
+          texture.magFilter = THREE.LinearFilter;
+          spriteMaterial.map = texture;
+          spriteMaterial.needsUpdate = true;
+          thumbnailTextures.push(texture);
+          renderCurrentScene();
+        });
+      });
+    }
+
     camera.position.z = 4;
     cameraRef.current = camera;
     rendererRef.current = renderer;
@@ -195,15 +280,18 @@ export function LatentMapViewer({
     window.addEventListener("resize", resize);
 
     return () => {
+      isDisposed = true;
       window.removeEventListener("resize", resize);
       cameraRef.current = null;
       rendererRef.current = null;
       sceneRef.current = null;
       geometry.dispose();
       material.dispose();
+      thumbnailMaterials.forEach((spriteMaterial) => spriteMaterial.dispose());
+      thumbnailTextures.forEach((texture) => texture.dispose());
       renderer.dispose();
     };
-  }, [renderCurrentScene, renderPoints]);
+  }, [renderCurrentScene, renderMode, renderPoints, thumbnailPlan]);
 
   useEffect(() => {
     viewRef.current = view;
@@ -242,7 +330,11 @@ export function LatentMapViewer({
   }
 
   function handlePointerDown(event: React.PointerEvent<HTMLDivElement>) {
-    event.currentTarget.setPointerCapture(event.pointerId);
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      // Synthetic browser checks may not create an active pointer capture target.
+    }
     dragStartRef.current = {
       pointer: {
         x: event.clientX,
@@ -335,8 +427,39 @@ export function LatentMapViewer({
           <Badge variant="outline">{stats.pointCount} images</Badge>
           <Badge variant="outline">{stats.clusterCount} clusters</Badge>
           <Badge variant="outline">{data.embedding_recipe}</Badge>
+          {renderMode === "thumbnails" ? (
+            <Badge variant="outline">
+              {thumbnailPlan.thumbnailPoints.length}
+              {thumbnailPlan.capped ? `/${stats.pointCount}` : ""} thumbnails
+            </Badge>
+          ) : null}
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          <ToggleGroup
+            aria-label="Map render mode"
+            size="sm"
+            spacing={0}
+            value={[renderMode]}
+            variant="outline"
+            onValueChange={(nextValue) => {
+              const nextMode = Array.isArray(nextValue)
+                ? nextValue[0]
+                : nextValue;
+
+              if (nextMode === "points" || nextMode === "thumbnails") {
+                setRenderMode(nextMode);
+              }
+            }}
+          >
+            <ToggleGroupItem aria-label="Point mode" value="points">
+              <CircleDot data-icon="inline-start" />
+              <span className="hidden sm:inline">Points</span>
+            </ToggleGroupItem>
+            <ToggleGroupItem aria-label="Thumbnail mode" value="thumbnails">
+              <Images data-icon="inline-start" />
+              <span className="hidden sm:inline">Thumbnails</span>
+            </ToggleGroupItem>
+          </ToggleGroup>
           <Tooltip>
             <TooltipTrigger
               render={
@@ -378,7 +501,14 @@ export function LatentMapViewer({
           className="absolute inset-0 cursor-crosshair touch-none bg-[#101113]"
           data-cluster-colors={clusterColorsEnabled}
           data-point-count={stats.pointCount}
+          data-render-mode={renderMode}
           data-selected-image-id={selectedImageId ?? undefined}
+          data-thumbnail-count={
+            renderMode === "thumbnails"
+              ? thumbnailPlan.thumbnailPoints.length
+              : 0
+          }
+          data-thumbnail-source-kind="generated"
           data-testid="latent-map-canvas"
           onPointerDown={handlePointerDown}
           onPointerLeave={() => {

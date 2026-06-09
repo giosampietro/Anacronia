@@ -42,6 +42,17 @@ export type LatentMapRenderablePoint = LatentMapFittedPoint & {
   point_state: LatentMapPointState;
 };
 
+export type LatentMapRenderMode = "points" | "thumbnails";
+
+export type LatentMapThumbnailRenderPlan = {
+  capped: boolean;
+  maxThumbnails: number;
+  thumbnailPoints: LatentMapRenderablePoint[];
+  textureSources: string[];
+};
+
+export const DEFAULT_LATENT_MAP_THUMBNAIL_CAP = 420;
+
 const CLUSTER_COLORS: [number, number, number][] = [
   [239, 184, 72],
   [74, 185, 201],
@@ -157,6 +168,43 @@ export function createLatentMapRenderState({
       point_state: "base",
     };
   });
+}
+
+function getThumbnailPriority(point: LatentMapRenderablePoint): number {
+  if (point.point_state === "selected") {
+    return 0;
+  }
+  if (point.point_state === "neighbor") {
+    return 1;
+  }
+
+  return 2;
+}
+
+export function createLatentMapThumbnailRenderPlan({
+  maxThumbnails = DEFAULT_LATENT_MAP_THUMBNAIL_CAP,
+  points,
+}: {
+  maxThumbnails?: number;
+  points: LatentMapRenderablePoint[];
+}): LatentMapThumbnailRenderPlan {
+  const prioritizedPoints = [...points].sort((left, right) => {
+    const priorityDelta = getThumbnailPriority(left) - getThumbnailPriority(right);
+
+    if (priorityDelta !== 0) {
+      return priorityDelta;
+    }
+
+    return left.image_id.localeCompare(right.image_id);
+  });
+  const thumbnailPoints = prioritizedPoints.slice(0, maxThumbnails);
+
+  return {
+    capped: points.length > thumbnailPoints.length,
+    maxThumbnails,
+    thumbnailPoints,
+    textureSources: thumbnailPoints.map((point) => point.thumbnail_path),
+  };
 }
 
 export function findNearestLatentMapPoint({

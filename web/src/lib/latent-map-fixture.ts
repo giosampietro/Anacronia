@@ -1,16 +1,20 @@
 import type { LatentMapViewerData } from "@/lib/latent-map-viewer";
 
-function createThumbnailDataUri(label: string, color: string): string {
-  const svg = [
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180">`,
-    `<rect width="180" height="180" fill="${color}"/>`,
-    `<circle cx="122" cy="68" r="44" fill="rgba(255,255,255,0.22)"/>`,
-    `<rect x="30" y="110" width="118" height="30" rx="15" fill="rgba(10,10,10,0.42)"/>`,
-    `<text x="90" y="130" dominant-baseline="middle" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="22" fill="white">${label}</text>`,
-    `</svg>`,
-  ].join("");
+const THUMBNAIL_DATA_URIS = {
+  A1: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAIAAADYYG7QAAAA4klEQVR42u2Y0Q2CQBBEgdDCJBahhdiD2gOV2IPYg4XYhMk24YcJIXeayN7uhiOzHyRHAveYWeY42vG8b9ZUXbOyIhCBSquPnOx0e+Yn75fDfNgGvPZfOX6R+QL9iRLUQwoaRyAdjReQmsYFqITGHqiQZutJXS4P17JIIBO/aBmBCFQTUPIlSoWqADJxrYZ92fB4qW83AEsvEZGt95CIJE8ZtJWezwogVztaIWT9AQDLm8b4ZwMAD2Gm1Fhs2XS00iZJr06hUHQO6fLjMyzH7RXauIrE1V5h2fW4o0IEIpBdvQHVtkGSJKXzgAAAAABJRU5ErkJggg==",
+  A2: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAIAAADYYG7QAAAA5UlEQVR42u2XvRHCMAyFg88rqGMIKFmCWehpoc8sDAElS9B5CYrc+XR2mkjyX+6pcJE48Zf33snx4f04TT2VmzorAAFIW77mYpf7N7/4eZ5rA61y5HcXMt8QZXWy64SmeKhlNKWAxDRFgDQ09kBKmr13ar082MtqApn4BcsABKCRgJI/USg0BJCJayOcy67zT/6+mbY+EULY9ck1fh8R1Q51YMVpFpRE+RpAuQZEZCWM3DIiSsTgOum7ht8alzhypzQ0SfdyAoVybXiwmjXGJNoNMhS1MQ8ydnulZa/bEQoBCEB29QfDkVgp/qw1dwAAAABJRU5ErkJggg==",
+  A3: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAIAAADYYG7QAAAA5klEQVR42u2XwQ2DMAxFAbGC12AIuHWJztYh2htLsEaW4BDJskIrNbYTJej7gEQkyOP/j5OM73UdWqppaKwABCBrzTUne+z7dfCzbfJ2rPDbf+X4RVYW6E+UShlS0BQE0tGUAlLTFAGy0PgDGWnu3qnt8mAtqwnk4hcsAxCAegJKdqJQqAsgF9d6OJc9j0P/PqLcJ0IItz658vdRvjbWDAVRkiaiJMrXALpqQERewugtIyIphqNlsWvMuXHhayRgv3jE2L0mhUJJqlrp1CyJjHbVDPGUcm73UGO1V1j2WhYoBCAA+dUJqM1YlNQYNRkAAAAASUVORK5CYII=",
+  B1: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAIAAADYYG7QAAAA3klEQVR42u2YzQ3CMAyFW5QVfGQIWKND0CWYgiHoEqzBEhy9RA+RkJUCoo7jNNXzLZHafHl+cX760+XebSkO3cYCQADKjeA52HMal53ncZLN3mHZf+T4RlYW6E8UJw8paAoC6WhKAalpigDl0NgDZdLsvVLny4O9zBPIJF9IGYAA1BJQchKFQk0AmWSthXvZ63FV/45o9bfMvHcPMXMyS6ertByViJZq11FIohBRbNZ8bHijmGsTq0ZQKBRNY8WUVK/234dkyqSprVIZ1tr5dw821yoeOg43KAQgANnFDMwQRJPlpqJyAAAAAElFTkSuQmCC",
+  B2: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAIAAADYYG7QAAAA4ElEQVR42u2XQQqDMBBFVdx3NSeoRyv0ChW7LHgGoUfrDbLqDboQZIgNtDOT0cifXQImz/+/E1Ofh1u1p2qqnRWAAKSt1nOz12NcT3b3ng9rh8/+K0eKLC/QjyhOGRLQZASS0eQCEtNkAdLQ2AMpaY7eqfXy4CzzBDLxC5YBCEAlAUV/olCoCCAT10q4l72np3g5+v/ZEMKhb67L+xGRd6gDK04zo0TK+4Wab09EVsLILeOqpGY0XaMVKDS7Fkll1b0afaIXxG0ylLJsgwytfTFPNE57mWWn6wUKAQhAdvUBoLFZWeq0opAAAAAASUVORK5CYII=",
+  B3: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAIAAADYYG7QAAAA3UlEQVR42u2XPQ7CMAyFS9Qr+H5MnKAVAzMSCC4AE/fLJTpEiqw0k+2YpHoe0x9/fe8pqU/L4zP1VGHqrAAEIG3Nns1e18t+cX1+vYGqHPuriWz+I0r15tAJTfNQy2haAYlpmgBpaOyBlDRH36n18uAs8wQy8QuWAQhAIwEVf6JQaAggE9dGmMt+75v4dYJnY4yHnlzz9xGRd6gjK06TUArl/ULN2xORlTByy7gqtpYJZ3siSq4lgixYXlHuXkGZaKvoyIG4ZUWevDNUbWkeapz2AsvOyx0KAQhAdrUBB5JZYeMByxwAAAAASUVORK5CYII=",
+  C1: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAIAAADYYG7QAAAA3UlEQVR42u3Y0RGCMAwGYOC6QiZwCF3DIWQIfXaJLsEaLuEEWcIHXnJV7zRNUsr9eSt30I8ktMB4uR6HLcU0bCwAAqg2UuRk+f54PzjfTnI4Bjz2Hx3fZL6gHylBPaTQOIJ0Gi+QWuMCqtHYgyo1e1+p69ODvSwSZFIvlAwggHoCFW+iyFAXIJOq9fBdtuSn+nJLpn9PYea99xAzF3cZ9yktJyYiQ4cmQ+v0RCRNctjsZ4M5Qq4aqXkXF6vX1LyL9T20Vkp2kpRZKVNN93g0E3Z7RcnO8wEZAgggu3gBdGZHrNcmX3UAAAAASUVORK5CYII=",
+  C2: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAIAAADYYG7QAAAA4ElEQVR42u3XuxGDMAwGYPCxgofIEMlGKUOZgi6hCxuxRIbwEim48/lkmkiysLlfpXn4Q9LZuH99rl1N4brKAiCApDFYTjbe13zwvdysQbuO/OomGw6k7N7sKtEUb2qephSIrSkCkmj0QULN2VdqeXqwl1mCVOqFkgEEUEsg8ieKDDUBUqlaC+eyefqyXzdP/t9HQginPrnG7/PeH9DUIYmo2Sgk8xagdPqYFa3EiEpGEDlUsmro9JBEQ1Yvx0OQHoojpj2UNm+aEi0Kp4dIadQ7Grs9r2SP5wUZAgggvfgBF1hWjwa1YK8AAAAASUVORK5CYII=",
+} as const;
 
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+function createThumbnailDataUri(
+  label: keyof typeof THUMBNAIL_DATA_URIS,
+): string {
+  return THUMBNAIL_DATA_URIS[label];
 }
 
 export const latentMapFixture: LatentMapViewerData = {
@@ -26,7 +30,7 @@ export const latentMapFixture: LatentMapViewerData = {
       x: -4.8,
       y: -1.6,
       cluster_id: 0,
-      thumbnail_path: createThumbnailDataUri("A1", "#a35d2c"),
+      thumbnail_path: createThumbnailDataUri("A1"),
       source_path: "fixture/a1.jpg",
       relative_path: "set-a/a1.jpg",
       width: 1200,
@@ -42,7 +46,7 @@ export const latentMapFixture: LatentMapViewerData = {
       x: -3.8,
       y: -1.2,
       cluster_id: 0,
-      thumbnail_path: createThumbnailDataUri("A2", "#c68430"),
+      thumbnail_path: createThumbnailDataUri("A2"),
       source_path: "fixture/a2.jpg",
       relative_path: "set-a/a2.jpg",
       width: 900,
@@ -57,7 +61,7 @@ export const latentMapFixture: LatentMapViewerData = {
       x: -3.6,
       y: -2.7,
       cluster_id: 0,
-      thumbnail_path: createThumbnailDataUri("A3", "#b54242"),
+      thumbnail_path: createThumbnailDataUri("A3"),
       source_path: "fixture/a3.jpg",
       relative_path: "set-a/a3.jpg",
       width: 1000,
@@ -72,7 +76,7 @@ export const latentMapFixture: LatentMapViewerData = {
       x: 1.2,
       y: 2.4,
       cluster_id: 1,
-      thumbnail_path: createThumbnailDataUri("B1", "#315f9f"),
+      thumbnail_path: createThumbnailDataUri("B1"),
       source_path: "fixture/b1.jpg",
       relative_path: "set-b/b1.jpg",
       width: 1600,
@@ -87,7 +91,7 @@ export const latentMapFixture: LatentMapViewerData = {
       x: 2.1,
       y: 2.9,
       cluster_id: 1,
-      thumbnail_path: createThumbnailDataUri("B2", "#237b78"),
+      thumbnail_path: createThumbnailDataUri("B2"),
       source_path: "fixture/b2.jpg",
       relative_path: "set-b/b2.jpg",
       width: 1400,
@@ -102,7 +106,7 @@ export const latentMapFixture: LatentMapViewerData = {
       x: 1.7,
       y: 1.4,
       cluster_id: 1,
-      thumbnail_path: createThumbnailDataUri("B3", "#748899"),
+      thumbnail_path: createThumbnailDataUri("B3"),
       source_path: "fixture/b3.jpg",
       relative_path: "set-b/b3.jpg",
       width: 1100,
@@ -117,7 +121,7 @@ export const latentMapFixture: LatentMapViewerData = {
       x: 4.3,
       y: -2.3,
       cluster_id: 2,
-      thumbnail_path: createThumbnailDataUri("C1", "#657a37"),
+      thumbnail_path: createThumbnailDataUri("C1"),
       source_path: "fixture/c1.jpg",
       relative_path: "set-c/c1.jpg",
       width: 1250,
@@ -132,7 +136,7 @@ export const latentMapFixture: LatentMapViewerData = {
       x: 5.1,
       y: -1.4,
       cluster_id: 2,
-      thumbnail_path: createThumbnailDataUri("C2", "#89923d"),
+      thumbnail_path: createThumbnailDataUri("C2"),
       source_path: "fixture/c2.jpg",
       relative_path: "set-c/c2.jpg",
       width: 930,

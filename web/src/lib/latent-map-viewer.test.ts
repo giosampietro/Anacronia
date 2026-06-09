@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { latentMapFixture } from "@/lib/latent-map-fixture";
 import {
+  createLatentMapThumbnailRenderPlan,
   createLatentMapNeighborSet,
   createLatentMapRenderState,
   createLatentMapStats,
@@ -39,6 +40,29 @@ describe("latent map viewer model", () => {
     expect(stateById.img_vermilion).toBe("neighbor");
     expect(stateById.img_cobalt).toBe("neighbor");
     expect(stateById.img_teal).toBe("cluster");
+  });
+
+  it("plans thumbnail rendering from generated thumbnails, not originals", () => {
+    const renderState = createLatentMapRenderState({
+      clusterColorsEnabled: true,
+      data: latentMapFixture,
+      selectedImageId: "img_saffron",
+    });
+    const plan = createLatentMapThumbnailRenderPlan({
+      maxThumbnails: 4,
+      points: renderState,
+    });
+
+    expect(plan.capped).toBe(true);
+    expect(plan.thumbnailPoints.map((point) => point.image_id)).toEqual([
+      "img_saffron",
+      "img_amber",
+      "img_cobalt",
+      "img_vermilion",
+    ]);
+    expect(plan.textureSources).toHaveLength(4);
+    expect(plan.textureSources.every((source) => source.startsWith("data:image/png"))).toBe(true);
+    expect(plan.textureSources).not.toContain("fixture/a1.jpg");
   });
 
   it("fits arbitrary UMAP coordinates into stable WebGL world space", () => {
