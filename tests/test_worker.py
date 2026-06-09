@@ -16,6 +16,7 @@ from anacronia.storage import initialize_storage
 from anacronia.worker import (
     CollectLockError,
     DiskSpaceError,
+    acquire_worker_runtime_lock,
     cancel_collect_job,
     check_collect_job_disk_availability,
     complete_collect_job,
@@ -94,6 +95,19 @@ class FakeVamProviderIngester:
         )
 
 
+class ProgressThenFailureProviderIngester:
+    provider = "vam"
+    display_name = "V&A"
+
+    def discover_candidate_run(self, **_kwargs):
+        raise AssertionError("Worker should not discover candidates.")
+
+    def ingest_run(self, request: ProviderIngestRequest) -> FakeProviderIngestSummary:
+        if request.on_candidate_processed is not None:
+            request.on_candidate_processed(0)
+        raise RuntimeError("temporary provider failure")
+
+
 def ppm_image_bytes(*, width: int, height: int) -> bytes:
     header = f"P6\n{width} {height}\n255\n".encode("ascii")
     row = bytes([180, 40, 120]) * width
@@ -102,6 +116,18 @@ def ppm_image_bytes(*, width: int, height: int) -> bytes:
 
 def test_worker_starts_idle():
     assert create_idle_worker_status() == {"service": "worker", "status": "idle"}
+
+
+def test_worker_runtime_lock_prevents_duplicate_workers(tmp_path):
+    worker_lock = acquire_worker_runtime_lock(tmp_path)
+    try:
+        with pytest.raises(RuntimeError):
+            acquire_worker_runtime_lock(tmp_path)
+    finally:
+        worker_lock.close()
+
+    released_lock = acquire_worker_runtime_lock(tmp_path)
+    released_lock.close()
 
 
 def test_collect_job_lock_blocks_second_job_until_paused(tmp_path):
@@ -309,6 +335,33 @@ def test_paused_collect_job_can_resume_to_running(tmp_path):
     assert resumed_job.status == "running"
     assert resumed_job.pause_reason == ""
     assert get_worker_status(database_path=database_path).status == "running"
+
+
+def test_resuming_paused_collect_job_resets_provider_failure_backoff(tmp_path):
+    database_path = tmp_path / "anacronia.sqlite"
+    job = start_collect_job(
+        database_path=database_path,
+        run_id=1,
+        candidate_offset=0,
+        candidate_limit=10,
+        candidate_progress_total=10,
+        available_disk_bytes=10_000_000,
+    )
+    record_collect_provider_failure(database_path=database_path, job_id=job.job_id)
+    record_collect_provider_failure(database_path=database_path, job_id=job.job_id)
+    paused_job = record_collect_provider_failure(
+        database_path=database_path,
+        job_id=job.job_id,
+    )
+
+    assert paused_job.status == "paused"
+
+    resumed_job = resume_collect_job(database_path=database_path, job_id=job.job_id)
+
+    assert resumed_job.status == "running"
+    assert resumed_job.provider_failure_count == 0
+    assert resumed_job.backoff_seconds == 0
+    assert resumed_job.pause_reason == ""
 
 
 def test_worker_resumes_paused_search_after_last_processed_candidate(tmp_path):
@@ -555,6 +608,58 @@ def test_repeated_provider_failures_trigger_backoff_then_automatic_pause(tmp_pat
         available_disk_bytes=10_000_000,
     )
     assert next_job.run_id == 2
+
+
+def test_worker_resets_provider_failure_count_after_candidate_progress(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    from anacronia.search_sets import create_or_continue_search_set
+
+    create_or_continue_search_set(
+        database_path=storage.database_path,
+        display_name="Snake Studies",
+        terms_text="snake",
+    )
+    run = discover_provider_candidates(
+        database_path=storage.database_path,
+        search_set_slug="snake-studies",
+        provider="vam",
+        candidate_offset=0,
+        candidate_limit=1,
+        candidate_client=FakeVamCandidateClient(),
+        batch_target=1,
+    )
+    job = start_collect_job(
+        database_path=storage.database_path,
+        run_id=run.run_id,
+        candidate_offset=run.candidate_offset,
+        candidate_limit=run.candidate_limit,
+        candidate_progress_total=run.candidate_progress_total,
+        batch_target=run.batch_target,
+        max_images_per_object=1,
+        available_disk_bytes=10_000_000,
+    )
+    record_collect_provider_failure(
+        database_path=storage.database_path,
+        job_id=job.job_id,
+    )
+    record_collect_provider_failure(
+        database_path=storage.database_path,
+        job_id=job.job_id,
+    )
+
+    assert process_running_collect_job(
+        database_path=storage.database_path,
+        data_root=storage.data_root,
+        met_client=FakeMetRecordClient(),
+        provider_ingesters={"vam": ProgressThenFailureProviderIngester()},
+    ) is None
+
+    retriable_job = get_collect_job(database_path=storage.database_path, job_id=job.job_id)
+    assert retriable_job.status == "running"
+    assert retriable_job.provider_failure_count == 1
+    assert retriable_job.backoff_seconds > 0
+    assert retriable_job.pause_reason == ""
+    assert retriable_job.last_processed_run_position == 0
 
 
 def test_worker_processes_running_collect_job_through_met_ingest(tmp_path):
