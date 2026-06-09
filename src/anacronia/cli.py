@@ -12,6 +12,7 @@ from typing import Optional, TextIO
 import webbrowser
 
 from anacronia.latent_map_runs import initialize_latent_map_run
+from anacronia.latent_map_scan import scan_latent_map_run
 from anacronia.met_ingest import rebuild_met_descriptors
 from anacronia.ports import choose_port, is_port_available as socket_port_available
 from anacronia.search_sets import MET_PROVIDER, SearchSet, create_or_continue_search_set
@@ -280,6 +281,24 @@ def run_latent_map_init(
     )
 
 
+def run_latent_map_scan(*, run_dir: Path) -> None:
+    summary = scan_latent_map_run(run_dir)
+    print(
+        json.dumps(
+            {
+                "run_id": summary.run_id,
+                "source_folder": str(summary.source_folder),
+                "supported_file_count": summary.supported_file_count,
+                "manifest_image_count": summary.manifest_image_count,
+                "skipped_file_count": len(summary.skipped_files),
+                "manifest_path": str(summary.manifest_path),
+                "skipped_path": str(summary.skipped_path),
+            }
+        ),
+        flush=True,
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="anacronia")
     parser.add_argument("--no-open", action="store_true", help="Print the local URL without opening a browser.")
@@ -297,6 +316,8 @@ def main() -> None:
     latent_map_init_parser.add_argument("--runs-root", required=True, type=Path)
     latent_map_init_parser.add_argument("--run-name")
     latent_map_init_parser.add_argument("--allow-output-inside-source", action="store_true")
+    latent_map_scan_parser = latent_map_subparsers.add_parser("scan")
+    latent_map_scan_parser.add_argument("--run-dir", required=True, type=Path)
     args = parser.parse_args()
 
     if args.command == "search-set" and args.search_set_command == "create":
@@ -314,6 +335,10 @@ def main() -> None:
             run_name=args.run_name,
             allow_output_inside_source=args.allow_output_inside_source,
         )
+        return
+
+    if args.command == "latent-map" and args.latent_map_command == "scan":
+        run_latent_map_scan(run_dir=args.run_dir)
         return
 
     run_startup_plan(build_startup_plan(no_open=args.no_open))

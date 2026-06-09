@@ -4,6 +4,7 @@ from anacronia.cli import (
     acquire_data_root_runtime_lock,
     build_startup_plan,
     run_latent_map_init,
+    run_latent_map_scan,
     validate_supported_runtime,
 )
 
@@ -127,3 +128,20 @@ def test_latent_map_init_cli_prints_run_summary(tmp_path, capsys):
     assert '"run_id"' in output
     assert '"config_path"' in output
     assert str(source_folder.resolve()) in output
+
+
+def test_latent_map_scan_cli_prints_scan_summary(tmp_path, capsys):
+    source_folder = tmp_path / "source-images"
+    source_folder.mkdir()
+    run_latent_map_init(
+        source_folder=source_folder,
+        runs_root=tmp_path / "runs",
+        run_name="J Shoot",
+    )
+    run_dir = next((tmp_path / "runs").iterdir())
+
+    run_latent_map_scan(run_dir=run_dir)
+
+    output = capsys.readouterr().out
+    assert '"supported_file_count": 0' in output
+    assert '"manifest_image_count": 0' in output
