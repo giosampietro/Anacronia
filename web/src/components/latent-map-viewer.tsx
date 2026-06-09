@@ -136,14 +136,7 @@ function createInitialDurableState({
       : null,
   };
 
-  if (typeof window === "undefined" || window.location.search.length === 0) {
-    return fallback;
-  }
-
-  return parseLatentMapUrlState(
-    new URLSearchParams(window.location.search),
-    data,
-  );
+  return fallback;
 }
 
 export function LatentMapViewer({
@@ -152,11 +145,15 @@ export function LatentMapViewer({
   initialRenderMode = "points",
   initialSelectedImageId = null,
 }: LatentMapViewerProps) {
-  const initialDurableState = createInitialDurableState({
-    data,
-    initialRenderMode,
-    initialSelectedImageId,
-  });
+  const initialDurableState = useMemo(
+    () =>
+      createInitialDurableState({
+        data,
+        initialRenderMode,
+        initialSelectedImageId,
+      }),
+    [data, initialRenderMode, initialSelectedImageId],
+  );
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const runtimeRef = useRef<LatentMapWebglRuntime | null>(null);
@@ -200,6 +197,7 @@ export function LatentMapViewer({
   const [sourceFilter, setSourceFilter] = useState(
     initialDurableState.sourceFilter,
   );
+  const [urlStateHydrated, setUrlStateHydrated] = useState(false);
   const filterOptions = useMemo(
     () => createLatentMapFilterOptions(data),
     [data],
@@ -357,6 +355,31 @@ export function LatentMapViewer({
       return;
     }
 
+    const nextDurableState =
+      window.location.search.length > 0
+        ? parseLatentMapUrlState(
+            new URLSearchParams(window.location.search),
+            data,
+          )
+        : initialDurableState;
+
+    setClusterFilter(nextDurableState.clusterFilter);
+    setRenderMode(nextDurableState.renderMode);
+    setSelectedImageId(nextDurableState.selectedImageId);
+    setSourceFilter(nextDurableState.sourceFilter);
+    setThumbnailSize(nextDurableState.thumbnailSize);
+    setView(nextDurableState.view);
+    setUrlStateHydrated(true);
+  }, [data, dataMountKey, initialDurableState]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    if (!urlStateHydrated) {
+      return;
+    }
+
     const nextSearchParams = serializeLatentMapUrlState(
       {
         clusterFilter,
@@ -380,6 +403,7 @@ export function LatentMapViewer({
     selectedImageId,
     sourceFilter,
     thumbnailSize,
+    urlStateHydrated,
     view,
   ]);
 
