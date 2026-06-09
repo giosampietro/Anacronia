@@ -14,6 +14,14 @@ describe("normalizeExportedLatentMapViewerData", () => {
         recipe_name: "dinov3_vits_256",
         layout_id: "layout-1",
         cluster_id: "cluster-1",
+        available_recipes: [
+          {
+            family: "dinov3",
+            long_edge: 256,
+            model_id: "facebook/dinov3-vits16-pretrain-lvd1689m",
+            recipe_name: "dinov3_vits_256",
+          },
+        ],
         available_layouts: [
           {
             layout_id: "layout-1",
@@ -53,6 +61,14 @@ describe("normalizeExportedLatentMapViewerData", () => {
       layout_id: "layout-1",
       cluster_id: "cluster-1",
       source_folder: "/source/images",
+      available_recipes: [
+        {
+          family: "dinov3",
+          long_edge: 256,
+          model_id: "facebook/dinov3-vits16-pretrain-lvd1689m",
+          recipe_name: "dinov3_vits_256",
+        },
+      ],
       available_layouts: [
         {
           layout_id: "layout-1",

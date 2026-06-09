@@ -71,6 +71,52 @@ const DEFAULT_VIEW: LatentMapViewState = {
 };
 const ATLAS_TEXTURE_SIZE = 2048;
 
+function getAvailableRecipes(data: LatentMapViewerData) {
+  return data.available_recipes && data.available_recipes.length > 0
+    ? data.available_recipes
+    : [
+        {
+          family: "",
+          long_edge: null,
+          model_id: "",
+          recipe_name: data.embedding_recipe,
+        },
+      ];
+}
+
+function getAvailableLayouts(data: LatentMapViewerData) {
+  return data.available_layouts && data.available_layouts.length > 0
+    ? data.available_layouts
+    : [
+        {
+          layout_id: data.layout_id,
+          method: "",
+          params: {},
+        },
+      ];
+}
+
+function getAvailableClusters(data: LatentMapViewerData) {
+  return data.available_clusters && data.available_clusters.length > 0
+    ? data.available_clusters
+    : [
+        {
+          cluster_count: null,
+          cluster_id: data.cluster_id,
+          method: "",
+          random_state: null,
+        },
+      ];
+}
+
+function formatRecipeLabel(
+  recipe: NonNullable<LatentMapViewerData["available_recipes"]>[number],
+) {
+  const label = recipe.label ?? recipe.recipe_name;
+
+  return recipe.long_edge ? `${label} (${recipe.long_edge}px)` : label;
+}
+
 function createInitialDurableState({
   data,
   initialRenderMode,
@@ -156,6 +202,14 @@ export function LatentMapViewer({
   );
   const filterOptions = useMemo(
     () => createLatentMapFilterOptions(data),
+    [data],
+  );
+  const methodOptions = useMemo(
+    () => ({
+      clusters: getAvailableClusters(data),
+      layouts: getAvailableLayouts(data),
+      recipes: getAvailableRecipes(data),
+    }),
     [data],
   );
   const filteredData = useMemo(
@@ -470,6 +524,52 @@ export function LatentMapViewer({
     });
   }
 
+  const navigateToMethodSelection = useCallback(
+    ({
+      clusterId = data.cluster_id,
+      layoutId = data.layout_id,
+      recipeName = data.embedding_recipe,
+    }: {
+      clusterId?: string;
+      layoutId?: string;
+      recipeName?: string;
+    }) => {
+      if (typeof window === "undefined") {
+        return;
+      }
+
+      const nextSearchParams = serializeLatentMapUrlState(
+        {
+          clusterFilter,
+          renderMode,
+          selectedImageId,
+          sourceFilter,
+          thumbnailSize,
+          view,
+        },
+        data,
+      );
+      nextSearchParams.set("recipe", recipeName);
+      nextSearchParams.set("layout", layoutId);
+      nextSearchParams.set("clusterResult", clusterId);
+
+      window.location.assign(
+        `${window.location.pathname}?${nextSearchParams.toString()}${
+          window.location.hash
+        }`,
+      );
+    },
+    [
+      clusterFilter,
+      data,
+      renderMode,
+      selectedImageId,
+      sourceFilter,
+      thumbnailSize,
+      view,
+    ],
+  );
+
   function handlePointerDown(event: React.PointerEvent<HTMLDivElement>) {
     try {
       event.currentTarget.setPointerCapture(event.pointerId);
@@ -587,9 +687,6 @@ export function LatentMapViewer({
             <Badge variant="outline">{totalStats.pointCount} total</Badge>
           ) : null}
           <Badge variant="outline">{stats.clusterCount} clusters</Badge>
-          <Badge variant="outline">{data.embedding_recipe}</Badge>
-          <Badge variant="outline">{data.layout_id}</Badge>
-          <Badge variant="outline">{data.cluster_id}</Badge>
           {renderMode === "thumbnails" ? (
             <Badge variant="outline">
               {thumbnailPlan.thumbnailPoints.length}
@@ -602,7 +699,82 @@ export function LatentMapViewer({
             </Badge>
           ) : null}
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <label className="flex items-center gap-1 text-xs text-muted-foreground">
+            <span>Embedding recipe</span>
+            <NativeSelect
+              aria-label="Embedding recipe"
+              className="w-[180px]"
+              id="latent-map-recipe"
+              name="latent-map-recipe"
+              onChange={(event) =>
+                navigateToMethodSelection({
+                  recipeName: event.currentTarget.value,
+                })
+              }
+              size="sm"
+              value={data.embedding_recipe}
+            >
+              {methodOptions.recipes.map((recipe) => (
+                <NativeSelectOption
+                  key={recipe.recipe_name}
+                  value={recipe.recipe_name}
+                >
+                  {formatRecipeLabel(recipe)}
+                </NativeSelectOption>
+              ))}
+            </NativeSelect>
+          </label>
+          <label className="flex items-center gap-1 text-xs text-muted-foreground">
+            <span>Layout result</span>
+            <NativeSelect
+              aria-label="Layout result"
+              className="w-[220px]"
+              id="latent-map-layout"
+              name="latent-map-layout"
+              onChange={(event) =>
+                navigateToMethodSelection({
+                  layoutId: event.currentTarget.value,
+                })
+              }
+              size="sm"
+              value={data.layout_id}
+            >
+              {methodOptions.layouts.map((layout) => (
+                <NativeSelectOption
+                  key={layout.layout_id}
+                  value={layout.layout_id}
+                >
+                  {layout.layout_id}
+                </NativeSelectOption>
+              ))}
+            </NativeSelect>
+          </label>
+          <label className="flex items-center gap-1 text-xs text-muted-foreground">
+            <span>Cluster result</span>
+            <NativeSelect
+              aria-label="Cluster result"
+              className="w-[190px]"
+              id="latent-map-cluster-result"
+              name="latent-map-cluster-result"
+              onChange={(event) =>
+                navigateToMethodSelection({
+                  clusterId: event.currentTarget.value,
+                })
+              }
+              size="sm"
+              value={data.cluster_id}
+            >
+              {methodOptions.clusters.map((cluster) => (
+                <NativeSelectOption
+                  key={cluster.cluster_id}
+                  value={cluster.cluster_id}
+                >
+                  {cluster.cluster_id}
+                </NativeSelectOption>
+              ))}
+            </NativeSelect>
+          </label>
           <NativeSelect
             aria-label="Cluster filter"
             className="w-[116px]"

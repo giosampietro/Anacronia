@@ -20,6 +20,7 @@ export type LatentMapViewerData = {
   schema_version: 1;
   available_clusters?: LatentMapAvailableCluster[];
   available_layouts?: LatentMapAvailableLayout[];
+  available_recipes?: LatentMapAvailableRecipe[];
   run_id: string;
   embedding_recipe: string;
   layout_id: string;
@@ -34,6 +35,14 @@ export type LatentMapAvailableLayout = {
   layout_id: string;
   method: string;
   params: Record<string, unknown>;
+};
+
+export type LatentMapAvailableRecipe = {
+  family: string;
+  label?: string;
+  long_edge: number | null;
+  model_id: string;
+  recipe_name: string;
 };
 
 export type LatentMapAvailableCluster = {

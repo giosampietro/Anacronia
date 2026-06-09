@@ -17,6 +17,13 @@ type NeighborIndex = {
   schema_version?: unknown;
 };
 
+type NeighborJsonlRow = {
+  image_id?: unknown;
+  neighbor_image_id?: unknown;
+  neighbor_rank?: unknown;
+  score?: unknown;
+};
+
 export async function GET(request: NextRequest) {
   const runName = request.nextUrl.searchParams.get("run");
   const relativePath = request.nextUrl.searchParams.get("path");
@@ -45,6 +52,40 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    if (neighborIndexPath.endsWith(".jsonl")) {
+      const rows = (await readFile(
+        /*turbopackIgnore: true*/ neighborIndexPath,
+        "utf-8",
+      ))
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as NeighborJsonlRow)
+        .filter((row) => String(row.image_id ?? "") === imageId)
+        .sort(
+          (left, right) =>
+            Number(left.neighbor_rank ?? 0) - Number(right.neighbor_rank ?? 0),
+        );
+
+      if (rows.length === 0) {
+        return new Response("FAISS neighbors not found for selected image.", {
+          status: 404,
+        });
+      }
+
+      return Response.json({
+        schema_version: 1,
+        image_id: imageId,
+        neighbors: rows.map((row) => ({
+          image_id: String(row.neighbor_image_id ?? ""),
+          rank: Number(row.neighbor_rank ?? 0),
+          score: Number(row.score ?? 0),
+        })),
+        recipe_name: path.basename(relativePath, "_neighbors.jsonl"),
+        run_id: runName,
+      });
+    }
+
     const neighborIndex = JSON.parse(
       await readFile(/*turbopackIgnore: true*/ neighborIndexPath, "utf-8"),
     ) as NeighborIndex;

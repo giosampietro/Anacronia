@@ -4,6 +4,11 @@ import type { Metadata } from "next";
 
 import { LatentMapViewer } from "@/components/latent-map-viewer";
 import { latentMapFixture } from "@/lib/latent-map-fixture";
+import {
+  LATENT_MAP_RUNS_ROOT,
+  loadLatentMapRunExportedViewerData,
+} from "@/lib/latent-map-run-data";
+import type { ExportedLatentMapViewerData } from "@/lib/latent-map-viewer-data";
 import { normalizeExportedLatentMapViewerData } from "@/lib/latent-map-viewer-data";
 
 export const metadata: Metadata = {
@@ -12,21 +17,43 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
-async function loadLatentMapViewerData() {
-  const viewerDataPath = process.env.ANACRONIA_LATENT_MAP_VIEWER_DATA;
+type LatentMapSearchParams = Record<string, string | string[] | undefined>;
 
-  if (!viewerDataPath) {
-    return latentMapFixture;
+function getSearchParam(
+  searchParams: LatentMapSearchParams,
+  key: string,
+): string | null {
+  const value = searchParams[key];
+
+  return Array.isArray(value) ? value[0] ?? null : value ?? null;
+}
+
+function resolveRunDir({
+  resolvedViewerDataPath,
+  searchParams,
+}: {
+  resolvedViewerDataPath: string;
+  searchParams: LatentMapSearchParams;
+}): string {
+  const runParam = getSearchParam(searchParams, "run");
+
+  if (process.env.ANACRONIA_LATENT_MAP_RUN_DIR) {
+    return path.resolve(process.env.ANACRONIA_LATENT_MAP_RUN_DIR);
   }
 
-  const resolvedViewerDataPath = path.resolve(viewerDataPath);
-  const rawData = JSON.parse(
-    await readFile(resolvedViewerDataPath, "utf-8"),
-  ) as Parameters<typeof normalizeExportedLatentMapViewerData>[0]["rawData"];
-  const runDir = path.resolve(
-    process.env.ANACRONIA_LATENT_MAP_RUN_DIR ??
-      path.dirname(path.dirname(resolvedViewerDataPath)),
-  );
+  if (runParam) {
+    const runsRoot = path.resolve(LATENT_MAP_RUNS_ROOT);
+    const runDir = path.resolve(runsRoot, runParam);
+
+    if (runDir.startsWith(`${runsRoot}${path.sep}`)) {
+      return runDir;
+    }
+  }
+
+  return path.resolve(path.dirname(path.dirname(resolvedViewerDataPath)));
+}
+
+async function loadLatentMapSourceFolder(runDir: string): Promise<string> {
   let sourceFolder = "external-source";
 
   try {
@@ -40,40 +67,101 @@ async function loadLatentMapViewerData() {
     );
   }
 
+  return sourceFolder;
+}
+
+async function hydrateThumbnailAtlas({
+  rawData,
+  runDir,
+}: {
+  rawData: ExportedLatentMapViewerData;
+  runDir: string;
+}) {
   if (
-    !rawData.thumbnail_atlas &&
-    typeof rawData.thumbnail_atlas_manifest_path === "string" &&
-    rawData.thumbnail_atlas_manifest_path.length > 0
+    rawData.thumbnail_atlas ||
+    typeof rawData.thumbnail_atlas_manifest_path !== "string" ||
+    rawData.thumbnail_atlas_manifest_path.length === 0
   ) {
-    const atlasManifestPath = path.resolve(
-      runDir,
-      rawData.thumbnail_atlas_manifest_path,
-    );
-    if (
-      atlasManifestPath === runDir ||
-      !atlasManifestPath.startsWith(`${runDir}${path.sep}`)
-    ) {
-      throw new Error("Latent map atlas manifest is outside the run directory.");
-    }
-    rawData.thumbnail_atlas = JSON.parse(
-      await readFile(atlasManifestPath, "utf-8"),
-    );
+    return;
   }
+
+  const atlasManifestPath = path.resolve(
+    runDir,
+    rawData.thumbnail_atlas_manifest_path,
+  );
+  if (
+    atlasManifestPath === runDir ||
+    !atlasManifestPath.startsWith(`${runDir}${path.sep}`)
+  ) {
+    throw new Error("Latent map atlas manifest is outside the run directory.");
+  }
+  rawData.thumbnail_atlas = JSON.parse(
+    await readFile(atlasManifestPath, "utf-8"),
+  );
+}
+
+async function loadLatentMapViewerData(searchParams: LatentMapSearchParams) {
+  const viewerDataPath = process.env.ANACRONIA_LATENT_MAP_VIEWER_DATA;
+
+  if (!viewerDataPath) {
+    return latentMapFixture;
+  }
+
+  const resolvedViewerDataPath = path.resolve(viewerDataPath);
+  const fallbackRawData = JSON.parse(
+    await readFile(resolvedViewerDataPath, "utf-8"),
+  ) as ExportedLatentMapViewerData;
+  const fallbackRunDir = path.resolve(
+    path.dirname(path.dirname(resolvedViewerDataPath)),
+  );
+  const runDir = resolveRunDir({
+    resolvedViewerDataPath,
+    searchParams,
+  });
+  let rawData: ExportedLatentMapViewerData = fallbackRawData;
+  let dataRunDir = fallbackRunDir;
+
+  try {
+    rawData = await loadLatentMapRunExportedViewerData({
+      runDir,
+      selectedClusterId:
+        getSearchParam(searchParams, "clusterResult") ??
+        fallbackRawData.cluster_id,
+      selectedLayoutId:
+        getSearchParam(searchParams, "layout") ?? fallbackRawData.layout_id,
+      selectedRecipeName:
+        getSearchParam(searchParams, "recipe") ?? fallbackRawData.recipe_name,
+    });
+    dataRunDir = runDir;
+  } catch {
+    rawData = fallbackRawData;
+    dataRunDir = fallbackRunDir;
+  }
+
+  const sourceFolder = await loadLatentMapSourceFolder(dataRunDir);
+
+  await hydrateThumbnailAtlas({ rawData, runDir: dataRunDir });
 
   return normalizeExportedLatentMapViewerData({
     neighborApiPath: `/api/latent-map/neighbors?run=${encodeURIComponent(
-      path.basename(runDir),
+      path.basename(dataRunDir),
     )}`,
     rawData,
     sourceFolder,
     thumbnailApiPath: `/api/latent-map/thumbnails?run=${encodeURIComponent(
-      path.basename(runDir),
+      path.basename(dataRunDir),
     )}`,
   });
 }
 
-export default async function LatentMapPage() {
-  const viewerData = await loadLatentMapViewerData();
+export default async function LatentMapPage({
+  searchParams,
+}: {
+  searchParams?: Promise<LatentMapSearchParams>;
+}) {
+  const viewerData = await loadLatentMapViewerData(
+    searchParams ? await searchParams : {},
+  );
 
   return <LatentMapViewer data={viewerData} />;
 }

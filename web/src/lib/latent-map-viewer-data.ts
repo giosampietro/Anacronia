@@ -5,7 +5,7 @@ import type {
   LatentMapViewerData,
 } from "@/lib/latent-map-viewer";
 
-type ExportedLatentMapViewerData = {
+export type ExportedLatentMapViewerData = {
   available_clusters?: {
     cluster_count?: unknown;
     cluster_id?: unknown;
@@ -16,6 +16,13 @@ type ExportedLatentMapViewerData = {
     layout_id?: unknown;
     method?: unknown;
     params?: unknown;
+  }[];
+  available_recipes?: {
+    family?: unknown;
+    label?: unknown;
+    long_edge?: unknown;
+    model_id?: unknown;
+    recipe_name?: unknown;
   }[];
   cluster_id?: string;
   layout_id?: string;
@@ -61,6 +68,7 @@ export function normalizeExportedLatentMapViewerData({
     run_id: String(rawData.run_id ?? "external-run"),
     available_clusters: normalizeAvailableClusters(rawData.available_clusters),
     available_layouts: normalizeAvailableLayouts(rawData.available_layouts),
+    available_recipes: normalizeAvailableRecipes(rawData.available_recipes),
     embedding_recipe: String(rawData.recipe_name ?? "unknown_recipe"),
     layout_id: String(rawData.layout_id ?? "unknown_layout"),
     cluster_id: String(rawData.cluster_id ?? "unknown_cluster"),
@@ -100,6 +108,23 @@ export function normalizeExportedLatentMapViewerData({
       };
     }),
   };
+}
+
+function normalizeAvailableRecipes(
+  recipes: ExportedLatentMapViewerData["available_recipes"],
+): LatentMapViewerData["available_recipes"] {
+  return Array.isArray(recipes)
+    ? recipes.map((recipe) => ({
+        family: String(recipe.family ?? ""),
+        ...(typeof recipe.label === "string" && recipe.label.length > 0
+          ? { label: recipe.label }
+          : {}),
+        long_edge:
+          typeof recipe.long_edge === "number" ? recipe.long_edge : null,
+        model_id: String(recipe.model_id ?? ""),
+        recipe_name: String(recipe.recipe_name ?? ""),
+      }))
+    : [];
 }
 
 function normalizeAvailableLayouts(
