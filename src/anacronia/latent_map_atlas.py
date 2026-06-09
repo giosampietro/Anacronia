@@ -60,8 +60,17 @@ def generate_latent_map_thumbnail_atlas(
                 run_dir=resolved_run_dir,
                 relative_path=source_thumbnail_path,
             )
-            tile = _fit_thumbnail_tile(source_thumbnail, tile_size=tile_size)
+            tile, content_rect = _fit_thumbnail_tile(
+                source_thumbnail,
+                tile_size=tile_size,
+            )
             atlas.paste(tile, (x, y))
+            content_rect_on_page = [
+                x + content_rect[0],
+                y + content_rect[1],
+                content_rect[2],
+                content_rect[3],
+            ]
             items.append(
                 {
                     "image_id": str(row["image_id"]),
@@ -69,11 +78,10 @@ def generate_latent_map_thumbnail_atlas(
                     "page_path": page_path.relative_to(resolved_run_dir).as_posix(),
                     "source_thumbnail_path": source_thumbnail_path,
                     "tile_rect": [x, y, tile_size, tile_size],
+                    "content_rect": content_rect_on_page,
                     "uv_rect": _uv_rect(
                         atlas_size=atlas_size,
-                        column=column,
-                        row=row_index,
-                        tile_size=tile_size,
+                        rect=content_rect_on_page,
                     ),
                     "width": int(row.get("width", 0) or 0),
                     "height": int(row.get("height", 0) or 0),
@@ -132,18 +140,62 @@ def generate_latent_map_thumbnail_atlas(
     )
 
 
-def _fit_thumbnail_tile(image: Image.Image, *, tile_size: int) -> Image.Image:
-    tile = Image.new("RGB", (tile_size, tile_size), (16, 17, 19))
+def _fit_thumbnail_tile(
+    image: Image.Image,
+    *,
+    tile_size: int,
+) -> tuple[Image.Image, list[int]]:
     thumbnail = ImageOps.contain(
         ImageOps.exif_transpose(image).convert("RGB"),
         (tile_size, tile_size),
         Image.Resampling.LANCZOS,
     )
+    tile = Image.new("RGB", (tile_size, tile_size))
     x = (tile_size - thumbnail.width) // 2
     y = (tile_size - thumbnail.height) // 2
     tile.paste(thumbnail, (x, y))
+    _extend_thumbnail_edges(
+        tile=tile,
+        thumbnail=thumbnail,
+        x=x,
+        y=y,
+        tile_size=tile_size,
+    )
 
-    return tile
+    return tile, [x, y, thumbnail.width, thumbnail.height]
+
+
+def _extend_thumbnail_edges(
+    *,
+    tile: Image.Image,
+    thumbnail: Image.Image,
+    x: int,
+    y: int,
+    tile_size: int,
+) -> None:
+    if x > 0:
+        left_edge = thumbnail.crop((0, 0, 1, thumbnail.height)).resize(
+            (x, thumbnail.height)
+        )
+        tile.paste(left_edge, (0, y))
+
+    right_width = tile_size - x - thumbnail.width
+    if right_width > 0:
+        right_edge = thumbnail.crop(
+            (thumbnail.width - 1, 0, thumbnail.width, thumbnail.height)
+        ).resize((right_width, thumbnail.height))
+        tile.paste(right_edge, (x + thumbnail.width, y))
+
+    if y > 0:
+        top_edge = tile.crop((0, y, tile_size, y + 1)).resize((tile_size, y))
+        tile.paste(top_edge, (0, 0))
+
+    bottom_height = tile_size - y - thumbnail.height
+    if bottom_height > 0:
+        bottom_edge = tile.crop(
+            (0, y + thumbnail.height - 1, tile_size, y + thumbnail.height)
+        ).resize((tile_size, bottom_height))
+        tile.paste(bottom_edge, (0, y + thumbnail.height))
 
 
 def _load_source_thumbnail(*, run_dir: Path, relative_path: str) -> Image.Image:
@@ -162,15 +214,14 @@ def _load_source_thumbnail(*, run_dir: Path, relative_path: str) -> Image.Image:
 def _uv_rect(
     *,
     atlas_size: int,
-    column: int,
-    row: int,
-    tile_size: int,
+    rect: list[int],
 ) -> list[float]:
+    x, y, width, height = rect
     pixel_inset = 0.5 / atlas_size
-    u0 = column * tile_size / atlas_size + pixel_inset
-    v0 = row * tile_size / atlas_size + pixel_inset
-    u1 = (column + 1) * tile_size / atlas_size - pixel_inset
-    v1 = (row + 1) * tile_size / atlas_size - pixel_inset
+    u0 = x / atlas_size + pixel_inset
+    v0 = y / atlas_size + pixel_inset
+    u1 = (x + width) / atlas_size - pixel_inset
+    v1 = (y + height) / atlas_size - pixel_inset
 
     return [u0, v0, u1 - u0, v1 - v0]
 

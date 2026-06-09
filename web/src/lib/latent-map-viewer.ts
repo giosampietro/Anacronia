@@ -92,6 +92,7 @@ export type LatentMapGeneratedThumbnailAtlasPage = {
 };
 
 export type LatentMapGeneratedThumbnailAtlasItem = {
+  content_rect?: [number, number, number, number];
   height: number;
   image_id: string;
   page_index: number;

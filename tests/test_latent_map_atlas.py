@@ -75,12 +75,32 @@ def test_generates_thumbnail_atlas_manifest_from_generated_thumbnails(tmp_path):
         "page_path": "viewer/atlases/32px/page-000.png",
         "source_thumbnail_path": "thumbnails/img-a.jpg",
         "tile_rect": [0, 0, 32, 32],
-        "uv_rect": [0.0078125, 0.0078125, 0.484375, 0.484375],
+        "content_rect": [0, 2, 32, 27],
+        "uv_rect": [0.0078125, 0.0390625, 0.484375, 0.40625],
         "width": 100,
         "height": 200,
     }
     assert manifest["items"][4]["image_id"] == "img-e"
     assert manifest["items"][4]["page_index"] == 1
+
+
+def test_atlas_manifest_samples_the_fitted_image_not_letterbox_padding(tmp_path):
+    run = create_atlas_run(tmp_path)
+
+    summary = generate_latent_map_thumbnail_atlas(
+        run_dir=run.run_dir,
+        tile_size=32,
+        atlas_size=64,
+    )
+
+    manifest = json.loads(summary.manifest_path.read_text(encoding="utf-8"))
+    first_item = manifest["items"][0]
+    page = Image.open(run.run_dir / "viewer/atlases/32px/page-000.png")
+
+    assert first_item["tile_rect"] == [0, 0, 32, 32]
+    assert first_item["content_rect"] == [0, 2, 32, 27]
+    assert page.getpixel((16, 0)) != (16, 17, 19)
+    assert page.getpixel((16, 2)) != (16, 17, 19)
 
 
 def test_atlas_generation_rejects_missing_generated_thumbnail(tmp_path):

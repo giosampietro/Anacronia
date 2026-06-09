@@ -194,16 +194,23 @@ function normalizeThumbnailAtlas({
         }))
       : [],
     items: Array.isArray(rawAtlas.items)
-      ? rawAtlas.items.map((item) => ({
-          height: Number(item.height ?? 0),
-          image_id: String(item.image_id ?? ""),
-          page_index: Number(item.page_index ?? 0),
-          page_path: String(item.page_path ?? ""),
-          source_thumbnail_path: String(item.source_thumbnail_path ?? ""),
-          tile_rect: normalizeNumberTuple(item.tile_rect),
-          uv_rect: normalizeNumberTuple(item.uv_rect),
-          width: Number(item.width ?? 0),
-        }))
+      ? rawAtlas.items.map((item) => {
+          const contentRect = Array.isArray(item.content_rect)
+            ? { content_rect: normalizeNumberTuple(item.content_rect) }
+            : {};
+
+          return {
+            height: Number(item.height ?? 0),
+            image_id: String(item.image_id ?? ""),
+            page_index: Number(item.page_index ?? 0),
+            page_path: String(item.page_path ?? ""),
+            source_thumbnail_path: String(item.source_thumbnail_path ?? ""),
+            tile_rect: normalizeNumberTuple(item.tile_rect),
+            uv_rect: normalizeNumberTuple(item.uv_rect),
+            width: Number(item.width ?? 0),
+            ...contentRect,
+          };
+        })
       : [],
   };
 }
