@@ -3,6 +3,7 @@ import pytest
 from anacronia.cli import (
     acquire_data_root_runtime_lock,
     build_startup_plan,
+    run_latent_map_init,
     validate_supported_runtime,
 )
 
@@ -110,3 +111,19 @@ def test_runtime_requires_apple_silicon_mac():
 
     with pytest.raises(RuntimeError, match="macOS"):
         validate_supported_runtime(system="Linux", machine="arm64")
+
+
+def test_latent_map_init_cli_prints_run_summary(tmp_path, capsys):
+    source_folder = tmp_path / "source-images"
+    source_folder.mkdir()
+
+    run_latent_map_init(
+        source_folder=source_folder,
+        runs_root=tmp_path / "runs",
+        run_name="J Shoot",
+    )
+
+    output = capsys.readouterr().out
+    assert '"run_id"' in output
+    assert '"config_path"' in output
+    assert str(source_folder.resolve()) in output

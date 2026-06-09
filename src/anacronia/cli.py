@@ -11,6 +11,7 @@ import time
 from typing import Optional, TextIO
 import webbrowser
 
+from anacronia.latent_map_runs import initialize_latent_map_run
 from anacronia.met_ingest import rebuild_met_descriptors
 from anacronia.ports import choose_port, is_port_available as socket_port_available
 from anacronia.search_sets import MET_PROVIDER, SearchSet, create_or_continue_search_set
@@ -252,6 +253,33 @@ def run_rebuild_descriptors() -> None:
     )
 
 
+def run_latent_map_init(
+    *,
+    source_folder: Path,
+    runs_root: Path,
+    run_name: str | None = None,
+    allow_output_inside_source: bool = False,
+) -> None:
+    run = initialize_latent_map_run(
+        source_folder=source_folder,
+        runs_root=runs_root,
+        run_name=run_name,
+        allow_output_inside_source=allow_output_inside_source,
+    )
+    print(
+        json.dumps(
+            {
+                "run_id": run.run_id,
+                "run_dir": str(run.run_dir),
+                "source_folder": str(run.source_folder),
+                "config_path": str(run.config_path),
+                "report_path": str(run.report_path),
+            }
+        ),
+        flush=True,
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="anacronia")
     parser.add_argument("--no-open", action="store_true", help="Print the local URL without opening a browser.")
@@ -262,6 +290,13 @@ def main() -> None:
     search_set_create_parser = search_set_subparsers.add_parser("create")
     search_set_create_parser.add_argument("--name", required=True)
     search_set_create_parser.add_argument("--terms", required=True)
+    latent_map_parser = subparsers.add_parser("latent-map")
+    latent_map_subparsers = latent_map_parser.add_subparsers(dest="latent_map_command")
+    latent_map_init_parser = latent_map_subparsers.add_parser("init")
+    latent_map_init_parser.add_argument("--source-folder", required=True, type=Path)
+    latent_map_init_parser.add_argument("--runs-root", required=True, type=Path)
+    latent_map_init_parser.add_argument("--run-name")
+    latent_map_init_parser.add_argument("--allow-output-inside-source", action="store_true")
     args = parser.parse_args()
 
     if args.command == "search-set" and args.search_set_command == "create":
@@ -270,6 +305,15 @@ def main() -> None:
 
     if args.command == "rebuild-descriptors":
         run_rebuild_descriptors()
+        return
+
+    if args.command == "latent-map" and args.latent_map_command == "init":
+        run_latent_map_init(
+            source_folder=args.source_folder,
+            runs_root=args.runs_root,
+            run_name=args.run_name,
+            allow_output_inside_source=args.allow_output_inside_source,
+        )
         return
 
     run_startup_plan(build_startup_plan(no_open=args.no_open))
