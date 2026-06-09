@@ -1,0 +1,146 @@
+import type { LatentMapViewerData } from "@/lib/latent-map-viewer";
+
+function createThumbnailDataUri(label: string, color: string): string {
+  const svg = [
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180">`,
+    `<rect width="180" height="180" fill="${color}"/>`,
+    `<circle cx="122" cy="68" r="44" fill="rgba(255,255,255,0.22)"/>`,
+    `<rect x="30" y="110" width="118" height="30" rx="15" fill="rgba(10,10,10,0.42)"/>`,
+    `<text x="90" y="130" dominant-baseline="middle" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="22" fill="white">${label}</text>`,
+    `</svg>`,
+  ].join("");
+
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
+
+export const latentMapFixture: LatentMapViewerData = {
+  schema_version: 1,
+  run_id: "prototype-fixture-8",
+  embedding_recipe: "dinov3_vits_256",
+  layout_id: "umap_n4_mindist0p05_seed42",
+  cluster_id: "kmeans_k3_seed42",
+  source_folder: "synthetic-fixture",
+  points: [
+    {
+      image_id: "img_saffron",
+      x: -4.8,
+      y: -1.6,
+      cluster_id: 0,
+      thumbnail_path: createThumbnailDataUri("A1", "#a35d2c"),
+      source_path: "fixture/a1.jpg",
+      relative_path: "set-a/a1.jpg",
+      width: 1200,
+      height: 900,
+      neighbors: [
+        { image_id: "img_amber", score: 0.94 },
+        { image_id: "img_vermilion", score: 0.82 },
+        { image_id: "img_cobalt", score: 0.48 },
+      ],
+    },
+    {
+      image_id: "img_amber",
+      x: -3.8,
+      y: -1.2,
+      cluster_id: 0,
+      thumbnail_path: createThumbnailDataUri("A2", "#c68430"),
+      source_path: "fixture/a2.jpg",
+      relative_path: "set-a/a2.jpg",
+      width: 900,
+      height: 1200,
+      neighbors: [
+        { image_id: "img_saffron", score: 0.94 },
+        { image_id: "img_vermilion", score: 0.79 },
+      ],
+    },
+    {
+      image_id: "img_vermilion",
+      x: -3.6,
+      y: -2.7,
+      cluster_id: 0,
+      thumbnail_path: createThumbnailDataUri("A3", "#b54242"),
+      source_path: "fixture/a3.jpg",
+      relative_path: "set-a/a3.jpg",
+      width: 1000,
+      height: 1000,
+      neighbors: [
+        { image_id: "img_amber", score: 0.79 },
+        { image_id: "img_saffron", score: 0.82 },
+      ],
+    },
+    {
+      image_id: "img_cobalt",
+      x: 1.2,
+      y: 2.4,
+      cluster_id: 1,
+      thumbnail_path: createThumbnailDataUri("B1", "#315f9f"),
+      source_path: "fixture/b1.jpg",
+      relative_path: "set-b/b1.jpg",
+      width: 1600,
+      height: 1000,
+      neighbors: [
+        { image_id: "img_teal", score: 0.91 },
+        { image_id: "img_glass", score: 0.78 },
+      ],
+    },
+    {
+      image_id: "img_teal",
+      x: 2.1,
+      y: 2.9,
+      cluster_id: 1,
+      thumbnail_path: createThumbnailDataUri("B2", "#237b78"),
+      source_path: "fixture/b2.jpg",
+      relative_path: "set-b/b2.jpg",
+      width: 1400,
+      height: 1100,
+      neighbors: [
+        { image_id: "img_cobalt", score: 0.91 },
+        { image_id: "img_glass", score: 0.75 },
+      ],
+    },
+    {
+      image_id: "img_glass",
+      x: 1.7,
+      y: 1.4,
+      cluster_id: 1,
+      thumbnail_path: createThumbnailDataUri("B3", "#748899"),
+      source_path: "fixture/b3.jpg",
+      relative_path: "set-b/b3.jpg",
+      width: 1100,
+      height: 1400,
+      neighbors: [
+        { image_id: "img_cobalt", score: 0.78 },
+        { image_id: "img_teal", score: 0.75 },
+      ],
+    },
+    {
+      image_id: "img_moss",
+      x: 4.3,
+      y: -2.3,
+      cluster_id: 2,
+      thumbnail_path: createThumbnailDataUri("C1", "#657a37"),
+      source_path: "fixture/c1.jpg",
+      relative_path: "set-c/c1.jpg",
+      width: 1250,
+      height: 920,
+      neighbors: [
+        { image_id: "img_lime", score: 0.89 },
+        { image_id: "img_glass", score: 0.44 },
+      ],
+    },
+    {
+      image_id: "img_lime",
+      x: 5.1,
+      y: -1.4,
+      cluster_id: 2,
+      thumbnail_path: createThumbnailDataUri("C2", "#89923d"),
+      source_path: "fixture/c2.jpg",
+      relative_path: "set-c/c2.jpg",
+      width: 930,
+      height: 1250,
+      neighbors: [
+        { image_id: "img_moss", score: 0.89 },
+        { image_id: "img_teal", score: 0.42 },
+      ],
+    },
+  ],
+};
