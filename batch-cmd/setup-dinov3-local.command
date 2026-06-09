@@ -36,7 +36,8 @@ echo "Installing local image-embedding dependencies"
   "transformers" \
   "huggingface_hub" \
   "safetensors" \
-  "numpy"
+  "numpy" \
+  "faiss-cpu"
 
 echo
 echo "Checking Apple Silicon acceleration and DINOv3 access"

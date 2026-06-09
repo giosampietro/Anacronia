@@ -3,6 +3,8 @@ import pytest
 from anacronia.cli import (
     acquire_data_root_runtime_lock,
     build_startup_plan,
+    run_latent_map_faiss_build,
+    run_latent_map_faiss_query,
     run_latent_map_embed,
     run_latent_map_init,
     run_latent_map_scan,
@@ -178,3 +180,49 @@ def test_latent_map_embed_cli_prints_embedding_summary(tmp_path, capsys):
     output = capsys.readouterr().out
     assert '"recipe_name": "dinov3_vits_256"' in output
     assert '"vector_count": 0' in output
+
+
+def test_latent_map_faiss_cli_prints_build_and_query_summaries(tmp_path, capsys):
+    import json
+
+    import numpy as np
+
+    source_folder = tmp_path / "source-images"
+    source_folder.mkdir()
+    run_latent_map_init(
+        source_folder=source_folder,
+        runs_root=tmp_path / "runs",
+        run_name="J Shoot",
+    )
+    run_dir = next((tmp_path / "runs").iterdir())
+    rows = [
+        {"image_id": "img-a", "source_path": str(source_folder / "a.jpg"), "relative_path": "a.jpg"},
+        {"image_id": "img-b", "source_path": str(source_folder / "b.jpg"), "relative_path": "b.jpg"},
+    ]
+    (run_dir / "manifest.jsonl").write_text(
+        "".join(json.dumps(row) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+    embeddings_dir = run_dir / "embeddings"
+    embeddings_dir.mkdir(exist_ok=True)
+    np.save(
+        embeddings_dir / "dinov3_vits_256.npy",
+        np.asarray([[1.0, 0.0], [0.8, 0.2]], dtype=np.float32),
+    )
+
+    run_latent_map_faiss_build(
+        run_dir=run_dir,
+        recipe_name="dinov3_vits_256",
+        top_k=2,
+    )
+    run_latent_map_faiss_query(
+        run_dir=run_dir,
+        recipe_name="dinov3_vits_256",
+        image_id="img-a",
+        top_k=1,
+        include_self=False,
+    )
+
+    output = capsys.readouterr().out
+    assert '"index_kind": "IndexFlatIP"' in output
+    assert '"image_id": "img-b"' in output

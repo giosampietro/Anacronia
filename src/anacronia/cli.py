@@ -12,6 +12,7 @@ from typing import Optional, TextIO
 import webbrowser
 
 from anacronia.latent_map_embeddings import DINO_EMBEDDING_RECIPES, embed_latent_map_run
+from anacronia.latent_map_faiss import build_faiss_index, query_faiss_neighbors
 from anacronia.latent_map_runs import initialize_latent_map_run
 from anacronia.latent_map_scan import scan_latent_map_run
 from anacronia.met_ingest import rebuild_met_descriptors
@@ -335,6 +336,66 @@ def run_latent_map_embed(
     )
 
 
+def run_latent_map_faiss_build(
+    *,
+    run_dir: Path,
+    recipe_name: str,
+    top_k: int,
+) -> None:
+    summary = build_faiss_index(
+        run_dir=run_dir,
+        recipe_name=recipe_name,
+        top_k=top_k,
+    )
+    print(
+        json.dumps(
+            {
+                "run_id": summary.run_id,
+                "recipe_name": summary.recipe_name,
+                "index_kind": summary.index_kind,
+                "vector_count": summary.vector_count,
+                "vector_dim": summary.vector_dim,
+                "index_path": str(summary.index_path),
+                "id_map_path": str(summary.id_map_path),
+                "neighbors_path": str(summary.neighbors_path),
+            }
+        ),
+        flush=True,
+    )
+
+
+def run_latent_map_faiss_query(
+    *,
+    run_dir: Path,
+    recipe_name: str,
+    image_id: str,
+    top_k: int,
+    include_self: bool,
+) -> None:
+    neighbors = query_faiss_neighbors(
+        run_dir=run_dir,
+        recipe_name=recipe_name,
+        image_id=image_id,
+        top_k=top_k,
+        include_self=include_self,
+    )
+    print(
+        json.dumps(
+            [
+                {
+                    "faiss_id": neighbor.faiss_id,
+                    "image_id": neighbor.image_id,
+                    "score": neighbor.score,
+                    "source_path": neighbor.source_path,
+                    "relative_path": neighbor.relative_path,
+                }
+                for neighbor in neighbors
+            ]
+        ),
+        flush=True,
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="anacronia")
     parser.add_argument("--no-open", action="store_true", help="Print the local URL without opening a browser.")
@@ -364,6 +425,24 @@ def main() -> None:
     latent_map_embed_parser.add_argument("--batch-size", type=int, default=8)
     latent_map_embed_parser.add_argument("--limit", type=int)
     latent_map_embed_parser.add_argument("--device", default="auto")
+    latent_map_faiss_build_parser = latent_map_subparsers.add_parser("faiss-build")
+    latent_map_faiss_build_parser.add_argument("--run-dir", required=True, type=Path)
+    latent_map_faiss_build_parser.add_argument(
+        "--recipe",
+        choices=sorted(DINO_EMBEDDING_RECIPES),
+        default="dinov3_vits_256",
+    )
+    latent_map_faiss_build_parser.add_argument("--top-k", type=int, default=20)
+    latent_map_faiss_query_parser = latent_map_subparsers.add_parser("faiss-query")
+    latent_map_faiss_query_parser.add_argument("--run-dir", required=True, type=Path)
+    latent_map_faiss_query_parser.add_argument(
+        "--recipe",
+        choices=sorted(DINO_EMBEDDING_RECIPES),
+        default="dinov3_vits_256",
+    )
+    latent_map_faiss_query_parser.add_argument("--image-id", required=True)
+    latent_map_faiss_query_parser.add_argument("--top-k", type=int, default=20)
+    latent_map_faiss_query_parser.add_argument("--include-self", action="store_true")
     args = parser.parse_args()
 
     if args.command == "search-set" and args.search_set_command == "create":
@@ -394,6 +473,24 @@ def main() -> None:
             batch_size=args.batch_size,
             limit=args.limit,
             device=args.device,
+        )
+        return
+
+    if args.command == "latent-map" and args.latent_map_command == "faiss-build":
+        run_latent_map_faiss_build(
+            run_dir=args.run_dir,
+            recipe_name=args.recipe,
+            top_k=args.top_k,
+        )
+        return
+
+    if args.command == "latent-map" and args.latent_map_command == "faiss-query":
+        run_latent_map_faiss_query(
+            run_dir=args.run_dir,
+            recipe_name=args.recipe,
+            image_id=args.image_id,
+            top_k=args.top_k,
+            include_self=args.include_self,
         )
         return
 
