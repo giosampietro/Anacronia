@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { latentMapFixture } from "@/lib/latent-map-fixture";
 import {
+  createLatentMapThumbnailAtlasPages,
   createLatentMapThumbnailRenderPlan,
   createLatentMapNeighborSet,
   createLatentMapRenderState,
@@ -42,7 +43,36 @@ describe("latent map viewer model", () => {
     expect(stateById.img_teal).toBe("cluster");
   });
 
-  it("plans thumbnail rendering from generated thumbnails, not originals", () => {
+  it("plans all-image atlas thumbnail rendering from generated thumbnails", () => {
+    const renderState = createLatentMapRenderState({
+      clusterColorsEnabled: true,
+      data: latentMapFixture,
+      selectedImageId: "img_saffron",
+    });
+    const plan = createLatentMapThumbnailRenderPlan({
+      points: renderState,
+      thumbnailSize: 64,
+    });
+
+    expect(plan.capped).toBe(false);
+    expect(plan.strategy).toBe("all-atlas");
+    expect(plan.thumbnailSize).toBe(64);
+    expect(plan.hoverPreviewSize).toBe(256);
+    expect(plan.thumbnailPoints).toHaveLength(8);
+    expect(plan.atlasPages).toHaveLength(1);
+    expect(plan.atlasPages[0].tileSize).toBe(64);
+    expect(plan.thumbnailPoints.map((point) => point.image_id).slice(0, 4)).toEqual([
+      "img_saffron",
+      "img_amber",
+      "img_cobalt",
+      "img_vermilion",
+    ]);
+    expect(plan.textureSources).toHaveLength(8);
+    expect(plan.textureSources.every((source) => source.startsWith("data:image/png"))).toBe(true);
+    expect(plan.textureSources).not.toContain("fixture/a1.jpg");
+  });
+
+  it("keeps the old capped thumbnail sample available as an explicit fallback", () => {
     const renderState = createLatentMapRenderState({
       clusterColorsEnabled: true,
       data: latentMapFixture,
@@ -51,6 +81,7 @@ describe("latent map viewer model", () => {
     const plan = createLatentMapThumbnailRenderPlan({
       maxThumbnails: 4,
       points: renderState,
+      strategy: "capped-sprites",
     });
 
     expect(plan.capped).toBe(true);
@@ -60,9 +91,6 @@ describe("latent map viewer model", () => {
       "img_cobalt",
       "img_vermilion",
     ]);
-    expect(plan.textureSources).toHaveLength(4);
-    expect(plan.textureSources.every((source) => source.startsWith("data:image/png"))).toBe(true);
-    expect(plan.textureSources).not.toContain("fixture/a1.jpg");
   });
 
   it("samples capped thumbnails across the fitted layout", () => {
@@ -90,6 +118,7 @@ describe("latent map viewer model", () => {
     const plan = createLatentMapThumbnailRenderPlan({
       maxThumbnails: 9,
       points,
+      strategy: "capped-sprites",
     });
 
     expect(plan.thumbnailPoints).toHaveLength(9);
@@ -97,6 +126,29 @@ describe("latent map viewer model", () => {
       .toBeGreaterThan(1);
     expect(new Set(plan.thumbnailPoints.map((point) => point.fitted_y)).size)
       .toBeGreaterThan(1);
+  });
+
+  it("models atlas page counts for 32, 64, and 96 pixel map thumbnails", () => {
+    const points = Array.from({ length: 3184 }, (_, index) => ({
+      image_id: `img_${String(index).padStart(4, "0")}`,
+      x: index,
+      y: index,
+      fitted_x: 0,
+      fitted_y: 0,
+      cluster_id: 0,
+      thumbnail_path: `thumb-${index}.jpg`,
+      source_path: `source-${index}.jpg`,
+      relative_path: `source-${index}.jpg`,
+      width: 100,
+      height: 100,
+      neighbors: [],
+      color: [150, 156, 166] as [number, number, number],
+      point_state: "cluster" as const,
+    }));
+
+    expect(createLatentMapThumbnailAtlasPages({ points, tileSize: 32 })).toHaveLength(1);
+    expect(createLatentMapThumbnailAtlasPages({ points, tileSize: 64 })).toHaveLength(4);
+    expect(createLatentMapThumbnailAtlasPages({ points, tileSize: 96 })).toHaveLength(8);
   });
 
   it("fits arbitrary UMAP coordinates into stable WebGL world space", () => {

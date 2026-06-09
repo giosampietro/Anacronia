@@ -44,14 +44,39 @@ export type LatentMapRenderablePoint = LatentMapFittedPoint & {
 
 export type LatentMapRenderMode = "points" | "thumbnails";
 
+export type LatentMapThumbnailSize = 32 | 64 | 96;
+
 export type LatentMapThumbnailRenderPlan = {
+  atlasPages: LatentMapThumbnailAtlasPage[];
   capped: boolean;
+  hoverPreviewSize: number;
   maxThumbnails: number;
+  strategy: "all-atlas" | "capped-sprites";
+  thumbnailSize: LatentMapThumbnailSize;
   thumbnailPoints: LatentMapRenderablePoint[];
   textureSources: string[];
 };
 
+export type LatentMapThumbnailAtlasItem = {
+  column: number;
+  point: LatentMapRenderablePoint;
+  row: number;
+  uvRect: [number, number, number, number];
+};
+
+export type LatentMapThumbnailAtlasPage = {
+  atlasSize: number;
+  columns: number;
+  index: number;
+  items: LatentMapThumbnailAtlasItem[];
+  rows: number;
+  tileSize: LatentMapThumbnailSize;
+};
+
 export const DEFAULT_LATENT_MAP_THUMBNAIL_CAP = 420;
+export const DEFAULT_LATENT_MAP_THUMBNAIL_SIZE: LatentMapThumbnailSize = 64;
+export const DEFAULT_LATENT_MAP_HOVER_PREVIEW_SIZE = 256;
+export const LATENT_MAP_THUMBNAIL_SIZE_OPTIONS = [32, 64, 96] as const;
 
 const CLUSTER_COLORS: [number, number, number][] = [
   [239, 184, 72],
@@ -242,11 +267,19 @@ function createSpatialThumbnailSample({
 }
 
 export function createLatentMapThumbnailRenderPlan({
+  atlasSize = 2048,
+  hoverPreviewSize = DEFAULT_LATENT_MAP_HOVER_PREVIEW_SIZE,
   maxThumbnails = DEFAULT_LATENT_MAP_THUMBNAIL_CAP,
   points,
+  strategy = "all-atlas",
+  thumbnailSize = DEFAULT_LATENT_MAP_THUMBNAIL_SIZE,
 }: {
+  atlasSize?: number;
+  hoverPreviewSize?: number;
   maxThumbnails?: number;
   points: LatentMapRenderablePoint[];
+  strategy?: LatentMapThumbnailRenderPlan["strategy"];
+  thumbnailSize?: LatentMapThumbnailSize;
 }): LatentMapThumbnailRenderPlan {
   const sortedPoints = [...points].sort((left, right) => {
     const priorityDelta = getThumbnailPriority(left) - getThumbnailPriority(right);
@@ -257,6 +290,37 @@ export function createLatentMapThumbnailRenderPlan({
 
     return left.image_id.localeCompare(right.image_id);
   });
+  const thumbnailPoints =
+    strategy === "all-atlas"
+      ? sortedPoints
+      : createCappedThumbnailPoints({
+          maxThumbnails,
+          sortedPoints,
+        });
+
+  return {
+    atlasPages: createLatentMapThumbnailAtlasPages({
+      atlasSize,
+      points: thumbnailPoints,
+      tileSize: thumbnailSize,
+    }),
+    capped: points.length > thumbnailPoints.length,
+    hoverPreviewSize,
+    maxThumbnails,
+    strategy,
+    thumbnailSize,
+    thumbnailPoints,
+    textureSources: thumbnailPoints.map((point) => point.thumbnail_path),
+  };
+}
+
+function createCappedThumbnailPoints({
+  maxThumbnails,
+  sortedPoints,
+}: {
+  maxThumbnails: number;
+  sortedPoints: LatentMapRenderablePoint[];
+}): LatentMapRenderablePoint[] {
   const requiredPoints = sortedPoints.filter(
     (point) => point.point_state === "selected" || point.point_state === "neighbor",
   );
@@ -265,17 +329,58 @@ export function createLatentMapThumbnailRenderPlan({
     maxPoints: Math.max(0, maxThumbnails - requiredPoints.length),
     points: sortedPoints.filter((point) => !requiredIds.has(point.image_id)),
   });
-  const thumbnailPoints = [...requiredPoints, ...spatialPoints].slice(
-    0,
-    maxThumbnails,
-  );
 
-  return {
-    capped: points.length > thumbnailPoints.length,
-    maxThumbnails,
-    thumbnailPoints,
-    textureSources: thumbnailPoints.map((point) => point.thumbnail_path),
-  };
+  return [...requiredPoints, ...spatialPoints].slice(0, maxThumbnails);
+}
+
+export function createLatentMapThumbnailAtlasPages({
+  atlasSize = 2048,
+  points,
+  tileSize,
+}: {
+  atlasSize?: number;
+  points: LatentMapRenderablePoint[];
+  tileSize: LatentMapThumbnailSize;
+}): LatentMapThumbnailAtlasPage[] {
+  if (points.length === 0) {
+    return [];
+  }
+
+  const columns = Math.max(1, Math.floor(atlasSize / tileSize));
+  const rows = columns;
+  const pageCapacity = columns * rows;
+  const pageCount = Math.ceil(points.length / pageCapacity);
+  const pixelInset = 0.5 / atlasSize;
+
+  return Array.from({ length: pageCount }, (_, pageIndex) => {
+    const pageStart = pageIndex * pageCapacity;
+    const pagePoints = points.slice(pageStart, pageStart + pageCapacity);
+
+    return {
+      atlasSize,
+      columns,
+      index: pageIndex,
+      items: pagePoints.map((point, itemIndex) => {
+        const atlasIndex = pageStart + itemIndex;
+        const pageItemIndex = atlasIndex % pageCapacity;
+        const column = pageItemIndex % columns;
+        const row = Math.floor(pageItemIndex / columns);
+        const u0 = column * tileSize / atlasSize + pixelInset;
+        const v0 = row * tileSize / atlasSize + pixelInset;
+        const u1 = (column + 1) * tileSize / atlasSize - pixelInset;
+        const v1 = (row + 1) * tileSize / atlasSize - pixelInset;
+
+        return {
+          column,
+          point,
+          row,
+          uvRect: [u0, v0, u1 - u0, v1 - v0],
+        };
+      }),
+      rows,
+      tileSize,
+    };
+  });
 }
 
 export function findNearestLatentMapPoint({

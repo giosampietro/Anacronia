@@ -11,6 +11,10 @@ import {
   ToggleGroupItem,
 } from "@/components/ui/toggle-group";
 import {
+  NativeSelect,
+  NativeSelectOption,
+} from "@/components/ui/native-select";
+import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -21,9 +25,13 @@ import {
   createLatentMapRenderState,
   createLatentMapStats,
   findNearestLatentMapPoint,
-  DEFAULT_LATENT_MAP_THUMBNAIL_CAP,
+  DEFAULT_LATENT_MAP_HOVER_PREVIEW_SIZE,
+  DEFAULT_LATENT_MAP_THUMBNAIL_SIZE,
+  LATENT_MAP_THUMBNAIL_SIZE_OPTIONS,
   type LatentMapRenderMode,
   type LatentMapRenderablePoint,
+  type LatentMapThumbnailAtlasPage,
+  type LatentMapThumbnailSize,
   type LatentMapViewerData,
 } from "@/lib/latent-map-viewer";
 
@@ -49,7 +57,8 @@ const DEFAULT_VIEW: ViewState = {
   offsetY: 0,
   zoom: 1,
 };
-const THUMBNAIL_BASE_WORLD_SIZE = 0.13;
+const THUMBNAIL_WORLD_SIZE_PER_PIXEL = 0.13 / 64;
+const ATLAS_TEXTURE_SIZE = 2048;
 
 function rgbToThreeColor([r, g, b]: [number, number, number]): THREE.Color {
   return new THREE.Color(r / 255, g / 255, b / 255);
@@ -100,11 +109,14 @@ function createPointGeometry(points: LatentMapRenderablePoint[]) {
   return geometry;
 }
 
-function getThumbnailScale(point: LatentMapRenderablePoint): [number, number] {
+function getThumbnailScale(
+  point: LatentMapRenderablePoint,
+  thumbnailSize: LatentMapThumbnailSize,
+): [number, number] {
   const aspect = Math.max(point.width, 1) / Math.max(point.height, 1);
   const scaleMultiplier =
     point.point_state === "selected" ? 1.36 : point.point_state === "neighbor" ? 1.16 : 1;
-  const baseSize = THUMBNAIL_BASE_WORLD_SIZE * scaleMultiplier;
+  const baseSize = thumbnailSize * THUMBNAIL_WORLD_SIZE_PER_PIXEL * scaleMultiplier;
   const boundedAspect = Math.min(1.45, Math.max(0.7, aspect));
 
   if (boundedAspect >= 1) {
@@ -114,25 +126,223 @@ function getThumbnailScale(point: LatentMapRenderablePoint): [number, number] {
   return [baseSize, baseSize / boundedAspect];
 }
 
-function createThumbnailSprite(point: LatentMapRenderablePoint) {
-  const material = new THREE.SpriteMaterial({
-    color: rgbToThreeColor(point.color),
-    opacity: point.point_state === "cluster" ? 0.88 : 0.98,
-    transparent: true,
+function getThumbnailLayer(point: LatentMapRenderablePoint): number {
+  if (point.point_state === "selected") {
+    return 0.32;
+  }
+  if (point.point_state === "neighbor") {
+    return 0.24;
+  }
+
+  return 0.16;
+}
+
+function getThumbnailStateValue(point: LatentMapRenderablePoint): number {
+  if (point.point_state === "selected") {
+    return 2;
+  }
+  if (point.point_state === "neighbor") {
+    return 1;
+  }
+
+  return 0;
+}
+
+function createAtlasGeometry({
+  page,
+  thumbnailSize,
+}: {
+  page: LatentMapThumbnailAtlasPage;
+  thumbnailSize: LatentMapThumbnailSize;
+}) {
+  const geometry = new THREE.InstancedBufferGeometry();
+  const positions = new Float32Array([
+    -0.5, -0.5, 0,
+    0.5, -0.5, 0,
+    -0.5, 0.5, 0,
+    0.5, 0.5, 0,
+  ]);
+  const uvs = new Float32Array([
+    0, 1,
+    1, 1,
+    0, 0,
+    1, 0,
+  ]);
+  const indices = [0, 1, 2, 2, 1, 3];
+  const instancePositions = new Float32Array(page.items.length * 3);
+  const instanceScales = new Float32Array(page.items.length * 2);
+  const instanceUvRects = new Float32Array(page.items.length * 4);
+  const instanceStates = new Float32Array(page.items.length);
+
+  page.items.forEach((item, index) => {
+    const [width, height] = getThumbnailScale(item.point, thumbnailSize);
+
+    instancePositions[index * 3] = item.point.fitted_x;
+    instancePositions[index * 3 + 1] = item.point.fitted_y;
+    instancePositions[index * 3 + 2] = getThumbnailLayer(item.point);
+    instanceScales[index * 2] = width;
+    instanceScales[index * 2 + 1] = height;
+    instanceUvRects.set(item.uvRect, index * 4);
+    instanceStates[index] = getThumbnailStateValue(item.point);
   });
-  const sprite = new THREE.Sprite(material);
-  const [width, height] = getThumbnailScale(point);
 
-  sprite.position.set(
-    point.fitted_x,
-    point.fitted_y,
-    point.point_state === "selected" ? 0.3 : 0.18,
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute("uv", new THREE.BufferAttribute(uvs, 2));
+  geometry.setIndex(indices);
+  geometry.setAttribute(
+    "instancePosition",
+    new THREE.InstancedBufferAttribute(instancePositions, 3),
   );
-  sprite.scale.set(width, height, 1);
-  sprite.renderOrder =
-    point.point_state === "selected" ? 30 : point.point_state === "neighbor" ? 20 : 10;
+  geometry.setAttribute(
+    "instanceScale",
+    new THREE.InstancedBufferAttribute(instanceScales, 2),
+  );
+  geometry.setAttribute(
+    "instanceUvRect",
+    new THREE.InstancedBufferAttribute(instanceUvRects, 4),
+  );
+  geometry.setAttribute(
+    "instanceState",
+    new THREE.InstancedBufferAttribute(instanceStates, 1),
+  );
+  geometry.instanceCount = page.items.length;
 
-  return { material, sprite };
+  return geometry;
+}
+
+function createAtlasMaterial(texture: THREE.Texture) {
+  return new THREE.ShaderMaterial({
+    depthTest: true,
+    depthWrite: true,
+    transparent: false,
+    uniforms: {
+      atlasTexture: { value: texture },
+    },
+    vertexShader: `
+      attribute vec3 instancePosition;
+      attribute vec2 instanceScale;
+      attribute vec4 instanceUvRect;
+      attribute float instanceState;
+      varying vec2 vAtlasUv;
+      varying vec2 vLocalUv;
+      varying float vState;
+
+      void main() {
+        vLocalUv = uv;
+        vAtlasUv = instanceUvRect.xy + (uv * instanceUvRect.zw);
+        vState = instanceState;
+        vec3 transformed = vec3(
+          (position.xy * instanceScale) + instancePosition.xy,
+          instancePosition.z
+        );
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(transformed, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform sampler2D atlasTexture;
+      varying vec2 vAtlasUv;
+      varying vec2 vLocalUv;
+      varying float vState;
+
+      void main() {
+        vec4 texel = texture2D(atlasTexture, vAtlasUv);
+        float edgeDistance = min(
+          min(vLocalUv.x, 1.0 - vLocalUv.x),
+          min(vLocalUv.y, 1.0 - vLocalUv.y)
+        );
+        float selected = step(1.5, vState);
+        float neighbor = step(0.5, vState) * (1.0 - selected);
+        float emphasis = max(selected, neighbor);
+        vec3 borderColor = mix(vec3(1.0, 0.62, 0.24), vec3(1.0), selected);
+        float border = (1.0 - step(0.045, edgeDistance)) * emphasis;
+        vec3 color = mix(texel.rgb, borderColor, border);
+
+        gl_FragColor = vec4(color, 1.0);
+      }
+    `,
+  });
+}
+
+function drawAtlasTile({
+  context,
+  image,
+  item,
+  tileSize,
+}: {
+  context: CanvasRenderingContext2D;
+  image: HTMLImageElement;
+  item: LatentMapThumbnailAtlasPage["items"][number];
+  tileSize: LatentMapThumbnailSize;
+}) {
+  const x = item.column * tileSize;
+  const y = item.row * tileSize;
+
+  context.fillStyle = "#101113";
+  context.fillRect(x, y, tileSize, tileSize);
+  context.drawImage(image, x, y, tileSize, tileSize);
+}
+
+function fillMissingAtlasTile({
+  context,
+  item,
+  tileSize,
+}: {
+  context: CanvasRenderingContext2D;
+  item: LatentMapThumbnailAtlasPage["items"][number];
+  tileSize: LatentMapThumbnailSize;
+}) {
+  const x = item.column * tileSize;
+  const y = item.row * tileSize;
+  const color = rgbToThreeColor(item.point.color);
+
+  context.fillStyle = `rgb(${Math.round(color.r * 255)}, ${Math.round(
+    color.g * 255,
+  )}, ${Math.round(color.b * 255)})`;
+  context.fillRect(x, y, tileSize, tileSize);
+}
+
+function createAtlasPageMesh({
+  page,
+  thumbnailSize,
+}: {
+  page: LatentMapThumbnailAtlasPage;
+  thumbnailSize: LatentMapThumbnailSize;
+}) {
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d");
+
+  if (!context) {
+    throw new Error("Could not create latent-map thumbnail atlas canvas.");
+  }
+
+  canvas.width = page.atlasSize;
+  canvas.height = page.atlasSize;
+  context.fillStyle = "#101113";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.flipY = false;
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.generateMipmaps = false;
+  texture.premultiplyAlpha = false;
+
+  const geometry = createAtlasGeometry({ page, thumbnailSize });
+  const material = createAtlasMaterial(texture);
+  const mesh = new THREE.Mesh(geometry, material);
+
+  mesh.frustumCulled = false;
+  mesh.renderOrder = 10 + page.index;
+
+  return {
+    canvas,
+    context,
+    geometry,
+    material,
+    mesh,
+    texture,
+  };
 }
 
 export function LatentMapViewer({
@@ -161,6 +371,8 @@ export function LatentMapViewer({
   );
   const [renderMode, setRenderMode] =
     useState<LatentMapRenderMode>(initialRenderMode);
+  const [thumbnailSize, setThumbnailSize] =
+    useState<LatentMapThumbnailSize>(DEFAULT_LATENT_MAP_THUMBNAIL_SIZE);
   const [view, setView] = useState<ViewState>(DEFAULT_VIEW);
   const stats = useMemo(() => createLatentMapStats(data), [data]);
   const renderPoints = useMemo(
@@ -184,10 +396,13 @@ export function LatentMapViewer({
   const thumbnailPlan = useMemo(
     () =>
       createLatentMapThumbnailRenderPlan({
-        maxThumbnails: DEFAULT_LATENT_MAP_THUMBNAIL_CAP,
+        atlasSize: ATLAS_TEXTURE_SIZE,
+        hoverPreviewSize: DEFAULT_LATENT_MAP_HOVER_PREVIEW_SIZE,
         points: renderPoints,
+        strategy: "all-atlas",
+        thumbnailSize,
       }),
-    [renderPoints],
+    [renderPoints, thumbnailSize],
   );
 
   const renderCurrentScene = useCallback(() => {
@@ -233,36 +448,69 @@ export function LatentMapViewer({
       vertexColors: true,
     });
     const pointCloud = new THREE.Points(geometry, material);
-    const thumbnailMaterials: THREE.SpriteMaterial[] = [];
-    const thumbnailTextures: THREE.Texture[] = [];
+    const atlasPages: ReturnType<typeof createAtlasPageMesh>[] = [];
+    const atlasImages: HTMLImageElement[] = [];
+    let animationFrameId: number | null = null;
     let isDisposed = false;
 
     renderer.setClearColor(0x101113, 1);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     scene.add(pointCloud);
 
+    const scheduleRender = () => {
+      if (animationFrameId !== null) {
+        return;
+      }
+
+      animationFrameId = window.requestAnimationFrame(() => {
+        animationFrameId = null;
+        renderCurrentScene();
+      });
+    };
+
     if (renderMode === "thumbnails") {
-      const textureLoader = new THREE.TextureLoader();
+      thumbnailPlan.atlasPages.forEach((page) => {
+        const atlasPage = createAtlasPageMesh({
+          page,
+          thumbnailSize: thumbnailPlan.thumbnailSize,
+        });
 
-      thumbnailPlan.thumbnailPoints.forEach((point) => {
-        const { material: spriteMaterial, sprite } = createThumbnailSprite(point);
+        atlasPages.push(atlasPage);
+        scene.add(atlasPage.mesh);
 
-        thumbnailMaterials.push(spriteMaterial);
-        scene.add(sprite);
-        textureLoader.load(point.thumbnail_path, (texture) => {
-          if (isDisposed) {
-            texture.dispose();
-            return;
-          }
+        page.items.forEach((item) => {
+          const image = new Image();
 
-          texture.colorSpace = THREE.SRGBColorSpace;
-          texture.flipY = false;
-          texture.minFilter = THREE.LinearFilter;
-          texture.magFilter = THREE.LinearFilter;
-          spriteMaterial.map = texture;
-          spriteMaterial.needsUpdate = true;
-          thumbnailTextures.push(texture);
-          renderCurrentScene();
+          atlasImages.push(image);
+          image.decoding = "async";
+          image.onload = () => {
+            if (isDisposed) {
+              return;
+            }
+
+            drawAtlasTile({
+              context: atlasPage.context,
+              image,
+              item,
+              tileSize: page.tileSize,
+            });
+            atlasPage.texture.needsUpdate = true;
+            scheduleRender();
+          };
+          image.onerror = () => {
+            if (isDisposed) {
+              return;
+            }
+
+            fillMissingAtlasTile({
+              context: atlasPage.context,
+              item,
+              tileSize: page.tileSize,
+            });
+            atlasPage.texture.needsUpdate = true;
+            scheduleRender();
+          };
+          image.src = item.point.thumbnail_path;
         });
       });
     }
@@ -282,13 +530,24 @@ export function LatentMapViewer({
     return () => {
       isDisposed = true;
       window.removeEventListener("resize", resize);
+      if (animationFrameId !== null) {
+        window.cancelAnimationFrame(animationFrameId);
+      }
+      atlasImages.forEach((image) => {
+        image.onload = null;
+        image.onerror = null;
+      });
       cameraRef.current = null;
       rendererRef.current = null;
       sceneRef.current = null;
       geometry.dispose();
       material.dispose();
-      thumbnailMaterials.forEach((spriteMaterial) => spriteMaterial.dispose());
-      thumbnailTextures.forEach((texture) => texture.dispose());
+      atlasPages.forEach((atlasPage) => {
+        scene.remove(atlasPage.mesh);
+        atlasPage.geometry.dispose();
+        atlasPage.material.dispose();
+        atlasPage.texture.dispose();
+      });
       renderer.dispose();
     };
   }, [renderCurrentScene, renderMode, renderPoints, thumbnailPlan]);
@@ -433,6 +692,11 @@ export function LatentMapViewer({
               {thumbnailPlan.capped ? `/${stats.pointCount}` : ""} thumbnails
             </Badge>
           ) : null}
+          {renderMode === "thumbnails" ? (
+            <Badge variant="outline">
+              {thumbnailPlan.thumbnailSize}px / {thumbnailPlan.atlasPages.length} atlas pages
+            </Badge>
+          ) : null}
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <ToggleGroup
@@ -460,6 +724,31 @@ export function LatentMapViewer({
               <span className="hidden sm:inline">Thumbnails</span>
             </ToggleGroupItem>
           </ToggleGroup>
+          {renderMode === "thumbnails" ? (
+            <NativeSelect
+              aria-label="Thumbnail size"
+              className="w-[84px]"
+              onChange={(event) => {
+                const nextSize = Number(event.currentTarget.value);
+
+                if (
+                  LATENT_MAP_THUMBNAIL_SIZE_OPTIONS.includes(
+                    nextSize as LatentMapThumbnailSize,
+                  )
+                ) {
+                  setThumbnailSize(nextSize as LatentMapThumbnailSize);
+                }
+              }}
+              size="sm"
+              value={String(thumbnailSize)}
+            >
+              {LATENT_MAP_THUMBNAIL_SIZE_OPTIONS.map((size) => (
+                <NativeSelectOption key={size} value={size}>
+                  {size}px
+                </NativeSelectOption>
+              ))}
+            </NativeSelect>
+          ) : null}
           <Tooltip>
             <TooltipTrigger
               render={
@@ -503,12 +792,18 @@ export function LatentMapViewer({
           data-point-count={stats.pointCount}
           data-render-mode={renderMode}
           data-selected-image-id={selectedImageId ?? undefined}
+          data-thumbnail-atlas-page-count={
+            renderMode === "thumbnails" ? thumbnailPlan.atlasPages.length : 0
+          }
           data-thumbnail-count={
             renderMode === "thumbnails"
               ? thumbnailPlan.thumbnailPoints.length
               : 0
           }
+          data-thumbnail-hover-preview-size={thumbnailPlan.hoverPreviewSize}
+          data-thumbnail-size={thumbnailPlan.thumbnailSize}
           data-thumbnail-source-kind="generated"
+          data-thumbnail-strategy={thumbnailPlan.strategy}
           data-testid="latent-map-canvas"
           onPointerDown={handlePointerDown}
           onPointerLeave={() => {
@@ -527,9 +822,6 @@ export function LatentMapViewer({
           {selectedPoint ? (
             <>
               <Badge className="bg-background/85 text-foreground" variant="outline">
-                {selectedPoint.relative_path}
-              </Badge>
-              <Badge className="bg-background/85 text-foreground" variant="outline">
                 {selectedPoint.neighbors.length} neighbors
               </Badge>
             </>
@@ -538,10 +830,17 @@ export function LatentMapViewer({
 
         {hoveredPoint ? (
           <div
-            className="pointer-events-none fixed z-50 w-40 overflow-hidden rounded-lg border bg-background shadow-xl"
+            className="pointer-events-none fixed z-50 overflow-hidden rounded-lg border bg-background shadow-xl"
             style={{
-              left: Math.min(hoverPosition.x + 14, window.innerWidth - 176),
-              top: Math.min(hoverPosition.y + 14, window.innerHeight - 196),
+              left: Math.min(
+                hoverPosition.x + 14,
+                window.innerWidth - thumbnailPlan.hoverPreviewSize - 16,
+              ),
+              top: Math.min(
+                hoverPosition.y + 14,
+                window.innerHeight - thumbnailPlan.hoverPreviewSize - 16,
+              ),
+              width: thumbnailPlan.hoverPreviewSize,
             }}
         >
             <div
@@ -551,9 +850,6 @@ export function LatentMapViewer({
                 backgroundImage: `url("${hoveredPoint.thumbnail_path}")`,
               }}
             />
-            <div className="truncate border-t px-2 py-1 text-xs text-muted-foreground">
-              {hoveredPoint.relative_path}
-            </div>
           </div>
         ) : null}
       </section>
