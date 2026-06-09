@@ -10,6 +10,7 @@ from anacronia.cli import (
     run_latent_map_init,
     run_latent_map_layout,
     run_latent_map_scan,
+    run_latent_map_result_export,
     run_latent_map_viewer_export,
     validate_supported_runtime,
 )
@@ -486,3 +487,80 @@ def test_latent_map_viewer_export_cli_prints_atlas_manifest_path(tmp_path, capsy
     assert "viewer/atlases/64px/atlas-manifest.json" in (
         run_dir / "viewer" / "map-data.json"
     ).read_text(encoding="utf-8")
+
+
+def test_latent_map_result_export_cli_prints_summary(tmp_path, capsys):
+    import json
+
+    source_folder = tmp_path / "source-images"
+    source_folder.mkdir()
+    run_latent_map_init(
+        source_folder=source_folder,
+        runs_root=tmp_path / "runs",
+        run_name="J Shoot",
+    )
+    run_dir = next((tmp_path / "runs").iterdir())
+    (run_dir / "manifest.jsonl").write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "image_id": "img-a",
+                        "relative_path": "a.jpg",
+                        "sha256": "a" * 64,
+                    }
+                ),
+                json.dumps(
+                    {
+                        "image_id": "img-a-copy",
+                        "relative_path": "a-copy.jpg",
+                        "sha256": "a" * 64,
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (run_dir / "indexes" / "dinov3_vits_256_neighbors.jsonl").write_text(
+        json.dumps(
+            {
+                "image_id": "img-a",
+                "neighbor_rank": 1,
+                "neighbor_image_id": "img-a-copy",
+                "score": 0.999,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (run_dir / "layouts" / "dinov3_vits_256_umap.json").write_text(
+        json.dumps({"layout_id": "umap", "points": [{"image_id": "img-a"}]}),
+        encoding="utf-8",
+    )
+    (run_dir / "clusters" / "dinov3_vits_256_kmeans.json").write_text(
+        json.dumps(
+            {
+                "cluster_id": "kmeans",
+                "points": [
+                    {"image_id": "img-a", "cluster_id": 0},
+                    {"image_id": "img-a-copy", "cluster_id": 0},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    run_latent_map_result_export(
+        run_dir=run_dir,
+        recipe_name="dinov3_vits_256",
+        selected_image_ids=["img-a"],
+        selected_cluster_ids=[0],
+        selected_neighbor_image_ids=["img-a"],
+        faiss_duplicate_threshold=0.98,
+    )
+
+    output = capsys.readouterr().out
+    assert '"exact_duplicate_group_count": 1' in output
+    assert '"faiss_candidate_count": 1' in output
+    assert '"result_path"' in output

@@ -15,6 +15,7 @@ from anacronia.latent_map_embeddings import DINO_EMBEDDING_RECIPES, embed_latent
 from anacronia.latent_map_atlas import generate_latent_map_thumbnail_atlas
 from anacronia.latent_map_faiss import build_faiss_index, query_faiss_neighbors
 from anacronia.latent_map_layout import build_latent_map_layout
+from anacronia.latent_map_result_exports import export_latent_map_results
 from anacronia.latent_map_runs import initialize_latent_map_run
 from anacronia.latent_map_scan import scan_latent_map_run
 from anacronia.latent_map_viewer_export import export_viewer_data
@@ -493,6 +494,42 @@ def run_latent_map_viewer_export(
     print(json.dumps(output), flush=True)
 
 
+def run_latent_map_result_export(
+    *,
+    run_dir: Path,
+    recipe_name: str,
+    selected_image_ids: list[str] | None = None,
+    selected_cluster_ids: list[int] | None = None,
+    selected_neighbor_image_ids: list[str] | None = None,
+    faiss_duplicate_threshold: float = 0.98,
+) -> None:
+    summary = export_latent_map_results(
+        run_dir=run_dir,
+        recipe_name=recipe_name,
+        selected_image_ids=selected_image_ids or [],
+        selected_cluster_ids=selected_cluster_ids or [],
+        selected_neighbor_image_ids=selected_neighbor_image_ids or [],
+        faiss_duplicate_threshold=faiss_duplicate_threshold,
+    )
+    print(
+        json.dumps(
+            {
+                "run_id": summary.run_id,
+                "recipe_name": summary.recipe_name,
+                "layout_id": summary.layout_id,
+                "cluster_id": summary.cluster_id,
+                "result_path": str(summary.result_path),
+                "exact_duplicate_group_count": summary.exact_duplicate_group_count,
+                "faiss_candidate_count": summary.faiss_candidate_count,
+                "selected_image_count": summary.selected_image_count,
+                "selected_cluster_count": summary.selected_cluster_count,
+                "selected_neighbor_anchor_count": summary.selected_neighbor_anchor_count,
+            }
+        ),
+        flush=True,
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="anacronia")
     parser.add_argument("--no-open", action="store_true", help="Print the local URL without opening a browser.")
@@ -571,6 +608,37 @@ def main() -> None:
         "--thumbnail-atlas-manifest",
         type=Path,
     )
+    latent_map_result_export_parser = latent_map_subparsers.add_parser("result-export")
+    latent_map_result_export_parser.add_argument("--run-dir", required=True, type=Path)
+    latent_map_result_export_parser.add_argument(
+        "--recipe",
+        choices=sorted(DINO_EMBEDDING_RECIPES),
+        default="dinov3_vits_256",
+    )
+    latent_map_result_export_parser.add_argument(
+        "--selected-image-id",
+        action="append",
+        default=[],
+        dest="selected_image_ids",
+    )
+    latent_map_result_export_parser.add_argument(
+        "--cluster-id",
+        action="append",
+        default=[],
+        dest="selected_cluster_ids",
+        type=int,
+    )
+    latent_map_result_export_parser.add_argument(
+        "--neighbor-image-id",
+        action="append",
+        default=[],
+        dest="selected_neighbor_image_ids",
+    )
+    latent_map_result_export_parser.add_argument(
+        "--faiss-duplicate-threshold",
+        type=float,
+        default=0.98,
+    )
     args = parser.parse_args()
 
     if args.command == "search-set" and args.search_set_command == "create":
@@ -646,6 +714,17 @@ def main() -> None:
             run_dir=args.run_dir,
             recipe_name=args.recipe,
             thumbnail_atlas_manifest_path=args.thumbnail_atlas_manifest,
+        )
+        return
+
+    if args.command == "latent-map" and args.latent_map_command == "result-export":
+        run_latent_map_result_export(
+            run_dir=args.run_dir,
+            recipe_name=args.recipe,
+            selected_image_ids=args.selected_image_ids,
+            selected_cluster_ids=args.selected_cluster_ids,
+            selected_neighbor_image_ids=args.selected_neighbor_image_ids,
+            faiss_duplicate_threshold=args.faiss_duplicate_threshold,
         )
         return
 
