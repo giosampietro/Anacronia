@@ -285,7 +285,7 @@ export function SidebarCollectionFilter({
     }
 
     setDeletingSearchSet(null);
-    router.push(createUserLibraryHref(filterText));
+    window.location.href = createUserLibraryHref(filterText);
   }
 
   return (
