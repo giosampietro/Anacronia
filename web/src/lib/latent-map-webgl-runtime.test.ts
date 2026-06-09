@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   getLatentMapThumbnailWorldScale,
+  LATENT_MAP_ATLAS_FRAGMENT_SHADER,
   LATENT_MAP_MAX_THUMBNAIL_SCREEN_SCALE,
 } from "@/lib/latent-map-webgl-runtime";
 import type { LatentMapRenderablePoint } from "@/lib/latent-map-viewer";
@@ -41,6 +42,15 @@ function toScreenLongSide({
 }
 
 describe("latent map WebGL runtime math", () => {
+  it("converts custom atlas shader output through Three color management", () => {
+    expect(LATENT_MAP_ATLAS_FRAGMENT_SHADER).toContain(
+      "gl_FragColor = vec4(color, 1.0);",
+    );
+    expect(LATENT_MAP_ATLAS_FRAGMENT_SHADER).toContain(
+      "#include <colorspace_fragment>",
+    );
+  });
+
   it("preserves original thumbnail aspect ratio", () => {
     const wideScale = getLatentMapThumbnailWorldScale({
       point: createRenderablePoint({ width: 1600, height: 1000 }),
