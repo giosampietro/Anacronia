@@ -356,6 +356,27 @@ function createAtlasGeometry({
   return geometry;
 }
 
+export const LATENT_MAP_ATLAS_FRAGMENT_SHADER = `
+  uniform sampler2D atlasTexture;
+  varying vec2 vAtlasUv;
+  varying vec2 vLocalUv;
+  varying float vState;
+
+  void main() {
+    vec4 texel = texture2D(atlasTexture, vAtlasUv);
+    float edgeDistance = min(
+      min(vLocalUv.x, 1.0 - vLocalUv.x),
+      min(vLocalUv.y, 1.0 - vLocalUv.y)
+    );
+    float selected = step(1.5, vState);
+    float focusRing = (1.0 - step(0.045, edgeDistance)) * selected;
+    vec3 color = mix(texel.rgb, vec3(1.0), focusRing);
+
+    gl_FragColor = vec4(color, 1.0);
+    #include <colorspace_fragment>
+  }
+`;
+
 function createAtlasMaterial(texture: THREE.Texture) {
   return new THREE.ShaderMaterial({
     depthTest: true,
@@ -384,25 +405,7 @@ function createAtlasMaterial(texture: THREE.Texture) {
         gl_Position = projectionMatrix * modelViewMatrix * vec4(transformed, 1.0);
       }
     `,
-    fragmentShader: `
-      uniform sampler2D atlasTexture;
-      varying vec2 vAtlasUv;
-      varying vec2 vLocalUv;
-      varying float vState;
-
-      void main() {
-        vec4 texel = texture2D(atlasTexture, vAtlasUv);
-        float edgeDistance = min(
-          min(vLocalUv.x, 1.0 - vLocalUv.x),
-          min(vLocalUv.y, 1.0 - vLocalUv.y)
-        );
-        float selected = step(1.5, vState);
-        float focusRing = (1.0 - step(0.045, edgeDistance)) * selected;
-        vec3 color = mix(texel.rgb, vec3(1.0), focusRing);
-
-        gl_FragColor = vec4(color, 1.0);
-      }
-    `,
+    fragmentShader: LATENT_MAP_ATLAS_FRAGMENT_SHADER,
   });
 }
 
