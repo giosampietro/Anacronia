@@ -16,6 +16,7 @@ from anacronia.latent_map_faiss import build_faiss_index, query_faiss_neighbors
 from anacronia.latent_map_layout import build_latent_map_layout
 from anacronia.latent_map_runs import initialize_latent_map_run
 from anacronia.latent_map_scan import scan_latent_map_run
+from anacronia.latent_map_viewer_export import export_viewer_data
 from anacronia.met_ingest import rebuild_met_descriptors
 from anacronia.ports import choose_port, is_port_available as socket_port_available
 from anacronia.search_sets import MET_PROVIDER, SearchSet, create_or_continue_search_set
@@ -435,6 +436,30 @@ def run_latent_map_layout(
     )
 
 
+def run_latent_map_viewer_export(
+    *,
+    run_dir: Path,
+    recipe_name: str,
+) -> None:
+    summary = export_viewer_data(
+        run_dir=run_dir,
+        recipe_name=recipe_name,
+    )
+    print(
+        json.dumps(
+            {
+                "run_id": summary.run_id,
+                "recipe_name": summary.recipe_name,
+                "layout_id": summary.layout_id,
+                "cluster_id": summary.cluster_id,
+                "point_count": summary.point_count,
+                "viewer_data_path": str(summary.viewer_data_path),
+            }
+        ),
+        flush=True,
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="anacronia")
     parser.add_argument("--no-open", action="store_true", help="Print the local URL without opening a browser.")
@@ -493,6 +518,13 @@ def main() -> None:
     latent_map_layout_parser.add_argument("--min-dist", type=float, default=0.05)
     latent_map_layout_parser.add_argument("--cluster-count", type=int, default=12)
     latent_map_layout_parser.add_argument("--random-state", type=int, default=42)
+    latent_map_viewer_export_parser = latent_map_subparsers.add_parser("viewer-export")
+    latent_map_viewer_export_parser.add_argument("--run-dir", required=True, type=Path)
+    latent_map_viewer_export_parser.add_argument(
+        "--recipe",
+        choices=sorted(DINO_EMBEDDING_RECIPES),
+        default="dinov3_vits_256",
+    )
     args = parser.parse_args()
 
     if args.command == "search-set" and args.search_set_command == "create":
@@ -552,6 +584,13 @@ def main() -> None:
             min_dist=args.min_dist,
             cluster_count=args.cluster_count,
             random_state=args.random_state,
+        )
+        return
+
+    if args.command == "latent-map" and args.latent_map_command == "viewer-export":
+        run_latent_map_viewer_export(
+            run_dir=args.run_dir,
+            recipe_name=args.recipe,
         )
         return
 

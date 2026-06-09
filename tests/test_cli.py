@@ -9,6 +9,7 @@ from anacronia.cli import (
     run_latent_map_init,
     run_latent_map_layout,
     run_latent_map_scan,
+    run_latent_map_viewer_export,
     validate_supported_runtime,
 )
 from anacronia.latent_map_scan import scan_latent_map_run
@@ -289,3 +290,69 @@ def test_latent_map_layout_cli_prints_layout_summary(tmp_path, capsys):
     output = capsys.readouterr().out
     assert '"point_count": 6' in output
     assert '"cluster_count": 3' in output
+
+
+def test_latent_map_viewer_export_cli_prints_summary(tmp_path, capsys):
+    import json
+
+    source_folder = tmp_path / "source-images"
+    source_folder.mkdir()
+    run_latent_map_init(
+        source_folder=source_folder,
+        runs_root=tmp_path / "runs",
+        run_name="J Shoot",
+    )
+    run_dir = next((tmp_path / "runs").iterdir())
+    manifest_rows = [
+        {"image_id": "img-a", "source_path": str(source_folder / "a.jpg"), "relative_path": "a.jpg", "thumbnail_path": "thumbnails/img-a.jpg"},
+        {"image_id": "img-b", "source_path": str(source_folder / "b.jpg"), "relative_path": "b.jpg", "thumbnail_path": "thumbnails/img-b.jpg"},
+    ]
+    (run_dir / "manifest.jsonl").write_text(
+        "".join(json.dumps(row) + "\n" for row in manifest_rows),
+        encoding="utf-8",
+    )
+    (run_dir / "layouts" / "dinov3_vits_256_umap.json").write_text(
+        json.dumps(
+            {
+                "layout_id": "umap",
+                "points": [
+                    {"image_id": "img-a", "x": 1.0, "y": 2.0},
+                    {"image_id": "img-b", "x": 3.0, "y": 4.0},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (run_dir / "clusters" / "dinov3_vits_256_kmeans.json").write_text(
+        json.dumps(
+            {
+                "cluster_id": "kmeans",
+                "points": [
+                    {"image_id": "img-a", "cluster_id": 0},
+                    {"image_id": "img-b", "cluster_id": 1},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (run_dir / "indexes" / "dinov3_vits_256_neighbors.jsonl").write_text(
+        json.dumps(
+            {
+                "image_id": "img-a",
+                "neighbor_rank": 1,
+                "neighbor_image_id": "img-b",
+                "score": 0.8,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    run_latent_map_viewer_export(
+        run_dir=run_dir,
+        recipe_name="dinov3_vits_256",
+    )
+
+    output = capsys.readouterr().out
+    assert '"point_count": 2' in output
+    assert '"viewer_data_path"' in output
