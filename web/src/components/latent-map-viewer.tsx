@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CircleDot, Images, Palette, RotateCcw, ScanSearch } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -27,7 +27,6 @@ import {
   createLatentMapStats,
   getNextLatentMapSelection,
   DEFAULT_LATENT_MAP_HOVER_PREVIEW_SIZE,
-  DEFAULT_LATENT_MAP_THUMBNAIL_SIZE,
   LATENT_MAP_THUMBNAIL_SIZE_OPTIONS,
   type LatentMapRenderMode,
   type LatentMapRuntimeRendererInfo,
@@ -38,6 +37,13 @@ import {
   createLatentMapPointerHitRadius,
   createLatentMapSpatialIndex,
 } from "@/lib/latent-map-spatial-index";
+import {
+  createLatentMapFilterOptions,
+  DEFAULT_LATENT_MAP_DURABLE_STATE,
+  filterLatentMapViewerData,
+  parseLatentMapUrlState,
+  serializeLatentMapUrlState,
+} from "@/lib/latent-map-viewer-state";
 import { normalizeLatentMapNeighborResponse } from "@/lib/latent-map-viewer-data";
 import {
   createLatentMapWebglRuntime,
@@ -65,12 +71,46 @@ const DEFAULT_VIEW: LatentMapViewState = {
 };
 const ATLAS_TEXTURE_SIZE = 2048;
 
+function createInitialDurableState({
+  data,
+  initialRenderMode,
+  initialSelectedImageId,
+}: {
+  data: LatentMapViewerData;
+  initialRenderMode: LatentMapRenderMode;
+  initialSelectedImageId: string | null;
+}) {
+  const fallback = {
+    ...DEFAULT_LATENT_MAP_DURABLE_STATE,
+    renderMode: initialRenderMode,
+    selectedImageId: data.points.some(
+      (point) => point.image_id === initialSelectedImageId,
+    )
+      ? initialSelectedImageId
+      : null,
+  };
+
+  if (typeof window === "undefined" || window.location.search.length === 0) {
+    return fallback;
+  }
+
+  return parseLatentMapUrlState(
+    new URLSearchParams(window.location.search),
+    data,
+  );
+}
+
 export function LatentMapViewer({
   className,
   data,
   initialRenderMode = "points",
   initialSelectedImageId = null,
 }: LatentMapViewerProps) {
+  const initialDurableState = createInitialDurableState({
+    data,
+    initialRenderMode,
+    initialSelectedImageId,
+  });
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const runtimeRef = useRef<LatentMapWebglRuntime | null>(null);
@@ -89,7 +129,7 @@ export function LatentMapViewer({
     y: 0,
   });
   const [selectedImageId, setSelectedImageId] = useState<string | null>(
-    initialSelectedImageId,
+    initialDurableState.selectedImageId,
   );
   const [neighborsByImageId, setNeighborsByImageId] = useState<
     Record<string, NonNullable<LatentMapViewerData["points"][number]["neighbors"]>>
@@ -99,23 +139,44 @@ export function LatentMapViewer({
   >(null);
   const [neighborError, setNeighborError] = useState<string | null>(null);
   const [renderMode, setRenderMode] =
-    useState<LatentMapRenderMode>(initialRenderMode);
+    useState<LatentMapRenderMode>(initialDurableState.renderMode);
   const [runtimeRendererInfo, setRuntimeRendererInfo] =
     useState<LatentMapRuntimeRendererInfo>();
   const [loadedThumbnailCount, setLoadedThumbnailCount] = useState(0);
   const [thumbnailSize, setThumbnailSize] =
-    useState<LatentMapThumbnailSize>(DEFAULT_LATENT_MAP_THUMBNAIL_SIZE);
-  const [view, setView] = useState<LatentMapViewState>(DEFAULT_VIEW);
-  const stats = useMemo(() => createLatentMapStats(data), [data]);
+    useState<LatentMapThumbnailSize>(initialDurableState.thumbnailSize);
+  const [view, setView] = useState<LatentMapViewState>(
+    initialDurableState.view,
+  );
+  const [clusterFilter, setClusterFilter] = useState(
+    initialDurableState.clusterFilter,
+  );
+  const [sourceFilter, setSourceFilter] = useState(
+    initialDurableState.sourceFilter,
+  );
+  const filterOptions = useMemo(
+    () => createLatentMapFilterOptions(data),
+    [data],
+  );
+  const filteredData = useMemo(
+    () =>
+      filterLatentMapViewerData(data, {
+        clusterFilter,
+        sourceFilter,
+      }),
+    [clusterFilter, data, sourceFilter],
+  );
+  const stats = useMemo(() => createLatentMapStats(filteredData), [filteredData]);
+  const totalStats = useMemo(() => createLatentMapStats(data), [data]);
   const renderPoints = useMemo(
     () =>
       createLatentMapRenderState({
         clusterColorsEnabled,
-        data,
+        data: filteredData,
         neighborsByImageId,
         selectedImageId,
       }),
-    [clusterColorsEnabled, data, neighborsByImageId, selectedImageId],
+    [clusterColorsEnabled, filteredData, neighborsByImageId, selectedImageId],
   );
   const spatialIndex = useMemo(
     () => createLatentMapSpatialIndex(renderPoints),
@@ -123,12 +184,15 @@ export function LatentMapViewer({
   );
   const selectedPoint = useMemo(
     () =>
-      data.points.find((point) => point.image_id === selectedImageId) ?? null,
-    [data.points, selectedImageId],
+      filteredData.points.find((point) => point.image_id === selectedImageId) ??
+      null,
+    [filteredData.points, selectedImageId],
   );
   const hoveredPoint = useMemo(
-    () => data.points.find((point) => point.image_id === hoveredImageId) ?? null,
-    [data.points, hoveredImageId],
+    () =>
+      filteredData.points.find((point) => point.image_id === hoveredImageId) ??
+      null,
+    [filteredData.points, hoveredImageId],
   );
   const thumbnailPlan = useMemo(
     () =>
@@ -234,6 +298,37 @@ export function LatentMapViewer({
     runtimeRef.current?.setView(view);
   }, [view]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const nextSearchParams = serializeLatentMapUrlState(
+      {
+        clusterFilter,
+        renderMode,
+        selectedImageId,
+        sourceFilter,
+        thumbnailSize,
+        view,
+      },
+      data,
+    );
+    const nextUrl = `${window.location.pathname}?${nextSearchParams.toString()}${
+      window.location.hash
+    }`;
+
+    window.history.replaceState(null, "", nextUrl);
+  }, [
+    clusterFilter,
+    data,
+    renderMode,
+    selectedImageId,
+    sourceFilter,
+    thumbnailSize,
+    view,
+  ]);
+
   useEffect(
     () => () => {
       if (hoverFrameRef.current !== null) {
@@ -284,7 +379,7 @@ export function LatentMapViewer({
     });
   }
 
-  async function loadNeighborsForImage(imageId: string) {
+  const loadNeighborsForImage = useCallback(async (imageId: string) => {
     const selectedPoint = data.points.find((point) => point.image_id === imageId);
 
     if (
@@ -329,6 +424,50 @@ export function LatentMapViewer({
         current === imageId ? null : current,
       );
     }
+  }, [data.neighbor_lookup_path, data.points, neighborsByImageId]);
+
+  useEffect(() => {
+    if (selectedImageId) {
+      const timeoutId = window.setTimeout(() => {
+        void loadNeighborsForImage(selectedImageId);
+      }, 0);
+
+      return () => window.clearTimeout(timeoutId);
+    }
+
+    return undefined;
+  }, [loadNeighborsForImage, selectedImageId]);
+
+  function clearSelectionIfHiddenByFilters(nextFilters: {
+    clusterFilter: string;
+    sourceFilter: string;
+  }) {
+    if (
+      selectedImageId &&
+      !filterLatentMapViewerData(data, nextFilters).points.some(
+        (point) => point.image_id === selectedImageId,
+      )
+    ) {
+      setSelectedImageId(null);
+      setNeighborError(null);
+      setLoadingNeighborImageId(null);
+    }
+  }
+
+  function handleClusterFilterChange(nextClusterFilter: string) {
+    setClusterFilter(nextClusterFilter);
+    clearSelectionIfHiddenByFilters({
+      clusterFilter: nextClusterFilter,
+      sourceFilter,
+    });
+  }
+
+  function handleSourceFilterChange(nextSourceFilter: string) {
+    setSourceFilter(nextSourceFilter);
+    clearSelectionIfHiddenByFilters({
+      clusterFilter,
+      sourceFilter: nextSourceFilter,
+    });
   }
 
   function handlePointerDown(event: React.PointerEvent<HTMLDivElement>) {
@@ -444,6 +583,9 @@ export function LatentMapViewer({
             </h1>
           </div>
           <Badge variant="outline">{stats.pointCount} images</Badge>
+          {stats.pointCount !== totalStats.pointCount ? (
+            <Badge variant="outline">{totalStats.pointCount} total</Badge>
+          ) : null}
           <Badge variant="outline">{stats.clusterCount} clusters</Badge>
           <Badge variant="outline">{data.embedding_recipe}</Badge>
           {renderMode === "thumbnails" ? (
@@ -459,6 +601,42 @@ export function LatentMapViewer({
           ) : null}
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          <NativeSelect
+            aria-label="Cluster filter"
+            className="w-[116px]"
+            id="latent-map-cluster-filter"
+            name="latent-map-cluster-filter"
+            onChange={(event) =>
+              handleClusterFilterChange(event.currentTarget.value)
+            }
+            size="sm"
+            value={clusterFilter}
+          >
+            <NativeSelectOption value="all">All clusters</NativeSelectOption>
+            {filterOptions.clusters.map((clusterId) => (
+              <NativeSelectOption key={clusterId} value={String(clusterId)}>
+                Cluster {clusterId}
+              </NativeSelectOption>
+            ))}
+          </NativeSelect>
+          <NativeSelect
+            aria-label="Source filter"
+            className="w-[112px]"
+            id="latent-map-source-filter"
+            name="latent-map-source-filter"
+            onChange={(event) =>
+              handleSourceFilterChange(event.currentTarget.value)
+            }
+            size="sm"
+            value={sourceFilter}
+          >
+            <NativeSelectOption value="all">All sources</NativeSelectOption>
+            {filterOptions.sources.map((source) => (
+              <NativeSelectOption key={source} value={source}>
+                {source}
+              </NativeSelectOption>
+            ))}
+          </NativeSelect>
           <ToggleGroup
             aria-label="Map render mode"
             size="sm"
@@ -524,7 +702,7 @@ export function LatentMapViewer({
                 />
               }
             >
-              <Palette />
+                  <Palette />
             </TooltipTrigger>
             <TooltipContent>Cluster colors</TooltipContent>
           </Tooltip>
@@ -551,6 +729,7 @@ export function LatentMapViewer({
           aria-label="Latent image map"
           className="absolute inset-0 cursor-crosshair touch-none bg-[#101113]"
           data-cluster-colors={clusterColorsEnabled}
+          data-cluster-filter={clusterFilter}
           data-point-count={stats.pointCount}
           data-render-mode={renderMode}
           data-runtime-atlas-page-count={runtimeSnapshot.atlasPageCount}
@@ -561,6 +740,8 @@ export function LatentMapViewer({
           data-runtime-renderer-triangles={runtimeSnapshot.rendererTriangleCount}
           data-runtime-textures={runtimeSnapshot.liveTextureCount}
           data-selected-image-id={selectedImageId ?? undefined}
+          data-source-filter={sourceFilter}
+          data-total-point-count={totalStats.pointCount}
           data-point-layer-size={pointLayer.pointSize}
           data-point-layer-visible={pointLayer.visible}
           data-thumbnail-atlas-page-count={

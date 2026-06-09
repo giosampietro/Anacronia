@@ -1,0 +1,175 @@
+import {
+  DEFAULT_LATENT_MAP_THUMBNAIL_SIZE,
+  LATENT_MAP_THUMBNAIL_SIZE_OPTIONS,
+  type LatentMapRenderMode,
+  type LatentMapThumbnailSize,
+  type LatentMapViewerData,
+} from "@/lib/latent-map-viewer";
+import type { LatentMapViewState } from "@/lib/latent-map-webgl-runtime";
+
+export type LatentMapFilterState = {
+  clusterFilter: string;
+  sourceFilter: string;
+};
+
+export type LatentMapDurableState = LatentMapFilterState & {
+  renderMode: LatentMapRenderMode;
+  selectedImageId: string | null;
+  thumbnailSize: LatentMapThumbnailSize;
+  view: LatentMapViewState;
+};
+
+const DEFAULT_VIEW: LatentMapViewState = {
+  offsetX: 0,
+  offsetY: 0,
+  zoom: 1,
+};
+
+export const DEFAULT_LATENT_MAP_FILTERS: LatentMapFilterState = {
+  clusterFilter: "all",
+  sourceFilter: "all",
+};
+
+export const DEFAULT_LATENT_MAP_DURABLE_STATE: LatentMapDurableState = {
+  ...DEFAULT_LATENT_MAP_FILTERS,
+  renderMode: "points",
+  selectedImageId: null,
+  thumbnailSize: DEFAULT_LATENT_MAP_THUMBNAIL_SIZE,
+  view: DEFAULT_VIEW,
+};
+
+export function getLatentMapSourceGroup(relativePath: string): string {
+  const segments = relativePath.split("/").filter(Boolean);
+
+  return segments.length > 1 ? segments[0] : "root";
+}
+
+export function createLatentMapFilterOptions(data: LatentMapViewerData): {
+  clusters: number[];
+  sources: string[];
+} {
+  return {
+    clusters: [...new Set(data.points.map((point) => point.cluster_id))].sort(
+      (left, right) => left - right,
+    ),
+    sources: [
+      ...new Set(
+        data.points.map((point) =>
+          getLatentMapSourceGroup(point.relative_path),
+        ),
+      ),
+    ].sort((left, right) => left.localeCompare(right)),
+  };
+}
+
+export function filterLatentMapViewerData(
+  data: LatentMapViewerData,
+  filters: LatentMapFilterState,
+): LatentMapViewerData {
+  const points = data.points.filter((point) => {
+    if (
+      filters.clusterFilter !== "all" &&
+      String(point.cluster_id) !== filters.clusterFilter
+    ) {
+      return false;
+    }
+
+    if (
+      filters.sourceFilter !== "all" &&
+      getLatentMapSourceGroup(point.relative_path) !== filters.sourceFilter
+    ) {
+      return false;
+    }
+
+    return true;
+  });
+
+  return {
+    ...data,
+    points,
+  };
+}
+
+export function parseLatentMapUrlState(
+  searchParams: URLSearchParams,
+  data: LatentMapViewerData,
+): LatentMapDurableState {
+  const filterOptions = createLatentMapFilterOptions(data);
+  const modeParam = searchParams.get("mode");
+  const thumbParam = Number(searchParams.get("thumb"));
+  const clusterParam = searchParams.get("cluster");
+  const sourceParam = searchParams.get("source");
+  const offsetX = Number(searchParams.get("x"));
+  const offsetY = Number(searchParams.get("y"));
+  const zoom = Number(searchParams.get("z"));
+  const clusterFilter =
+    clusterParam !== null &&
+    filterOptions.clusters.some((clusterId) => String(clusterId) === clusterParam)
+      ? clusterParam
+      : "all";
+  const sourceFilter =
+    sourceParam !== null && filterOptions.sources.includes(sourceParam)
+      ? sourceParam
+      : "all";
+  const selectedParam = searchParams.get("selected");
+  const selectedExists = selectedParam
+    ? filterLatentMapViewerData(data, {
+        clusterFilter,
+        sourceFilter,
+      }).points.some((point) => point.image_id === selectedParam)
+    : false;
+
+  return {
+    clusterFilter,
+    renderMode: modeParam === "thumbnails" ? "thumbnails" : "points",
+    selectedImageId: selectedExists ? selectedParam : null,
+    sourceFilter,
+    thumbnailSize: LATENT_MAP_THUMBNAIL_SIZE_OPTIONS.includes(
+      thumbParam as LatentMapThumbnailSize,
+    )
+      ? (thumbParam as LatentMapThumbnailSize)
+      : DEFAULT_LATENT_MAP_THUMBNAIL_SIZE,
+    view: {
+      offsetX: Number.isFinite(offsetX) ? offsetX : DEFAULT_VIEW.offsetX,
+      offsetY: Number.isFinite(offsetY) ? offsetY : DEFAULT_VIEW.offsetY,
+      zoom: Number.isFinite(zoom) && zoom >= 0.45 && zoom <= 7
+        ? zoom
+        : DEFAULT_VIEW.zoom,
+    },
+  };
+}
+
+export function serializeLatentMapUrlState(
+  state: LatentMapDurableState,
+  data: LatentMapViewerData,
+): URLSearchParams {
+  const searchParams = new URLSearchParams();
+
+  searchParams.set("run", data.run_id);
+  searchParams.set("recipe", data.embedding_recipe);
+  searchParams.set("layout", data.layout_id);
+  searchParams.set("clusterResult", data.cluster_id);
+  searchParams.set("mode", state.renderMode);
+  searchParams.set("thumb", String(state.thumbnailSize));
+
+  if (state.selectedImageId) {
+    searchParams.set("selected", state.selectedImageId);
+  }
+  if (state.clusterFilter !== "all") {
+    searchParams.set("cluster", state.clusterFilter);
+  }
+  if (state.sourceFilter !== "all") {
+    searchParams.set("source", state.sourceFilter);
+  }
+  if (state.view.offsetX !== 0) {
+    searchParams.set("x", String(Number(state.view.offsetX.toFixed(4))));
+  }
+  if (state.view.offsetY !== 0) {
+    searchParams.set("y", String(Number(state.view.offsetY.toFixed(4))));
+  }
+  if (state.view.zoom !== 1) {
+    searchParams.set("z", String(Number(state.view.zoom.toFixed(4))));
+  }
+
+  return searchParams;
+}
