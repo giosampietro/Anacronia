@@ -7,10 +7,12 @@ from anacronia.local_material import ensure_local_material_schema
 from anacronia.search_sets import create_or_continue_search_set
 from anacronia.storage import initialize_storage, provider_raw_record_path
 from anacronia.vam_adapter import (
+    VamImageReference,
     extract_vam_descriptors,
     ingest_vam_run,
     matched_vam_fields,
     select_vam_image_references,
+    vam_image_import_candidate_from_reference,
 )
 
 
@@ -227,6 +229,40 @@ def test_selects_vam_iiif_image_references_with_skipped_over_limit():
         "https://framemark.vam.ac.uk/collections/2006AL3614/full/full/0/default.jpg"
     )
     assert skipped[0].reason == "beyond_max_images_per_object"
+
+
+def test_vam_image_import_candidate_keeps_asset_ref_metadata_and_paths(tmp_path):
+    candidate = vam_image_import_candidate_from_reference(
+        data_root=tmp_path,
+        reference=VamImageReference(
+            object_id="O9138",
+            asset_ref="2006AL3614",
+            source_image_url="https://framemark.vam.ac.uk/collections/2006AL3614/full/full/0/default.jpg",
+            image_role="primary",
+            image_index=None,
+            primary_image_small_url="https://framemark.vam.ac.uk/collections/2006AL3614/full/!100,100/0/default.jpg",
+            copyright_text="© Victoria and Albert Museum, London",
+            sensitive_image=False,
+        ),
+    )
+
+    assert candidate.provider == "vam"
+    assert candidate.object_id == "O9138"
+    assert candidate.source_image_id == "2006AL3614"
+    assert candidate.source_rights_statement == "© Victoria and Albert Museum, London"
+    assert candidate.source_iiif_service_url == (
+        "https://framemark.vam.ac.uk/collections/2006AL3614"
+    )
+    assert candidate.source_metadata == {"sensitive_image": False}
+    assert candidate.temporary_original_path == (
+        tmp_path / "temp" / "vam" / "images" / "O9138" / "primary-source-original"
+    )
+    assert candidate.standard_path == (
+        tmp_path / "vam" / "images" / "O9138" / "primary-standard-1024.jpg"
+    )
+    assert candidate.thumb_path == (
+        tmp_path / "vam" / "images" / "O9138" / "primary-thumb-256.jpg"
+    )
 
 
 def test_extracts_vam_descriptors_and_verified_match_fields():

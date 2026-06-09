@@ -9,10 +9,8 @@ from urllib.error import HTTPError
 
 from anacronia.collection_runs import CandidateRun, discover_provider_candidates
 from anacronia.curation import get_collection_import_exclusions
-from anacronia.image_pipeline import process_image_derivatives_from_bytes
 from anacronia.local_material import (
     LocalDescriptor,
-    LocalImageAsset,
     LocalMuseumObject,
     LocalObjectMatch,
     LocalSkippedCandidate,
@@ -37,6 +35,10 @@ from anacronia.provider_adapters import (
 from anacronia.provider_import import (
     finish_provider_import_candidate,
     load_provider_import_run_context,
+)
+from anacronia.provider_image_import import (
+    ProviderImageImportCandidate,
+    import_provider_image_candidates,
 )
 from anacronia.provider_identity import SourceObjectId, normalize_source_object_id
 from anacronia.search_sets import normalize_search_term
@@ -263,89 +265,21 @@ def ingest_vam_run(
                 filtered_image_references.append(image_reference)
             image_references = filtered_image_references
 
-        processed_image_assets: list[tuple[VamImageReference, LocalImageAsset]] = []
-        for image_reference in image_references:
-            try:
-                processed = process_image_derivatives_from_bytes(
-                    source_bytes=resolved_download_image_bytes(
-                        image_reference.source_image_url
-                    ),
-                    temporary_original_path=provider_temporary_original_path(
-                        data_root=data_root,
-                        provider=VAM_PROVIDER,
-                        object_id=image_reference.object_id,
-                        image_role=image_reference.image_role,
-                        image_index=image_reference.image_index,
-                    ),
-                    standard_path=provider_image_derivative_path(
-                        data_root=data_root,
-                        provider=VAM_PROVIDER,
-                        object_id=image_reference.object_id,
-                        image_role=image_reference.image_role,
-                        image_index=image_reference.image_index,
-                        derivative="standard-1024",
-                    ),
-                    thumb_path=provider_image_derivative_path(
-                        data_root=data_root,
-                        provider=VAM_PROVIDER,
-                        object_id=image_reference.object_id,
-                        image_role=image_reference.image_role,
-                        image_index=image_reference.image_index,
-                        derivative="thumb-256",
-                    ),
+        image_import_result = import_provider_image_candidates(
+            candidates=[
+                vam_image_import_candidate_from_reference(
+                    data_root=data_root,
+                    reference=image_reference,
                 )
-            except Exception:
-                skipped_image_references.append(
-                    VamSkippedImageReference(
-                        object_id=image_reference.object_id,
-                        source_image_url=image_reference.source_image_url,
-                        image_role=image_reference.image_role,
-                        image_index=image_reference.image_index,
-                        reason="image_processing_failed",
-                    )
-                )
-                continue
-
-            if not processed.imported:
-                skipped_image_references.append(
-                    VamSkippedImageReference(
-                        object_id=image_reference.object_id,
-                        source_image_url=image_reference.source_image_url,
-                        image_role=image_reference.image_role,
-                        image_index=image_reference.image_index,
-                        reason="image_processing_failed",
-                    )
-                )
-                continue
-
-            processed_image_assets.append(
-                (
-                    image_reference,
-                    LocalImageAsset(
-                        provider=VAM_PROVIDER,
-                        object_id=image_reference.object_id,
-                        source_image_url=image_reference.source_image_url,
-                        source_image_id=image_reference.asset_ref,
-                        image_role=image_reference.image_role,
-                        image_index=image_reference.image_index,
-                        primary_image_small_url=image_reference.primary_image_small_url,
-                        original_width=processed.original_width,
-                        original_height=processed.original_height,
-                        standard_path=processed.standard_path,
-                        thumb_path=processed.thumb_path,
-                        imported=processed.imported,
-                        source_rights_statement=image_reference.copyright_text,
-                        source_iiif_service_url=vam_iiif_service_url(
-                            image_reference.asset_ref
-                        ),
-                        source_metadata=(
-                            {"sensitive_image": image_reference.sensitive_image}
-                            if image_reference.sensitive_image is not None
-                            else {}
-                        ),
-                    ),
-                )
-            )
+                for image_reference in image_references
+            ],
+            download_image_bytes=resolved_download_image_bytes,
+        )
+        processed_image_assets = image_import_result.imported_image_assets
+        skipped_image_references.extend(
+            vam_skipped_image_reference_from_local(reference)
+            for reference in image_import_result.skipped_image_references
+        )
 
         if not processed_image_assets:
             skipped_candidate = VamSkippedCandidate(
@@ -381,7 +315,7 @@ def ingest_vam_run(
                     connection=connection,
                     reference=skipped_image_reference,
                 )
-            for _image_reference, image_asset in processed_image_assets:
+            for image_asset in processed_image_assets:
                 record_local_image_asset(
                     connection=connection,
                     image_asset=image_asset,
@@ -482,6 +416,64 @@ def select_vam_image_references(
         )
 
     return selected_references, skipped_references
+
+
+def vam_image_import_candidate_from_reference(
+    *,
+    data_root: Path,
+    reference: VamImageReference,
+) -> ProviderImageImportCandidate:
+    return ProviderImageImportCandidate(
+        provider=VAM_PROVIDER,
+        object_id=reference.object_id,
+        source_image_url=reference.source_image_url,
+        source_image_id=reference.asset_ref,
+        image_role=reference.image_role,
+        image_index=reference.image_index,
+        primary_image_small_url=reference.primary_image_small_url,
+        temporary_original_path=provider_temporary_original_path(
+            data_root=data_root,
+            provider=VAM_PROVIDER,
+            object_id=reference.object_id,
+            image_role=reference.image_role,
+            image_index=reference.image_index,
+        ),
+        standard_path=provider_image_derivative_path(
+            data_root=data_root,
+            provider=VAM_PROVIDER,
+            object_id=reference.object_id,
+            image_role=reference.image_role,
+            image_index=reference.image_index,
+            derivative="standard-1024",
+        ),
+        thumb_path=provider_image_derivative_path(
+            data_root=data_root,
+            provider=VAM_PROVIDER,
+            object_id=reference.object_id,
+            image_role=reference.image_role,
+            image_index=reference.image_index,
+            derivative="thumb-256",
+        ),
+        source_rights_statement=reference.copyright_text,
+        source_iiif_service_url=vam_iiif_service_url(reference.asset_ref),
+        source_metadata=(
+            {"sensitive_image": reference.sensitive_image}
+            if reference.sensitive_image is not None
+            else {}
+        ),
+    )
+
+
+def vam_skipped_image_reference_from_local(
+    reference: LocalSkippedImageReference,
+) -> VamSkippedImageReference:
+    return VamSkippedImageReference(
+        object_id=normalize_source_object_id(reference.object_id),
+        source_image_url=reference.source_image_url,
+        image_role=reference.image_role,
+        image_index=reference.image_index,
+        reason=reference.reason,
+    )
 
 
 def vam_image_asset_refs(record: dict[str, object]) -> list[str]:
