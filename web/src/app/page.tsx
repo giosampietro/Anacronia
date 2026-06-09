@@ -18,10 +18,12 @@ import { UserLibraryWorkspace } from "@/components/user-library-workspace";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   Card,
+  CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { buttonVariants } from "@/components/ui/button";
 import {
   CircleAlert,
 } from "lucide-react";
@@ -86,6 +88,8 @@ import {
   deleteCreatedCollectionAfterFailedInitialCollect,
 } from "@/lib/new-collection";
 import {
+  createNewSearchSetHref,
+  createUserLibraryHref,
   createWorkspaceMode,
   getFirstParam,
 } from "@/lib/workspace";
@@ -671,6 +675,41 @@ function NewSearchSetWorkspace({
   );
 }
 
+function MissingSearchSetWorkspace({
+  collectionFilterText,
+  searchSetSlug,
+}: {
+  collectionFilterText: string;
+  searchSetSlug: string;
+}) {
+  return (
+    <div className="mx-auto flex max-w-4xl flex-col gap-4">
+      <Card size="sm">
+        <CardHeader>
+          <CardTitle>Collection not found</CardTitle>
+          <CardDescription>
+            The Collection "{searchSetSlug}" was deleted or no longer exists.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-wrap gap-2">
+          <a
+            className={buttonVariants({ size: "sm", variant: "default" })}
+            href={createUserLibraryHref(collectionFilterText)}
+          >
+            My Library
+          </a>
+          <a
+            className={buttonVariants({ size: "sm", variant: "outline" })}
+            href={createNewSearchSetHref(collectionFilterText)}
+          >
+            New Collection
+          </a>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 type SubmittableProviderSearchAction = ProviderSearchAction & {
   kind: "start" | "stop" | "resume";
 };
@@ -775,7 +814,8 @@ export default async function Home({ searchParams }: HomeProps) {
   const collectionErrorCode = getFirstParam(resolvedSearchParams?.collection_error);
   const requestedWorkspaceMode = getFirstParam(resolvedSearchParams?.mode);
   const requestedGridViewMode = getFirstParam(resolvedSearchParams?.view);
-  const activeSearchSetSlug = getFirstParam(resolvedSearchParams?.search_set);
+  const activeSearchSetSlug =
+    getFirstParam(resolvedSearchParams?.search_set)?.trim() || undefined;
   const legacyObjectProvider = getFirstParam(resolvedSearchParams?.object_provider);
   const legacyObjectId = getFirstParam(resolvedSearchParams?.object_id)?.trim();
   const selectedObjectRoute =
@@ -816,7 +856,11 @@ export default async function Home({ searchParams }: HomeProps) {
   const rows = createStatusRows({ uiPort, apiPort, apiHealth });
   const activeSearchSet = dashboardView.activeSearchSet;
   const collectAvailable = canStartCollect(dashboardView.workerStatus);
-  const workspaceMode = createWorkspaceMode(requestedWorkspaceMode, activeSearchSet);
+  const workspaceMode = createWorkspaceMode({
+    activeSearchSet,
+    modeParam: requestedWorkspaceMode,
+    searchSetSlug: activeSearchSetSlug,
+  });
   const gridViewMode = createGridViewMode(requestedGridViewMode, workspaceMode);
   const activeProviderCollections = activeSearchSet?.providerCollections ?? [];
   const curationActionsDisabled =
@@ -1196,6 +1240,11 @@ export default async function Home({ searchParams }: HomeProps) {
             collectAvailable={collectAvailable}
             existingCollections={existingCollections}
             serverError={newCollectionServerError}
+          />
+        ) : workspaceMode === "missing-search-set" && activeSearchSetSlug !== undefined ? (
+          <MissingSearchSetWorkspace
+            collectionFilterText={collectionFilterText}
+            searchSetSlug={activeSearchSetSlug}
           />
         ) : workspaceMode === "user-library" ? (
           <UserLibraryWorkspace

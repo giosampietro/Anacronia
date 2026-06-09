@@ -47,10 +47,31 @@ describe("workspace navigation helpers", () => {
   });
 
   it("selects explicit workspaces and defaults bare loads to the User Library", () => {
-    expect(createWorkspaceMode("new-search-set", snakeStudy)).toBe("new-search-set");
-    expect(createWorkspaceMode("user-library", snakeStudy)).toBe("user-library");
-    expect(createWorkspaceMode(undefined, null)).toBe("user-library");
-    expect(createWorkspaceMode(undefined, snakeStudy)).toBe("search-set");
+    expect(createWorkspaceMode({
+      activeSearchSet: snakeStudy,
+      modeParam: "new-search-set",
+      searchSetSlug: "snake-studies",
+    })).toBe("new-search-set");
+    expect(createWorkspaceMode({
+      activeSearchSet: snakeStudy,
+      modeParam: "user-library",
+      searchSetSlug: "snake-studies",
+    })).toBe("user-library");
+    expect(createWorkspaceMode({
+      activeSearchSet: null,
+      modeParam: undefined,
+      searchSetSlug: undefined,
+    })).toBe("user-library");
+    expect(createWorkspaceMode({
+      activeSearchSet: snakeStudy,
+      modeParam: undefined,
+      searchSetSlug: "snake-studies",
+    })).toBe("search-set");
+    expect(createWorkspaceMode({
+      activeSearchSet: null,
+      modeParam: undefined,
+      searchSetSlug: "deleted-collection",
+    })).toBe("missing-search-set");
   });
 
   it("filters Collections by title, slug, or term summary", () => {
