@@ -3,6 +3,7 @@ import pytest
 from anacronia.cli import (
     acquire_data_root_runtime_lock,
     build_startup_plan,
+    run_latent_map_atlas,
     run_latent_map_faiss_build,
     run_latent_map_faiss_query,
     run_latent_map_embed,
@@ -292,6 +293,49 @@ def test_latent_map_layout_cli_prints_layout_summary(tmp_path, capsys):
     assert '"cluster_count": 3' in output
 
 
+def test_latent_map_atlas_cli_prints_summary(tmp_path, capsys):
+    import json
+
+    from PIL import Image
+
+    source_folder = tmp_path / "source-images"
+    source_folder.mkdir()
+    run_latent_map_init(
+        source_folder=source_folder,
+        runs_root=tmp_path / "runs",
+        run_name="J Shoot",
+    )
+    run_dir = next((tmp_path / "runs").iterdir())
+    thumbnail_dir = run_dir / "thumbnails"
+    manifest_rows = []
+    for image_id in ["img-a", "img-b", "img-c", "img-d", "img-e"]:
+        thumbnail_path = thumbnail_dir / f"{image_id}.jpg"
+        Image.new("RGB", (48, 48), (160, 120, 80)).save(
+            thumbnail_path,
+            format="JPEG",
+        )
+        manifest_rows.append(
+            {
+                "image_id": image_id,
+                "thumbnail_path": thumbnail_path.relative_to(run_dir).as_posix(),
+                "width": 48,
+                "height": 48,
+            }
+        )
+    (run_dir / "manifest.jsonl").write_text(
+        "".join(json.dumps(row) + "\n" for row in manifest_rows),
+        encoding="utf-8",
+    )
+
+    run_latent_map_atlas(run_dir=run_dir, tile_size=32, atlas_size=64)
+
+    output = capsys.readouterr().out
+    assert '"tile_size": 32' in output
+    assert '"image_count": 5' in output
+    assert '"page_count": 2' in output
+    assert '"manifest_path"' in output
+
+
 def test_latent_map_viewer_export_cli_prints_summary(tmp_path, capsys):
     import json
 
@@ -356,3 +400,88 @@ def test_latent_map_viewer_export_cli_prints_summary(tmp_path, capsys):
     output = capsys.readouterr().out
     assert '"point_count": 2' in output
     assert '"viewer_data_path"' in output
+
+
+def test_latent_map_viewer_export_cli_prints_atlas_manifest_path(tmp_path, capsys):
+    import json
+
+    source_folder = tmp_path / "source-images"
+    source_folder.mkdir()
+    run_latent_map_init(
+        source_folder=source_folder,
+        runs_root=tmp_path / "runs",
+        run_name="J Shoot",
+    )
+    run_dir = next((tmp_path / "runs").iterdir())
+    atlas_manifest_path = run_dir / "viewer" / "atlases" / "64px" / "atlas-manifest.json"
+    atlas_manifest_path.parent.mkdir(parents=True)
+    atlas_manifest_path.write_text(
+        json.dumps({"asset_kind": "latent-map-thumbnail-atlas"}),
+        encoding="utf-8",
+    )
+    manifest_rows = [
+        {
+            "image_id": "img-a",
+            "source_path": str(source_folder / "a.jpg"),
+            "relative_path": "a.jpg",
+            "thumbnail_path": "thumbnails/img-a.jpg",
+        },
+        {
+            "image_id": "img-b",
+            "source_path": str(source_folder / "b.jpg"),
+            "relative_path": "b.jpg",
+            "thumbnail_path": "thumbnails/img-b.jpg",
+        },
+    ]
+    (run_dir / "manifest.jsonl").write_text(
+        "".join(json.dumps(row) + "\n" for row in manifest_rows),
+        encoding="utf-8",
+    )
+    (run_dir / "layouts" / "dinov3_vits_256_umap.json").write_text(
+        json.dumps(
+            {
+                "layout_id": "umap",
+                "points": [
+                    {"image_id": "img-a", "x": 1.0, "y": 2.0},
+                    {"image_id": "img-b", "x": 3.0, "y": 4.0},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (run_dir / "clusters" / "dinov3_vits_256_kmeans.json").write_text(
+        json.dumps(
+            {
+                "cluster_id": "kmeans",
+                "points": [
+                    {"image_id": "img-a", "cluster_id": 0},
+                    {"image_id": "img-b", "cluster_id": 1},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (run_dir / "indexes" / "dinov3_vits_256_neighbors.jsonl").write_text(
+        json.dumps(
+            {
+                "image_id": "img-a",
+                "neighbor_rank": 1,
+                "neighbor_image_id": "img-b",
+                "score": 0.8,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    run_latent_map_viewer_export(
+        run_dir=run_dir,
+        recipe_name="dinov3_vits_256",
+        thumbnail_atlas_manifest_path=atlas_manifest_path,
+    )
+
+    output = capsys.readouterr().out
+    assert '"thumbnail_atlas_manifest_path"' in output
+    assert "viewer/atlases/64px/atlas-manifest.json" in (
+        run_dir / "viewer" / "map-data.json"
+    ).read_text(encoding="utf-8")

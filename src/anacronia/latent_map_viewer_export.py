@@ -13,15 +13,21 @@ class ViewerDataExportSummary:
     cluster_id: str
     point_count: int
     viewer_data_path: Path
+    thumbnail_atlas_manifest_path: Path | None = None
 
 
 def export_viewer_data(
     *,
     run_dir: Path,
     recipe_name: str,
+    thumbnail_atlas_manifest_path: Path | None = None,
 ) -> ViewerDataExportSummary:
     resolved_run_dir = run_dir.expanduser().resolve()
     run_id = _read_run_id(resolved_run_dir)
+    resolved_atlas_manifest_path = _resolve_optional_run_path(
+        run_dir=resolved_run_dir,
+        path=thumbnail_atlas_manifest_path,
+    )
     manifest_rows = _load_jsonl(resolved_run_dir / "manifest.jsonl")
     manifest_by_id = {str(row["image_id"]): row for row in manifest_rows}
     layout = _load_single_json(
@@ -72,25 +78,27 @@ def export_viewer_data(
     viewer_dir = resolved_run_dir / "viewer"
     viewer_dir.mkdir(parents=True, exist_ok=True)
     viewer_data_path = viewer_dir / "map-data.json"
-    viewer_data_path.write_text(
-        json.dumps(
-            {
-                "run_id": run_id,
-                "recipe_name": recipe_name,
-                "layout_id": str(layout.get("layout_id", "")),
-                "cluster_id": str(cluster.get("cluster_id", "")),
-                "point_count": len(points),
-                "points": points,
-            },
-            indent=2,
+    viewer_data = {
+        "run_id": run_id,
+        "recipe_name": recipe_name,
+        "layout_id": str(layout.get("layout_id", "")),
+        "cluster_id": str(cluster.get("cluster_id", "")),
+        "point_count": len(points),
+        "points": points,
+    }
+    if resolved_atlas_manifest_path is not None:
+        viewer_data["thumbnail_atlas_manifest_path"] = (
+            resolved_atlas_manifest_path.relative_to(resolved_run_dir).as_posix()
         )
-        + "\n",
+    viewer_data_path.write_text(
+        json.dumps(viewer_data, indent=2) + "\n",
         encoding="utf-8",
     )
     _append_viewer_report(
         run_dir=resolved_run_dir,
         recipe_name=recipe_name,
         point_count=len(points),
+        thumbnail_atlas_manifest_path=resolved_atlas_manifest_path,
         viewer_data_path=viewer_data_path,
     )
 
@@ -100,6 +108,7 @@ def export_viewer_data(
         layout_id=str(layout.get("layout_id", "")),
         cluster_id=str(cluster.get("cluster_id", "")),
         point_count=len(points),
+        thumbnail_atlas_manifest_path=resolved_atlas_manifest_path,
         viewer_data_path=viewer_data_path,
     )
 
@@ -155,11 +164,29 @@ def _read_run_id(run_dir: Path) -> str:
     return str(json.loads(config_path.read_text(encoding="utf-8"))["run_id"])
 
 
+def _resolve_optional_run_path(
+    *,
+    run_dir: Path,
+    path: Path | None,
+) -> Path | None:
+    if path is None:
+        return None
+
+    resolved_path = path.expanduser().resolve()
+    if resolved_path != run_dir and not resolved_path.is_relative_to(run_dir):
+        raise ValueError(f"Path is outside the latent-map run: {path}")
+    if not resolved_path.is_file():
+        raise ValueError(f"Required file not found: {path}")
+
+    return resolved_path
+
+
 def _append_viewer_report(
     *,
     run_dir: Path,
     recipe_name: str,
     point_count: int,
+    thumbnail_atlas_manifest_path: Path | None,
     viewer_data_path: Path,
 ) -> None:
     report_path = run_dir / "report.md"
@@ -172,6 +199,16 @@ def _append_viewer_report(
             f"- Recipe: `{recipe_name}`",
             f"- Points: {point_count}",
             f"- File: `{viewer_data_path}`",
+            *(
+                [
+                    (
+                        "- Thumbnail atlas manifest: "
+                        f"`{thumbnail_atlas_manifest_path}`"
+                    )
+                ]
+                if thumbnail_atlas_manifest_path is not None
+                else []
+            ),
             "",
         ]
     )

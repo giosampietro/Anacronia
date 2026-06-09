@@ -8,6 +8,7 @@ import type {
   LatentMapThumbnailRenderPlan,
   LatentMapThumbnailSize,
 } from "@/lib/latent-map-viewer";
+import { isLatentMapThumbnailFocusActive } from "@/lib/latent-map-viewer";
 
 export type LatentMapViewState = {
   offsetX: number;
@@ -280,13 +281,20 @@ function createAtlasGeometry({
   return geometry;
 }
 
-function createAtlasMaterial(texture: THREE.Texture) {
+function createAtlasMaterial({
+  focusActive,
+  texture,
+}: {
+  focusActive: boolean;
+  texture: THREE.Texture;
+}) {
   return new THREE.ShaderMaterial({
     depthTest: true,
     depthWrite: true,
-    transparent: false,
+    transparent: true,
     uniforms: {
       atlasTexture: { value: texture },
+      focusActive: { value: focusActive ? 1 : 0 },
     },
     vertexShader: `
       attribute vec3 instancePosition;
@@ -310,6 +318,7 @@ function createAtlasMaterial(texture: THREE.Texture) {
     `,
     fragmentShader: `
       uniform sampler2D atlasTexture;
+      uniform float focusActive;
       varying vec2 vAtlasUv;
       varying vec2 vLocalUv;
       varying float vState;
@@ -321,13 +330,12 @@ function createAtlasMaterial(texture: THREE.Texture) {
           min(vLocalUv.y, 1.0 - vLocalUv.y)
         );
         float selected = step(1.5, vState);
-        float neighbor = step(0.5, vState) * (1.0 - selected);
-        float emphasis = max(selected, neighbor);
-        vec3 borderColor = mix(vec3(1.0, 0.62, 0.24), vec3(1.0), selected);
-        float border = (1.0 - step(0.045, edgeDistance)) * emphasis;
-        vec3 color = mix(texel.rgb, borderColor, border);
+        float nonFocus = 1.0 - step(0.5, vState);
+        float focusRing = (1.0 - step(0.045, edgeDistance)) * selected;
+        float alpha = mix(1.0, 0.5, focusActive * nonFocus);
+        vec3 color = mix(texel.rgb, vec3(1.0), focusRing);
 
-        gl_FragColor = vec4(color, 1.0);
+        gl_FragColor = vec4(color, alpha);
       }
     `,
   });
@@ -382,9 +390,11 @@ type AtlasPageMesh = {
 };
 
 function createAtlasPageMesh({
+  focusActive,
   page,
   thumbnailSize,
 }: {
+  focusActive: boolean;
   page: LatentMapThumbnailAtlasPage;
   thumbnailSize: LatentMapThumbnailSize;
 }): AtlasPageMesh {
@@ -409,7 +419,7 @@ function createAtlasPageMesh({
   texture.premultiplyAlpha = false;
 
   const geometry = createAtlasGeometry({ page, thumbnailSize });
-  const material = createAtlasMaterial(texture);
+  const material = createAtlasMaterial({ focusActive, texture });
   const mesh = new THREE.Mesh(geometry, material);
 
   mesh.frustumCulled = false;
@@ -558,15 +568,60 @@ export function createLatentMapWebglRuntime({
 
   function loadAtlasPages(plan: LatentMapThumbnailRenderPlan) {
     unloadAtlasPages();
+    const focusActive = isLatentMapThumbnailFocusActive(plan.thumbnailPoints);
 
     plan.atlasPages.forEach((page) => {
       const atlasPage = createAtlasPageMesh({
+        focusActive,
         page,
         thumbnailSize: plan.thumbnailSize,
       });
 
       atlasPages.push(atlasPage);
       scene.add(atlasPage.mesh);
+
+      if (page.texturePath) {
+        const image = new Image();
+
+        atlasImages.push(image);
+        image.decoding = "async";
+        image.onload = () => {
+          if (isDisposed) {
+            return;
+          }
+
+          atlasPage.context.drawImage(
+            image,
+            0,
+            0,
+            page.atlasSize,
+            page.atlasSize,
+          );
+          loadedThumbnailCount += page.items.length;
+          atlasPage.texture.needsUpdate = true;
+          scheduleRender();
+          reportDiagnostics();
+        };
+        image.onerror = () => {
+          if (isDisposed) {
+            return;
+          }
+
+          page.items.forEach((item) => {
+            fillMissingAtlasTile({
+              context: atlasPage.context,
+              item,
+              tileSize: page.tileSize,
+            });
+          });
+          loadedThumbnailCount += page.items.length;
+          atlasPage.texture.needsUpdate = true;
+          scheduleRender();
+          reportDiagnostics();
+        };
+        image.src = page.texturePath;
+        return;
+      }
 
       page.items.forEach((item) => {
         const image = new Image();
@@ -612,6 +667,8 @@ export function createLatentMapWebglRuntime({
   }
 
   function updateAtlasInstances(plan: LatentMapThumbnailRenderPlan) {
+    const focusActive = isLatentMapThumbnailFocusActive(plan.thumbnailPoints);
+
     plan.atlasPages.forEach((page, index) => {
       const atlasPage = atlasPages[index];
 
@@ -625,6 +682,7 @@ export function createLatentMapWebglRuntime({
         thumbnailSize: plan.thumbnailSize,
       });
       atlasPage.page = page;
+      atlasPage.material.uniforms.focusActive.value = focusActive ? 1 : 0;
     });
   }
 

@@ -65,4 +65,55 @@ describe("normalizeExportedLatentMapViewerData", () => {
       "/api/latent-map/thumbnails?run=run-1&path=thumbnails%2Fimg_1.jpg",
     );
   });
+
+  it("loads generated atlas page URLs through the thumbnail API", () => {
+    const data = normalizeExportedLatentMapViewerData({
+      sourceFolder: "/source/images",
+      thumbnailApiPath: "/api/latent-map/thumbnails?run=run-1",
+      rawData: {
+        points: [
+          {
+            image_id: "img_1",
+            thumbnail_path: "thumbnails/img_1.jpg",
+          },
+        ],
+        thumbnail_atlas: {
+          schema_version: 1,
+          asset_kind: "latent-map-thumbnail-atlas",
+          run_id: "run-1",
+          tile_size: 32,
+          atlas_size: 64,
+          image_count: 1,
+          page_count: 1,
+          pages: [
+            {
+              index: 0,
+              path: "viewer/atlases/32px/page-000.png",
+              width: 64,
+              height: 64,
+            },
+          ],
+          items: [
+            {
+              image_id: "img_1",
+              page_index: 0,
+              page_path: "viewer/atlases/32px/page-000.png",
+              source_thumbnail_path: "thumbnails/img_1.jpg",
+              tile_rect: [0, 0, 32, 32],
+              uv_rect: [0.0078125, 0.0078125, 0.484375, 0.484375],
+              width: 100,
+              height: 200,
+            },
+          ],
+        },
+      },
+    });
+
+    expect(data.thumbnail_atlas?.pages[0].path).toBe(
+      "/api/latent-map/thumbnails?run=run-1&path=viewer%2Fatlases%2F32px%2Fpage-000.png",
+    );
+    expect(data.thumbnail_atlas?.items[0].source_thumbnail_path).toBe(
+      "thumbnails/img_1.jpg",
+    );
+  });
 });

@@ -23,9 +23,10 @@ async function loadLatentMapViewerData() {
   const rawData = JSON.parse(
     await readFile(resolvedViewerDataPath, "utf-8"),
   ) as Parameters<typeof normalizeExportedLatentMapViewerData>[0]["rawData"];
-  const runDir =
+  const runDir = path.resolve(
     process.env.ANACRONIA_LATENT_MAP_RUN_DIR ??
-    path.dirname(path.dirname(resolvedViewerDataPath));
+      path.dirname(path.dirname(resolvedViewerDataPath)),
+  );
   let sourceFolder = "external-source";
 
   try {
@@ -36,6 +37,26 @@ async function loadLatentMapViewerData() {
   } catch {
     sourceFolder = String(
       process.env.ANACRONIA_LATENT_MAP_SOURCE_FOLDER ?? sourceFolder,
+    );
+  }
+
+  if (
+    !rawData.thumbnail_atlas &&
+    typeof rawData.thumbnail_atlas_manifest_path === "string" &&
+    rawData.thumbnail_atlas_manifest_path.length > 0
+  ) {
+    const atlasManifestPath = path.resolve(
+      runDir,
+      rawData.thumbnail_atlas_manifest_path,
+    );
+    if (
+      atlasManifestPath === runDir ||
+      !atlasManifestPath.startsWith(`${runDir}${path.sep}`)
+    ) {
+      throw new Error("Latent map atlas manifest is outside the run directory.");
+    }
+    rawData.thumbnail_atlas = JSON.parse(
+      await readFile(atlasManifestPath, "utf-8"),
     );
   }
 

@@ -1,6 +1,9 @@
 import json
 from datetime import datetime, timezone
 
+from PIL import Image
+
+from anacronia.latent_map_atlas import generate_latent_map_thumbnail_atlas
 from anacronia.latent_map_runs import initialize_latent_map_run
 from anacronia.latent_map_viewer_export import export_viewer_data
 
@@ -32,6 +35,12 @@ def create_viewer_run(tmp_path):
             "height": 200,
         },
     ]
+    for row in manifest_rows:
+        thumbnail_path = run.run_dir / str(row["thumbnail_path"])
+        Image.new("RGB", (48, 48), (160, 120, 80)).save(
+            thumbnail_path,
+            format="JPEG",
+        )
     (run.run_dir / "manifest.jsonl").write_text(
         "".join(json.dumps(row) + "\n" for row in manifest_rows),
         encoding="utf-8",
@@ -122,6 +131,26 @@ def test_exports_compact_viewer_data_with_neighbors(tmp_path):
             }
         ],
     }
+
+
+def test_exports_viewer_data_with_generated_atlas_manifest_path(tmp_path):
+    run = create_viewer_run(tmp_path)
+    atlas_summary = generate_latent_map_thumbnail_atlas(
+        run_dir=run.run_dir,
+        tile_size=32,
+        atlas_size=64,
+    )
+
+    summary = export_viewer_data(
+        run_dir=run.run_dir,
+        recipe_name="dinov3_vits_256",
+        thumbnail_atlas_manifest_path=atlas_summary.manifest_path,
+    )
+
+    data = json.loads(summary.viewer_data_path.read_text(encoding="utf-8"))
+    assert data["thumbnail_atlas_manifest_path"] == (
+        "viewer/atlases/32px/atlas-manifest.json"
+    )
 
 
 def test_export_rejects_missing_neighbor_references(tmp_path):

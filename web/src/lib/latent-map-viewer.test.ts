@@ -10,6 +10,8 @@ import {
   createLatentMapStats,
   findNearestLatentMapPoint,
   fitLatentMapPoints,
+  getLatentMapThumbnailOpacity,
+  isLatentMapThumbnailFocusActive,
 } from "@/lib/latent-map-viewer";
 
 describe("latent map viewer model", () => {
@@ -42,6 +44,46 @@ describe("latent map viewer model", () => {
     expect(stateById.img_vermilion).toBe("neighbor");
     expect(stateById.img_cobalt).toBe("neighbor");
     expect(stateById.img_teal).toBe("cluster");
+  });
+
+  it("dims non-neighbor thumbnails only while a FAISS focus is active", () => {
+    const focusedState = createLatentMapRenderState({
+      clusterColorsEnabled: true,
+      data: latentMapFixture,
+      selectedImageId: "img_saffron",
+    });
+    const unfocusedState = createLatentMapRenderState({
+      clusterColorsEnabled: true,
+      data: latentMapFixture,
+      selectedImageId: null,
+    });
+
+    expect(isLatentMapThumbnailFocusActive(focusedState)).toBe(true);
+    expect(
+      getLatentMapThumbnailOpacity({
+        focusActive: true,
+        pointState: "selected",
+      }),
+    ).toBe(1);
+    expect(
+      getLatentMapThumbnailOpacity({
+        focusActive: true,
+        pointState: "neighbor",
+      }),
+    ).toBe(1);
+    expect(
+      getLatentMapThumbnailOpacity({
+        focusActive: true,
+        pointState: "cluster",
+      }),
+    ).toBe(0.5);
+    expect(isLatentMapThumbnailFocusActive(unfocusedState)).toBe(false);
+    expect(
+      getLatentMapThumbnailOpacity({
+        focusActive: false,
+        pointState: "cluster",
+      }),
+    ).toBe(1);
   });
 
   it("plans all-image atlas thumbnail rendering from generated thumbnails", () => {
@@ -96,6 +138,68 @@ describe("latent map viewer model", () => {
     expect(saffronPlan.thumbnailPoints.map((point) => point.image_id)).toEqual(
       tealPlan.thumbnailPoints.map((point) => point.image_id),
     );
+  });
+
+  it("plans generated atlas assets without per-image base thumbnail textures", () => {
+    const renderState = createLatentMapRenderState({
+      clusterColorsEnabled: true,
+      data: latentMapFixture,
+      selectedImageId: "img_saffron",
+    });
+    const atlasItems = renderState.map((point, index) => ({
+      height: point.height,
+      image_id: point.image_id,
+      page_index: 0,
+      page_path: "viewer/atlases/32px/page-000.png",
+      source_thumbnail_path: point.thumbnail_path,
+      tile_rect: [index * 32, 0, 32, 32] as [number, number, number, number],
+      uv_rect: [0.0078125, 0.0078125, 0.1, 0.1] as [
+        number,
+        number,
+        number,
+        number,
+      ],
+      width: point.width,
+    }));
+
+    const plan = createLatentMapThumbnailRenderPlan({
+      points: renderState,
+      thumbnailAtlas: {
+        schema_version: 1,
+        asset_kind: "latent-map-thumbnail-atlas",
+        run_id: latentMapFixture.run_id,
+        tile_size: 32,
+        atlas_size: 256,
+        image_count: renderState.length,
+        page_count: 1,
+        pages: [
+          {
+            height: 256,
+            index: 0,
+            path: "/api/latent-map/thumbnails?run=run-1&path=viewer%2Fatlases%2F32px%2Fpage-000.png",
+            width: 256,
+          },
+        ],
+        items: atlasItems,
+      },
+      thumbnailSize: 32,
+    });
+
+    expect(plan.strategy).toBe("generated-atlas");
+    expect(plan.textureSources).toEqual([
+      "/api/latent-map/thumbnails?run=run-1&path=viewer%2Fatlases%2F32px%2Fpage-000.png",
+    ]);
+    expect(plan.thumbnailPoints).toHaveLength(8);
+    expect(plan.atlasPages).toHaveLength(1);
+    expect(plan.atlasPages[0].texturePath).toBe(
+      "/api/latent-map/thumbnails?run=run-1&path=viewer%2Fatlases%2F32px%2Fpage-000.png",
+    );
+    expect(plan.atlasPages[0].items[0].uvRect).toEqual([
+      0.0078125,
+      0.0078125,
+      0.1,
+      0.1,
+    ]);
   });
 
   it("keeps the old capped thumbnail sample available as an explicit fallback", () => {

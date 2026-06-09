@@ -12,6 +12,7 @@ from typing import Optional, TextIO
 import webbrowser
 
 from anacronia.latent_map_embeddings import DINO_EMBEDDING_RECIPES, embed_latent_map_run
+from anacronia.latent_map_atlas import generate_latent_map_thumbnail_atlas
 from anacronia.latent_map_faiss import build_faiss_index, query_faiss_neighbors
 from anacronia.latent_map_layout import build_latent_map_layout
 from anacronia.latent_map_runs import initialize_latent_map_run
@@ -436,28 +437,57 @@ def run_latent_map_layout(
     )
 
 
-def run_latent_map_viewer_export(
+def run_latent_map_atlas(
     *,
     run_dir: Path,
-    recipe_name: str,
+    tile_size: int,
+    atlas_size: int,
 ) -> None:
-    summary = export_viewer_data(
+    summary = generate_latent_map_thumbnail_atlas(
         run_dir=run_dir,
-        recipe_name=recipe_name,
+        tile_size=tile_size,
+        atlas_size=atlas_size,
     )
     print(
         json.dumps(
             {
                 "run_id": summary.run_id,
-                "recipe_name": summary.recipe_name,
-                "layout_id": summary.layout_id,
-                "cluster_id": summary.cluster_id,
-                "point_count": summary.point_count,
-                "viewer_data_path": str(summary.viewer_data_path),
+                "tile_size": summary.tile_size,
+                "atlas_size": summary.atlas_size,
+                "image_count": summary.image_count,
+                "page_count": summary.page_count,
+                "manifest_path": str(summary.manifest_path),
+                "total_page_bytes": summary.total_page_bytes,
             }
         ),
         flush=True,
     )
+
+
+def run_latent_map_viewer_export(
+    *,
+    run_dir: Path,
+    recipe_name: str,
+    thumbnail_atlas_manifest_path: Path | None = None,
+) -> None:
+    summary = export_viewer_data(
+        run_dir=run_dir,
+        recipe_name=recipe_name,
+        thumbnail_atlas_manifest_path=thumbnail_atlas_manifest_path,
+    )
+    output = {
+        "run_id": summary.run_id,
+        "recipe_name": summary.recipe_name,
+        "layout_id": summary.layout_id,
+        "cluster_id": summary.cluster_id,
+        "point_count": summary.point_count,
+        "viewer_data_path": str(summary.viewer_data_path),
+    }
+    if summary.thumbnail_atlas_manifest_path is not None:
+        output["thumbnail_atlas_manifest_path"] = str(
+            summary.thumbnail_atlas_manifest_path
+        )
+    print(json.dumps(output), flush=True)
 
 
 def main() -> None:
@@ -518,12 +548,25 @@ def main() -> None:
     latent_map_layout_parser.add_argument("--min-dist", type=float, default=0.05)
     latent_map_layout_parser.add_argument("--cluster-count", type=int, default=12)
     latent_map_layout_parser.add_argument("--random-state", type=int, default=42)
+    latent_map_atlas_parser = latent_map_subparsers.add_parser("atlas")
+    latent_map_atlas_parser.add_argument("--run-dir", required=True, type=Path)
+    latent_map_atlas_parser.add_argument(
+        "--tile-size",
+        choices=[32, 64, 96],
+        default=64,
+        type=int,
+    )
+    latent_map_atlas_parser.add_argument("--atlas-size", type=int, default=2048)
     latent_map_viewer_export_parser = latent_map_subparsers.add_parser("viewer-export")
     latent_map_viewer_export_parser.add_argument("--run-dir", required=True, type=Path)
     latent_map_viewer_export_parser.add_argument(
         "--recipe",
         choices=sorted(DINO_EMBEDDING_RECIPES),
         default="dinov3_vits_256",
+    )
+    latent_map_viewer_export_parser.add_argument(
+        "--thumbnail-atlas-manifest",
+        type=Path,
     )
     args = parser.parse_args()
 
@@ -587,10 +630,19 @@ def main() -> None:
         )
         return
 
+    if args.command == "latent-map" and args.latent_map_command == "atlas":
+        run_latent_map_atlas(
+            run_dir=args.run_dir,
+            tile_size=args.tile_size,
+            atlas_size=args.atlas_size,
+        )
+        return
+
     if args.command == "latent-map" and args.latent_map_command == "viewer-export":
         run_latent_map_viewer_export(
             run_dir=args.run_dir,
             recipe_name=args.recipe,
+            thumbnail_atlas_manifest_path=args.thumbnail_atlas_manifest,
         )
         return
 

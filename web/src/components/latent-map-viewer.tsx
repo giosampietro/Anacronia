@@ -115,9 +115,10 @@ export function LatentMapViewer({
         hoverPreviewSize: DEFAULT_LATENT_MAP_HOVER_PREVIEW_SIZE,
         points: renderPoints,
         strategy: "all-atlas",
+        thumbnailAtlas: data.thumbnail_atlas,
         thumbnailSize,
       }),
-    [renderPoints, thumbnailSize],
+    [data.thumbnail_atlas, renderPoints, thumbnailSize],
   );
   const runtimeState = useMemo<LatentMapRuntimeState>(
     () => ({
