@@ -150,7 +150,7 @@ describe("latent map viewer model", () => {
     expect(plan.capped).toBe(false);
     expect(plan.strategy).toBe("all-atlas");
     expect(plan.thumbnailSize).toBe(64);
-    expect(plan.hoverPreviewSize).toBe(256);
+    expect(plan.hoverPreviewSize).toBe(512);
     expect(plan.thumbnailPoints).toHaveLength(8);
     expect(plan.atlasPages).toHaveLength(1);
     expect(plan.atlasPages[0].tileSize).toBe(64);

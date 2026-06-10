@@ -1441,7 +1441,7 @@ export function LatentMapViewer({
               alt=""
               className="block size-full object-contain"
               height={hoverPreviewBox.height}
-              src={hoveredPoint.thumbnail_path}
+              src={hoveredPoint.preview_path ?? hoveredPoint.thumbnail_path}
               unoptimized
               width={hoverPreviewBox.width}
             />

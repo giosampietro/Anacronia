@@ -76,6 +76,9 @@ def export_viewer_data(
                 "y": float(point["y"]),
                 "cluster_id": cluster_by_id[image_id],
                 "thumbnail_path": str(manifest.get("thumbnail_path", "")),
+                "preview_path": str(
+                    manifest.get("preview_path") or manifest.get("thumbnail_path", "")
+                ),
                 "relative_path": str(manifest.get("relative_path", "")),
                 "width": manifest.get("width"),
                 "height": manifest.get("height"),

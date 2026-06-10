@@ -50,14 +50,34 @@ def test_scans_supported_formats_and_writes_manifest_thumbnails(tmp_path):
     assert {row["extension"] for row in manifest} == {"jpg", "webp"}
     for row in manifest:
         thumbnail_path = run.run_dir / row["thumbnail_path"]
+        preview_path = run.run_dir / row["preview_path"]
         assert thumbnail_path.is_file()
         assert thumbnail_path.parent == run.run_dir / "thumbnails"
+        assert preview_path.is_file()
+        assert preview_path.parent == run.run_dir / "previews"
         assert row["width"] > 0
         assert row["height"] > 0
     report = (run.run_dir / "report.md").read_text(encoding="utf-8")
     assert "- Supported files: 2" in report
     assert "- Manifest images: 2" in report
     assert "- Skipped files: 1" in report
+
+
+def test_scan_writes_1024_long_edge_hover_previews(tmp_path):
+    source_folder = tmp_path / "source-images"
+    write_image(source_folder / "large.jpg", size=(2400, 1200))
+    run = create_run(tmp_path, source_folder)
+
+    scan_latent_map_run(run.run_dir)
+
+    manifest = read_manifest(run.run_dir)
+    thumbnail_path = run.run_dir / manifest[0]["thumbnail_path"]
+    preview_path = run.run_dir / manifest[0]["preview_path"]
+
+    with Image.open(thumbnail_path) as thumbnail:
+        assert max(thumbnail.size) == 256
+    with Image.open(preview_path) as preview:
+        assert max(preview.size) == 1024
 
 
 def test_scan_uses_stable_image_ids_and_does_not_mutate_sources(tmp_path):

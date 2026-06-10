@@ -31,6 +31,7 @@ describe("loadLatentMapRunExportedViewerData", () => {
         JSON.stringify({
           height: 600,
           image_id: "img_1",
+          preview_path: "previews/img_1.jpg",
           relative_path: "set/img_1.jpg",
           thumbnail_path: "thumbnails/img_1.jpg",
           width: 800,
@@ -38,6 +39,7 @@ describe("loadLatentMapRunExportedViewerData", () => {
         JSON.stringify({
           height: 400,
           image_id: "img_2",
+          preview_path: "previews/img_2.jpg",
           relative_path: "set/img_2.jpg",
           thumbnail_path: "thumbnails/img_2.jpg",
           width: 500,
@@ -157,6 +159,7 @@ describe("loadLatentMapRunExportedViewerData", () => {
       expect.objectContaining({
         cluster_id: 7,
         image_id: "img_1",
+        preview_path: "previews/img_1.jpg",
         relative_path: "set/img_1.jpg",
         thumbnail_path: "thumbnails/img_1.jpg",
         x: 3,

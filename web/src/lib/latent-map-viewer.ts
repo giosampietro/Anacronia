@@ -9,6 +9,7 @@ export type LatentMapPoint = {
   y: number;
   cluster_id: number;
   thumbnail_path: string;
+  preview_path?: string;
   source_path?: string;
   relative_path: string;
   width: number;
@@ -211,7 +212,7 @@ export type LatentMapThumbnailRendererComparison = {
 export const DEFAULT_LATENT_MAP_THUMBNAIL_CAP = 420;
 export const DEFAULT_LATENT_MAP_THUMBNAIL_SIZE: LatentMapThumbnailSize = 64;
 export const DEFAULT_LATENT_MAP_TEXTURE_DETAIL: LatentMapTextureDetail = "auto";
-export const DEFAULT_LATENT_MAP_HOVER_PREVIEW_SIZE = 256;
+export const DEFAULT_LATENT_MAP_HOVER_PREVIEW_SIZE = 512;
 export const LATENT_MAP_THUMBNAIL_SIZE_OPTIONS = [32, 64, 96] as const;
 export const LATENT_MAP_DEFAULT_POINT_SIZE = 9;
 export const LATENT_MAP_FOCUS_BACKGROUND_POINT_SIZE = 3;

@@ -44,6 +44,7 @@ describe("normalizeExportedLatentMapViewerData", () => {
             y: -0.5,
             cluster_id: 4,
             thumbnail_path: "thumbnails/img_1.jpg",
+            preview_path: "previews/img_1.jpg",
             source_path: "/source/images/original.jpg",
             relative_path: "original.jpg",
             width: 800,
@@ -89,6 +90,7 @@ describe("normalizeExportedLatentMapViewerData", () => {
       image_id: "img_1",
       thumbnail_path:
         "/api/latent-map/thumbnails?path=thumbnails%2Fimg_1.jpg",
+      preview_path: "/api/latent-map/thumbnails?path=previews%2Fimg_1.jpg",
       source_path: "",
       relative_path: "original.jpg",
     });
@@ -97,6 +99,7 @@ describe("normalizeExportedLatentMapViewerData", () => {
     );
     expect(data.points[0].neighbors).toEqual([]);
     expect(data.points[0].thumbnail_path).not.toContain("original.jpg");
+    expect(data.points[0].preview_path).not.toContain("original.jpg");
   });
 
   it("preserves existing thumbnail API query params", () => {
@@ -114,6 +117,9 @@ describe("normalizeExportedLatentMapViewerData", () => {
     });
 
     expect(data.points[0].thumbnail_path).toBe(
+      "/api/latent-map/thumbnails?run=run-1&path=thumbnails%2Fimg_1.jpg",
+    );
+    expect(data.points[0].preview_path).toBe(
       "/api/latent-map/thumbnails?run=run-1&path=thumbnails%2Fimg_1.jpg",
     );
   });

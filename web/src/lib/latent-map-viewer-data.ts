@@ -93,6 +93,7 @@ export function normalizeExportedLatentMapViewerData({
     ...(thumbnailAtlases.length > 0 ? { thumbnail_atlases: thumbnailAtlases } : {}),
     points: points.map((point): LatentMapPoint => {
       const thumbnailPath = String(point.thumbnail_path ?? "");
+      const previewPath = String(point.preview_path ?? thumbnailPath);
 
       return {
         image_id: String(point.image_id ?? ""),
@@ -102,6 +103,10 @@ export function normalizeExportedLatentMapViewerData({
         thumbnail_path: createResourceUrl({
           apiPath: thumbnailApiPath,
           resourcePath: thumbnailPath,
+        }),
+        preview_path: createResourceUrl({
+          apiPath: thumbnailApiPath,
+          resourcePath: previewPath,
         }),
         source_path: "",
         relative_path: String(point.relative_path ?? ""),

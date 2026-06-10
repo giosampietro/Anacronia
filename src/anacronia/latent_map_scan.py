@@ -9,6 +9,7 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 
 
 THUMBNAIL_SIZE = (256, 256)
+PREVIEW_SIZE = (1024, 1024)
 
 
 @dataclass(frozen=True)
@@ -48,7 +49,9 @@ def scan_latent_map_run(run_dir: Path) -> LatentMapScanSummary:
     skipped_files: list[LatentMapSkippedFile] = []
     supported_file_count = 0
     thumbnail_dir = resolved_run_dir / "thumbnails"
+    preview_dir = resolved_run_dir / "previews"
     thumbnail_dir.mkdir(parents=True, exist_ok=True)
+    preview_dir.mkdir(parents=True, exist_ok=True)
 
     for path in _discover_files(source_folder):
         relative_path = path.relative_to(source_folder).as_posix()
@@ -70,9 +73,14 @@ def scan_latent_map_run(run_dir: Path) -> LatentMapScanSummary:
                 width, height = image.size
                 image_id = _image_id(relative_path=relative_path, file_hash=file_hash)
                 thumbnail_path = thumbnail_dir / f"{image_id}.jpg"
-                thumbnail = image.convert("RGB")
+                preview_path = preview_dir / f"{image_id}.jpg"
+                rgb_image = image.convert("RGB")
+                thumbnail = rgb_image.copy()
                 thumbnail.thumbnail(THUMBNAIL_SIZE, Image.Resampling.LANCZOS)
                 thumbnail.save(thumbnail_path, format="JPEG", quality=85)
+                preview = rgb_image.copy()
+                preview.thumbnail(PREVIEW_SIZE, Image.Resampling.LANCZOS)
+                preview.save(preview_path, format="JPEG", quality=90)
         except (OSError, UnidentifiedImageError, ValueError):
             skipped_files.append(
                 LatentMapSkippedFile(
@@ -96,6 +104,7 @@ def scan_latent_map_run(run_dir: Path) -> LatentMapScanSummary:
                 "height": height,
                 "subfolder": "" if subfolder == "." else subfolder,
                 "thumbnail_path": thumbnail_path.relative_to(resolved_run_dir).as_posix(),
+                "preview_path": preview_path.relative_to(resolved_run_dir).as_posix(),
             }
         )
 

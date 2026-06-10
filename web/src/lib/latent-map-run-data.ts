@@ -8,6 +8,7 @@ export const LATENT_MAP_RUNS_ROOT = "/private/tmp/anacronia-latent-map-runs";
 type ManifestRow = {
   height?: unknown;
   image_id?: unknown;
+  preview_path?: unknown;
   relative_path?: unknown;
   thumbnail_path?: unknown;
   width?: unknown;
@@ -152,6 +153,9 @@ export async function loadLatentMapRunExportedViewerData({
         cluster_id: Number(clusterPoint?.cluster_id ?? 0),
         height: Number(manifestRow?.height ?? 1),
         image_id: imageId,
+        preview_path: String(
+          manifestRow?.preview_path ?? manifestRow?.thumbnail_path ?? "",
+        ),
         relative_path: String(manifestRow?.relative_path ?? ""),
         thumbnail_path: String(manifestRow?.thumbnail_path ?? ""),
         width: Number(manifestRow?.width ?? 1),
