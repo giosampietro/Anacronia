@@ -26,19 +26,21 @@ The user should perceive improved sharpness, not layout shifts or thumbnails pop
 Expose two separate controls:
 
 - `Thumb size`: `Small`, `Medium`, `Large`
-- `Texture detail`: `Auto`, `32px`, `64px`, `96px`
+- `Texture detail`: `Auto`, plus the generated atlas sizes available for the current run
 
 Default:
 
 - `Thumb size`: `Medium`
 - `Texture detail`: `Auto`
 
-`Thumb size` controls visual scale only. `Texture detail` controls which generated atlas backs the same thumbnail quads. `Auto` should be the normal user path; fixed `32px`, `64px`, and `96px` are useful for comparison, QA, and performance debugging.
+`Thumb size` controls visual scale only. `Texture detail` controls which generated atlas backs the same thumbnail quads. `Auto` should be the normal user path; fixed atlas sizes are useful for comparison, QA, and performance debugging.
+
+The current J Shoot run has `32px`, `64px`, and `96px` atlases. Future runs may add levels such as `16px`, `128px`, or `256px`; the UI should render manual options from the run manifest instead of hard-coding three choices.
 
 Keep URL state durable:
 
 - Keep `thumb` for the user-facing thumbnail display size.
-- Add `detail=auto|32|64|96` for texture detail.
+- Add `detail=auto|<atlasTileSize>` for texture detail.
 - Existing URLs with only `thumb=32|64|96` should still load. During the transition, interpret `thumb` as the display-size request and default `detail` to `auto`.
 
 ## Planning Inputs
@@ -105,6 +107,30 @@ createLatentMapThumbnailRenderPlan({
 
 The render infrastructure may rebuild internal atlas-page batches when the selected texture atlas changes, because `32px`, `64px`, and `96px` atlases have different page counts and UV rects. That is acceptable as implementation detail. The visible geometry contract must remain unchanged: same logical thumbnails, positions, and screen/world scale.
 
+Do not encode valid atlas sizes as a TypeScript union like `32 | 64 | 96` in the LOD layer. Use numeric tile sizes discovered from `data.thumbnail_atlases`, sorted ascending. The current generator can still validate supported sizes separately until more atlas sizes are intentionally added.
+
+## LOD Ladder
+
+The first shipping ladder should remain:
+
+```text
+32px -> 64px -> 96px
+```
+
+The plan should support a larger ladder:
+
+```text
+16px -> 32px -> 64px -> 96px -> 128px -> 256px
+```
+
+Do not generate or load every possible level by default. Each level has a different cost profile:
+
+- `16px`: cheap and useful for very zoomed-out texture previews, but may be visually too abstract.
+- `128px`: useful for close inspection, but increases atlas page count and decoded texture memory.
+- `256px`: only reasonable after viewport-aware atlas-page loading, because all-atlas loading would create too many live textures for 3k+ images.
+
+For the current all-thumbnails/all-atlas renderer, `32/64/96` is the practical upper bound. Introduce `128/256` only when the runtime can load atlas pages by viewport/focus set and evict pages outside a memory budget.
+
 ## Auto Selection
 
 Use a pure helper in `web/src/lib/`:
@@ -118,6 +144,8 @@ selectLatentMapTextureDetail({
 });
 ```
 
+`availableDetails` should come from loaded run data, not from a fixed enum.
+
 In `auto`, calculate `displayThumbnailScreenLongSide` from the same scale math used by the runtime:
 
 ```text
@@ -127,6 +155,14 @@ screenLongSide = displayWorldLongSide * viewportHeight * zoom / 2
 Use hysteresis with the previous resolved detail to avoid rapid flips near thresholds.
 
 If the desired atlas is missing, choose the nearest available detail. Prefer the next sharper atlas for selected and FAISS neighbor thumbnails when available.
+
+For arbitrary future ladders, avoid hard-coded thresholds per size. Start from a general rule:
+
+```text
+choose the smallest atlas tile size >= target screen long side * qualityRatio
+```
+
+Use `qualityRatio` around `1.0` for normal thumbnails, then tune against real images. Apply hysteresis around the resolved neighboring levels rather than around fixed `32/64/96` boundaries.
 
 ## Runtime Loading
 
@@ -141,7 +177,7 @@ Do not rely on WebGL mipmaps as the first implementation of product LOD. Atlas m
 
 ## Initial Auto Thresholds
 
-Start with screen-space thresholds based on thumbnail long-side size:
+Start with screen-space thresholds based on thumbnail long-side size for the current `32/64/96` ladder:
 
 - Use `32px` atlas below `42px` on screen.
 - Use `64px` atlas from `42px` to `86px`.
@@ -154,9 +190,11 @@ Add hysteresis:
 
 These numbers are starting points and should be tuned against the J Shoot run.
 
+If `16px`, `128px`, or `256px` are added later, replace the fixed threshold table with the general selector above and per-run tuning data.
+
 ## Implementation Steps
 
-1. Add `TextureDetailMode = "auto" | 32 | 64 | 96`.
+1. Add `TextureDetailMode = "auto" | number`, backed by validated available atlas sizes from the run.
 2. Add display-size state that is separate from generated atlas tile size.
 3. Update URL parsing/serialization for `detail`.
 4. Add the pure texture-detail selector with hysteresis tests.
@@ -173,6 +211,7 @@ These numbers are starting points and should be tuned against the J Shoot run.
 - Do not introduce collision avoidance or representative sampling here.
 - Do not load original full-size images for the map.
 - Do not make selected thumbnails physically larger as part of texture LOD.
+- Do not generate `128px` or `256px` atlases by default until atlas-page caching exists.
 
 ## Acceptance Criteria
 
