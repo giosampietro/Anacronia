@@ -1,7 +1,10 @@
 import {
+  DEFAULT_LATENT_MAP_TEXTURE_DETAIL,
   DEFAULT_LATENT_MAP_THUMBNAIL_SIZE,
   LATENT_MAP_THUMBNAIL_SIZE_OPTIONS,
+  getLatentMapAvailableTextureDetails,
   type LatentMapRenderMode,
+  type LatentMapTextureDetail,
   type LatentMapThumbnailSize,
   type LatentMapViewerData,
 } from "@/lib/latent-map-viewer";
@@ -19,6 +22,7 @@ export type LatentMapFilterState = {
 export type LatentMapDurableState = LatentMapFilterState & {
   renderMode: LatentMapRenderMode;
   selectedImageId: string | null;
+  textureDetail: LatentMapTextureDetail;
   thumbnailSize: LatentMapThumbnailSize;
   view: LatentMapViewState;
 };
@@ -38,6 +42,7 @@ export const DEFAULT_LATENT_MAP_DURABLE_STATE: LatentMapDurableState = {
   ...DEFAULT_LATENT_MAP_FILTERS,
   renderMode: "points",
   selectedImageId: null,
+  textureDetail: DEFAULT_LATENT_MAP_TEXTURE_DETAIL,
   thumbnailSize: DEFAULT_LATENT_MAP_THUMBNAIL_SIZE,
   view: DEFAULT_VIEW,
 };
@@ -101,6 +106,9 @@ export function parseLatentMapUrlState(
   const filterOptions = createLatentMapFilterOptions(data);
   const modeParam = searchParams.get("mode");
   const thumbParam = Number(searchParams.get("thumb"));
+  const detailParam = searchParams.get("detail");
+  const detailNumber = Number(detailParam);
+  const availableTextureDetails = getLatentMapAvailableTextureDetails(data);
   const clusterParam = searchParams.get("cluster");
   const sourceParam = searchParams.get("source");
   const offsetX = Number(searchParams.get("x"));
@@ -128,6 +136,12 @@ export function parseLatentMapUrlState(
     renderMode: modeParam === "thumbnails" ? "thumbnails" : "points",
     selectedImageId: selectedExists ? selectedParam : null,
     sourceFilter,
+    textureDetail:
+      detailParam === null || detailParam === "auto"
+        ? DEFAULT_LATENT_MAP_TEXTURE_DETAIL
+        : availableTextureDetails.includes(detailNumber)
+          ? detailNumber
+          : DEFAULT_LATENT_MAP_TEXTURE_DETAIL,
     thumbnailSize: LATENT_MAP_THUMBNAIL_SIZE_OPTIONS.includes(
       thumbParam as LatentMapThumbnailSize,
     )
@@ -157,6 +171,7 @@ export function serializeLatentMapUrlState(
   searchParams.set("clusterResult", data.cluster_id);
   searchParams.set("mode", state.renderMode);
   searchParams.set("thumb", String(state.thumbnailSize));
+  searchParams.set("detail", String(state.textureDetail));
 
   if (state.selectedImageId) {
     searchParams.set("selected", state.selectedImageId);

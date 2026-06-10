@@ -49,6 +49,7 @@ describe("latent map viewer state", () => {
       renderMode: "thumbnails",
       selectedImageId: "img_saffron",
       sourceFilter: "set-a",
+      textureDetail: "auto",
       thumbnailSize: 96,
       view: {
         offsetX: 0.2,
@@ -71,6 +72,7 @@ describe("latent map viewer state", () => {
       renderMode: "points",
       selectedImageId: null,
       sourceFilter: "all",
+      textureDetail: "auto",
       thumbnailSize: 64,
       view: {
         offsetX: 0,
@@ -88,6 +90,7 @@ describe("latent map viewer state", () => {
           renderMode: "thumbnails",
           selectedImageId: "img_cobalt",
           sourceFilter: "set-b",
+          textureDetail: 96,
           thumbnailSize: 32,
           view: {
             offsetX: 0.125,
@@ -98,7 +101,37 @@ describe("latent map viewer state", () => {
         latentMapFixture,
       ).toString(),
     ).toBe(
-      "run=prototype-fixture-8&recipe=dinov3_vits_256&layout=umap_n4_mindist0p05_seed42&clusterResult=kmeans_k3_seed42&mode=thumbnails&thumb=32&selected=img_cobalt&cluster=1&source=set-b&x=0.125&y=-0.25&z=1.5",
+      "run=prototype-fixture-8&recipe=dinov3_vits_256&layout=umap_n4_mindist0p05_seed42&clusterResult=kmeans_k3_seed42&mode=thumbnails&thumb=32&detail=96&selected=img_cobalt&cluster=1&source=set-b&x=0.125&y=-0.25&z=1.5",
     );
+  });
+
+  it("parses manual texture detail only when the run advertises that atlas", () => {
+    expect(
+      parseLatentMapUrlState(
+        new URLSearchParams("mode=thumbnails&thumb=32&detail=96"),
+        {
+          ...latentMapFixture,
+          thumbnail_atlases: [
+            {
+              schema_version: 1,
+              asset_kind: "latent-map-thumbnail-atlas",
+              run_id: latentMapFixture.run_id,
+              tile_size: 96,
+              atlas_size: 512,
+              image_count: 0,
+              page_count: 0,
+              pages: [],
+              items: [],
+            },
+          ],
+        },
+      ).textureDetail,
+    ).toBe(96);
+    expect(
+      parseLatentMapUrlState(
+        new URLSearchParams("mode=thumbnails&thumb=32&detail=128"),
+        latentMapFixture,
+      ).textureDetail,
+    ).toBe("auto");
   });
 });

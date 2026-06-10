@@ -172,6 +172,7 @@ describe("LatentMapViewer", () => {
           renderMode: "thumbnails",
           selectedImageId: null,
           sourceFilter: "all",
+          textureDetail: "auto",
           thumbnailSize: 96,
           view: {
             offsetX: 0,
@@ -184,9 +185,49 @@ describe("LatentMapViewer", () => {
 
     expect(html).toContain("data-render-mode=\"thumbnails\"");
     expect(html).toContain("data-thumbnail-size=\"96\"");
+    expect(html).toContain("data-thumbnail-display-size=\"96\"");
     expect(html).toContain("data-thumbnail-atlas-tile-size=\"96\"");
+    expect(html).toContain("data-thumbnail-resolved-texture-detail=\"96\"");
+    expect(html).toContain("data-thumbnail-texture-detail=\"auto\"");
     expect(html).toContain("data-thumbnail-strategy=\"generated-atlas\"");
+    expect(html).toContain("name=\"latent-map-texture-detail\"");
     expect(html).toContain("96px");
+  });
+
+  it("can server-render visual thumbnail size separately from texture detail", () => {
+    const html = renderToString(
+      <LatentMapViewer
+        data={{
+          ...latentMapFixture,
+          thumbnail_atlases: [
+            createFixtureAtlas(32),
+            createFixtureAtlas(64),
+            createFixtureAtlas(96),
+          ],
+        }}
+        initialState={{
+          clusterFilter: "all",
+          renderMode: "thumbnails",
+          selectedImageId: null,
+          sourceFilter: "all",
+          textureDetail: 96,
+          thumbnailSize: 32,
+          view: {
+            offsetX: 0,
+            offsetY: 0,
+            zoom: 1,
+          },
+        }}
+      />,
+    ).replaceAll("<!-- -->", "");
+
+    expect(html).toContain("data-thumbnail-size=\"32\"");
+    expect(html).toContain("data-thumbnail-display-size=\"32\"");
+    expect(html).toContain("data-thumbnail-atlas-tile-size=\"96\"");
+    expect(html).toContain("data-thumbnail-resolved-texture-detail=\"96\"");
+    expect(html).toContain("data-thumbnail-texture-detail=\"96\"");
+    expect(html).toContain("name=\"latent-map-thumbnail-size\"");
+    expect(html).toContain("name=\"latent-map-texture-detail\"");
   });
 
   it("renders FAISS focus thumbnails over small background points", () => {

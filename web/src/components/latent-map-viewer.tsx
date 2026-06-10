@@ -27,12 +27,15 @@ import {
   createLatentMapPointLayerPlan,
   createLatentMapRenderState,
   createLatentMapStats,
+  getLatentMapAvailableTextureDetails,
   getNextLatentMapSelection,
   getLatentMapThumbnailAtlasForSize,
   DEFAULT_LATENT_MAP_HOVER_PREVIEW_SIZE,
   LATENT_MAP_THUMBNAIL_SIZE_OPTIONS,
+  resolveLatentMapTextureDetail,
   type LatentMapRenderMode,
   type LatentMapRuntimePerformanceInfo,
+  type LatentMapTextureDetail,
   type LatentMapRuntimeRendererInfo,
   type LatentMapThumbnailSize,
   type LatentMapViewerData,
@@ -224,6 +227,8 @@ export function LatentMapViewer({
   const [loadedThumbnailCount, setLoadedThumbnailCount] = useState(0);
   const [thumbnailSize, setThumbnailSize] =
     useState<LatentMapThumbnailSize>(initialDurableState.thumbnailSize);
+  const [textureDetail, setTextureDetail] =
+    useState<LatentMapTextureDetail>(initialDurableState.textureDetail);
   const [view, setView] = useState<LatentMapViewState>(
     initialDurableState.view,
   );
@@ -288,9 +293,22 @@ export function LatentMapViewer({
         width: hoveredPoint.width,
       })
     : null;
+  const textureDetailOptions = useMemo(
+    () => getLatentMapAvailableTextureDetails(data),
+    [data],
+  );
+  const resolvedTextureDetail = useMemo(
+    () =>
+      resolveLatentMapTextureDetail({
+        data,
+        textureDetail,
+        thumbnailSize,
+      }),
+    [data, textureDetail, thumbnailSize],
+  );
   const thumbnailAtlas = useMemo(
-    () => getLatentMapThumbnailAtlasForSize(data, thumbnailSize),
-    [data, thumbnailSize],
+    () => getLatentMapThumbnailAtlasForSize(data, resolvedTextureDetail),
+    [data, resolvedTextureDetail],
   );
   const thumbnailPlan = useMemo(
     () =>
@@ -299,10 +317,11 @@ export function LatentMapViewer({
         hoverPreviewSize: DEFAULT_LATENT_MAP_HOVER_PREVIEW_SIZE,
         points: renderPoints,
         strategy: "all-atlas",
+        textureDetail,
         thumbnailAtlas,
         thumbnailSize,
       }),
-    [renderPoints, thumbnailAtlas, thumbnailSize],
+    [renderPoints, textureDetail, thumbnailAtlas, thumbnailSize],
   );
   const pointLayer = useMemo(
     () =>
@@ -414,6 +433,7 @@ export function LatentMapViewer({
         renderMode,
         selectedImageId,
         sourceFilter,
+        textureDetail,
         thumbnailSize,
         view,
       },
@@ -430,6 +450,7 @@ export function LatentMapViewer({
     renderMode,
     selectedImageId,
     sourceFilter,
+    textureDetail,
     thumbnailSize,
     view,
   ]);
@@ -657,6 +678,7 @@ export function LatentMapViewer({
           renderMode,
           selectedImageId,
           sourceFilter,
+          textureDetail,
           thumbnailSize,
           view,
         },
@@ -678,6 +700,7 @@ export function LatentMapViewer({
       renderMode,
       selectedImageId,
       sourceFilter,
+      textureDetail,
       thumbnailSize,
       view,
     ],
@@ -925,31 +948,62 @@ export function LatentMapViewer({
             </ToggleGroupItem>
           </ToggleGroup>
           {renderMode === "thumbnails" ? (
-            <NativeSelect
-              aria-label="Thumbnail size"
-              className="w-[84px]"
-              id="latent-map-thumbnail-size"
-              name="latent-map-thumbnail-size"
-              onChange={(event) => {
-                const nextSize = Number(event.currentTarget.value);
+            <>
+              <NativeSelect
+                aria-label="Thumbnail size"
+                className="w-[84px]"
+                id="latent-map-thumbnail-size"
+                name="latent-map-thumbnail-size"
+                onChange={(event) => {
+                  const nextSize = Number(event.currentTarget.value);
 
-                if (
-                  LATENT_MAP_THUMBNAIL_SIZE_OPTIONS.includes(
-                    nextSize as LatentMapThumbnailSize,
-                  )
-                ) {
-                  setThumbnailSize(nextSize as LatentMapThumbnailSize);
-                }
-              }}
-              size="sm"
-              value={String(thumbnailSize)}
-            >
-              {LATENT_MAP_THUMBNAIL_SIZE_OPTIONS.map((size) => (
-                <NativeSelectOption key={size} value={size}>
-                  {size}px
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
+                  if (
+                    LATENT_MAP_THUMBNAIL_SIZE_OPTIONS.includes(
+                      nextSize as LatentMapThumbnailSize,
+                    )
+                  ) {
+                    setThumbnailSize(nextSize as LatentMapThumbnailSize);
+                  }
+                }}
+                size="sm"
+                value={String(thumbnailSize)}
+              >
+                {LATENT_MAP_THUMBNAIL_SIZE_OPTIONS.map((size) => (
+                  <NativeSelectOption key={size} value={size}>
+                    {size}px
+                  </NativeSelectOption>
+                ))}
+              </NativeSelect>
+              {textureDetailOptions.length > 0 ? (
+                <NativeSelect
+                  aria-label="Texture detail"
+                  className="w-[92px]"
+                  id="latent-map-texture-detail"
+                  name="latent-map-texture-detail"
+                  onChange={(event) => {
+                    const value = event.currentTarget.value;
+                    const nextDetail =
+                      value === "auto" ? "auto" : Number(value);
+
+                    if (
+                      nextDetail === "auto" ||
+                      textureDetailOptions.includes(nextDetail)
+                    ) {
+                      setTextureDetail(nextDetail);
+                    }
+                  }}
+                  size="sm"
+                  value={String(textureDetail)}
+                >
+                  <NativeSelectOption value="auto">Auto</NativeSelectOption>
+                  {textureDetailOptions.map((detail) => (
+                    <NativeSelectOption key={detail} value={detail}>
+                      {detail}px
+                    </NativeSelectOption>
+                  ))}
+                </NativeSelect>
+              ) : null}
+            </>
           ) : null}
           <Tooltip>
             <TooltipTrigger
@@ -1025,6 +1079,7 @@ export function LatentMapViewer({
           }
           data-thumbnail-hover-preview-size={thumbnailPlan.hoverPreviewSize}
           data-thumbnail-atlas-tile-size={thumbnailAtlas?.tile_size ?? 0}
+          data-thumbnail-display-size={thumbnailPlan.displayThumbnailSize}
           data-thumbnail-instanced-draw-calls={
             renderMode === "thumbnails"
               ? thumbnailRendererComparison.instancedAtlas.drawCalls
@@ -1039,6 +1094,9 @@ export function LatentMapViewer({
             thumbnailRendererComparison.recommendation
           }
           data-thumbnail-renderer="instanced-atlas"
+          data-thumbnail-resolved-texture-detail={
+            thumbnailPlan.resolvedTextureDetail
+          }
           data-thumbnail-size={thumbnailPlan.thumbnailSize}
           data-thumbnail-sprite-baseline-draw-calls={
             renderMode === "thumbnails"
@@ -1052,6 +1110,7 @@ export function LatentMapViewer({
           }
           data-thumbnail-source-kind="generated"
           data-thumbnail-strategy={thumbnailPlan.strategy}
+          data-thumbnail-texture-detail={thumbnailPlan.textureDetail}
           data-testid="latent-map-canvas"
           onPointerDown={handlePointerDown}
           onPointerLeave={() => {

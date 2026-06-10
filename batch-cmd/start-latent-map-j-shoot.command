@@ -6,8 +6,11 @@ cd "$(dirname "$0")/.."
 RUN_ID="20260609T130049Z-mvp1-j-shoot-20260609"
 RUN_DIR="/private/tmp/anacronia-latent-map-runs/$RUN_ID"
 VIEWER_DATA="$RUN_DIR/viewer/map-data.json"
-APP_ORIGIN="http://localhost:18660"
-LATENT_MAP_URL="$APP_ORIGIN/latent-map?run=$RUN_ID&recipe=dinov3_vits_256&layout=umap_n15_mindist0p05_seed42&clusterResult=kmeans_k12_seed42&mode=thumbnails&thumb=96&z=24"
+WORKTREE_DATA_ROOT="/private/tmp/anacronia-latent-map-worktree-data"
+APP_UI_PORT="18661"
+APP_API_PORT="18671"
+APP_ORIGIN="http://localhost:$APP_UI_PORT"
+LATENT_MAP_URL="$APP_ORIGIN/latent-map?run=$RUN_ID&recipe=dinov3_vits_256&layout=umap_n15_mindist0p05_seed42&clusterResult=kmeans_k12_seed42&mode=thumbnails&thumb=96&detail=auto&z=24"
 WATCHER_PID=""
 
 finish() {
@@ -51,8 +54,8 @@ if [ ! -f "$VIEWER_DATA" ]; then
 fi
 
 if curl --silent --fail --max-time 2 "$APP_ORIGIN" >/dev/null 2>&1; then
-  echo "Port 18660 is already serving an app."
-  echo "Close the other Anacronia Terminal window first, then run this launcher again."
+  echo "Port $APP_UI_PORT is already serving an app."
+  echo "Close the other latent-map worktree Terminal window first, then run this launcher again."
   exit 1
 fi
 
@@ -69,6 +72,8 @@ done
 
 export ANACRONIA_LATENT_MAP_RUN_DIR="$RUN_DIR"
 export ANACRONIA_LATENT_MAP_VIEWER_DATA="$VIEWER_DATA"
+export ANACRONIA_DATA_ROOT="$WORKTREE_DATA_ROOT"
+mkdir -p "$ANACRONIA_DATA_ROOT"
 
 (
   for _ in {1..120}; do
@@ -86,4 +91,4 @@ WATCHER_PID=$!
 echo "Leave this window open while using the latent map."
 echo
 
-.venv/bin/anacronia --no-open
+.venv/bin/anacronia --no-open --ui-port "$APP_UI_PORT" --api-port "$APP_API_PORT"

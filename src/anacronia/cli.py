@@ -556,6 +556,8 @@ def run_latent_map_result_export(
 def main() -> None:
     parser = argparse.ArgumentParser(prog="anacronia")
     parser.add_argument("--no-open", action="store_true", help="Print the local URL without opening a browser.")
+    parser.add_argument("--ui-port", type=int, help="Port for the local Next.js UI.")
+    parser.add_argument("--api-port", type=int, help="Port for the local FastAPI backend.")
     subparsers = parser.add_subparsers(dest="command")
     subparsers.add_parser("rebuild-descriptors")
     search_set_parser = subparsers.add_parser("search-set")
@@ -767,7 +769,13 @@ def main() -> None:
         )
         return
 
-    run_startup_plan(build_startup_plan(no_open=args.no_open))
+    run_startup_plan(
+        build_startup_plan(
+            no_open=args.no_open,
+            ui_port=args.ui_port,
+            api_port=args.api_port,
+        )
+    )
 
 
 if __name__ == "__main__":

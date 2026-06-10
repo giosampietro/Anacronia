@@ -295,6 +295,8 @@ function updateAtlasInstanceAttributes({
   const instancePositions = instancePosition.array as Float32Array;
   const instanceScales = geometry.getAttribute("instanceScale")
     .array as Float32Array;
+  const instanceUvRects = geometry.getAttribute("instanceUvRect")
+    .array as Float32Array;
   const instanceStates = geometry.getAttribute("instanceState")
     .array as Float32Array;
 
@@ -311,11 +313,13 @@ function updateAtlasInstanceAttributes({
     instancePositions[index * 3 + 2] = getThumbnailLayer(item.point);
     instanceScales[index * 2] = width;
     instanceScales[index * 2 + 1] = height;
+    instanceUvRects.set(item.uvRect, index * 4);
     instanceStates[index] = getThumbnailStateValue(item.point);
   });
 
   instancePosition.needsUpdate = true;
   geometry.getAttribute("instanceScale").needsUpdate = true;
+  geometry.getAttribute("instanceUvRect").needsUpdate = true;
   geometry.getAttribute("instanceState").needsUpdate = true;
 }
 
@@ -421,7 +425,7 @@ function drawAtlasTile({
   context: CanvasRenderingContext2D;
   image: HTMLImageElement;
   item: LatentMapThumbnailAtlasPage["items"][number];
-  tileSize: LatentMapThumbnailSize;
+  tileSize: number;
 }) {
   const x = item.column * tileSize;
   const y = item.row * tileSize;
@@ -438,7 +442,7 @@ function fillMissingAtlasTile({
 }: {
   context: CanvasRenderingContext2D;
   item: LatentMapThumbnailAtlasPage["items"][number];
-  tileSize: LatentMapThumbnailSize;
+  tileSize: number;
 }) {
   const x = item.column * tileSize;
   const y = item.row * tileSize;
@@ -536,12 +540,21 @@ function nowMilliseconds() {
 
 function createThumbnailPlanSignature(plan: LatentMapThumbnailRenderPlan) {
   const sources = plan.textureSources.join("\n");
+  const pages = plan.atlasPages
+    .map(
+      (page) =>
+        `${page.index}:${page.atlasSize}:${page.tileSize}:${page.items.length}:${
+          page.texturePath ?? ""
+        }`,
+    )
+    .join("\n");
 
   return [
     plan.strategy,
-    plan.thumbnailSize,
+    plan.resolvedTextureDetail,
     plan.atlasPages.length,
     plan.thumbnailPoints.length,
+    pages,
     sources,
   ].join("|");
 }

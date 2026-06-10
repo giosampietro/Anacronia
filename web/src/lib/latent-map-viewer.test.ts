@@ -12,9 +12,11 @@ import {
   createLatentMapStats,
   findNearestLatentMapPoint,
   fitLatentMapPoints,
+  getLatentMapAvailableTextureDetails,
   getLatentMapThumbnailAtlasForSize,
   getNextLatentMapSelection,
   isLatentMapThumbnailFocusActive,
+  resolveLatentMapTextureDetail,
 } from "@/lib/latent-map-viewer";
 
 describe("latent map viewer model", () => {
@@ -297,6 +299,8 @@ describe("latent map viewer model", () => {
 
     expect(plan.strategy).toBe("generated-atlas");
     expect(plan.thumbnailSize).toBe(32);
+    expect(plan.displayThumbnailSize).toBe(32);
+    expect(plan.resolvedTextureDetail).toBe(64);
     expect(plan.textureSources).toEqual([
       "/api/latent-map/thumbnails?run=run-1&path=viewer%2Fatlases%2F64px%2Fpage-000.png",
     ]);
@@ -549,6 +553,101 @@ describe("latent map viewer model", () => {
         },
         96,
       )?.tile_size,
+    ).toBe(96);
+  });
+
+  it("exposes generated texture detail options from the run manifest", () => {
+    expect(
+      getLatentMapAvailableTextureDetails({
+        ...latentMapFixture,
+        thumbnail_atlas: {
+          schema_version: 1,
+          asset_kind: "latent-map-thumbnail-atlas",
+          run_id: "run-1",
+          tile_size: 64,
+          atlas_size: 512,
+          image_count: 0,
+          page_count: 0,
+          pages: [],
+          items: [],
+        },
+        thumbnail_atlases: [
+          {
+            schema_version: 1,
+            asset_kind: "latent-map-thumbnail-atlas",
+            run_id: "run-1",
+            tile_size: 96,
+            atlas_size: 512,
+            image_count: 0,
+            page_count: 0,
+            pages: [],
+            items: [],
+          },
+          {
+            schema_version: 1,
+            asset_kind: "latent-map-thumbnail-atlas",
+            run_id: "run-1",
+            tile_size: 32,
+            atlas_size: 512,
+            image_count: 0,
+            page_count: 0,
+            pages: [],
+            items: [],
+          },
+        ],
+      }),
+    ).toEqual([32, 64, 96]);
+  });
+
+  it("resolves automatic texture detail from display size but preserves manual detail", () => {
+    const data = {
+      ...latentMapFixture,
+      thumbnail_atlases: [
+        {
+          schema_version: 1,
+          asset_kind: "latent-map-thumbnail-atlas",
+          run_id: "run-1",
+          tile_size: 32,
+          atlas_size: 512,
+          image_count: 0,
+          page_count: 0,
+          pages: [],
+          items: [],
+        },
+        {
+          schema_version: 1,
+          asset_kind: "latent-map-thumbnail-atlas",
+          run_id: "run-1",
+          tile_size: 96,
+          atlas_size: 512,
+          image_count: 0,
+          page_count: 0,
+          pages: [],
+          items: [],
+        },
+      ],
+    };
+
+    expect(
+      resolveLatentMapTextureDetail({
+        data,
+        textureDetail: "auto",
+        thumbnailSize: 32,
+      }),
+    ).toBe(32);
+    expect(
+      resolveLatentMapTextureDetail({
+        data,
+        textureDetail: "auto",
+        thumbnailSize: 64,
+      }),
+    ).toBe(96);
+    expect(
+      resolveLatentMapTextureDetail({
+        data,
+        textureDetail: 96,
+        thumbnailSize: 32,
+      }),
     ).toBe(96);
   });
 
