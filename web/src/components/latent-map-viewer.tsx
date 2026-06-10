@@ -11,9 +11,14 @@ import {
   ToggleGroupItem,
 } from "@/components/ui/toggle-group";
 import {
-  NativeSelect,
-  NativeSelectOption,
-} from "@/components/ui/native-select";
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Tooltip,
   TooltipContent,
@@ -118,12 +123,103 @@ function getAvailableClusters(data: LatentMapViewerData) {
       ];
 }
 
+function compactNumberLabel(value: unknown): string | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+
+  if (typeof value === "string" && value.trim().length > 0) {
+    return value.replace("p", ".");
+  }
+
+  return null;
+}
+
+function getTrailingNumber(value: string, pattern: RegExp): string | null {
+  return value.match(pattern)?.[1]?.replace("p", ".") ?? null;
+}
+
 function formatRecipeLabel(
   recipe: NonNullable<LatentMapViewerData["available_recipes"]>[number],
 ) {
-  const label = recipe.label ?? recipe.recipe_name;
+  if (recipe.label) {
+    return recipe.long_edge
+      ? `${recipe.label} · ${recipe.long_edge}px`
+      : recipe.label;
+  }
 
-  return recipe.long_edge ? `${label} (${recipe.long_edge}px)` : label;
+  const recipeName = recipe.recipe_name.toLowerCase();
+  const recipeFamily = recipe.family?.toLowerCase() ?? "";
+  const family =
+    recipeFamily === "dinov3" || recipeName.includes("dinov3")
+      ? "DINOv3"
+      : recipe.family || recipe.recipe_name;
+  const variant = recipeName.includes("vits")
+    ? "ViT-S"
+    : recipeName.includes("vitb")
+      ? "ViT-B"
+      : recipeName.includes("vitl")
+        ? "ViT-L"
+        : null;
+  const longEdge =
+    recipe.long_edge ?? Number(getTrailingNumber(recipeName, /_(\d+)$/));
+
+  return [family, variant, longEdge ? `${longEdge}px` : null]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function formatLayoutLabel(
+  layout: NonNullable<LatentMapViewerData["available_layouts"]>[number],
+) {
+  const layoutId = layout.layout_id.toLowerCase();
+  const method = layout.method
+    ? layout.method.toUpperCase()
+    : layoutId.includes("umap")
+      ? "UMAP"
+      : layout.layout_id;
+  const neighbors =
+    compactNumberLabel(layout.params.n_neighbors) ??
+    getTrailingNumber(layoutId, /umap_n(\d+)/);
+  const minDistance =
+    compactNumberLabel(layout.params.min_dist) ??
+    getTrailingNumber(layoutId, /mindist([0-9p]+)/);
+
+  return [
+    method,
+    neighbors ? `n=${neighbors}` : null,
+    minDistance ? `min=${minDistance}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function formatClusterResultLabel(
+  cluster: NonNullable<LatentMapViewerData["available_clusters"]>[number],
+) {
+  const clusterId = cluster.cluster_id.toLowerCase();
+  const clusterMethod = cluster.method?.toLowerCase() ?? "";
+  const method =
+    clusterMethod === "kmeans" || clusterId.includes("kmeans")
+      ? "K-means"
+      : cluster.method || cluster.cluster_id;
+  const clusterCount =
+    compactNumberLabel(cluster.cluster_count) ??
+    getTrailingNumber(clusterId, /kmeans_k(\d+)/);
+
+  return [method, clusterCount ? `${clusterCount} clusters` : null]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function formatTextureDetailLabel(
+  detail: LatentMapTextureDetail | string | null,
+) {
+  if (detail === "auto" || detail === null || detail === "") {
+    return "Auto";
+  }
+
+  return `${detail}px`;
 }
 
 function createInitialDurableState({
@@ -811,117 +907,248 @@ export function LatentMapViewer({
           </div>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <label className="flex items-center gap-1 text-xs text-muted-foreground">
-            <span>Embedding recipe</span>
-            <NativeSelect
-              aria-label="Embedding recipe"
-              className="w-[180px]"
+          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+            <span>Embedding</span>
+            <Select
               id="latent-map-recipe"
               name="latent-map-recipe"
-              onChange={(event) =>
+              onValueChange={(nextRecipe) => {
+                if (typeof nextRecipe !== "string") {
+                  return;
+                }
+
                 navigateToMethodSelection({
-                  recipeName: event.currentTarget.value,
-                })
-              }
-              size="sm"
+                  recipeName: nextRecipe,
+                });
+              }}
               value={data.embedding_recipe}
             >
-              {methodOptions.recipes.map((recipe) => (
-                <NativeSelectOption
-                  key={recipe.recipe_name}
-                  value={recipe.recipe_name}
-                >
-                  {formatRecipeLabel(recipe)}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
-          </label>
-          <label className="flex items-center gap-1 text-xs text-muted-foreground">
-            <span>Layout result</span>
-            <NativeSelect
-              aria-label="Layout result"
-              className="w-[220px]"
+              <SelectTrigger
+                aria-label="Embedding"
+                className="w-[220px] justify-between"
+                size="sm"
+              >
+                <SelectValue>
+                  {(selectedRecipe) => {
+                    const recipe =
+                      methodOptions.recipes.find(
+                        (candidate) =>
+                          candidate.recipe_name === selectedRecipe,
+                      ) ?? methodOptions.recipes[0];
+
+                    return (
+                      <span className="truncate">
+                        {formatRecipeLabel(recipe)}
+                      </span>
+                    );
+                  }}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent align="start" className="min-w-64">
+                <SelectGroup>
+                  <SelectLabel>Embedding</SelectLabel>
+                  {methodOptions.recipes.map((recipe) => (
+                    <SelectItem
+                      key={recipe.recipe_name}
+                      label={formatRecipeLabel(recipe)}
+                      value={recipe.recipe_name}
+                    >
+                      <span className="truncate">
+                        {formatRecipeLabel(recipe)}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+            <span>Layout</span>
+            <Select
               id="latent-map-layout"
               name="latent-map-layout"
-              onChange={(event) =>
+              onValueChange={(nextLayout) => {
+                if (typeof nextLayout !== "string") {
+                  return;
+                }
+
                 navigateToMethodSelection({
-                  layoutId: event.currentTarget.value,
-                })
-              }
-              size="sm"
+                  layoutId: nextLayout,
+                });
+              }}
               value={data.layout_id}
             >
-              {methodOptions.layouts.map((layout) => (
-                <NativeSelectOption
-                  key={layout.layout_id}
-                  value={layout.layout_id}
-                >
-                  {layout.layout_id}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
-          </label>
-          <label className="flex items-center gap-1 text-xs text-muted-foreground">
-            <span>Cluster result</span>
-            <NativeSelect
-              aria-label="Cluster result"
-              className="w-[190px]"
+              <SelectTrigger
+                aria-label="Layout"
+                className="w-[220px] justify-between"
+                size="sm"
+              >
+                <SelectValue>
+                  {(selectedLayout) => {
+                    const layout =
+                      methodOptions.layouts.find(
+                        (candidate) => candidate.layout_id === selectedLayout,
+                      ) ?? methodOptions.layouts[0];
+
+                    return (
+                      <span className="truncate">
+                        {formatLayoutLabel(layout)}
+                      </span>
+                    );
+                  }}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent align="start" className="min-w-64">
+                <SelectGroup>
+                  <SelectLabel>Layout</SelectLabel>
+                  {methodOptions.layouts.map((layout) => (
+                    <SelectItem
+                      key={layout.layout_id}
+                      label={formatLayoutLabel(layout)}
+                      value={layout.layout_id}
+                    >
+                      <span className="truncate">
+                        {formatLayoutLabel(layout)}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+            <span>Clusters</span>
+            <Select
               id="latent-map-cluster-result"
               name="latent-map-cluster-result"
-              onChange={(event) =>
+              onValueChange={(nextClusterId) => {
+                if (typeof nextClusterId !== "string") {
+                  return;
+                }
+
                 navigateToMethodSelection({
-                  clusterId: event.currentTarget.value,
-                })
-              }
-              size="sm"
+                  clusterId: nextClusterId,
+                });
+              }}
               value={data.cluster_id}
             >
-              {methodOptions.clusters.map((cluster) => (
-                <NativeSelectOption
-                  key={cluster.cluster_id}
-                  value={cluster.cluster_id}
-                >
-                  {cluster.cluster_id}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
-          </label>
-          <NativeSelect
-            aria-label="Cluster filter"
-            className="w-[116px]"
+              <SelectTrigger
+                aria-label="Cluster result"
+                className="w-[190px] justify-between"
+                size="sm"
+              >
+                <SelectValue>
+                  {(selectedClusterId) => {
+                    const cluster =
+                      methodOptions.clusters.find(
+                        (candidate) =>
+                          candidate.cluster_id === selectedClusterId,
+                      ) ?? methodOptions.clusters[0];
+
+                    return (
+                      <span className="truncate">
+                        {formatClusterResultLabel(cluster)}
+                      </span>
+                    );
+                  }}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent align="start" className="min-w-56">
+                <SelectGroup>
+                  <SelectLabel>Clusters</SelectLabel>
+                  {methodOptions.clusters.map((cluster) => (
+                    <SelectItem
+                      key={cluster.cluster_id}
+                      label={formatClusterResultLabel(cluster)}
+                      value={cluster.cluster_id}
+                    >
+                      <span className="truncate">
+                        {formatClusterResultLabel(cluster)}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </div>
+          <Select
             id="latent-map-cluster-filter"
             name="latent-map-cluster-filter"
-            onChange={(event) =>
-              handleClusterFilterChange(event.currentTarget.value)
-            }
-            size="sm"
+            onValueChange={(nextClusterFilter) => {
+              if (typeof nextClusterFilter === "string") {
+                handleClusterFilterChange(nextClusterFilter);
+              }
+            }}
             value={clusterFilter}
           >
-            <NativeSelectOption value="all">All clusters</NativeSelectOption>
-            {filterOptions.clusters.map((clusterId) => (
-              <NativeSelectOption key={clusterId} value={String(clusterId)}>
-                Cluster {clusterId}
-              </NativeSelectOption>
-            ))}
-          </NativeSelect>
-          <NativeSelect
-            aria-label="Source filter"
-            className="w-[112px]"
+            <SelectTrigger
+              aria-label="Cluster filter"
+              className="w-[132px] justify-between"
+              size="sm"
+            >
+              <SelectValue>
+                {(selectedClusterFilter) =>
+                  selectedClusterFilter === "all"
+                    ? "All clusters"
+                    : `Cluster ${selectedClusterFilter}`
+                }
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent align="start">
+              <SelectGroup>
+                <SelectLabel>Cluster filter</SelectLabel>
+                <SelectItem label="All clusters" value="all">
+                  All clusters
+                </SelectItem>
+                {filterOptions.clusters.map((clusterId) => (
+                  <SelectItem
+                    key={clusterId}
+                    label={`Cluster ${clusterId}`}
+                    value={String(clusterId)}
+                  >
+                    Cluster {clusterId}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+          <Select
             id="latent-map-source-filter"
             name="latent-map-source-filter"
-            onChange={(event) =>
-              handleSourceFilterChange(event.currentTarget.value)
-            }
-            size="sm"
+            onValueChange={(nextSourceFilter) => {
+              if (typeof nextSourceFilter === "string") {
+                handleSourceFilterChange(nextSourceFilter);
+              }
+            }}
             value={sourceFilter}
           >
-            <NativeSelectOption value="all">All sources</NativeSelectOption>
-            {filterOptions.sources.map((source) => (
-              <NativeSelectOption key={source} value={source}>
-                {source}
-              </NativeSelectOption>
-            ))}
-          </NativeSelect>
+            <SelectTrigger
+              aria-label="Source filter"
+              className="w-[124px] justify-between"
+              size="sm"
+            >
+              <SelectValue>
+                {(selectedSourceFilter) =>
+                  selectedSourceFilter === "all"
+                    ? "All sources"
+                    : selectedSourceFilter
+                }
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent align="start">
+              <SelectGroup>
+                <SelectLabel>Source filter</SelectLabel>
+                <SelectItem label="All sources" value="all">
+                  All sources
+                </SelectItem>
+                {filterOptions.sources.map((source) => (
+                  <SelectItem key={source} label={source} value={source}>
+                    {source}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
           <ToggleGroup
             aria-label="Map render mode"
             size="sm"
@@ -949,13 +1176,11 @@ export function LatentMapViewer({
           </ToggleGroup>
           {renderMode === "thumbnails" ? (
             <>
-              <NativeSelect
-                aria-label="Thumbnail size"
-                className="w-[84px]"
+              <Select
                 id="latent-map-thumbnail-size"
                 name="latent-map-thumbnail-size"
-                onChange={(event) => {
-                  const nextSize = Number(event.currentTarget.value);
+                onValueChange={(nextValue) => {
+                  const nextSize = Number(nextValue);
 
                   if (
                     LATENT_MAP_THUMBNAIL_SIZE_OPTIONS.includes(
@@ -965,23 +1190,44 @@ export function LatentMapViewer({
                     setThumbnailSize(nextSize as LatentMapThumbnailSize);
                   }
                 }}
-                size="sm"
                 value={String(thumbnailSize)}
               >
-                {LATENT_MAP_THUMBNAIL_SIZE_OPTIONS.map((size) => (
-                  <NativeSelectOption key={size} value={size}>
-                    {size}px
-                  </NativeSelectOption>
-                ))}
-              </NativeSelect>
+                <SelectTrigger
+                  aria-label="Thumbnail display size"
+                  className="w-[146px] justify-between"
+                  size="sm"
+                >
+                  <SelectValue>
+                    {(selectedSize) => (
+                      <>
+                        <span className="text-muted-foreground">
+                          Display
+                        </span>
+                        <span>{selectedSize}px</span>
+                      </>
+                    )}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent align="start" className="min-w-44">
+                  <SelectGroup>
+                    <SelectLabel>Display size</SelectLabel>
+                    {LATENT_MAP_THUMBNAIL_SIZE_OPTIONS.map((size) => (
+                      <SelectItem
+                        key={size}
+                        label={`${size}px`}
+                        value={String(size)}
+                      >
+                        {size}px
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
               {textureDetailOptions.length > 0 ? (
-                <NativeSelect
-                  aria-label="Texture detail"
-                  className="w-[92px]"
+                <Select
                   id="latent-map-texture-detail"
                   name="latent-map-texture-detail"
-                  onChange={(event) => {
-                    const value = event.currentTarget.value;
+                  onValueChange={(value) => {
                     const nextDetail =
                       value === "auto" ? "auto" : Number(value);
 
@@ -992,16 +1238,42 @@ export function LatentMapViewer({
                       setTextureDetail(nextDetail);
                     }
                   }}
-                  size="sm"
                   value={String(textureDetail)}
                 >
-                  <NativeSelectOption value="auto">Auto</NativeSelectOption>
-                  {textureDetailOptions.map((detail) => (
-                    <NativeSelectOption key={detail} value={detail}>
-                      {detail}px
-                    </NativeSelectOption>
-                  ))}
-                </NativeSelect>
+                  <SelectTrigger
+                    aria-label="Image detail"
+                    className="w-[150px] justify-between"
+                    size="sm"
+                  >
+                    <SelectValue>
+                      {(selectedDetail) => (
+                        <>
+                          <span className="text-muted-foreground">Detail</span>
+                          <span>
+                            {formatTextureDetailLabel(selectedDetail)}
+                          </span>
+                        </>
+                      )}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent align="start" className="min-w-44">
+                    <SelectGroup>
+                      <SelectLabel>Atlas image detail</SelectLabel>
+                      <SelectItem label="Auto" value="auto">
+                        Auto
+                      </SelectItem>
+                      {textureDetailOptions.map((detail) => (
+                        <SelectItem
+                          key={detail}
+                          label={`${detail}px`}
+                          value={String(detail)}
+                        >
+                          {detail}px
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
               ) : null}
             </>
           ) : null}

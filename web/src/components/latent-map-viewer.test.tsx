@@ -80,7 +80,9 @@ describe("LatentMapViewer", () => {
     expect(html).toContain("data-thumbnail-instanced-draw-calls=\"0\"");
     expect(html).not.toContain("data-selected-image-id=");
     expect(html).not.toContain("8 images");
-    expect(html).not.toContain("3 clusters");
+    expect(html).toContain("DINOv3 · ViT-S · 256px");
+    expect(html).toContain("UMAP · n=4 · min=0.05");
+    expect(html).toContain("K-means · 3 clusters");
     expect(html).toContain("name=\"latent-map-recipe\"");
     expect(html).toContain("name=\"latent-map-layout\"");
     expect(html).toContain("name=\"latent-map-cluster-result\"");
@@ -128,10 +130,12 @@ describe("LatentMapViewer", () => {
       />,
     ).replaceAll("<!-- -->", "");
 
-    expect(html).toContain("Embedding recipe");
-    expect(html).toContain("dinov3_vits_384");
-    expect(html).toContain("Layout result");
-    expect(html).toContain("Cluster result");
+    expect(html).toContain("Embedding");
+    expect(html).toContain("DINOv3 · ViT-S · 256px");
+    expect(html).toContain("Layout");
+    expect(html).toContain("UMAP · n=4");
+    expect(html).toContain("Clusters");
+    expect(html).toContain("K-means · 3 clusters");
   });
 
   it("can render the map surface in thumbnail mode without originals", () => {
@@ -191,6 +195,8 @@ describe("LatentMapViewer", () => {
     expect(html).toContain("data-thumbnail-texture-detail=\"auto\"");
     expect(html).toContain("data-thumbnail-strategy=\"generated-atlas\"");
     expect(html).toContain("name=\"latent-map-texture-detail\"");
+    expect(html).toContain("Display");
+    expect(html).toContain("Detail");
     expect(html).toContain("96px");
   });
 
