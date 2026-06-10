@@ -149,10 +149,21 @@ export type LatentMapRuntimeRendererInfo = {
   };
 };
 
+export type LatentMapRuntimePerformanceInfo = {
+  averageFrameMs: number;
+  averageRenderMs: number;
+  estimatedFps: number;
+  lastRenderMs: number;
+};
+
 export type LatentMapRuntimeSnapshot = {
+  averageFrameMs: number;
+  averageRenderMs: number;
   atlasPageCount: number;
   drawCalls: number;
+  estimatedFps: number;
   geometryCount: number;
+  lastRenderMs: number;
   liveTextureCount: number;
   loadedThumbnailCount: number;
   pointCount: number;
@@ -163,12 +174,43 @@ export type LatentMapRuntimeSnapshot = {
   thumbnailSize: LatentMapThumbnailSize;
 };
 
+export type LatentMapThumbnailRendererStats = {
+  drawCalls: number;
+  gpuTextures: number;
+  materialCount: number;
+  objectCount: number;
+  sourceImageRequests: number;
+};
+
+export type LatentMapThumbnailRendererComparison = {
+  instancedAtlas: LatentMapThumbnailRendererStats & {
+    atlasPageCount: number;
+    estimatedTextureBytes: number;
+    instances: number;
+  };
+  recommendation:
+    | "keep-capped-sprites-for-mvp"
+    | "use-instanced-front-end-atlas"
+    | "generate-atlas-pages-before-scaling"
+    | "use-instanced-generated-atlas";
+  spriteBaseline: LatentMapThumbnailRendererStats & {
+    sprites: number;
+  };
+  thresholds: {
+    generatedAtlasThumbnailCount: number;
+    instancedThumbnailCount: number;
+  };
+};
+
 export const DEFAULT_LATENT_MAP_THUMBNAIL_CAP = 420;
 export const DEFAULT_LATENT_MAP_THUMBNAIL_SIZE: LatentMapThumbnailSize = 64;
 export const DEFAULT_LATENT_MAP_HOVER_PREVIEW_SIZE = 256;
 export const LATENT_MAP_THUMBNAIL_SIZE_OPTIONS = [32, 64, 96] as const;
 export const LATENT_MAP_DEFAULT_POINT_SIZE = 9;
 export const LATENT_MAP_FOCUS_BACKGROUND_POINT_SIZE = 3;
+export const LATENT_MAP_INSTANCED_THUMBNAIL_THRESHOLD =
+  DEFAULT_LATENT_MAP_THUMBNAIL_CAP;
+export const LATENT_MAP_GENERATED_ATLAS_THUMBNAIL_THRESHOLD = 1_000;
 
 const CLUSTER_COLORS: [number, number, number][] = [
   [239, 184, 72],
@@ -531,22 +573,28 @@ export function createLatentMapThumbnailRenderPlan({
 
 export function createLatentMapRuntimeSnapshot({
   loadedThumbnailCount = 0,
+  performanceInfo,
   pointCount,
   renderMode,
   rendererInfo,
   thumbnailPlan,
 }: {
   loadedThumbnailCount?: number;
+  performanceInfo?: LatentMapRuntimePerformanceInfo;
   pointCount: number;
   renderMode: LatentMapRenderMode;
   rendererInfo?: LatentMapRuntimeRendererInfo;
   thumbnailPlan: LatentMapThumbnailRenderPlan;
 }): LatentMapRuntimeSnapshot {
   return {
+    averageFrameMs: Number((performanceInfo?.averageFrameMs ?? 0).toFixed(2)),
+    averageRenderMs: Number((performanceInfo?.averageRenderMs ?? 0).toFixed(2)),
     atlasPageCount:
       renderMode === "thumbnails" ? thumbnailPlan.atlasPages.length : 0,
     drawCalls: rendererInfo?.render?.calls ?? 0,
+    estimatedFps: Number((performanceInfo?.estimatedFps ?? 0).toFixed(1)),
     geometryCount: rendererInfo?.memory?.geometries ?? 0,
+    lastRenderMs: Number((performanceInfo?.lastRenderMs ?? 0).toFixed(2)),
     liveTextureCount: rendererInfo?.memory?.textures ?? 0,
     loadedThumbnailCount,
     pointCount,
@@ -556,6 +604,57 @@ export function createLatentMapRuntimeSnapshot({
     thumbnailCount:
       renderMode === "thumbnails" ? thumbnailPlan.thumbnailPoints.length : 0,
     thumbnailSize: thumbnailPlan.thumbnailSize,
+  };
+}
+
+export function createLatentMapThumbnailRendererComparison(
+  thumbnailPlan: LatentMapThumbnailRenderPlan,
+): LatentMapThumbnailRendererComparison {
+  const thumbnailCount = thumbnailPlan.thumbnailPoints.length;
+  const atlasPageCount = thumbnailPlan.atlasPages.length;
+  const atlasSourceRequests =
+    thumbnailPlan.strategy === "generated-atlas"
+      ? thumbnailPlan.atlasPages.filter((page) => page.texturePath).length
+      : thumbnailCount;
+  let recommendation: LatentMapThumbnailRendererComparison["recommendation"] =
+    "keep-capped-sprites-for-mvp";
+
+  if (
+    thumbnailPlan.strategy !== "generated-atlas" &&
+    thumbnailCount >= LATENT_MAP_GENERATED_ATLAS_THUMBNAIL_THRESHOLD
+  ) {
+    recommendation = "generate-atlas-pages-before-scaling";
+  } else if (thumbnailPlan.strategy === "generated-atlas") {
+    recommendation = "use-instanced-generated-atlas";
+  } else if (thumbnailCount >= LATENT_MAP_INSTANCED_THUMBNAIL_THRESHOLD) {
+    recommendation = "use-instanced-front-end-atlas";
+  }
+
+  return {
+    instancedAtlas: {
+      atlasPageCount,
+      drawCalls: atlasPageCount,
+      estimatedTextureBytes: thumbnailPlan.estimatedAtlasTextureBytes,
+      gpuTextures: atlasPageCount,
+      instances: thumbnailCount,
+      materialCount: atlasPageCount,
+      objectCount: atlasPageCount,
+      sourceImageRequests: atlasSourceRequests,
+    },
+    recommendation,
+    spriteBaseline: {
+      drawCalls: thumbnailCount,
+      gpuTextures: thumbnailCount,
+      materialCount: thumbnailCount,
+      objectCount: thumbnailCount,
+      sourceImageRequests: thumbnailCount,
+      sprites: thumbnailCount,
+    },
+    thresholds: {
+      generatedAtlasThumbnailCount:
+        LATENT_MAP_GENERATED_ATLAS_THUMBNAIL_THRESHOLD,
+      instancedThumbnailCount: LATENT_MAP_INSTANCED_THUMBNAIL_THRESHOLD,
+    },
   };
 }
 

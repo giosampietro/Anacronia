@@ -22,6 +22,20 @@ This is a single-context repo: read root `CONTEXT.md` first and use `docs/adr/` 
 
 The user is learning Git/GitHub and may ask for work across multiple branches, ports, worktrees, PRs, or parallel tasks. Treat normal-language intent as the goal, but sanity-check the local and GitHub state before acting. See `docs/agents/user-collaboration.md`.
 
+### Browser and Chrome tooling
+
+For rendered UI work, local app QA, CSS/layout debugging, console/network/storage inspection, and final handoff verification, first consider Chrome Web Tools, Chrome DevTools MCP, or the Chrome/in-app browser tooling before reaching for Playwright screenshots, static screenshots, curl, or ad hoc terminal-only checks.
+
+Prefer Chrome-based tooling when the task benefits from inspecting the real running app, the actual DOM and computed CSS, browser console errors, network requests, local storage/session state, user Chrome profile state, or the expected app port with real data.
+
+Use Playwright or scripted screenshots when repeatable automated regression coverage, multi-viewport checks, pixel/canvas checks, or CI-style verification is the better fit, or when Chrome tooling is unavailable. In UI diagnosis, Playwright should complement Chrome Web Tools rather than silently replace them.
+
+### Latent-map image visibility
+
+For the latent-map viewer, never treat a carpet of overlapping thumbnails as an acceptable final UX. The user needs access to all images, but not by showing every thumbnail at once in an unreadable pile.
+
+Interpret viewport-aware planning as an image-visibility and navigation problem: every image must remain discoverable and reachable, while the active view should choose readable representatives, selected images, FAISS neighbors, and zoom-dependent detail. Instancing and atlas pages are rendering infrastructure, not a product excuse to create thumbnail carpet.
+
 ### User test commands
 
 When giving the user terminal commands for local checks or manual testing, also add or update a double-clickable Mac `.command` file under `batch-cmd/` and link it in the chat. The user prefers not to type terminal commands.

@@ -4,6 +4,7 @@ import { latentMapFixture } from "@/lib/latent-map-fixture";
 import {
   createLatentMapRuntimeSnapshot,
   createLatentMapThumbnailAtlasPages,
+  createLatentMapThumbnailRendererComparison,
   createLatentMapThumbnailRenderPlan,
   createLatentMapNeighborSet,
   createLatentMapPointLayerPlan,
@@ -420,6 +421,101 @@ describe("latent map viewer model", () => {
     expect(at96.estimatedAtlasTextureBytes).toBe(23 * atlasBytes);
   });
 
+  it("compares per-thumbnail sprites against the instanced atlas path", () => {
+    const points = Array.from({ length: 3_184 }, (_, index) => ({
+      image_id: `img_${String(index).padStart(4, "0")}`,
+      x: index,
+      y: index,
+      fitted_x: 0,
+      fitted_y: 0,
+      cluster_id: 0,
+      thumbnail_path: `thumb-${index}.jpg`,
+      source_path: `source-${index}.jpg`,
+      relative_path: `source-${index}.jpg`,
+      width: 100,
+      height: 100,
+      neighbors: [],
+      color: [150, 156, 166] as [number, number, number],
+      point_state: "cluster" as const,
+    }));
+    const plan = createLatentMapThumbnailRenderPlan({
+      points,
+      thumbnailSize: 64,
+    });
+    const comparison = createLatentMapThumbnailRendererComparison(plan);
+
+    expect(comparison.spriteBaseline).toMatchObject({
+      drawCalls: 3_184,
+      gpuTextures: 3_184,
+      materialCount: 3_184,
+      sprites: 3_184,
+    });
+    expect(comparison.instancedAtlas).toMatchObject({
+      atlasPageCount: 4,
+      drawCalls: 4,
+      gpuTextures: 4,
+      instances: 3_184,
+    });
+    expect(comparison.recommendation).toBe(
+      "generate-atlas-pages-before-scaling",
+    );
+  });
+
+  it("models generated atlas pages as bounded texture requests", () => {
+    const renderState = createLatentMapRenderState({
+      clusterColorsEnabled: true,
+      data: latentMapFixture,
+      selectedImageId: null,
+    });
+    const plan = createLatentMapThumbnailRenderPlan({
+      points: renderState,
+      thumbnailAtlas: {
+        schema_version: 1,
+        asset_kind: "latent-map-thumbnail-atlas",
+        run_id: latentMapFixture.run_id,
+        tile_size: 64,
+        atlas_size: 512,
+        image_count: renderState.length,
+        page_count: 1,
+        pages: [
+          {
+            height: 512,
+            index: 0,
+            path: "/api/latent-map/thumbnails?run=run-1&path=page-000.png",
+            width: 512,
+          },
+        ],
+        items: renderState.map((point, index) => ({
+          height: point.height,
+          image_id: point.image_id,
+          page_index: 0,
+          page_path: "page-000.png",
+          source_thumbnail_path: point.thumbnail_path,
+          tile_rect: [index * 64, 0, 64, 64] as [
+            number,
+            number,
+            number,
+            number,
+          ],
+          uv_rect: [0, 0, 0.125, 0.125] as [
+            number,
+            number,
+            number,
+            number,
+          ],
+          width: point.width,
+        })),
+      },
+      thumbnailSize: 64,
+    });
+    const comparison = createLatentMapThumbnailRendererComparison(plan);
+
+    expect(comparison.spriteBaseline.sourceImageRequests).toBe(8);
+    expect(comparison.instancedAtlas.sourceImageRequests).toBe(1);
+    expect(comparison.instancedAtlas.gpuTextures).toBe(1);
+    expect(comparison.recommendation).toBe("use-instanced-generated-atlas");
+  });
+
   it("summarizes runtime diagnostics from the render plan and renderer info", () => {
     const renderState = createLatentMapRenderState({
       clusterColorsEnabled: true,
@@ -434,6 +530,12 @@ describe("latent map viewer model", () => {
     expect(
       createLatentMapRuntimeSnapshot({
         loadedThumbnailCount: 5,
+        performanceInfo: {
+          averageFrameMs: 17.372,
+          averageRenderMs: 3.243,
+          estimatedFps: 57.564,
+          lastRenderMs: 2.194,
+        },
         pointCount: renderState.length,
         renderMode: "thumbnails",
         rendererInfo: {
@@ -450,9 +552,13 @@ describe("latent map viewer model", () => {
         thumbnailPlan,
       }),
     ).toEqual({
+      averageFrameMs: 17.37,
+      averageRenderMs: 3.24,
       atlasPageCount: 1,
       drawCalls: 3,
+      estimatedFps: 57.6,
       geometryCount: 2,
+      lastRenderMs: 2.19,
       liveTextureCount: 1,
       loadedThumbnailCount: 5,
       pointCount: 8,

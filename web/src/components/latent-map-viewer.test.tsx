@@ -13,12 +13,19 @@ describe("LatentMapViewer", () => {
     expect(html).toContain("data-testid=\"latent-map-canvas\"");
     expect(html).toContain("data-render-mode=\"points\"");
     expect(html).toContain("data-point-count=\"8\"");
+    expect(html).toContain("data-runtime-average-frame-ms=\"0\"");
+    expect(html).toContain("data-runtime-average-render-ms=\"0\"");
     expect(html).toContain("data-runtime-atlas-page-count=\"0\"");
     expect(html).toContain("data-runtime-draw-calls=\"0\"");
+    expect(html).toContain("data-runtime-estimated-fps=\"0\"");
     expect(html).toContain("data-runtime-geometries=\"0\"");
+    expect(html).toContain("data-runtime-last-render-ms=\"0\"");
     expect(html).toContain("data-runtime-loaded-thumbnails=\"0\"");
     expect(html).toContain("data-runtime-textures=\"0\"");
     expect(html).toContain("data-thumbnail-count=\"0\"");
+    expect(html).toContain("data-thumbnail-renderer=\"instanced-atlas\"");
+    expect(html).toContain("data-thumbnail-sprite-baseline-draw-calls=\"0\"");
+    expect(html).toContain("data-thumbnail-instanced-draw-calls=\"0\"");
     expect(html).not.toContain("data-selected-image-id=");
     expect(html).toContain("8 images");
     expect(html).toContain("3 clusters");
@@ -86,10 +93,39 @@ describe("LatentMapViewer", () => {
     expect(html).toContain("data-render-mode=\"thumbnails\"");
     expect(html).toContain("data-runtime-atlas-page-count=\"1\"");
     expect(html).toContain("data-thumbnail-count=\"8\"");
+    expect(html).toContain("data-thumbnail-instanced-draw-calls=\"1\"");
+    expect(html).toContain("data-thumbnail-instanced-textures=\"1\"");
+    expect(html).toContain("data-thumbnail-recommendation=\"keep-capped-sprites-for-mvp\"");
+    expect(html).toContain("data-thumbnail-sprite-baseline-draw-calls=\"8\"");
+    expect(html).toContain("data-thumbnail-sprite-baseline-textures=\"8\"");
     expect(html).toContain("data-thumbnail-source-kind=\"generated\"");
     expect(html).toContain("name=\"latent-map-thumbnail-size\"");
     expect(html).toContain("8 thumbnails");
     expect(html).not.toContain("fixture/a1.jpg");
+  });
+
+  it("can server-render URL-derived thumbnail state without a client mismatch", () => {
+    const html = renderToString(
+      <LatentMapViewer
+        data={latentMapFixture}
+        initialState={{
+          clusterFilter: "all",
+          renderMode: "thumbnails",
+          selectedImageId: null,
+          sourceFilter: "all",
+          thumbnailSize: 96,
+          view: {
+            offsetX: 0,
+            offsetY: 0,
+            zoom: 1,
+          },
+        }}
+      />,
+    ).replaceAll("<!-- -->", "");
+
+    expect(html).toContain("data-render-mode=\"thumbnails\"");
+    expect(html).toContain("data-thumbnail-size=\"96\"");
+    expect(html).toContain("96px");
   });
 
   it("renders FAISS focus thumbnails over small background points", () => {

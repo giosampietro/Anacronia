@@ -8,6 +8,7 @@ import {
   LATENT_MAP_RUNS_ROOT,
   loadLatentMapRunExportedViewerData,
 } from "@/lib/latent-map-run-data";
+import { parseLatentMapUrlState } from "@/lib/latent-map-viewer-state";
 import type { ExportedLatentMapViewerData } from "@/lib/latent-map-viewer-data";
 import { normalizeExportedLatentMapViewerData } from "@/lib/latent-map-viewer-data";
 
@@ -26,6 +27,27 @@ function getSearchParam(
   const value = searchParams[key];
 
   return Array.isArray(value) ? value[0] ?? null : value ?? null;
+}
+
+function toUrlSearchParams(searchParams: LatentMapSearchParams): URLSearchParams {
+  const urlSearchParams = new URLSearchParams();
+
+  Object.entries(searchParams).forEach(([key, value]) => {
+    if (Array.isArray(value)) {
+      value.forEach((entry) => {
+        if (entry !== undefined) {
+          urlSearchParams.append(key, entry);
+        }
+      });
+      return;
+    }
+
+    if (value !== undefined) {
+      urlSearchParams.set(key, value);
+    }
+  });
+
+  return urlSearchParams;
 }
 
 function resolveRunDir({
@@ -159,9 +181,12 @@ export default async function LatentMapPage({
 }: {
   searchParams?: Promise<LatentMapSearchParams>;
 }) {
-  const viewerData = await loadLatentMapViewerData(
-    searchParams ? await searchParams : {},
+  const resolvedSearchParams = searchParams ? await searchParams : {};
+  const viewerData = await loadLatentMapViewerData(resolvedSearchParams);
+  const initialState = parseLatentMapUrlState(
+    toUrlSearchParams(resolvedSearchParams),
+    viewerData,
   );
 
-  return <LatentMapViewer data={viewerData} />;
+  return <LatentMapViewer data={viewerData} initialState={initialState} />;
 }

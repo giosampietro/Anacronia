@@ -4,6 +4,7 @@ import type {
   LatentMapRenderablePoint,
   LatentMapRenderMode,
   LatentMapPointLayerPlan,
+  LatentMapRuntimePerformanceInfo,
   LatentMapRuntimeRendererInfo,
   LatentMapThumbnailAtlasPage,
   LatentMapThumbnailRenderPlan,
@@ -18,6 +19,7 @@ export type LatentMapViewState = {
 
 export type LatentMapRuntimeDiagnostics = {
   loadedThumbnailCount: number;
+  performanceInfo: LatentMapRuntimePerformanceInfo;
   rendererInfo: LatentMapRuntimeRendererInfo;
 };
 
@@ -38,6 +40,7 @@ export type LatentMapWebglRuntime = {
 };
 
 const THUMBNAIL_WORLD_SIZE_PER_PIXEL = 0.13 / 64;
+const MAX_INTERACTION_FRAME_GAP_MS = 250;
 
 function rgbToThreeColor([r, g, b]: [number, number, number]): THREE.Color {
   return new THREE.Color(r / 255, g / 255, b / 255);
@@ -441,6 +444,10 @@ function getRendererInfo(
   };
 }
 
+function nowMilliseconds() {
+  return typeof performance === "undefined" ? Date.now() : performance.now();
+}
+
 function createThumbnailPlanSignature(plan: LatentMapThumbnailRenderPlan) {
   const sources = plan.textureSources.join("\n");
 
@@ -495,6 +502,10 @@ export function createLatentMapWebglRuntime({
   let currentThumbnailPlanSignature = "";
   let currentView = view;
   let isDisposed = false;
+  let averageFrameMs = 0;
+  let averageRenderMs = 0;
+  let lastRenderMs = 0;
+  let lastRenderStartedAt = 0;
   let loadedThumbnailCount = 0;
 
   renderer.setClearColor(0x101113, 1);
@@ -506,6 +517,12 @@ export function createLatentMapWebglRuntime({
   function getDiagnostics(): LatentMapRuntimeDiagnostics {
     return {
       loadedThumbnailCount,
+      performanceInfo: {
+        averageFrameMs,
+        averageRenderMs,
+        estimatedFps: averageFrameMs > 0 ? 1000 / averageFrameMs : 0,
+        lastRenderMs,
+      },
       rendererInfo: getRendererInfo(renderer),
     };
   }
@@ -527,7 +544,25 @@ export function createLatentMapWebglRuntime({
       view: currentView,
       width,
     });
+    const renderStartedAt = nowMilliseconds();
+
+    if (lastRenderStartedAt > 0) {
+      const frameMs = renderStartedAt - lastRenderStartedAt;
+
+      averageFrameMs =
+        frameMs > MAX_INTERACTION_FRAME_GAP_MS
+          ? 0
+          : averageFrameMs === 0
+            ? frameMs
+            : averageFrameMs * 0.8 + frameMs * 0.2;
+    }
+    lastRenderStartedAt = renderStartedAt;
     renderer.render(scene, camera);
+    lastRenderMs = nowMilliseconds() - renderStartedAt;
+    averageRenderMs =
+      averageRenderMs === 0
+        ? lastRenderMs
+        : averageRenderMs * 0.8 + lastRenderMs * 0.2;
     reportDiagnostics();
   }
 

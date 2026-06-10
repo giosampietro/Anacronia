@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import {
+  createLatentMapThumbnailRendererComparison,
   createLatentMapRuntimeSnapshot,
   createLatentMapThumbnailRenderPlan,
   createLatentMapPointLayerPlan,
@@ -29,6 +30,7 @@ import {
   DEFAULT_LATENT_MAP_HOVER_PREVIEW_SIZE,
   LATENT_MAP_THUMBNAIL_SIZE_OPTIONS,
   type LatentMapRenderMode,
+  type LatentMapRuntimePerformanceInfo,
   type LatentMapRuntimeRendererInfo,
   type LatentMapThumbnailSize,
   type LatentMapViewerData,
@@ -41,8 +43,8 @@ import {
   createLatentMapFilterOptions,
   DEFAULT_LATENT_MAP_DURABLE_STATE,
   filterLatentMapViewerData,
-  parseLatentMapUrlState,
   serializeLatentMapUrlState,
+  type LatentMapDurableState,
 } from "@/lib/latent-map-viewer-state";
 import { normalizeLatentMapNeighborResponse } from "@/lib/latent-map-viewer-data";
 import {
@@ -55,6 +57,7 @@ import {
 type LatentMapViewerProps = {
   className?: string;
   data: LatentMapViewerData;
+  initialState?: LatentMapDurableState;
   initialRenderMode?: LatentMapRenderMode;
   initialSelectedImageId?: string | null;
 };
@@ -119,13 +122,19 @@ function formatRecipeLabel(
 
 function createInitialDurableState({
   data,
+  initialState,
   initialRenderMode,
   initialSelectedImageId,
 }: {
   data: LatentMapViewerData;
+  initialState?: LatentMapDurableState;
   initialRenderMode: LatentMapRenderMode;
   initialSelectedImageId: string | null;
 }) {
+  if (initialState) {
+    return initialState;
+  }
+
   const fallback = {
     ...DEFAULT_LATENT_MAP_DURABLE_STATE,
     renderMode: initialRenderMode,
@@ -136,24 +145,19 @@ function createInitialDurableState({
       : null,
   };
 
-  if (typeof window === "undefined" || window.location.search.length === 0) {
-    return fallback;
-  }
-
-  return parseLatentMapUrlState(
-    new URLSearchParams(window.location.search),
-    data,
-  );
+  return fallback;
 }
 
 export function LatentMapViewer({
   className,
   data,
+  initialState,
   initialRenderMode = "points",
   initialSelectedImageId = null,
 }: LatentMapViewerProps) {
   const initialDurableState = createInitialDurableState({
     data,
+    initialState,
     initialRenderMode,
     initialSelectedImageId,
   });
@@ -188,6 +192,8 @@ export function LatentMapViewer({
     useState<LatentMapRenderMode>(initialDurableState.renderMode);
   const [runtimeRendererInfo, setRuntimeRendererInfo] =
     useState<LatentMapRuntimeRendererInfo>();
+  const [runtimePerformanceInfo, setRuntimePerformanceInfo] =
+    useState<LatentMapRuntimePerformanceInfo>();
   const [loadedThumbnailCount, setLoadedThumbnailCount] = useState(0);
   const [thumbnailSize, setThumbnailSize] =
     useState<LatentMapThumbnailSize>(initialDurableState.thumbnailSize);
@@ -269,6 +275,10 @@ export function LatentMapViewer({
       }),
     [renderMode, renderPoints, thumbnailPlan],
   );
+  const thumbnailRendererComparison = useMemo(
+    () => createLatentMapThumbnailRendererComparison(thumbnailPlan),
+    [thumbnailPlan],
+  );
   const runtimeState = useMemo<LatentMapRuntimeState>(
     () => ({
       pointLayer,
@@ -299,6 +309,7 @@ export function LatentMapViewer({
     () =>
       createLatentMapRuntimeSnapshot({
         loadedThumbnailCount,
+        performanceInfo: runtimePerformanceInfo,
         pointCount: stats.pointCount,
         renderMode,
         rendererInfo: runtimeRendererInfo,
@@ -307,6 +318,7 @@ export function LatentMapViewer({
     [
       loadedThumbnailCount,
       renderMode,
+      runtimePerformanceInfo,
       runtimeRendererInfo,
       stats.pointCount,
       thumbnailPlan,
@@ -331,6 +343,7 @@ export function LatentMapViewer({
       canvas,
       onDiagnosticsChange: (diagnostics) => {
         setLoadedThumbnailCount(diagnostics.loadedThumbnailCount);
+        setRuntimePerformanceInfo(diagnostics.performanceInfo);
         setRuntimeRendererInfo(diagnostics.rendererInfo);
       },
       view: viewRef.current,
@@ -906,9 +919,13 @@ export function LatentMapViewer({
           data-cluster-filter={clusterFilter}
           data-point-count={stats.pointCount}
           data-render-mode={renderMode}
+          data-runtime-average-frame-ms={runtimeSnapshot.averageFrameMs}
+          data-runtime-average-render-ms={runtimeSnapshot.averageRenderMs}
           data-runtime-atlas-page-count={runtimeSnapshot.atlasPageCount}
           data-runtime-draw-calls={runtimeSnapshot.drawCalls}
+          data-runtime-estimated-fps={runtimeSnapshot.estimatedFps}
           data-runtime-geometries={runtimeSnapshot.geometryCount}
+          data-runtime-last-render-ms={runtimeSnapshot.lastRenderMs}
           data-runtime-loaded-thumbnails={runtimeSnapshot.loadedThumbnailCount}
           data-runtime-renderer-points={runtimeSnapshot.rendererPointCount}
           data-runtime-renderer-triangles={runtimeSnapshot.rendererTriangleCount}
@@ -932,7 +949,31 @@ export function LatentMapViewer({
               : 0
           }
           data-thumbnail-hover-preview-size={thumbnailPlan.hoverPreviewSize}
+          data-thumbnail-instanced-draw-calls={
+            renderMode === "thumbnails"
+              ? thumbnailRendererComparison.instancedAtlas.drawCalls
+              : 0
+          }
+          data-thumbnail-instanced-textures={
+            renderMode === "thumbnails"
+              ? thumbnailRendererComparison.instancedAtlas.gpuTextures
+              : 0
+          }
+          data-thumbnail-recommendation={
+            thumbnailRendererComparison.recommendation
+          }
+          data-thumbnail-renderer="instanced-atlas"
           data-thumbnail-size={thumbnailPlan.thumbnailSize}
+          data-thumbnail-sprite-baseline-draw-calls={
+            renderMode === "thumbnails"
+              ? thumbnailRendererComparison.spriteBaseline.drawCalls
+              : 0
+          }
+          data-thumbnail-sprite-baseline-textures={
+            renderMode === "thumbnails"
+              ? thumbnailRendererComparison.spriteBaseline.gpuTextures
+              : 0
+          }
           data-thumbnail-source-kind="generated"
           data-thumbnail-strategy={thumbnailPlan.strategy}
           data-testid="latent-map-canvas"
