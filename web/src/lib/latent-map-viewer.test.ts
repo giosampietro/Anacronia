@@ -12,6 +12,7 @@ import {
   createLatentMapStats,
   findNearestLatentMapPoint,
   fitLatentMapPoints,
+  getLatentMapThumbnailAtlasForSize,
   getNextLatentMapSelection,
   isLatentMapThumbnailFocusActive,
 } from "@/lib/latent-map-viewer";
@@ -514,6 +515,41 @@ describe("latent map viewer model", () => {
     expect(comparison.instancedAtlas.sourceImageRequests).toBe(1);
     expect(comparison.instancedAtlas.gpuTextures).toBe(1);
     expect(comparison.recommendation).toBe("use-instanced-generated-atlas");
+  });
+
+  it("selects a generated thumbnail atlas matching the requested size", () => {
+    expect(
+      getLatentMapThumbnailAtlasForSize(
+        {
+          ...latentMapFixture,
+          thumbnail_atlases: [
+            {
+              schema_version: 1,
+              asset_kind: "latent-map-thumbnail-atlas",
+              run_id: "run-1",
+              tile_size: 32,
+              atlas_size: 512,
+              image_count: 0,
+              page_count: 0,
+              pages: [],
+              items: [],
+            },
+            {
+              schema_version: 1,
+              asset_kind: "latent-map-thumbnail-atlas",
+              run_id: "run-1",
+              tile_size: 96,
+              atlas_size: 512,
+              image_count: 0,
+              page_count: 0,
+              pages: [],
+              items: [],
+            },
+          ],
+        },
+        96,
+      )?.tile_size,
+    ).toBe(96);
   });
 
   it("summarizes runtime diagnostics from the render plan and renderer info", () => {

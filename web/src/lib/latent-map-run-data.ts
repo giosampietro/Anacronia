@@ -120,9 +120,12 @@ export async function loadLatentMapRunExportedViewerData({
     resolvedRunDir,
     path.join("indexes", `${selectedRecipe}_neighbors.jsonl`),
   );
-  const thumbnailAtlasManifestPath = await findThumbnailAtlasManifestPath(
+  const thumbnailAtlasManifestPaths = await findThumbnailAtlasManifestPaths(
     resolvedRunDir,
   );
+  const thumbnailAtlasManifestPath =
+    thumbnailAtlasManifestPaths["64"] ??
+    Object.values(thumbnailAtlasManifestPaths)[0];
 
   return {
     available_clusters: clusters.map((output) => ({
@@ -160,6 +163,9 @@ export async function loadLatentMapRunExportedViewerData({
     run_id: String(layout.value.run_id ?? path.basename(resolvedRunDir)),
     ...(thumbnailAtlasManifestPath
       ? { thumbnail_atlas_manifest_path: thumbnailAtlasManifestPath }
+      : {}),
+    ...(Object.keys(thumbnailAtlasManifestPaths).length > 0
+      ? { thumbnail_atlas_manifest_paths: thumbnailAtlasManifestPaths }
       : {}),
   };
 }
@@ -301,27 +307,22 @@ async function existingRelativePath(
   }
 }
 
-async function findThumbnailAtlasManifestPath(
+async function findThumbnailAtlasManifestPaths(
   runDir: string,
-): Promise<string | undefined> {
-  const preferredPath = path.join(
-    "viewer",
-    "atlases",
-    "64px",
-    "atlas-manifest.json",
-  );
-  const preferred = await existingRelativePath(runDir, preferredPath);
-
-  if (preferred) {
-    return preferred;
-  }
-
+): Promise<Record<string, string>> {
   const atlasRoot = path.join(runDir, "viewer", "atlases");
   const atlasDirs = await safeReadDir(atlasRoot);
+  const manifestPaths: Record<string, string> = {};
 
   for (const atlasDir of atlasDirs.sort((left, right) =>
     left.localeCompare(right),
   )) {
+    const match = /^(\d+)px$/.exec(atlasDir);
+
+    if (!match) {
+      continue;
+    }
+
     const relativePath = path.join(
       "viewer",
       "atlases",
@@ -331,11 +332,11 @@ async function findThumbnailAtlasManifestPath(
     const found = await existingRelativePath(runDir, relativePath);
 
     if (found) {
-      return found;
+      manifestPaths[match[1]] = found;
     }
   }
 
-  return undefined;
+  return manifestPaths;
 }
 
 async function safeReadDir(dir: string): Promise<string[]> {

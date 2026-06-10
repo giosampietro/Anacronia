@@ -28,6 +28,7 @@ import {
   createLatentMapRenderState,
   createLatentMapStats,
   getNextLatentMapSelection,
+  getLatentMapThumbnailAtlasForSize,
   DEFAULT_LATENT_MAP_HOVER_PREVIEW_SIZE,
   LATENT_MAP_THUMBNAIL_SIZE_OPTIONS,
   type LatentMapRenderMode,
@@ -287,6 +288,10 @@ export function LatentMapViewer({
         width: hoveredPoint.width,
       })
     : null;
+  const thumbnailAtlas = useMemo(
+    () => getLatentMapThumbnailAtlasForSize(data, thumbnailSize),
+    [data, thumbnailSize],
+  );
   const thumbnailPlan = useMemo(
     () =>
       createLatentMapThumbnailRenderPlan({
@@ -294,10 +299,10 @@ export function LatentMapViewer({
         hoverPreviewSize: DEFAULT_LATENT_MAP_HOVER_PREVIEW_SIZE,
         points: renderPoints,
         strategy: "all-atlas",
-        thumbnailAtlas: data.thumbnail_atlas,
+        thumbnailAtlas,
         thumbnailSize,
       }),
-    [data.thumbnail_atlas, renderPoints, thumbnailSize],
+    [renderPoints, thumbnailAtlas, thumbnailSize],
   );
   const pointLayer = useMemo(
     () =>
@@ -471,6 +476,32 @@ export function LatentMapViewer({
 
     return () => {
       wrapper.removeEventListener("wheel", handleNativeWheel);
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target;
+      const targetElement =
+        target instanceof HTMLElement ? target : null;
+
+      if (
+        targetElement?.closest(
+          "input, textarea, select, button, [contenteditable='true']",
+        )
+      ) {
+        return;
+      }
+
+      if (event.key.toLowerCase() === "h") {
+        setView(DEFAULT_VIEW);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
     };
   }, []);
 
@@ -755,22 +786,6 @@ export function LatentMapViewer({
               Latent Map
             </h1>
           </div>
-          <Badge variant="outline">{stats.pointCount} images</Badge>
-          {stats.pointCount !== totalStats.pointCount ? (
-            <Badge variant="outline">{totalStats.pointCount} total</Badge>
-          ) : null}
-          <Badge variant="outline">{stats.clusterCount} clusters</Badge>
-          {renderMode === "thumbnails" ? (
-            <Badge variant="outline">
-              {thumbnailPlan.thumbnailPoints.length}
-              {thumbnailPlan.capped ? `/${stats.pointCount}` : ""} thumbnails
-            </Badge>
-          ) : null}
-          {renderMode === "thumbnails" ? (
-            <Badge variant="outline">
-              {thumbnailPlan.thumbnailSize}px / {thumbnailPlan.atlasPages.length} atlas pages
-            </Badge>
-          ) : null}
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
           <label className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -1009,6 +1024,7 @@ export function LatentMapViewer({
               : 0
           }
           data-thumbnail-hover-preview-size={thumbnailPlan.hoverPreviewSize}
+          data-thumbnail-atlas-tile-size={thumbnailAtlas?.tile_size ?? 0}
           data-thumbnail-instanced-draw-calls={
             renderMode === "thumbnails"
               ? thumbnailRendererComparison.instancedAtlas.drawCalls

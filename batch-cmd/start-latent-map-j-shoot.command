@@ -1,0 +1,89 @@
+#!/bin/bash
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+RUN_ID="20260609T130049Z-mvp1-j-shoot-20260609"
+RUN_DIR="/private/tmp/anacronia-latent-map-runs/$RUN_ID"
+VIEWER_DATA="$RUN_DIR/viewer/map-data.json"
+APP_ORIGIN="http://localhost:18660"
+LATENT_MAP_URL="$APP_ORIGIN/latent-map?run=$RUN_ID&recipe=dinov3_vits_256&layout=umap_n15_mindist0p05_seed42&clusterResult=kmeans_k12_seed42&mode=thumbnails&thumb=96&z=24"
+WATCHER_PID=""
+
+finish() {
+  status=$?
+  if [ -n "$WATCHER_PID" ]; then
+    kill "$WATCHER_PID" >/dev/null 2>&1 || true
+  fi
+  echo
+  if [ "$status" -eq 0 ]; then
+    echo "Anacronia latent map stopped."
+  else
+    echo "Anacronia latent map stopped with an error. Please send the text above in the Codex chat."
+  fi
+  echo
+  if [ "${ANACRONIA_BATCH_NO_PAUSE:-}" != "1" ]; then
+    read -r -p "Press Enter to close this window..."
+  fi
+  exit "$status"
+}
+
+trap finish EXIT
+
+echo "Starting Anacronia latent map from this worktree"
+echo "Worktree: $(pwd)"
+echo "Run: $RUN_ID"
+echo "URL: $LATENT_MAP_URL"
+echo
+
+if [ ! -x ".venv/bin/anacronia" ]; then
+  echo "Missing Anacronia command at .venv/bin/anacronia."
+  echo "Double-click batch-cmd/setup-local-environment.command first."
+  exit 1
+fi
+
+if [ ! -f "$VIEWER_DATA" ]; then
+  echo "Missing viewer data:"
+  echo "$VIEWER_DATA"
+  echo
+  echo "The J Shoot latent-map run must exist before this launcher can start."
+  exit 1
+fi
+
+if curl --silent --fail --max-time 2 "$APP_ORIGIN" >/dev/null 2>&1; then
+  echo "Port 18660 is already serving an app."
+  echo "Close the other Anacronia Terminal window first, then run this launcher again."
+  exit 1
+fi
+
+for tile_size in 32 64 96; do
+  manifest_path="$RUN_DIR/viewer/atlases/${tile_size}px/atlas-manifest.json"
+  if [ ! -f "$manifest_path" ]; then
+    echo "Generating ${tile_size}px atlas"
+    .venv/bin/anacronia latent-map atlas \
+      --run-dir "$RUN_DIR" \
+      --tile-size "$tile_size" \
+      --atlas-size 2048
+  fi
+done
+
+export ANACRONIA_LATENT_MAP_RUN_DIR="$RUN_DIR"
+export ANACRONIA_LATENT_MAP_VIEWER_DATA="$VIEWER_DATA"
+
+(
+  for _ in {1..120}; do
+    if curl --silent --fail --max-time 2 "$APP_ORIGIN" >/dev/null 2>&1; then
+      open "$LATENT_MAP_URL"
+      exit 0
+    fi
+    sleep 1
+  done
+
+  echo "Timed out waiting for Anacronia at $APP_ORIGIN."
+) &
+WATCHER_PID=$!
+
+echo "Leave this window open while using the latent map."
+echo
+
+.venv/bin/anacronia --no-open

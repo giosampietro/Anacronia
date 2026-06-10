@@ -5,6 +5,10 @@ import {
   type LatentMapThumbnailSize,
   type LatentMapViewerData,
 } from "@/lib/latent-map-viewer";
+import {
+  LATENT_MAP_MAX_ZOOM,
+  LATENT_MAP_MIN_ZOOM,
+} from "@/lib/latent-map-view-controls";
 import type { LatentMapViewState } from "@/lib/latent-map-webgl-runtime";
 
 export type LatentMapFilterState = {
@@ -132,7 +136,9 @@ export function parseLatentMapUrlState(
     view: {
       offsetX: Number.isFinite(offsetX) ? offsetX : DEFAULT_VIEW.offsetX,
       offsetY: Number.isFinite(offsetY) ? offsetY : DEFAULT_VIEW.offsetY,
-      zoom: Number.isFinite(zoom) && zoom >= 0.45 && zoom <= 7
+      zoom: Number.isFinite(zoom) &&
+        zoom >= LATENT_MAP_MIN_ZOOM &&
+        zoom <= LATENT_MAP_MAX_ZOOM
         ? zoom
         : DEFAULT_VIEW.zoom,
     },

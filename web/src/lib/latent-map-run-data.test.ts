@@ -17,9 +17,13 @@ describe("loadLatentMapRunExportedViewerData", () => {
     await mkdir(path.join(runDir, "embeddings"));
     await mkdir(path.join(runDir, "indexes"));
     await mkdir(path.join(runDir, "layouts"));
-    await mkdir(path.join(runDir, "viewer", "atlases", "64px"), {
-      recursive: true,
-    });
+    await Promise.all(
+      [32, 64, 96].map((tileSize) =>
+        mkdir(path.join(runDir, "viewer", "atlases", `${tileSize}px`), {
+          recursive: true,
+        }),
+      ),
+    );
 
     await writeFile(
       path.join(runDir, "manifest.jsonl"),
@@ -93,19 +97,29 @@ describe("loadLatentMapRunExportedViewerData", () => {
       })}\n`,
       "utf-8",
     );
-    await writeJson(
-      path.join(runDir, "viewer", "atlases", "64px", "atlas-manifest.json"),
-      {
-        asset_kind: "latent-map-thumbnail-atlas",
-        atlas_size: 2048,
-        image_count: 2,
-        items: [],
-        page_count: 0,
-        pages: [],
-        run_id: "test-run",
-        schema_version: 1,
-        tile_size: 64,
-      },
+    await Promise.all(
+      [32, 64, 96].map((tileSize) =>
+        writeJson(
+          path.join(
+            runDir,
+            "viewer",
+            "atlases",
+            `${tileSize}px`,
+            "atlas-manifest.json",
+          ),
+          {
+            asset_kind: "latent-map-thumbnail-atlas",
+            atlas_size: 2048,
+            image_count: 2,
+            items: [],
+            page_count: 0,
+            pages: [],
+            run_id: "test-run",
+            schema_version: 1,
+            tile_size: tileSize,
+          },
+        ),
+      ),
     );
 
     const data = await loadLatentMapRunExportedViewerData({
@@ -121,6 +135,11 @@ describe("loadLatentMapRunExportedViewerData", () => {
       neighbor_index_path: "indexes/dinov3_vits_384_neighbors.jsonl",
       recipe_name: "dinov3_vits_384",
       thumbnail_atlas_manifest_path: "viewer/atlases/64px/atlas-manifest.json",
+      thumbnail_atlas_manifest_paths: {
+        "32": "viewer/atlases/32px/atlas-manifest.json",
+        "64": "viewer/atlases/64px/atlas-manifest.json",
+        "96": "viewer/atlases/96px/atlas-manifest.json",
+      },
     });
     expect(data.available_recipes).toEqual([
       expect.objectContaining({

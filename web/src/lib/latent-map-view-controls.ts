@@ -1,7 +1,7 @@
 import type { LatentMapViewState } from "@/lib/latent-map-webgl-runtime";
 
 export const LATENT_MAP_MIN_ZOOM = 0.45;
-export const LATENT_MAP_MAX_ZOOM = 7;
+export const LATENT_MAP_MAX_ZOOM = 48;
 
 const WHEEL_LINE_HEIGHT = 16;
 const WHEEL_ZOOM_SENSITIVITY = 0.0015;

@@ -196,6 +196,57 @@ describe("normalizeExportedLatentMapViewerData", () => {
     ]);
   });
 
+  it("normalizes multiple generated atlas sizes for client-side LOD switching", () => {
+    const data = normalizeExportedLatentMapViewerData({
+      sourceFolder: "/source/images",
+      thumbnailApiPath: "/api/latent-map/thumbnails?run=run-1",
+      rawData: {
+        points: [
+          {
+            image_id: "img_1",
+            thumbnail_path: "thumbnails/img_1.jpg",
+          },
+        ],
+        thumbnail_atlases: [32, 64, 96].map((tileSize) => ({
+          schema_version: 1,
+          asset_kind: "latent-map-thumbnail-atlas",
+          run_id: "run-1",
+          tile_size: tileSize,
+          atlas_size: 512,
+          image_count: 1,
+          page_count: 1,
+          pages: [
+            {
+              index: 0,
+              path: `viewer/atlases/${tileSize}px/page-000.png`,
+              width: 512,
+              height: 512,
+            },
+          ],
+          items: [
+            {
+              image_id: "img_1",
+              page_index: 0,
+              page_path: `viewer/atlases/${tileSize}px/page-000.png`,
+              source_thumbnail_path: "thumbnails/img_1.jpg",
+              tile_rect: [0, 0, tileSize, tileSize],
+              uv_rect: [0, 0, 0.125, 0.125],
+              width: 100,
+              height: 100,
+            },
+          ],
+        })),
+      },
+    });
+
+    expect(data.thumbnail_atlases?.map((atlas) => atlas.tile_size)).toEqual([
+      32, 64, 96,
+    ]);
+    expect(data.thumbnail_atlases?.[2].pages[0].path).toBe(
+      "/api/latent-map/thumbnails?run=run-1&path=viewer%2Fatlases%2F96px%2Fpage-000.png",
+    );
+  });
+
   it("normalizes selected-image FAISS neighbor responses", () => {
     expect(
       normalizeLatentMapNeighborResponse(

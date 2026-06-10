@@ -3,6 +3,58 @@ import { describe, expect, it } from "vitest";
 
 import { LatentMapViewer } from "@/components/latent-map-viewer";
 import { latentMapFixture } from "@/lib/latent-map-fixture";
+import type {
+  LatentMapGeneratedThumbnailAtlas,
+  LatentMapThumbnailSize,
+} from "@/lib/latent-map-viewer";
+
+function createFixtureAtlas(
+  tileSize: LatentMapThumbnailSize,
+): LatentMapGeneratedThumbnailAtlas {
+  return {
+    schema_version: 1,
+    asset_kind: "latent-map-thumbnail-atlas",
+    run_id: latentMapFixture.run_id,
+    tile_size: tileSize,
+    atlas_size: 512,
+    image_count: latentMapFixture.points.length,
+    page_count: 1,
+    pages: [
+      {
+        height: 512,
+        index: 0,
+        path: `/atlas-${tileSize}.png`,
+        width: 512,
+      },
+    ],
+    items: latentMapFixture.points.map((point, index) => {
+      const columns = Math.floor(512 / tileSize);
+      const column = index % columns;
+      const row = Math.floor(index / columns);
+
+      return {
+        height: point.height,
+        image_id: point.image_id,
+        page_index: 0,
+        page_path: `/atlas-${tileSize}.png`,
+        source_thumbnail_path: point.thumbnail_path,
+        tile_rect: [
+          column * tileSize,
+          row * tileSize,
+          tileSize,
+          tileSize,
+        ] as [number, number, number, number],
+        uv_rect: [0, 0, 0.125, 0.125] as [
+          number,
+          number,
+          number,
+          number,
+        ],
+        width: point.width,
+      };
+    }),
+  };
+}
 
 describe("LatentMapViewer", () => {
   it("renders directly as a map surface with prototype fixture data", () => {
@@ -27,8 +79,8 @@ describe("LatentMapViewer", () => {
     expect(html).toContain("data-thumbnail-sprite-baseline-draw-calls=\"0\"");
     expect(html).toContain("data-thumbnail-instanced-draw-calls=\"0\"");
     expect(html).not.toContain("data-selected-image-id=");
-    expect(html).toContain("8 images");
-    expect(html).toContain("3 clusters");
+    expect(html).not.toContain("8 images");
+    expect(html).not.toContain("3 clusters");
     expect(html).toContain("name=\"latent-map-recipe\"");
     expect(html).toContain("name=\"latent-map-layout\"");
     expect(html).toContain("name=\"latent-map-cluster-result\"");
@@ -100,14 +152,21 @@ describe("LatentMapViewer", () => {
     expect(html).toContain("data-thumbnail-sprite-baseline-textures=\"8\"");
     expect(html).toContain("data-thumbnail-source-kind=\"generated\"");
     expect(html).toContain("name=\"latent-map-thumbnail-size\"");
-    expect(html).toContain("8 thumbnails");
+    expect(html).not.toContain("8 thumbnails");
     expect(html).not.toContain("fixture/a1.jpg");
   });
 
-  it("can server-render URL-derived thumbnail state without a client mismatch", () => {
+  it("can server-render URL-derived thumbnail state with a matching atlas size", () => {
     const html = renderToString(
       <LatentMapViewer
-        data={latentMapFixture}
+        data={{
+          ...latentMapFixture,
+          thumbnail_atlases: [
+            createFixtureAtlas(32),
+            createFixtureAtlas(64),
+            createFixtureAtlas(96),
+          ],
+        }}
         initialState={{
           clusterFilter: "all",
           renderMode: "thumbnails",
@@ -125,6 +184,8 @@ describe("LatentMapViewer", () => {
 
     expect(html).toContain("data-render-mode=\"thumbnails\"");
     expect(html).toContain("data-thumbnail-size=\"96\"");
+    expect(html).toContain("data-thumbnail-atlas-tile-size=\"96\"");
+    expect(html).toContain("data-thumbnail-strategy=\"generated-atlas\"");
     expect(html).toContain("96px");
   });
 
@@ -142,6 +203,6 @@ describe("LatentMapViewer", () => {
     expect(html).toContain("data-thumbnail-count=\"4\"");
     expect(html).toContain("data-point-layer-visible=\"true\"");
     expect(html).toContain("data-point-layer-size=\"3\"");
-    expect(html).toContain("4 thumbnails");
+    expect(html).not.toContain("4 thumbnails");
   });
 });

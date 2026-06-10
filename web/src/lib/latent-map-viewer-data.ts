@@ -31,7 +31,9 @@ export type ExportedLatentMapViewerData = {
   recipe_name?: string;
   run_id?: string;
   thumbnail_atlas?: Partial<LatentMapGeneratedThumbnailAtlas>;
+  thumbnail_atlases?: Partial<LatentMapGeneratedThumbnailAtlas>[];
   thumbnail_atlas_manifest_path?: string;
+  thumbnail_atlas_manifest_paths?: Record<string, string>;
 };
 
 function createResourceUrl({
@@ -62,6 +64,11 @@ export function normalizeExportedLatentMapViewerData({
     rawAtlas: rawData.thumbnail_atlas,
     thumbnailApiPath,
   });
+  const thumbnailAtlases = normalizeThumbnailAtlases({
+    rawAtlases: rawData.thumbnail_atlases,
+    singleAtlas: thumbnailAtlas,
+    thumbnailApiPath,
+  });
 
   return {
     schema_version: 1,
@@ -83,6 +90,7 @@ export function normalizeExportedLatentMapViewerData({
         }
       : {}),
     ...(thumbnailAtlas ? { thumbnail_atlas: thumbnailAtlas } : {}),
+    ...(thumbnailAtlases.length > 0 ? { thumbnail_atlases: thumbnailAtlases } : {}),
     points: points.map((point): LatentMapPoint => {
       const thumbnailPath = String(point.thumbnail_path ?? "");
 
@@ -108,6 +116,40 @@ export function normalizeExportedLatentMapViewerData({
       };
     }),
   };
+}
+
+function normalizeThumbnailAtlases({
+  rawAtlases,
+  singleAtlas,
+  thumbnailApiPath,
+}: {
+  rawAtlases: Partial<LatentMapGeneratedThumbnailAtlas>[] | undefined;
+  singleAtlas: LatentMapGeneratedThumbnailAtlas | undefined;
+  thumbnailApiPath: string;
+}): LatentMapGeneratedThumbnailAtlas[] {
+  const atlases = [
+    ...(Array.isArray(rawAtlases)
+      ? rawAtlases
+          .map((rawAtlas) =>
+            normalizeThumbnailAtlas({ rawAtlas, thumbnailApiPath }),
+          )
+          .filter((atlas): atlas is LatentMapGeneratedThumbnailAtlas =>
+            Boolean(atlas),
+          )
+      : []),
+    ...(singleAtlas ? [singleAtlas] : []),
+  ];
+  const atlasesBySize = new Map<number, LatentMapGeneratedThumbnailAtlas>();
+
+  atlases.forEach((atlas) => {
+    if (!atlasesBySize.has(atlas.tile_size)) {
+      atlasesBySize.set(atlas.tile_size, atlas);
+    }
+  });
+
+  return [...atlasesBySize.values()].sort(
+    (left, right) => left.tile_size - right.tile_size,
+  );
 }
 
 function normalizeAvailableRecipes(

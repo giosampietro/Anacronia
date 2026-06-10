@@ -99,27 +99,42 @@ async function hydrateThumbnailAtlas({
   rawData: ExportedLatentMapViewerData;
   runDir: string;
 }) {
-  if (
-    rawData.thumbnail_atlas ||
-    typeof rawData.thumbnail_atlas_manifest_path !== "string" ||
-    rawData.thumbnail_atlas_manifest_path.length === 0
-  ) {
+  if (rawData.thumbnail_atlases?.length) {
     return;
   }
 
-  const atlasManifestPath = path.resolve(
-    runDir,
-    rawData.thumbnail_atlas_manifest_path,
-  );
-  if (
-    atlasManifestPath === runDir ||
-    !atlasManifestPath.startsWith(`${runDir}${path.sep}`)
-  ) {
-    throw new Error("Latent map atlas manifest is outside the run directory.");
+  if (rawData.thumbnail_atlas && !rawData.thumbnail_atlas_manifest_paths) {
+    return;
   }
-  rawData.thumbnail_atlas = JSON.parse(
-    await readFile(atlasManifestPath, "utf-8"),
+
+  const manifestPaths = rawData.thumbnail_atlas_manifest_paths
+    ? Object.values(rawData.thumbnail_atlas_manifest_paths)
+    : typeof rawData.thumbnail_atlas_manifest_path === "string" &&
+        rawData.thumbnail_atlas_manifest_path.length > 0
+      ? [rawData.thumbnail_atlas_manifest_path]
+      : [];
+
+  if (manifestPaths.length === 0) {
+    return;
+  }
+
+  rawData.thumbnail_atlases = await Promise.all(
+    manifestPaths.map(async (manifestPath) => {
+      const atlasManifestPath = path.resolve(runDir, manifestPath);
+
+      if (
+        atlasManifestPath === runDir ||
+        !atlasManifestPath.startsWith(`${runDir}${path.sep}`)
+      ) {
+        throw new Error("Latent map atlas manifest is outside the run directory.");
+      }
+
+      return JSON.parse(await readFile(atlasManifestPath, "utf-8"));
+    }),
   );
+  rawData.thumbnail_atlas =
+    rawData.thumbnail_atlases.find((atlas) => atlas.tile_size === 64) ??
+    rawData.thumbnail_atlases[0];
 }
 
 async function loadLatentMapViewerData(searchParams: LatentMapSearchParams) {

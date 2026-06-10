@@ -40,7 +40,7 @@ describe("latent map viewer state", () => {
     expect(
       parseLatentMapUrlState(
         new URLSearchParams(
-          "mode=thumbnails&thumb=96&selected=img_saffron&cluster=0&source=set-a&x=0.2&y=-0.1&z=2.5",
+          "mode=thumbnails&thumb=96&selected=img_saffron&cluster=0&source=set-a&x=0.2&y=-0.1&z=24",
         ),
         latentMapFixture,
       ),
@@ -53,7 +53,7 @@ describe("latent map viewer state", () => {
       view: {
         offsetX: 0.2,
         offsetY: -0.1,
-        zoom: 2.5,
+        zoom: 24,
       },
     });
   });

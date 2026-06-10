@@ -28,6 +28,7 @@ export type LatentMapViewerData = {
   source_folder: string;
   neighbor_lookup_path?: string;
   thumbnail_atlas?: LatentMapGeneratedThumbnailAtlas;
+  thumbnail_atlases?: LatentMapGeneratedThumbnailAtlas[];
   points: LatentMapPoint[];
 };
 
@@ -242,6 +243,18 @@ export function createLatentMapStats(data: LatentMapViewerData): {
     clusterCount: new Set(data.points.map((point) => point.cluster_id)).size,
     pointCount: data.points.length,
   };
+}
+
+export function getLatentMapThumbnailAtlasForSize(
+  data: LatentMapViewerData,
+  thumbnailSize: LatentMapThumbnailSize,
+): LatentMapGeneratedThumbnailAtlas | undefined {
+  const atlases = [
+    ...(data.thumbnail_atlases ?? []),
+    ...(data.thumbnail_atlas ? [data.thumbnail_atlas] : []),
+  ];
+
+  return atlases.find((atlas) => atlas.tile_size === thumbnailSize);
 }
 
 export function createLatentMapNeighborSet(
