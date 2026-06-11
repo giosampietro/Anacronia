@@ -33,6 +33,7 @@ import {
   createLatentMapRenderState,
   createLatentMapStats,
   getLatentMapAvailableTextureDetails,
+  getLatentMapFallbackThumbnailAtlas,
   getNextLatentMapSelection,
   getLatentMapThumbnailAtlasForSize,
   getLatentMapThumbnailScreenLongSide,
@@ -454,18 +455,54 @@ export function LatentMapViewer({
     () => getLatentMapThumbnailAtlasForSize(data, resolvedTextureDetail),
     [data, resolvedTextureDetail],
   );
+  const fallbackThumbnailAtlas = useMemo(
+    () =>
+      getLatentMapFallbackThumbnailAtlas({
+        data,
+        resolvedTextureDetail,
+      }),
+    [data, resolvedTextureDetail],
+  );
+  const thumbnailViewport = useMemo(
+    () =>
+      mapViewportSize.height > 0 && mapViewportSize.width > 0
+        ? {
+            height: mapViewportSize.height,
+            offsetX: view.offsetX,
+            offsetY: view.offsetY,
+            width: mapViewportSize.width,
+            zoom: view.zoom,
+          }
+        : undefined,
+    [
+      mapViewportSize.height,
+      mapViewportSize.width,
+      view.offsetX,
+      view.offsetY,
+      view.zoom,
+    ],
+  );
   const thumbnailPlan = useMemo(
     () =>
       createLatentMapThumbnailRenderPlan({
         atlasSize: ATLAS_TEXTURE_SIZE,
+        fallbackThumbnailAtlas,
         hoverPreviewSize: DEFAULT_LATENT_MAP_HOVER_PREVIEW_SIZE,
         points: renderPoints,
         strategy: "all-atlas",
         textureDetail,
         thumbnailAtlas,
         thumbnailSize,
+        viewport: thumbnailViewport,
       }),
-    [renderPoints, textureDetail, thumbnailAtlas, thumbnailSize],
+    [
+      fallbackThumbnailAtlas,
+      renderPoints,
+      textureDetail,
+      thumbnailAtlas,
+      thumbnailSize,
+      thumbnailViewport,
+    ],
   );
   const pointLayer = useMemo(
     () =>
@@ -1442,8 +1479,13 @@ export function LatentMapViewer({
           data-point-layer-size={pointLayer.pointSize}
           data-point-layer-visible={pointLayer.visible}
           data-thumbnail-atlas-page-count={
-            renderMode === "thumbnails" ? thumbnailPlan.atlasPages.length : 0
+            renderMode === "thumbnails"
+              ? thumbnailPlan.atlasPages.length +
+                thumbnailPlan.fallbackAtlasPages.length
+              : 0
           }
+          data-thumbnail-atlas-cache-active={thumbnailPlan.atlasPageCacheActive}
+          data-thumbnail-atlas-page-budget={thumbnailPlan.atlasPageBudget ?? 0}
           data-thumbnail-estimated-atlas-texture-bytes={
             renderMode === "thumbnails"
               ? thumbnailPlan.estimatedAtlasTextureBytes
@@ -1457,6 +1499,12 @@ export function LatentMapViewer({
           data-thumbnail-hover-preview-size={thumbnailPlan.hoverPreviewSize}
           data-thumbnail-atlas-tile-size={thumbnailAtlas?.tile_size ?? 0}
           data-thumbnail-display-size={thumbnailPlan.displayThumbnailSize}
+          data-thumbnail-fallback-atlas-page-count={
+            thumbnailPlan.fallbackAtlasPages.length
+          }
+          data-thumbnail-fallback-texture-detail={
+            thumbnailPlan.fallbackResolvedTextureDetail ?? 0
+          }
           data-thumbnail-instanced-draw-calls={
             renderMode === "thumbnails"
               ? thumbnailRendererComparison.instancedAtlas.drawCalls
@@ -1491,6 +1539,9 @@ export function LatentMapViewer({
           data-thumbnail-source-kind="generated"
           data-thumbnail-strategy={thumbnailPlan.strategy}
           data-thumbnail-texture-detail={thumbnailPlan.textureDetail}
+          data-thumbnail-total-atlas-page-count={
+            thumbnailPlan.totalAtlasPageCount
+          }
           data-testid="latent-map-canvas"
           onPointerDown={handlePointerDown}
           onPointerLeave={() => {

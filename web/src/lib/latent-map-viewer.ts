@@ -107,10 +107,14 @@ export type LatentMapGeneratedThumbnailAtlasItem = {
 };
 
 export type LatentMapThumbnailRenderPlan = {
+  atlasPageBudget: number | null;
+  atlasPageCacheActive: boolean;
   atlasPages: LatentMapThumbnailAtlasPage[];
   capped: boolean;
   displayThumbnailSize: LatentMapThumbnailSize;
   estimatedAtlasTextureBytes: number;
+  fallbackAtlasPages: LatentMapThumbnailAtlasPage[];
+  fallbackResolvedTextureDetail: number | null;
   hoverPreviewSize: number;
   maxThumbnails: number;
   resolvedTextureDetail: number;
@@ -119,6 +123,7 @@ export type LatentMapThumbnailRenderPlan = {
   thumbnailSize: LatentMapThumbnailSize;
   thumbnailPoints: LatentMapRenderablePoint[];
   textureSources: string[];
+  totalAtlasPageCount: number;
 };
 
 export type LatentMapPointLayerPlan = {
@@ -139,9 +144,18 @@ export type LatentMapThumbnailAtlasPage = {
   columns: number;
   index: number;
   items: LatentMapThumbnailAtlasItem[];
+  renderLayer?: "fallback" | "primary";
   rows: number;
   tileSize: number;
   texturePath?: string;
+};
+
+export type LatentMapThumbnailViewport = {
+  height: number;
+  offsetX: number;
+  offsetY: number;
+  width: number;
+  zoom: number;
 };
 
 export type LatentMapRuntimeRendererInfo = {
@@ -216,6 +230,9 @@ export const DEFAULT_LATENT_MAP_HOVER_PREVIEW_SIZE = 512;
 export const LATENT_MAP_THUMBNAIL_SIZE_OPTIONS = [32, 64, 96] as const;
 export const LATENT_MAP_THUMBNAIL_WORLD_SIZE_PER_PIXEL = 0.13 / 64;
 export const LATENT_MAP_MAX_THUMBNAIL_SCREEN_SCALE = 2;
+export const LATENT_MAP_HIGH_DETAIL_PAGE_CACHE_MIN_DETAIL = 128;
+export const LATENT_MAP_HIGH_DETAIL_PAGE_BUDGET = 6;
+export const LATENT_MAP_FALLBACK_ATLAS_PAGE_BUDGET = 4;
 export const LATENT_MAP_DEFAULT_POINT_SIZE = 9;
 export const LATENT_MAP_FOCUS_BACKGROUND_POINT_SIZE = 3;
 export const LATENT_MAP_INSTANCED_THUMBNAIL_THRESHOLD =
@@ -495,6 +512,34 @@ export function getLatentMapThumbnailAtlasForSize(
   );
 }
 
+export function getLatentMapFallbackThumbnailAtlas({
+  data,
+  maxPageCount = LATENT_MAP_FALLBACK_ATLAS_PAGE_BUDGET,
+  resolvedTextureDetail,
+}: {
+  data: LatentMapViewerData;
+  maxPageCount?: number;
+  resolvedTextureDetail: number;
+}): LatentMapGeneratedThumbnailAtlas | undefined {
+  const lowerDetailAtlases = getLatentMapGeneratedThumbnailAtlases(data).filter(
+    (atlas) => atlas.tile_size < resolvedTextureDetail,
+  );
+  const budgetedAtlases = lowerDetailAtlases.filter(
+    (atlas) => atlas.page_count <= maxPageCount,
+  );
+
+  return budgetedAtlases.at(-1) ?? lowerDetailAtlases[0];
+}
+
+export function getLatentMapRenderableAtlasPages(
+  thumbnailPlan: LatentMapThumbnailRenderPlan,
+) {
+  return [
+    ...thumbnailPlan.fallbackAtlasPages,
+    ...thumbnailPlan.atlasPages,
+  ];
+}
+
 export function createLatentMapNeighborSet(
   data: LatentMapViewerData,
   selectedImageId: string | null,
@@ -747,8 +792,139 @@ function createSpatialThumbnailSample({
   return sampled;
 }
 
+function isFocusThumbnail(point: LatentMapRenderablePoint) {
+  return point.point_state === "selected" || point.point_state === "neighbor";
+}
+
+function getViewportWorldBounds({
+  thumbnailSize,
+  viewport,
+}: {
+  thumbnailSize: LatentMapThumbnailSize;
+  viewport: LatentMapThumbnailViewport;
+}) {
+  const width = Math.max(viewport.width, 1);
+  const height = Math.max(viewport.height, 1);
+  const zoom = Math.max(viewport.zoom, 0.001);
+  const aspect = width / height;
+  const margin =
+    thumbnailSize *
+    LATENT_MAP_THUMBNAIL_WORLD_SIZE_PER_PIXEL *
+    LATENT_MAP_MAX_THUMBNAIL_SCREEN_SCALE;
+
+  return {
+    maxX: viewport.offsetX + aspect / zoom + margin,
+    maxY: viewport.offsetY + 1 / zoom + margin,
+    minX: viewport.offsetX - aspect / zoom - margin,
+    minY: viewport.offsetY - 1 / zoom - margin,
+  };
+}
+
+function isPointInsideBounds(
+  point: LatentMapRenderablePoint,
+  bounds: ReturnType<typeof getViewportWorldBounds>,
+) {
+  return (
+    point.fitted_x >= bounds.minX &&
+    point.fitted_x <= bounds.maxX &&
+    point.fitted_y >= bounds.minY &&
+    point.fitted_y <= bounds.maxY
+  );
+}
+
+export function selectLatentMapAtlasPagesForViewport({
+  pageBudget = LATENT_MAP_HIGH_DETAIL_PAGE_BUDGET,
+  pages,
+  thumbnailSize,
+  viewport,
+}: {
+  pageBudget?: number;
+  pages: LatentMapThumbnailAtlasPage[];
+  thumbnailSize: LatentMapThumbnailSize;
+  viewport: LatentMapThumbnailViewport;
+}): LatentMapThumbnailAtlasPage[] {
+  if (pages.length === 0) {
+    return [];
+  }
+
+  const bounds = getViewportWorldBounds({
+    thumbnailSize,
+    viewport,
+  });
+  const pageCandidates = pages.map((page) => {
+    const visibleItems = page.items.filter((item) =>
+      isPointInsideBounds(item.point, bounds),
+    );
+    const pinnedItems = page.items.filter((item) =>
+      isFocusThumbnail(item.point),
+    );
+    const pageCenter = page.items.reduce(
+      (center, item) => ({
+        x: center.x + item.point.fitted_x / Math.max(page.items.length, 1),
+        y: center.y + item.point.fitted_y / Math.max(page.items.length, 1),
+      }),
+      { x: 0, y: 0 },
+    );
+
+    return {
+      distanceFromViewCenter: Math.hypot(
+        pageCenter.x - viewport.offsetX,
+        pageCenter.y - viewport.offsetY,
+      ),
+      page,
+      pinnedCount: pinnedItems.length,
+      visibleCount: visibleItems.length,
+    };
+  });
+  const pinnedCandidates = pageCandidates.filter(
+    (candidate) => candidate.pinnedCount > 0,
+  );
+  const pinnedIndexes = new Set(
+    pinnedCandidates.map((candidate) => candidate.page.index),
+  );
+  const visibleCandidates = pageCandidates
+    .filter(
+      (candidate) =>
+        candidate.visibleCount > 0 && !pinnedIndexes.has(candidate.page.index),
+    )
+    .sort((left, right) => {
+      const visibleDelta = right.visibleCount - left.visibleCount;
+
+      if (visibleDelta !== 0) {
+        return visibleDelta;
+      }
+
+      const distanceDelta =
+        left.distanceFromViewCenter - right.distanceFromViewCenter;
+
+      if (distanceDelta !== 0) {
+        return distanceDelta;
+      }
+
+      return left.page.index - right.page.index;
+    });
+  const allowedVisibleCount = Math.max(
+    0,
+    pageBudget - pinnedCandidates.length,
+  );
+  const selectedPages = [
+    ...pinnedCandidates,
+    ...visibleCandidates.slice(0, allowedVisibleCount),
+  ];
+
+  if (selectedPages.length === 0) {
+    return [];
+  }
+
+  return selectedPages
+    .map((candidate) => candidate.page)
+    .sort((left, right) => left.index - right.index);
+}
+
 export function createLatentMapThumbnailRenderPlan({
   atlasSize = 2048,
+  atlasPageBudget = LATENT_MAP_HIGH_DETAIL_PAGE_BUDGET,
+  fallbackThumbnailAtlas,
   hoverPreviewSize = DEFAULT_LATENT_MAP_HOVER_PREVIEW_SIZE,
   maxThumbnails = DEFAULT_LATENT_MAP_THUMBNAIL_CAP,
   points,
@@ -756,8 +932,11 @@ export function createLatentMapThumbnailRenderPlan({
   textureDetail = DEFAULT_LATENT_MAP_TEXTURE_DETAIL,
   thumbnailAtlas,
   thumbnailSize = DEFAULT_LATENT_MAP_THUMBNAIL_SIZE,
+  viewport,
 }: {
+  atlasPageBudget?: number;
   atlasSize?: number;
+  fallbackThumbnailAtlas?: LatentMapGeneratedThumbnailAtlas;
   hoverPreviewSize?: number;
   maxThumbnails?: number;
   points: LatentMapRenderablePoint[];
@@ -765,6 +944,7 @@ export function createLatentMapThumbnailRenderPlan({
   textureDetail?: LatentMapTextureDetail;
   thumbnailAtlas?: LatentMapGeneratedThumbnailAtlas;
   thumbnailSize?: LatentMapThumbnailSize;
+  viewport?: LatentMapThumbnailViewport;
 }): LatentMapThumbnailRenderPlan {
   const resolvedTextureDetail =
     thumbnailAtlas?.tile_size ??
@@ -781,12 +961,15 @@ export function createLatentMapThumbnailRenderPlan({
   ) {
     return createGeneratedAtlasRenderPlan({
       hoverPreviewSize,
+      atlasPageBudget,
+      fallbackThumbnailAtlas,
       maxThumbnails,
       points: plannedPoints,
       resolvedTextureDetail,
       textureDetail,
       thumbnailAtlas,
       thumbnailSize,
+      viewport,
     });
   }
 
@@ -818,10 +1001,14 @@ export function createLatentMapThumbnailRenderPlan({
   });
 
   return {
+    atlasPageBudget: null,
+    atlasPageCacheActive: false,
     atlasPages,
     capped: plannedPoints.length > thumbnailPoints.length,
     displayThumbnailSize: thumbnailSize,
     estimatedAtlasTextureBytes: atlasPages.length * atlasSize * atlasSize * 4,
+    fallbackAtlasPages: [],
+    fallbackResolvedTextureDetail: null,
     hoverPreviewSize,
     maxThumbnails,
     resolvedTextureDetail,
@@ -830,6 +1017,7 @@ export function createLatentMapThumbnailRenderPlan({
     thumbnailSize,
     thumbnailPoints,
     textureSources: thumbnailPoints.map((point) => point.thumbnail_path),
+    totalAtlasPageCount: atlasPages.length,
   };
 }
 
@@ -852,7 +1040,9 @@ export function createLatentMapRuntimeSnapshot({
     averageFrameMs: Number((performanceInfo?.averageFrameMs ?? 0).toFixed(2)),
     averageRenderMs: Number((performanceInfo?.averageRenderMs ?? 0).toFixed(2)),
     atlasPageCount:
-      renderMode === "thumbnails" ? thumbnailPlan.atlasPages.length : 0,
+      renderMode === "thumbnails"
+        ? getLatentMapRenderableAtlasPages(thumbnailPlan).length
+        : 0,
     drawCalls: rendererInfo?.render?.calls ?? 0,
     estimatedFps: Number((performanceInfo?.estimatedFps ?? 0).toFixed(1)),
     geometryCount: rendererInfo?.memory?.geometries ?? 0,
@@ -873,10 +1063,11 @@ export function createLatentMapThumbnailRendererComparison(
   thumbnailPlan: LatentMapThumbnailRenderPlan,
 ): LatentMapThumbnailRendererComparison {
   const thumbnailCount = thumbnailPlan.thumbnailPoints.length;
-  const atlasPageCount = thumbnailPlan.atlasPages.length;
+  const renderableAtlasPages = getLatentMapRenderableAtlasPages(thumbnailPlan);
+  const atlasPageCount = renderableAtlasPages.length;
   const atlasSourceRequests =
     thumbnailPlan.strategy === "generated-atlas"
-      ? thumbnailPlan.atlasPages.filter((page) => page.texturePath).length
+      ? renderableAtlasPages.filter((page) => page.texturePath).length
       : thumbnailCount;
   let recommendation: LatentMapThumbnailRendererComparison["recommendation"] =
     "keep-capped-sprites-for-mvp";
@@ -920,27 +1111,25 @@ export function createLatentMapThumbnailRendererComparison(
   };
 }
 
-function createGeneratedAtlasRenderPlan({
-  hoverPreviewSize,
-  maxThumbnails,
+function createGeneratedAtlasPagesForAtlas({
+  pointById,
   points,
-  resolvedTextureDetail,
-  textureDetail,
   thumbnailAtlas,
-  thumbnailSize,
+  renderLayer,
 }: {
-  hoverPreviewSize: number;
-  maxThumbnails: number;
+  pointById: Map<string, LatentMapRenderablePoint>;
   points: LatentMapRenderablePoint[];
-  resolvedTextureDetail: number;
-  textureDetail: LatentMapTextureDetail;
   thumbnailAtlas: LatentMapGeneratedThumbnailAtlas;
-  thumbnailSize: LatentMapThumbnailSize;
-}): LatentMapThumbnailRenderPlan {
-  const pointById = new Map(points.map((point) => [point.image_id, point]));
+  renderLayer: LatentMapThumbnailAtlasPage["renderLayer"];
+}): LatentMapThumbnailAtlasPage[] {
+  const pointIds = new Set(points.map((point) => point.image_id));
   const itemsByPageIndex = new Map<number, LatentMapThumbnailAtlasItem[]>();
 
   thumbnailAtlas.items.forEach((item) => {
+    if (!pointIds.has(item.image_id)) {
+      return;
+    }
+
     const point = pointById.get(item.image_id);
 
     if (!point) {
@@ -957,7 +1146,7 @@ function createGeneratedAtlasRenderPlan({
     itemsByPageIndex.set(item.page_index, pageItems);
   });
 
-  const atlasPages = thumbnailAtlas.pages.map((page) => {
+  return thumbnailAtlas.pages.map((page) => {
     const columns = Math.max(
       1,
       Math.floor(thumbnailAtlas.atlas_size / thumbnailAtlas.tile_size),
@@ -968,21 +1157,87 @@ function createGeneratedAtlasRenderPlan({
       columns,
       index: page.index,
       items: itemsByPageIndex.get(page.index) ?? [],
+      renderLayer,
       rows: columns,
       texturePath: page.path,
       tileSize: thumbnailAtlas.tile_size,
     };
   });
+}
+
+function createGeneratedAtlasRenderPlan({
+  atlasPageBudget,
+  fallbackThumbnailAtlas,
+  hoverPreviewSize,
+  maxThumbnails,
+  points,
+  resolvedTextureDetail,
+  textureDetail,
+  thumbnailAtlas,
+  thumbnailSize,
+  viewport,
+}: {
+  atlasPageBudget: number;
+  fallbackThumbnailAtlas?: LatentMapGeneratedThumbnailAtlas;
+  hoverPreviewSize: number;
+  maxThumbnails: number;
+  points: LatentMapRenderablePoint[];
+  resolvedTextureDetail: number;
+  textureDetail: LatentMapTextureDetail;
+  thumbnailAtlas: LatentMapGeneratedThumbnailAtlas;
+  thumbnailSize: LatentMapThumbnailSize;
+  viewport?: LatentMapThumbnailViewport;
+}): LatentMapThumbnailRenderPlan {
+  const pointById = new Map(points.map((point) => [point.image_id, point]));
+  const allPrimaryAtlasPages = createGeneratedAtlasPagesForAtlas({
+    pointById,
+    points,
+    renderLayer: "primary",
+    thumbnailAtlas,
+  });
+  const shouldUsePageCache =
+    resolvedTextureDetail >= LATENT_MAP_HIGH_DETAIL_PAGE_CACHE_MIN_DETAIL &&
+    Boolean(fallbackThumbnailAtlas) &&
+    Boolean(viewport && viewport.height > 0 && viewport.width > 0);
+  const fallbackAtlasPages =
+    shouldUsePageCache && fallbackThumbnailAtlas
+      ? createGeneratedAtlasPagesForAtlas({
+          pointById,
+          points,
+          renderLayer: "fallback",
+          thumbnailAtlas: fallbackThumbnailAtlas,
+        })
+      : [];
+  const atlasPages = shouldUsePageCache && viewport
+    ? selectLatentMapAtlasPagesForViewport({
+        pageBudget: atlasPageBudget,
+        pages: allPrimaryAtlasPages,
+        thumbnailSize,
+        viewport,
+      })
+    : allPrimaryAtlasPages;
   const thumbnailPoints = thumbnailAtlas.items
     .map((item) => pointById.get(item.image_id))
     .filter((point): point is LatentMapRenderablePoint => Boolean(point));
+  const renderableAtlasPages = [...fallbackAtlasPages, ...atlasPages];
 
   return {
+    atlasPageBudget: shouldUsePageCache ? atlasPageBudget : null,
+    atlasPageCacheActive: shouldUsePageCache,
     atlasPages,
     capped: false,
     displayThumbnailSize: thumbnailSize,
     estimatedAtlasTextureBytes:
-      atlasPages.length * thumbnailAtlas.atlas_size * thumbnailAtlas.atlas_size * 4,
+      renderableAtlasPages.reduce(
+        (totalBytes, page) =>
+          totalBytes + page.atlasSize * page.atlasSize * 4,
+        0,
+      ),
+    fallbackAtlasPages,
+    fallbackResolvedTextureDetail:
+      shouldUsePageCache && fallbackThumbnailAtlas
+        ? fallbackThumbnailAtlas.tile_size
+        : null,
     hoverPreviewSize,
     maxThumbnails,
     resolvedTextureDetail,
@@ -990,7 +1245,8 @@ function createGeneratedAtlasRenderPlan({
     textureDetail,
     thumbnailSize,
     thumbnailPoints,
-    textureSources: atlasPages.map((page) => page.texturePath ?? ""),
+    textureSources: renderableAtlasPages.map((page) => page.texturePath ?? ""),
+    totalAtlasPageCount: allPrimaryAtlasPages.length,
   };
 }
 

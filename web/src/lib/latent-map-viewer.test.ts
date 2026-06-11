@@ -13,13 +13,94 @@ import {
   findNearestLatentMapPoint,
   fitLatentMapPoints,
   getLatentMapAvailableTextureDetails,
+  getLatentMapFallbackThumbnailAtlas,
+  getLatentMapRenderableAtlasPages,
   getLatentMapThumbnailScreenLongSide,
   getLatentMapThumbnailAtlasForSize,
   getNextLatentMapSelection,
   isLatentMapThumbnailFocusActive,
   resolveLatentMapTextureDetail,
+  selectLatentMapAtlasPagesForViewport,
   selectLatentMapTextureDetail,
+  type LatentMapGeneratedThumbnailAtlas,
+  type LatentMapRenderablePoint,
 } from "@/lib/latent-map-viewer";
+
+function createRenderablePoints(count: number): LatentMapRenderablePoint[] {
+  return Array.from({ length: count }, (_, index) => ({
+    image_id: `img_${String(index).padStart(2, "0")}`,
+    x: index,
+    y: 0,
+    fitted_x: index * 0.25,
+    fitted_y: 0,
+    cluster_id: 0,
+    thumbnail_path: `thumb-${index}.jpg`,
+    source_path: `source-${index}.jpg`,
+    relative_path: `source-${index}.jpg`,
+    width: 100,
+    height: 100,
+    neighbors: [],
+    color: [150, 156, 166] as [number, number, number],
+    point_state: "cluster" as const,
+  }));
+}
+
+function createGeneratedAtlas({
+  atlasSize = 256,
+  points,
+  tileSize,
+}: {
+  atlasSize?: number;
+  points: LatentMapRenderablePoint[];
+  tileSize: number;
+}): LatentMapGeneratedThumbnailAtlas {
+  const columns = Math.max(1, Math.floor(atlasSize / tileSize));
+  const pageCapacity = columns * columns;
+  const pageCount = Math.ceil(points.length / pageCapacity);
+
+  return {
+    schema_version: 1,
+    asset_kind: "latent-map-thumbnail-atlas",
+    run_id: "run-1",
+    tile_size: tileSize,
+    atlas_size: atlasSize,
+    image_count: points.length,
+    page_count: pageCount,
+    pages: Array.from({ length: pageCount }, (_, pageIndex) => ({
+      height: atlasSize,
+      index: pageIndex,
+      path: `/api/latent-map/thumbnails?run=run-1&path=viewer%2Fatlases%2F${tileSize}px%2Fpage-${String(pageIndex).padStart(3, "0")}.png`,
+      width: atlasSize,
+    })),
+    items: points.map((point, index) => {
+      const pageIndex = Math.floor(index / pageCapacity);
+      const pageOffset = index % pageCapacity;
+      const column = pageOffset % columns;
+      const row = Math.floor(pageOffset / columns);
+
+      return {
+        height: point.height,
+        image_id: point.image_id,
+        page_index: pageIndex,
+        page_path: `viewer/atlases/${tileSize}px/page-${String(pageIndex).padStart(3, "0")}.png`,
+        source_thumbnail_path: point.thumbnail_path,
+        tile_rect: [
+          column * tileSize,
+          row * tileSize,
+          tileSize,
+          tileSize,
+        ] as [number, number, number, number],
+        uv_rect: [
+          column / columns,
+          row / columns,
+          1 / columns,
+          1 / columns,
+        ] as [number, number, number, number],
+        width: point.width,
+      };
+    }),
+  };
+}
 
 describe("latent map viewer model", () => {
   it("reports point and cluster counts for exported viewer data", () => {
@@ -307,6 +388,87 @@ describe("latent map viewer model", () => {
       "/api/latent-map/thumbnails?run=run-1&path=viewer%2Fatlases%2F64px%2Fpage-000.png",
     ]);
     expect(plan.thumbnailPoints).toHaveLength(8);
+  });
+
+  it("selects viewport atlas pages while keeping focus pages pinned", () => {
+    const points = createRenderablePoints(10);
+    const atlas = createGeneratedAtlas({
+      points,
+      tileSize: 128,
+    });
+    const renderPlan = createLatentMapThumbnailRenderPlan({
+      points,
+      thumbnailAtlas: atlas,
+      thumbnailSize: 96,
+    });
+
+    points[9].point_state = "selected";
+
+    const pinnedOnlyPages = selectLatentMapAtlasPagesForViewport({
+      pageBudget: 1,
+      pages: renderPlan.atlasPages,
+      thumbnailSize: 96,
+      viewport: {
+        height: 800,
+        offsetX: 0,
+        offsetY: 0,
+        width: 1200,
+        zoom: 8,
+      },
+    });
+    const visibleAndPinnedPages = selectLatentMapAtlasPagesForViewport({
+      pageBudget: 2,
+      pages: renderPlan.atlasPages,
+      thumbnailSize: 96,
+      viewport: {
+        height: 800,
+        offsetX: 0,
+        offsetY: 0,
+        width: 1200,
+        zoom: 8,
+      },
+    });
+
+    expect(pinnedOnlyPages.map((page) => page.index)).toEqual([2]);
+    expect(visibleAndPinnedPages.map((page) => page.index)).toEqual([0, 2]);
+  });
+
+  it("uses a low-detail fallback while caching high-detail atlas pages", () => {
+    const points = createRenderablePoints(10);
+    const highDetailAtlas = createGeneratedAtlas({
+      points,
+      tileSize: 128,
+    });
+    const fallbackAtlas = createGeneratedAtlas({
+      points,
+      tileSize: 64,
+    });
+    const plan = createLatentMapThumbnailRenderPlan({
+      atlasPageBudget: 1,
+      fallbackThumbnailAtlas: fallbackAtlas,
+      points,
+      thumbnailAtlas: highDetailAtlas,
+      thumbnailSize: 96,
+      viewport: {
+        height: 800,
+        offsetX: 0,
+        offsetY: 0,
+        width: 1200,
+        zoom: 8,
+      },
+    });
+
+    expect(plan.atlasPageCacheActive).toBe(true);
+    expect(plan.fallbackResolvedTextureDetail).toBe(64);
+    expect(plan.fallbackAtlasPages).toHaveLength(1);
+    expect(plan.atlasPages.map((page) => page.index)).toEqual([0]);
+    expect(plan.totalAtlasPageCount).toBe(3);
+    expect(getLatentMapRenderableAtlasPages(plan)).toHaveLength(2);
+    expect(plan.estimatedAtlasTextureBytes).toBe(2 * 256 * 256 * 4);
+    expect(plan.textureSources).toEqual([
+      "/api/latent-map/thumbnails?run=run-1&path=viewer%2Fatlases%2F64px%2Fpage-000.png",
+      "/api/latent-map/thumbnails?run=run-1&path=viewer%2Fatlases%2F128px%2Fpage-000.png",
+    ]);
   });
 
   it("keeps the old capped thumbnail sample available as an explicit fallback", () => {
@@ -616,6 +778,52 @@ describe("latent map viewer model", () => {
         ],
       }),
     ).toEqual([32, 64, 96, 128]);
+  });
+
+  it("chooses the sharpest lower fallback atlas within the page budget", () => {
+    expect(
+      getLatentMapFallbackThumbnailAtlas({
+        data: {
+          ...latentMapFixture,
+          thumbnail_atlases: [
+            {
+              schema_version: 1,
+              asset_kind: "latent-map-thumbnail-atlas",
+              run_id: "run-1",
+              tile_size: 32,
+              atlas_size: 2048,
+              image_count: 0,
+              page_count: 1,
+              pages: [],
+              items: [],
+            },
+            {
+              schema_version: 1,
+              asset_kind: "latent-map-thumbnail-atlas",
+              run_id: "run-1",
+              tile_size: 64,
+              atlas_size: 2048,
+              image_count: 0,
+              page_count: 4,
+              pages: [],
+              items: [],
+            },
+            {
+              schema_version: 1,
+              asset_kind: "latent-map-thumbnail-atlas",
+              run_id: "run-1",
+              tile_size: 96,
+              atlas_size: 2048,
+              image_count: 0,
+              page_count: 8,
+              pages: [],
+              items: [],
+            },
+          ],
+        },
+        resolvedTextureDetail: 128,
+      })?.tile_size,
+    ).toBe(64);
   });
 
   it("resolves automatic texture detail from screen size but preserves manual detail", () => {

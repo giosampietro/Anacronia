@@ -1,6 +1,7 @@
 import * as THREE from "three";
 
 import {
+  getLatentMapRenderableAtlasPages,
   getLatentMapThumbnailStateScaleMultiplier,
   LATENT_MAP_MAX_THUMBNAIL_SCREEN_SCALE,
   LATENT_MAP_THUMBNAIL_WORLD_SIZE_PER_PIXEL,
@@ -239,7 +240,9 @@ function writeAtlasInstanceAttributes({
 
     instancePositions[index * 3] = item.point.fitted_x;
     instancePositions[index * 3 + 1] = item.point.fitted_y;
-    instancePositions[index * 3 + 2] = getThumbnailLayer(item.point);
+    instancePositions[index * 3 + 2] =
+      getThumbnailLayer(item.point) +
+      (page.renderLayer === "primary" ? 0.02 : 0);
     instanceScales[index * 2] = width;
     instanceScales[index * 2 + 1] = height;
     instanceUvRects.set(item.uvRect, index * 4);
@@ -309,7 +312,9 @@ function updateAtlasInstanceAttributes({
 
     instancePositions[index * 3] = item.point.fitted_x;
     instancePositions[index * 3 + 1] = item.point.fitted_y;
-    instancePositions[index * 3 + 2] = getThumbnailLayer(item.point);
+    instancePositions[index * 3 + 2] =
+      getThumbnailLayer(item.point) +
+      (page.renderLayer === "primary" ? 0.02 : 0);
     instanceScales[index * 2] = width;
     instanceScales[index * 2 + 1] = height;
     instanceUvRects.set(item.uvRect, index * 4);
@@ -467,7 +472,7 @@ type PreparedAtlasPageSet = {
   atlasPages: AtlasPageMesh[];
   images: HTMLImageElement[];
   isCanceled: boolean;
-  loadedThumbnailCount: number;
+  loadedImageIds: Set<string>;
   signature: string;
   thumbnailPlan: LatentMapThumbnailRenderPlan;
 };
@@ -513,7 +518,8 @@ function createAtlasPageMesh({
   const mesh = new THREE.Mesh(geometry, material);
 
   mesh.frustumCulled = false;
-  mesh.renderOrder = 10 + page.index;
+  mesh.renderOrder =
+    (page.renderLayer === "primary" ? 1_000 : 10) + page.index;
 
   return {
     canvas,
@@ -548,10 +554,12 @@ function nowMilliseconds() {
 
 function createThumbnailPlanSignature(plan: LatentMapThumbnailRenderPlan) {
   const sources = plan.textureSources.join("\n");
-  const pages = plan.atlasPages
+  const pages = getLatentMapRenderableAtlasPages(plan)
     .map(
       (page) =>
-        `${page.index}:${page.atlasSize}:${page.tileSize}:${page.items.length}:${
+        `${page.renderLayer ?? "primary"}:${page.index}:${page.atlasSize}:${
+          page.tileSize
+        }:${page.items.length}:${
           page.texturePath ?? ""
         }`,
     )
@@ -560,7 +568,9 @@ function createThumbnailPlanSignature(plan: LatentMapThumbnailRenderPlan) {
   return [
     plan.strategy,
     plan.resolvedTextureDetail,
+    plan.atlasPageCacheActive ? "cached" : "full",
     plan.atlasPages.length,
+    plan.fallbackAtlasPages.length,
     plan.thumbnailPoints.length,
     pages,
     sources,
@@ -773,13 +783,13 @@ export function createLatentMapWebglRuntime({
       atlasPages: [],
       images: [],
       isCanceled: false,
-      loadedThumbnailCount: 0,
+      loadedImageIds: new Set<string>(),
       signature,
       thumbnailPlan: plan,
     };
     const loadPromises: Promise<void>[] = [];
 
-    plan.atlasPages.forEach((page) => {
+    getLatentMapRenderableAtlasPages(plan).forEach((page) => {
       const atlasPage = createAtlasPageMesh({
         page,
         thumbnailSize: plan.thumbnailSize,
@@ -801,7 +811,9 @@ export function createLatentMapWebglRuntime({
                   tileSize: page.tileSize,
                 });
               });
-              pageSet.loadedThumbnailCount += page.items.length;
+              page.items.forEach((item) => {
+                pageSet.loadedImageIds.add(item.point.image_id);
+              });
               atlasPage.texture.needsUpdate = true;
             },
             onLoad: (image) => {
@@ -812,7 +824,9 @@ export function createLatentMapWebglRuntime({
                 page.atlasSize,
                 page.atlasSize,
               );
-              pageSet.loadedThumbnailCount += page.items.length;
+              page.items.forEach((item) => {
+                pageSet.loadedImageIds.add(item.point.image_id);
+              });
               atlasPage.texture.needsUpdate = true;
             },
             pageSet,
@@ -831,7 +845,7 @@ export function createLatentMapWebglRuntime({
                 item,
                 tileSize: page.tileSize,
               });
-              pageSet.loadedThumbnailCount += 1;
+              pageSet.loadedImageIds.add(item.point.image_id);
               atlasPage.texture.needsUpdate = true;
             },
             onLoad: (image) => {
@@ -841,7 +855,7 @@ export function createLatentMapWebglRuntime({
                 item,
                 tileSize: page.tileSize,
               });
-              pageSet.loadedThumbnailCount += 1;
+              pageSet.loadedImageIds.add(item.point.image_id);
               atlasPage.texture.needsUpdate = true;
             },
             pageSet,
@@ -863,7 +877,7 @@ export function createLatentMapWebglRuntime({
     });
     pageSet.images.length = 0;
     pageSet.atlasPages = [];
-    loadedThumbnailCount = pageSet.loadedThumbnailCount;
+    loadedThumbnailCount = pageSet.loadedImageIds.size;
     activeThumbnailPlan = pageSet.thumbnailPlan;
     activeThumbnailPlanSignature = pageSet.signature;
     updateAtlasInstances(activeThumbnailPlan);
@@ -903,7 +917,7 @@ export function createLatentMapWebglRuntime({
   function updateAtlasInstances(plan: LatentMapThumbnailRenderPlan) {
     const viewportHeight = getViewportHeight();
 
-    plan.atlasPages.forEach((page, index) => {
+    getLatentMapRenderableAtlasPages(plan).forEach((page, index) => {
       const atlasPage = atlasPages[index];
 
       if (!atlasPage) {
