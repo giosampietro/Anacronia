@@ -10,7 +10,7 @@ WORKTREE_DATA_ROOT="/private/tmp/anacronia-latent-map-worktree-data"
 APP_UI_PORT="18661"
 APP_API_PORT="18671"
 APP_ORIGIN="http://localhost:$APP_UI_PORT"
-LATENT_MAP_URL="$APP_ORIGIN/latent-map?run=$RUN_ID&recipe=dinov3_vits_256&layout=umap_n15_mindist0p05_seed42&clusterResult=kmeans_k12_seed42&mode=thumbnails&thumb=96&detail=auto&z=0.75"
+LATENT_MAP_URL="$APP_ORIGIN/latent-map?run=$RUN_ID&recipe=dinov3_vits_384&layout=umap_n15_mindist0p05_seed42&clusterResult=kmeans_k12_seed42&mode=thumbnails&thumb=96&detail=auto&z=0.75"
 WATCHER_PID=""
 
 finish() {
