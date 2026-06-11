@@ -7,6 +7,9 @@ from typing import Protocol
 
 import numpy as np
 
+UMAP_INIT = "spectral"
+UMAP_METRIC = "cosine"
+
 
 @dataclass(frozen=True)
 class LatentMapLayoutSummary:
@@ -114,7 +117,8 @@ def build_latent_map_layout(
                     "requested_n_neighbors": n_neighbors,
                     "effective_n_neighbors": effective_neighbors,
                     "min_dist": min_dist,
-                    "metric": "cosine",
+                    "metric": UMAP_METRIC,
+                    "init": UMAP_INIT,
                     "random_state": random_state,
                 },
                 "points": layout_points,
@@ -175,7 +179,8 @@ def _build_umap_reducer(*, n_neighbors: int, min_dist: float, random_state: int)
         n_components=2,
         n_neighbors=n_neighbors,
         min_dist=min_dist,
-        metric="cosine",
+        metric=UMAP_METRIC,
+        init=UMAP_INIT,
         random_state=random_state,
     )
 

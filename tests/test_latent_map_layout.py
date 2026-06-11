@@ -78,6 +78,8 @@ def test_builds_umap_layout_and_kmeans_clusters_with_image_ids(tmp_path):
     assert summary.point_count == 6
     assert summary.cluster_count == 3
     assert layout["layout_id"] == summary.layout_id
+    assert layout["params"]["init"] == "spectral"
+    assert layout["params"]["metric"] == "cosine"
     assert layout["params"]["requested_n_neighbors"] == 4
     assert [point["image_id"] for point in layout["points"]] == [
         "img-0",

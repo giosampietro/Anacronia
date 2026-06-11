@@ -27,7 +27,7 @@ It also verifies the comparison UMAP layouts for both `dinov3_vits_256` and `din
 - `n=30`, `min_dist=0.1`
 - `n=50`, `min_dist=0.1`
 
-Missing layout files are generated from the existing embedding vectors; the launcher does not rerun DINO image embedding.
+Missing layout files are generated from the existing embedding vectors with UMAP `init=spectral`; the launcher does not rerun DINO image embedding.
 
 ## Expected URL
 
