@@ -35,7 +35,7 @@ Default:
 
 `Thumb size` controls visual scale only. `Texture detail` controls which generated atlas backs the same thumbnail quads. `Auto` should be the normal user path; fixed atlas sizes are useful for comparison, QA, and performance debugging.
 
-The current J Shoot run has `32px`, `64px`, and `96px` atlases. Future runs may add levels such as `16px`, `128px`, or `256px`; the UI should render manual options from the run manifest instead of hard-coding three choices.
+The current J Shoot run should carry `32px`, `64px`, `96px`, and `128px` atlases for this LOD pass. Future runs may add levels such as `16px` or `256px`; the UI should render manual options from the run manifest instead of hard-coding three choices.
 
 Keep URL state durable:
 
@@ -111,10 +111,10 @@ Do not encode valid atlas sizes as a TypeScript union like `32 | 64 | 96` in the
 
 ## LOD Ladder
 
-The first shipping ladder should remain:
+The first shipping ladder should be:
 
 ```text
-32px -> 64px -> 96px
+32px -> 64px -> 96px -> 128px
 ```
 
 The plan should support a larger ladder:
@@ -129,7 +129,7 @@ Do not generate or load every possible level by default. Each level has a differ
 - `128px`: useful for close inspection, but increases atlas page count and decoded texture memory.
 - `256px`: only reasonable after viewport-aware atlas-page loading, because all-atlas loading would create too many live textures for 3k+ images.
 
-For the current all-thumbnails/all-atlas renderer, `32/64/96` is the practical upper bound. Introduce `128/256` only when the runtime can load atlas pages by viewport/focus set and evict pages outside a memory budget.
+For the current all-thumbnails/all-atlas renderer, `128px` is acceptable for the J Shoot QA run, but should stay behind explicit generated atlas manifests and diagnostics. Introduce `256px` only when the runtime can load atlas pages by viewport/focus set and evict pages outside a memory budget.
 
 ## Auto Selection
 
@@ -190,7 +190,7 @@ Add hysteresis:
 
 These numbers are starting points and should be tuned against the J Shoot run.
 
-If `16px`, `128px`, or `256px` are added later, replace the fixed threshold table with the general selector above and per-run tuning data.
+With `128px` included, the implementation should use the general selector above and keep the fixed threshold table only as historical tuning context for the original three-level pass.
 
 ## Implementation Steps
 
@@ -211,7 +211,7 @@ If `16px`, `128px`, or `256px` are added later, replace the fixed threshold tabl
 - Do not introduce collision avoidance or representative sampling here.
 - Do not load original full-size images for the map.
 - Do not make selected thumbnails physically larger as part of texture LOD.
-- Do not generate `128px` or `256px` atlases by default until atlas-page caching exists.
+- Do not generate `256px` atlases by default until atlas-page caching exists.
 
 ## Acceptance Criteria
 
@@ -220,6 +220,6 @@ If `16px`, `128px`, or `256px` are added later, replace the fixed threshold tabl
 - In `Auto`, zooming in upgrades texture detail and zooming out downgrades texture detail.
 - The selected image and FAISS neighbors remain visible and use the best available texture detail.
 - The browser console stays clean during zoom and control changes.
-- Real-data QA on the J Shoot run confirms `32px`, `64px`, and `96px` atlas usage.
-- Runtime diagnostics show bounded texture count: expected current J Shoot atlas counts are `1` texture for `32px`, `4` for `64px`, and `8` for `96px`.
+- Real-data QA on the J Shoot run confirms `32px`, `64px`, `96px`, and `128px` atlas usage.
+- Runtime diagnostics show bounded texture count: expected current J Shoot atlas counts are `1` texture for `32px`, `4` for `64px`, `8` for `96px`, and `13` for `128px`.
 - No blank atlas flash is visible during automatic detail transitions.

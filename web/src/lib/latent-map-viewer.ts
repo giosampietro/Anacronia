@@ -214,6 +214,8 @@ export const DEFAULT_LATENT_MAP_THUMBNAIL_SIZE: LatentMapThumbnailSize = 64;
 export const DEFAULT_LATENT_MAP_TEXTURE_DETAIL: LatentMapTextureDetail = "auto";
 export const DEFAULT_LATENT_MAP_HOVER_PREVIEW_SIZE = 512;
 export const LATENT_MAP_THUMBNAIL_SIZE_OPTIONS = [32, 64, 96] as const;
+export const LATENT_MAP_THUMBNAIL_WORLD_SIZE_PER_PIXEL = 0.13 / 64;
+export const LATENT_MAP_MAX_THUMBNAIL_SCREEN_SCALE = 2;
 export const LATENT_MAP_DEFAULT_POINT_SIZE = 9;
 export const LATENT_MAP_FOCUS_BACKGROUND_POINT_SIZE = 3;
 export const LATENT_MAP_INSTANCED_THUMBNAIL_THRESHOLD =
@@ -279,6 +281,46 @@ export function getLatentMapAvailableTextureDetails(
   );
 }
 
+export function getLatentMapThumbnailStateScaleMultiplier(
+  pointState: LatentMapPointState,
+) {
+  if (pointState === "selected") {
+    return 1.36;
+  }
+  if (pointState === "neighbor") {
+    return 1.16;
+  }
+
+  return 1;
+}
+
+export function getLatentMapThumbnailScreenLongSide({
+  thumbnailSize,
+  viewportHeight,
+  zoom,
+  scaleMultiplier = 1,
+}: {
+  thumbnailSize: LatentMapThumbnailSize;
+  viewportHeight: number;
+  zoom: number;
+  scaleMultiplier?: number;
+}) {
+  const safeViewportHeight = Math.max(viewportHeight, 1);
+  const safeZoom = Math.max(zoom, 0.001);
+  const safeScaleMultiplier = Math.max(scaleMultiplier, 1);
+  const worldLongSide =
+    thumbnailSize *
+    LATENT_MAP_THUMBNAIL_WORLD_SIZE_PER_PIXEL *
+    safeScaleMultiplier;
+  const screenLongSide = worldLongSide * ((safeViewportHeight * safeZoom) / 2);
+  const maxScreenLongSide =
+    thumbnailSize *
+    LATENT_MAP_MAX_THUMBNAIL_SCREEN_SCALE *
+    safeScaleMultiplier;
+
+  return Math.min(screenLongSide, maxScreenLongSide);
+}
+
 function getNearestLatentMapTextureDetail({
   availableDetails,
   targetDetail,
@@ -306,12 +348,113 @@ function getNearestLatentMapTextureDetail({
   });
 }
 
+function getSortedTextureDetails(availableDetails: number[]) {
+  return [...new Set(availableDetails)]
+    .filter((detail) => Number.isFinite(detail) && detail > 0)
+    .sort((left, right) => left - right);
+}
+
+function getNearestTextureDetailIndex({
+  availableDetails,
+  targetDetail,
+}: {
+  availableDetails: number[];
+  targetDetail: number;
+}) {
+  if (availableDetails.length === 0) {
+    return -1;
+  }
+
+  return availableDetails.reduce((bestIndex, detail, index) => {
+    const best = availableDetails[bestIndex];
+    const bestDelta = Math.abs(best - targetDetail);
+    const detailDelta = Math.abs(detail - targetDetail);
+
+    if (detailDelta < bestDelta) {
+      return index;
+    }
+
+    if (detailDelta === bestDelta && detail > best) {
+      return index;
+    }
+
+    return bestIndex;
+  }, 0);
+}
+
+export function selectLatentMapTextureDetail({
+  availableDetails,
+  displayThumbnailScreenLongSide,
+  previousResolvedDetail,
+}: {
+  availableDetails: number[];
+  displayThumbnailScreenLongSide: number;
+  previousResolvedDetail?: number | null;
+}): number | null {
+  const details = getSortedTextureDetails(availableDetails);
+
+  if (details.length === 0) {
+    return null;
+  }
+
+  const targetDetail = Number.isFinite(displayThumbnailScreenLongSide)
+    ? Math.max(displayThumbnailScreenLongSide, 1)
+    : details[0];
+  const targetIndex = getNearestTextureDetailIndex({
+    availableDetails: details,
+    targetDetail,
+  });
+  const previousIndex =
+    previousResolvedDetail === null || previousResolvedDetail === undefined
+      ? -1
+      : details.indexOf(previousResolvedDetail);
+
+  if (targetIndex < 0) {
+    return null;
+  }
+
+  if (previousIndex >= 0 && targetIndex !== previousIndex) {
+    if (targetIndex > previousIndex) {
+      const nextDetail = details[previousIndex + 1];
+
+      if (nextDetail !== undefined) {
+        const currentDetail = details[previousIndex];
+        const gap = nextDetail - currentDetail;
+        const switchUpAt = (currentDetail + nextDetail) / 2 + gap * 0.125;
+
+        if (targetDetail < switchUpAt) {
+          return currentDetail;
+        }
+      }
+    } else {
+      const previousLowerDetail = details[previousIndex - 1];
+
+      if (previousLowerDetail !== undefined) {
+        const currentDetail = details[previousIndex];
+        const gap = currentDetail - previousLowerDetail;
+        const switchDownAt =
+          (previousLowerDetail + currentDetail) / 2 - gap * 0.125;
+
+        if (targetDetail > switchDownAt) {
+          return currentDetail;
+        }
+      }
+    }
+  }
+
+  return details[targetIndex];
+}
+
 export function resolveLatentMapTextureDetail({
+  displayThumbnailScreenLongSide,
   data,
+  previousResolvedDetail,
   textureDetail = DEFAULT_LATENT_MAP_TEXTURE_DETAIL,
   thumbnailSize = DEFAULT_LATENT_MAP_THUMBNAIL_SIZE,
 }: {
+  displayThumbnailScreenLongSide?: number;
   data: LatentMapViewerData;
+  previousResolvedDetail?: number | null;
   textureDetail?: LatentMapTextureDetail;
   thumbnailSize?: LatentMapThumbnailSize;
 }): number {
@@ -319,6 +462,19 @@ export function resolveLatentMapTextureDetail({
 
   if (typeof textureDetail === "number" && availableDetails.includes(textureDetail)) {
     return textureDetail;
+  }
+
+  if (
+    textureDetail === "auto" &&
+    displayThumbnailScreenLongSide !== undefined
+  ) {
+    return (
+      selectLatentMapTextureDetail({
+        availableDetails,
+        displayThumbnailScreenLongSide,
+        previousResolvedDetail,
+      }) ?? thumbnailSize
+    );
   }
 
   return (

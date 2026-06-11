@@ -11,4 +11,4 @@ On macOS, double-click a `.command` file from Finder. A Terminal window will ope
 - `setup-dinov3-local.command` installs local image-embedding dependencies and checks Apple Silicon plus Hugging Face DINOv3 access.
 - `verify-bootstrap.command` runs the current Python and web checks. It does not open the app.
 - `start-anacronia.command` starts the local app and opens the browser when ready.
-- `start-latent-map-j-shoot.command` starts this worktree on `localhost:18661` against the J Shoot latent-map run, verifies the 32/64/96px atlases exist, and opens the real-data latent-map URL.
+- `start-latent-map-j-shoot.command` starts this worktree on `localhost:18661` against the J Shoot latent-map run, verifies the 32/64/96/128px atlases exist, and opens the real-data latent-map URL.

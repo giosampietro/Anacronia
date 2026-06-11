@@ -617,7 +617,7 @@ def main() -> None:
     latent_map_atlas_parser.add_argument("--run-dir", required=True, type=Path)
     latent_map_atlas_parser.add_argument(
         "--tile-size",
-        choices=[32, 64, 96],
+        choices=[32, 64, 96, 128],
         default=64,
         type=int,
     )

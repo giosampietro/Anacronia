@@ -35,6 +35,8 @@ import {
   getLatentMapAvailableTextureDetails,
   getNextLatentMapSelection,
   getLatentMapThumbnailAtlasForSize,
+  getLatentMapThumbnailScreenLongSide,
+  getLatentMapThumbnailStateScaleMultiplier,
   DEFAULT_LATENT_MAP_HOVER_PREVIEW_SIZE,
   LATENT_MAP_THUMBNAIL_SIZE_OPTIONS,
   resolveLatentMapTextureDetail,
@@ -293,6 +295,7 @@ export function LatentMapViewer({
   const runtimeStateRef = useRef<LatentMapRuntimeState | null>(null);
   const hoverFrameRef = useRef<number | null>(null);
   const hoverPointerRef = useRef<PointerPosition | null>(null);
+  const previousResolvedTextureDetailRef = useRef<number | null>(null);
   const dragStartRef = useRef<{
     pointer: PointerPosition;
     view: LatentMapViewState;
@@ -325,6 +328,10 @@ export function LatentMapViewer({
     useState<LatentMapThumbnailSize>(initialDurableState.thumbnailSize);
   const [textureDetail, setTextureDetail] =
     useState<LatentMapTextureDetail>(initialDurableState.textureDetail);
+  const [mapViewportSize, setMapViewportSize] = useState({
+    height: 0,
+    width: 0,
+  });
   const [view, setView] = useState<LatentMapViewState>(
     initialDurableState.view,
   );
@@ -393,14 +400,55 @@ export function LatentMapViewer({
     () => getLatentMapAvailableTextureDetails(data),
     [data],
   );
+  const textureDetailScaleMultiplier = useMemo(
+    () =>
+      renderPoints.reduce(
+        (maxScale, point) =>
+          Math.max(
+            maxScale,
+            getLatentMapThumbnailStateScaleMultiplier(point.point_state),
+          ),
+        1,
+      ),
+    [renderPoints],
+  );
+  const displayThumbnailScreenLongSide = useMemo(
+    () =>
+      getLatentMapThumbnailScreenLongSide({
+        scaleMultiplier: textureDetailScaleMultiplier,
+        thumbnailSize,
+        viewportHeight: mapViewportSize.height,
+        zoom: view.zoom,
+      }),
+    [
+      mapViewportSize.height,
+      textureDetailScaleMultiplier,
+      thumbnailSize,
+      view.zoom,
+    ],
+  );
+  // eslint-disable-next-line react-hooks/refs -- ref stores non-rendering LOD hysteresis memory.
+  const previousResolvedTextureDetail = previousResolvedTextureDetailRef.current;
   const resolvedTextureDetail = useMemo(
     () =>
       resolveLatentMapTextureDetail({
         data,
+        displayThumbnailScreenLongSide:
+          mapViewportSize.height > 0
+            ? displayThumbnailScreenLongSide
+            : undefined,
+        previousResolvedDetail: previousResolvedTextureDetail,
         textureDetail,
         thumbnailSize,
       }),
-    [data, textureDetail, thumbnailSize],
+    [
+      data,
+      displayThumbnailScreenLongSide,
+      mapViewportSize.height,
+      previousResolvedTextureDetail,
+      textureDetail,
+      thumbnailSize,
+    ],
   );
   const thumbnailAtlas = useMemo(
     () => getLatentMapThumbnailAtlasForSize(data, resolvedTextureDetail),
@@ -479,6 +527,10 @@ export function LatentMapViewer({
   );
 
   useEffect(() => {
+    previousResolvedTextureDetailRef.current = resolvedTextureDetail;
+  }, [resolvedTextureDetail]);
+
+  useEffect(() => {
     runtimeStateRef.current = runtimeState;
     runtimeRef.current?.setRenderState(runtimeState);
   }, [runtimeState]);
@@ -517,6 +569,52 @@ export function LatentMapViewer({
     viewRef.current = view;
     runtimeRef.current?.setView(view);
   }, [view]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const wrapper = wrapperRef.current;
+
+    if (!wrapper) {
+      return;
+    }
+
+    const updateViewportSize = () => {
+      const rect = wrapper.getBoundingClientRect();
+      const nextSize = {
+        height: Math.max(0, Math.round(rect.height)),
+        width: Math.max(0, Math.round(rect.width)),
+      };
+
+      setMapViewportSize((current) =>
+        current.height === nextSize.height && current.width === nextSize.width
+          ? current
+          : nextSize,
+      );
+    };
+    const ResizeObserverConstructor = window.ResizeObserver;
+    const resizeObserver = ResizeObserverConstructor
+      ? new ResizeObserverConstructor(updateViewportSize)
+      : null;
+
+    updateViewportSize();
+
+    if (resizeObserver) {
+      resizeObserver.observe(wrapper);
+    } else {
+      window.addEventListener("resize", updateViewportSize);
+    }
+
+    return () => {
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+      } else {
+        window.removeEventListener("resize", updateViewportSize);
+      }
+    };
+  }, [dataMountKey]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -708,7 +806,14 @@ export function LatentMapViewer({
         current === imageId ? null : current,
       );
     }
-  }, [data.neighbor_lookup_path, data.points, neighborsByImageId]);
+  }, [
+    data.neighbor_lookup_path,
+    data.points,
+    neighborsByImageId,
+    setLoadingNeighborImageId,
+    setNeighborError,
+    setNeighborsByImageId,
+  ]);
 
   useEffect(() => {
     if (selectedImageId) {
@@ -1369,6 +1474,9 @@ export function LatentMapViewer({
           data-thumbnail-resolved-texture-detail={
             thumbnailPlan.resolvedTextureDetail
           }
+          data-thumbnail-screen-long-side={Number(
+            displayThumbnailScreenLongSide.toFixed(2),
+          )}
           data-thumbnail-size={thumbnailPlan.thumbnailSize}
           data-thumbnail-sprite-baseline-draw-calls={
             renderMode === "thumbnails"

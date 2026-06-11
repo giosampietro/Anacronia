@@ -59,7 +59,7 @@ if curl --silent --fail --max-time 2 "$APP_ORIGIN" >/dev/null 2>&1; then
   exit 1
 fi
 
-for tile_size in 32 64 96; do
+for tile_size in 32 64 96 128; do
   manifest_path="$RUN_DIR/viewer/atlases/${tile_size}px/atlas-manifest.json"
   if [ ! -f "$manifest_path" ]; then
     echo "Generating ${tile_size}px atlas"

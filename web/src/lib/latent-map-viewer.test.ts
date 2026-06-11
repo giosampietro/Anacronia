@@ -13,10 +13,12 @@ import {
   findNearestLatentMapPoint,
   fitLatentMapPoints,
   getLatentMapAvailableTextureDetails,
+  getLatentMapThumbnailScreenLongSide,
   getLatentMapThumbnailAtlasForSize,
   getNextLatentMapSelection,
   isLatentMapThumbnailFocusActive,
   resolveLatentMapTextureDetail,
+  selectLatentMapTextureDetail,
 } from "@/lib/latent-map-viewer";
 
 describe("latent map viewer model", () => {
@@ -363,7 +365,7 @@ describe("latent map viewer model", () => {
       .toBeGreaterThan(1);
   });
 
-  it("models atlas page counts for 32, 64, and 96 pixel map thumbnails", () => {
+  it("models atlas page counts for 32, 64, 96, and 128 pixel map thumbnails", () => {
     const points = Array.from({ length: 3184 }, (_, index) => ({
       image_id: `img_${String(index).padStart(4, "0")}`,
       x: index,
@@ -384,6 +386,7 @@ describe("latent map viewer model", () => {
     expect(createLatentMapThumbnailAtlasPages({ points, tileSize: 32 })).toHaveLength(1);
     expect(createLatentMapThumbnailAtlasPages({ points, tileSize: 64 })).toHaveLength(4);
     expect(createLatentMapThumbnailAtlasPages({ points, tileSize: 96 })).toHaveLength(8);
+    expect(createLatentMapThumbnailAtlasPages({ points, tileSize: 128 })).toHaveLength(13);
   });
 
   it("estimates atlas texture budget for a synthetic 10k image map", () => {
@@ -416,6 +419,10 @@ describe("latent map viewer model", () => {
       points,
       thumbnailSize: 96,
     });
+    const at128 = createLatentMapThumbnailAtlasPages({
+      points,
+      tileSize: 128,
+    });
     const atlasBytes = 2048 * 2048 * 4;
 
     expect(at32.atlasPages).toHaveLength(3);
@@ -424,6 +431,7 @@ describe("latent map viewer model", () => {
     expect(at64.estimatedAtlasTextureBytes).toBe(10 * atlasBytes);
     expect(at96.atlasPages).toHaveLength(23);
     expect(at96.estimatedAtlasTextureBytes).toBe(23 * atlasBytes);
+    expect(at128).toHaveLength(40);
   });
 
   it("compares per-thumbnail sprites against the instanced atlas path", () => {
@@ -587,6 +595,17 @@ describe("latent map viewer model", () => {
             schema_version: 1,
             asset_kind: "latent-map-thumbnail-atlas",
             run_id: "run-1",
+            tile_size: 128,
+            atlas_size: 512,
+            image_count: 0,
+            page_count: 0,
+            pages: [],
+            items: [],
+          },
+          {
+            schema_version: 1,
+            asset_kind: "latent-map-thumbnail-atlas",
+            run_id: "run-1",
             tile_size: 32,
             atlas_size: 512,
             image_count: 0,
@@ -596,10 +615,10 @@ describe("latent map viewer model", () => {
           },
         ],
       }),
-    ).toEqual([32, 64, 96]);
+    ).toEqual([32, 64, 96, 128]);
   });
 
-  it("resolves automatic texture detail from display size but preserves manual detail", () => {
+  it("resolves automatic texture detail from screen size but preserves manual detail", () => {
     const data = {
       ...latentMapFixture,
       thumbnail_atlases: [
@@ -618,7 +637,29 @@ describe("latent map viewer model", () => {
           schema_version: 1,
           asset_kind: "latent-map-thumbnail-atlas",
           run_id: "run-1",
+          tile_size: 64,
+          atlas_size: 512,
+          image_count: 0,
+          page_count: 0,
+          pages: [],
+          items: [],
+        },
+        {
+          schema_version: 1,
+          asset_kind: "latent-map-thumbnail-atlas",
+          run_id: "run-1",
           tile_size: 96,
+          atlas_size: 512,
+          image_count: 0,
+          page_count: 0,
+          pages: [],
+          items: [],
+        },
+        {
+          schema_version: 1,
+          asset_kind: "latent-map-thumbnail-atlas",
+          run_id: "run-1",
+          tile_size: 128,
           atlas_size: 512,
           image_count: 0,
           page_count: 0,
@@ -631,17 +672,19 @@ describe("latent map viewer model", () => {
     expect(
       resolveLatentMapTextureDetail({
         data,
+        displayThumbnailScreenLongSide: 34,
         textureDetail: "auto",
-        thumbnailSize: 32,
+        thumbnailSize: 64,
       }),
     ).toBe(32);
     expect(
       resolveLatentMapTextureDetail({
         data,
+        displayThumbnailScreenLongSide: 118,
         textureDetail: "auto",
         thumbnailSize: 64,
       }),
-    ).toBe(96);
+    ).toBe(128);
     expect(
       resolveLatentMapTextureDetail({
         data,
@@ -649,6 +692,61 @@ describe("latent map viewer model", () => {
         thumbnailSize: 32,
       }),
     ).toBe(96);
+  });
+
+  it("selects texture detail from arbitrary atlas ladders with hysteresis", () => {
+    const availableDetails = [128, 32, 96, 64];
+
+    expect(
+      selectLatentMapTextureDetail({
+        availableDetails,
+        displayThumbnailScreenLongSide: 34,
+      }),
+    ).toBe(32);
+    expect(
+      selectLatentMapTextureDetail({
+        availableDetails,
+        displayThumbnailScreenLongSide: 118,
+      }),
+    ).toBe(128);
+    expect(
+      selectLatentMapTextureDetail({
+        availableDetails,
+        displayThumbnailScreenLongSide: 82,
+        previousResolvedDetail: 64,
+      }),
+    ).toBe(64);
+    expect(
+      selectLatentMapTextureDetail({
+        availableDetails,
+        displayThumbnailScreenLongSide: 86,
+        previousResolvedDetail: 64,
+      }),
+    ).toBe(96);
+    expect(
+      selectLatentMapTextureDetail({
+        availableDetails,
+        displayThumbnailScreenLongSide: 109,
+        previousResolvedDetail: 128,
+      }),
+    ).toBe(128);
+    expect(
+      selectLatentMapTextureDetail({
+        availableDetails,
+        displayThumbnailScreenLongSide: 104,
+        previousResolvedDetail: 128,
+      }),
+    ).toBe(96);
+  });
+
+  it("uses the same thumbnail screen-size cap as the WebGL runtime", () => {
+    expect(
+      getLatentMapThumbnailScreenLongSide({
+        thumbnailSize: 64,
+        viewportHeight: 900,
+        zoom: 20,
+      }),
+    ).toBe(128);
   });
 
   it("summarizes runtime diagnostics from the render plan and renderer info", () => {

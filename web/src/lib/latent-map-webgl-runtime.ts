@@ -1,15 +1,20 @@
 import * as THREE from "three";
 
-import type {
-  LatentMapRenderablePoint,
-  LatentMapRenderMode,
-  LatentMapPointLayerPlan,
-  LatentMapRuntimePerformanceInfo,
-  LatentMapRuntimeRendererInfo,
-  LatentMapThumbnailAtlasPage,
-  LatentMapThumbnailRenderPlan,
-  LatentMapThumbnailSize,
+import {
+  getLatentMapThumbnailStateScaleMultiplier,
+  LATENT_MAP_MAX_THUMBNAIL_SCREEN_SCALE,
+  LATENT_MAP_THUMBNAIL_WORLD_SIZE_PER_PIXEL,
+  type LatentMapRenderablePoint,
+  type LatentMapRenderMode,
+  type LatentMapPointLayerPlan,
+  type LatentMapRuntimePerformanceInfo,
+  type LatentMapRuntimeRendererInfo,
+  type LatentMapThumbnailAtlasPage,
+  type LatentMapThumbnailRenderPlan,
+  type LatentMapThumbnailSize,
 } from "@/lib/latent-map-viewer";
+
+export { LATENT_MAP_MAX_THUMBNAIL_SCREEN_SCALE };
 
 export type LatentMapViewState = {
   offsetX: number;
@@ -39,9 +44,7 @@ export type LatentMapWebglRuntime = {
   setView: (view: LatentMapViewState) => void;
 };
 
-const THUMBNAIL_WORLD_SIZE_PER_PIXEL = 0.13 / 64;
 const MAX_INTERACTION_FRAME_GAP_MS = 250;
-export const LATENT_MAP_MAX_THUMBNAIL_SCREEN_SCALE = 2;
 
 function rgbToThreeColor([r, g, b]: [number, number, number]): THREE.Color {
   return new THREE.Color(r / 255, g / 255, b / 255);
@@ -129,14 +132,6 @@ function updatePointGeometry(
   geometry.getAttribute("color").needsUpdate = true;
 }
 
-function getThumbnailStateScaleMultiplier(point: LatentMapRenderablePoint) {
-  return point.point_state === "selected"
-    ? 1.36
-    : point.point_state === "neighbor"
-      ? 1.16
-      : 1;
-}
-
 export function getLatentMapThumbnailWorldScale({
   point,
   thumbnailSize,
@@ -151,9 +146,13 @@ export function getLatentMapThumbnailWorldScale({
   const sourceWidth = Math.max(point.width, 1);
   const sourceHeight = Math.max(point.height, 1);
   const aspect = sourceWidth / sourceHeight;
-  const scaleMultiplier = getThumbnailStateScaleMultiplier(point);
+  const scaleMultiplier = getLatentMapThumbnailStateScaleMultiplier(
+    point.point_state,
+  );
   const longSideWorldSize =
-    thumbnailSize * THUMBNAIL_WORLD_SIZE_PER_PIXEL * scaleMultiplier;
+    thumbnailSize *
+    LATENT_MAP_THUMBNAIL_WORLD_SIZE_PER_PIXEL *
+    scaleMultiplier;
   let width =
     aspect >= 1 ? longSideWorldSize : longSideWorldSize * aspect;
   let height =
@@ -464,6 +463,15 @@ type AtlasPageMesh = {
   texture: THREE.CanvasTexture;
 };
 
+type PreparedAtlasPageSet = {
+  atlasPages: AtlasPageMesh[];
+  images: HTMLImageElement[];
+  isCanceled: boolean;
+  loadedThumbnailCount: number;
+  signature: string;
+  thumbnailPlan: LatentMapThumbnailRenderPlan;
+};
+
 function createAtlasPageMesh({
   page,
   thumbnailSize,
@@ -596,13 +604,14 @@ export function createLatentMapWebglRuntime({
   });
   const pointCloud = new THREE.Points(pointGeometry, pointMaterial);
   const atlasPages: AtlasPageMesh[] = [];
-  const atlasImages: HTMLImageElement[] = [];
   let animationFrameId: number | null = null;
+  let activeThumbnailPlan = thumbnailPlan;
+  let activeThumbnailPlanSignature = "";
+  let atlasLoadRequestId = 0;
   let currentRenderMode = renderMode;
-  let currentThumbnailPlan = thumbnailPlan;
-  let currentThumbnailPlanSignature = "";
   let currentView = view;
   let isDisposed = false;
+  let pendingAtlasPageSet: PreparedAtlasPageSet | null = null;
   let averageFrameMs = 0;
   let averageRenderMs = 0;
   let lastRenderMs = 0;
@@ -683,20 +692,92 @@ export function createLatentMapWebglRuntime({
   }
 
   function unloadAtlasPages() {
-    atlasImages.forEach((image) => {
-      image.onload = null;
-      image.onerror = null;
-    });
-    atlasImages.length = 0;
+    atlasLoadRequestId += 1;
+    cancelPendingAtlasPageSet();
     atlasPages.splice(0).forEach((atlasPage) => {
       disposeAtlasPage(scene, atlasPage);
     });
     loadedThumbnailCount = 0;
-    currentThumbnailPlanSignature = "";
+    activeThumbnailPlanSignature = "";
   }
 
-  function loadAtlasPages(plan: LatentMapThumbnailRenderPlan) {
-    unloadAtlasPages();
+  function disposePreparedAtlasPageSet(pageSet: PreparedAtlasPageSet) {
+    pageSet.isCanceled = true;
+    pageSet.images.forEach((image) => {
+      image.onload = null;
+      image.onerror = null;
+    });
+    pageSet.images.length = 0;
+    pageSet.atlasPages.forEach((atlasPage) => {
+      disposeAtlasPage(scene, atlasPage);
+    });
+    pageSet.atlasPages.length = 0;
+  }
+
+  function cancelPendingAtlasPageSet() {
+    if (!pendingAtlasPageSet) {
+      return;
+    }
+
+    disposePreparedAtlasPageSet(pendingAtlasPageSet);
+    pendingAtlasPageSet = null;
+  }
+
+  function loadAtlasImage({
+    imageSource,
+    onError,
+    onLoad,
+    pageSet,
+  }: {
+    imageSource: string;
+    onError: () => void;
+    onLoad: (image: HTMLImageElement) => void;
+    pageSet: PreparedAtlasPageSet;
+  }) {
+    const image = new Image();
+
+    pageSet.images.push(image);
+    image.decoding = "async";
+
+    return new Promise<void>((resolve) => {
+      const finish = () => {
+        image.onload = null;
+        image.onerror = null;
+        resolve();
+      };
+
+      image.onload = () => {
+        if (!isDisposed && !pageSet.isCanceled) {
+          onLoad(image);
+        }
+        finish();
+      };
+      image.onerror = () => {
+        if (!isDisposed && !pageSet.isCanceled) {
+          onError();
+        }
+        finish();
+      };
+      image.src = imageSource;
+    });
+  }
+
+  function createPreparedAtlasPageSet({
+    plan,
+    signature,
+  }: {
+    plan: LatentMapThumbnailRenderPlan;
+    signature: string;
+  }) {
+    const pageSet: PreparedAtlasPageSet = {
+      atlasPages: [],
+      images: [],
+      isCanceled: false,
+      loadedThumbnailCount: 0,
+      signature,
+      thumbnailPlan: plan,
+    };
+    const loadPromises: Promise<void>[] = [];
 
     plan.atlasPages.forEach((page) => {
       const atlasPage = createAtlasPageMesh({
@@ -706,93 +787,117 @@ export function createLatentMapWebglRuntime({
         viewportHeight: getViewportHeight(),
       });
 
-      atlasPages.push(atlasPage);
-      scene.add(atlasPage.mesh);
+      pageSet.atlasPages.push(atlasPage);
 
       if (page.texturePath) {
-        const image = new Image();
-
-        atlasImages.push(image);
-        image.decoding = "async";
-        image.onload = () => {
-          if (isDisposed) {
-            return;
-          }
-
-          atlasPage.context.drawImage(
-            image,
-            0,
-            0,
-            page.atlasSize,
-            page.atlasSize,
-          );
-          loadedThumbnailCount += page.items.length;
-          atlasPage.texture.needsUpdate = true;
-          scheduleRender();
-          reportDiagnostics();
-        };
-        image.onerror = () => {
-          if (isDisposed) {
-            return;
-          }
-
-          page.items.forEach((item) => {
-            fillMissingAtlasTile({
-              context: atlasPage.context,
-              item,
-              tileSize: page.tileSize,
-            });
-          });
-          loadedThumbnailCount += page.items.length;
-          atlasPage.texture.needsUpdate = true;
-          scheduleRender();
-          reportDiagnostics();
-        };
-        image.src = page.texturePath;
+        loadPromises.push(
+          loadAtlasImage({
+            imageSource: page.texturePath,
+            onError: () => {
+              page.items.forEach((item) => {
+                fillMissingAtlasTile({
+                  context: atlasPage.context,
+                  item,
+                  tileSize: page.tileSize,
+                });
+              });
+              pageSet.loadedThumbnailCount += page.items.length;
+              atlasPage.texture.needsUpdate = true;
+            },
+            onLoad: (image) => {
+              atlasPage.context.drawImage(
+                image,
+                0,
+                0,
+                page.atlasSize,
+                page.atlasSize,
+              );
+              pageSet.loadedThumbnailCount += page.items.length;
+              atlasPage.texture.needsUpdate = true;
+            },
+            pageSet,
+          }),
+        );
         return;
       }
 
       page.items.forEach((item) => {
-        const image = new Image();
-
-        atlasImages.push(image);
-        image.decoding = "async";
-        image.onload = () => {
-          if (isDisposed) {
-            return;
-          }
-
-          drawAtlasTile({
-            context: atlasPage.context,
-            image,
-            item,
-            tileSize: page.tileSize,
-          });
-          loadedThumbnailCount += 1;
-          atlasPage.texture.needsUpdate = true;
-          scheduleRender();
-          reportDiagnostics();
-        };
-        image.onerror = () => {
-          if (isDisposed) {
-            return;
-          }
-
-          fillMissingAtlasTile({
-            context: atlasPage.context,
-            item,
-            tileSize: page.tileSize,
-          });
-          loadedThumbnailCount += 1;
-          atlasPage.texture.needsUpdate = true;
-          scheduleRender();
-          reportDiagnostics();
-        };
-        image.src = item.point.thumbnail_path;
+        loadPromises.push(
+          loadAtlasImage({
+            imageSource: item.point.thumbnail_path,
+            onError: () => {
+              fillMissingAtlasTile({
+                context: atlasPage.context,
+                item,
+                tileSize: page.tileSize,
+              });
+              pageSet.loadedThumbnailCount += 1;
+              atlasPage.texture.needsUpdate = true;
+            },
+            onLoad: (image) => {
+              drawAtlasTile({
+                context: atlasPage.context,
+                image,
+                item,
+                tileSize: page.tileSize,
+              });
+              pageSet.loadedThumbnailCount += 1;
+              atlasPage.texture.needsUpdate = true;
+            },
+            pageSet,
+          }),
+        );
       });
     });
 
-    currentThumbnailPlanSignature = createThumbnailPlanSignature(plan);
+    return { loadPromises, pageSet };
+  }
+
+  function installPreparedAtlasPageSet(pageSet: PreparedAtlasPageSet) {
+    atlasPages.splice(0).forEach((atlasPage) => {
+      disposeAtlasPage(scene, atlasPage);
+    });
+    atlasPages.push(...pageSet.atlasPages);
+    pageSet.atlasPages.forEach((atlasPage) => {
+      scene.add(atlasPage.mesh);
+    });
+    pageSet.images.length = 0;
+    pageSet.atlasPages = [];
+    loadedThumbnailCount = pageSet.loadedThumbnailCount;
+    activeThumbnailPlan = pageSet.thumbnailPlan;
+    activeThumbnailPlanSignature = pageSet.signature;
+    updateAtlasInstances(activeThumbnailPlan);
+  }
+
+  function loadAtlasPages(plan: LatentMapThumbnailRenderPlan) {
+    const signature = createThumbnailPlanSignature(plan);
+    const requestId = atlasLoadRequestId + 1;
+
+    atlasLoadRequestId = requestId;
+    cancelPendingAtlasPageSet();
+
+    const { loadPromises, pageSet } = createPreparedAtlasPageSet({
+      plan,
+      signature,
+    });
+
+    pendingAtlasPageSet = pageSet;
+    void Promise.all(loadPromises).then(() => {
+      if (
+        isDisposed ||
+        pageSet.isCanceled ||
+        requestId !== atlasLoadRequestId ||
+        pendingAtlasPageSet !== pageSet
+      ) {
+        disposePreparedAtlasPageSet(pageSet);
+        return;
+      }
+
+      pendingAtlasPageSet = null;
+      installPreparedAtlasPageSet(pageSet);
+      scheduleRender();
+      reportDiagnostics();
+    });
   }
 
   function updateAtlasInstances(plan: LatentMapThumbnailRenderPlan) {
@@ -818,7 +923,6 @@ export function createLatentMapWebglRuntime({
 
   function setRenderState(nextState: LatentMapRuntimeState) {
     currentRenderMode = nextState.renderMode;
-    currentThumbnailPlan = nextState.thumbnailPlan;
     updatePointGeometry(pointGeometry, nextState.pointLayer.points);
     pointMaterial.size = nextState.pointLayer.pointSize;
 
@@ -827,12 +931,15 @@ export function createLatentMapWebglRuntime({
     );
 
     if (nextState.renderMode !== "thumbnails") {
-      if (atlasPages.length > 0) {
+      if (atlasPages.length > 0 || pendingAtlasPageSet) {
         unloadAtlasPages();
       }
-    } else if (nextSignature !== currentThumbnailPlanSignature) {
-      loadAtlasPages(nextState.thumbnailPlan);
+    } else if (nextSignature !== activeThumbnailPlanSignature) {
+      if (pendingAtlasPageSet?.signature !== nextSignature) {
+        loadAtlasPages(nextState.thumbnailPlan);
+      }
     } else {
+      activeThumbnailPlan = nextState.thumbnailPlan;
       updateAtlasInstances(nextState.thumbnailPlan);
     }
 
@@ -844,7 +951,7 @@ export function createLatentMapWebglRuntime({
   function setView(nextView: LatentMapViewState) {
     currentView = nextView;
     if (currentRenderMode === "thumbnails" && atlasPages.length > 0) {
-      updateAtlasInstances(currentThumbnailPlan);
+      updateAtlasInstances(activeThumbnailPlan);
     }
     scheduleRender();
   }
@@ -863,13 +970,13 @@ export function createLatentMapWebglRuntime({
       ? null
       : new ResizeObserver(() => {
           if (currentRenderMode === "thumbnails" && atlasPages.length > 0) {
-            updateAtlasInstances(currentThumbnailPlan);
+            updateAtlasInstances(activeThumbnailPlan);
           }
           scheduleRender();
         });
   const resize = () => {
     if (currentRenderMode === "thumbnails" && atlasPages.length > 0) {
-      updateAtlasInstances(currentThumbnailPlan);
+      updateAtlasInstances(activeThumbnailPlan);
     }
     scheduleRender();
   };
