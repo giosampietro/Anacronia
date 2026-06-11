@@ -18,6 +18,17 @@ The launcher runs from the worktree that contains the script, so it does not acc
 
 It verifies that the generated `32px`, `64px`, `96px`, and `128px` atlas manifests exist before starting the app. Missing atlas sizes are generated automatically.
 
+It also verifies the comparison UMAP layouts for both `dinov3_vits_256` and `dinov3_vits_384`:
+
+- `n=2`, `min_dist=0.1`
+- `n=6`, `min_dist=0.1`
+- `n=10`, `min_dist=0.1`
+- `n=15`, `min_dist=0.1`
+- `n=30`, `min_dist=0.1`
+- `n=50`, `min_dist=0.1`
+
+Missing layout files are generated from the existing embedding vectors; the launcher does not rerun DINO image embedding.
+
 ## Expected URL
 
 The launcher opens:

@@ -70,6 +70,24 @@ for tile_size in 32 64 96 128; do
   fi
 done
 
+export LOKY_MAX_CPU_COUNT="${LOKY_MAX_CPU_COUNT:-8}"
+
+for recipe in dinov3_vits_256 dinov3_vits_384; do
+  for n_neighbors in 2 6 10 15 30 50; do
+    layout_path="$RUN_DIR/layouts/${recipe}_umap_n${n_neighbors}_mindist0p1_seed42.json"
+    if [ ! -f "$layout_path" ]; then
+      echo "Generating UMAP layout for ${recipe}: n=${n_neighbors}, min_dist=0.1"
+      .venv/bin/anacronia latent-map layout \
+        --run-dir "$RUN_DIR" \
+        --recipe "$recipe" \
+        --n-neighbors "$n_neighbors" \
+        --min-dist 0.1 \
+        --cluster-count 12 \
+        --random-state 42
+    fi
+  done
+done
+
 export ANACRONIA_LATENT_MAP_RUN_DIR="$RUN_DIR"
 export ANACRONIA_LATENT_MAP_VIEWER_DATA="$VIEWER_DATA"
 export ANACRONIA_DATA_ROOT="$WORKTREE_DATA_ROOT"
