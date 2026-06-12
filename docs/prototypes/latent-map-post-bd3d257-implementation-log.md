@@ -182,3 +182,15 @@ This log records the local work completed after the last pushed commit on this b
   - the focused group renders `154` thumbnails;
   - the non-focused layer remains visible at `3px`;
   - no browser console warnings or errors were reported.
+
+## Update After HDBSCAN Review
+
+The HDBSCAN artifacts are being kept, but the first J Shoot results show that direct HDBSCAN on DINO vectors is not the preferred next grouping path. Most presets either leave too many images unassigned or create groups that are too broad to help visual exploration.
+
+Added [Latent Map Clustering Roadmap PRD](latent-map-clustering-roadmap-prd.md) as durable project memory for the next clustering experiments. The current implementation order is:
+
+1. [#221 FAISS kNN graph community clustering](https://github.com/giosampietro/Anacronia/issues/221).
+2. [#222 Hierarchical clustering with a user-facing granularity control](https://github.com/giosampietro/Anacronia/issues/222).
+3. Cluster diagnostics to make group quality visible.
+
+This remains under ADR-0023's Analysis Result provenance boundary. No app-wide ADR is needed unless the core local app, analysis pipeline, and latent-map viewer change their artifact contract.

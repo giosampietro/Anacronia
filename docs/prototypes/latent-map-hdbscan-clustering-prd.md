@@ -61,3 +61,15 @@ For future image-folder imports, HDBSCAN generation should be chained after DINO
 ## ADR Note
 
 No new ADR is required for this slice. HDBSCAN cluster files are versioned analysis-result artifacts and fit ADR-0023's provenance model.
+
+## June 12, 2026 Experiment Outcome
+
+The first real J Shoot HDBSCAN artifacts are worth keeping, but they are not strong enough to become the preferred grouping model.
+
+On the current DINO feature space, the presets either leave most images unassigned or create groups that are too broad to add much exploratory value. This is useful negative evidence: the dataset does not currently present itself as clean density-separated islands.
+
+The next clustering memory and recommended order are recorded in [Latent Map Clustering Roadmap PRD](latent-map-clustering-roadmap-prd.md). The preferred next experiments are:
+
+1. FAISS kNN graph community clustering.
+2. Hierarchical clustering with a user-facing granularity control.
+3. Diagnostics that make group quality visible instead of relying on method names.
