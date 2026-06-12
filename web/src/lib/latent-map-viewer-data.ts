@@ -5,6 +5,11 @@ import type {
   LatentMapViewerData,
 } from "@/lib/latent-map-viewer";
 
+export type LatentMapRelationResponse = {
+  neighbors: LatentMapNeighbor[];
+  opposites: LatentMapNeighbor[];
+};
+
 export type ExportedLatentMapViewerData = {
   available_clusters?: {
     cluster_count?: unknown;
@@ -115,6 +120,16 @@ export function normalizeExportedLatentMapViewerData({
         neighbors: Array.isArray(point.neighbors)
           ? point.neighbors.map((neighbor) => ({
               image_id: String(neighbor.image_id),
+              rank:
+                typeof neighbor.rank === "number" ? neighbor.rank : undefined,
+              score: Number(neighbor.score ?? 0),
+            }))
+          : [],
+        opposites: Array.isArray(point.opposites)
+          ? point.opposites.map((neighbor) => ({
+              image_id: String(neighbor.image_id),
+              rank:
+                typeof neighbor.rank === "number" ? neighbor.rank : undefined,
               score: Number(neighbor.score ?? 0),
             }))
           : [],
@@ -279,6 +294,16 @@ export function normalizeLatentMapNeighborResponse(
   rawData: unknown,
   selectedImageId: string,
 ): LatentMapNeighbor[] {
+  return normalizeLatentMapRelationResponse(
+    rawData,
+    selectedImageId,
+  ).neighbors;
+}
+
+export function normalizeLatentMapRelationResponse(
+  rawData: unknown,
+  selectedImageId: string,
+): LatentMapRelationResponse {
   if (!rawData || typeof rawData !== "object") {
     throw new Error("FAISS neighbors are unavailable for the selected image.");
   }
@@ -297,11 +322,24 @@ export function normalizeLatentMapNeighborResponse(
     throw new Error("FAISS neighbors are unavailable for the selected image.");
   }
 
-  return response.neighbors.map((neighbor) => {
-    const row = neighbor as { image_id?: unknown; score?: unknown };
+  const rawOpposites = (response as { opposites?: unknown }).opposites;
+
+  return {
+    neighbors: normalizeNeighborRows(response.neighbors),
+    opposites: Array.isArray(rawOpposites)
+      ? normalizeNeighborRows(rawOpposites)
+      : [],
+  };
+}
+
+function normalizeNeighborRows(rows: unknown[]): LatentMapNeighbor[] {
+  return rows.map((neighbor) => {
+    const row = neighbor as { image_id?: unknown; rank?: unknown; score?: unknown };
+    const rank = Number(row.rank);
 
     return {
       image_id: String(row.image_id ?? ""),
+      ...(Number.isFinite(rank) ? { rank } : {}),
       score: Number(row.score ?? 0),
     };
   });

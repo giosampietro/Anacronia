@@ -223,3 +223,18 @@ With `128px` included, the implementation should use the general selector above 
 - Real-data QA on the J Shoot run confirms `32px`, `64px`, `96px`, and `128px` atlas usage.
 - Runtime diagnostics show bounded texture count: expected current J Shoot atlas counts are `1` texture for `32px`, `4` for `64px`, `8` for `96px`, and `13` for `128px`.
 - No blank atlas flash is visible during automatic detail transitions.
+
+## June 12, 2026 Implementation Status
+
+The texture LOD work now sits inside a broader latent-map viewer iteration. The current branch keeps the PRD's core display-size versus texture-detail split and adds related viewer controls needed for real use:
+
+- The generated atlas ladder for the J Shoot run is `32px`, `64px`, `96px`, and `128px`.
+- `detail=auto` resolves from zoom and viewport size, while manual `detail=<size>` stays fixed.
+- The worktree launcher verifies the atlas ladder before fast launch instead of generating missing assets during daily startup.
+- FAISS focus controls now expose a durable neighbor-count dropdown and a relation dropdown for `closest`, `opposite`, or `both`.
+- The viewer uses the main shadcn sidebar pattern for Display, Method, Filters, and Search controls.
+- The day/night theme now reaches the actual WebGL clear color, with light mode clearing to `#f0f0f0` and dark mode clearing to `#101113`.
+
+Detailed implementation notes since commit `bd3d257` are recorded in [Latent Map Implementation Log After `bd3d257`](latent-map-post-bd3d257-implementation-log.md).
+
+No new ADR is required for this update. The work remains prototype UI and run-artifact behavior under ADR-0023's Analysis Result provenance boundary and ADR-0019's local-process supervision direction.

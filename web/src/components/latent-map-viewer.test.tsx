@@ -62,6 +62,12 @@ describe("LatentMapViewer", () => {
       .replaceAll("<!-- -->", "");
 
     expect(html).toContain("Latent Map");
+    expect(html).toContain("Anacronia");
+    expect(html).toContain("data-slot=\"sidebar-inset\"");
+    expect(html.indexOf("Display")).toBeLessThan(html.indexOf("Method"));
+    expect(html.indexOf("Cluster colors")).toBeLessThan(
+      html.indexOf("Method"),
+    );
     expect(html).toContain("data-testid=\"latent-map-canvas\"");
     expect(html).toContain("data-render-mode=\"points\"");
     expect(html).toContain("data-point-count=\"8\"");
@@ -74,6 +80,9 @@ describe("LatentMapViewer", () => {
     expect(html).toContain("data-runtime-last-render-ms=\"0\"");
     expect(html).toContain("data-runtime-loaded-thumbnails=\"0\"");
     expect(html).toContain("data-runtime-textures=\"0\"");
+    expect(html).toContain("data-map-theme=\"dark\"");
+    expect(html).toContain("data-faiss-neighbor-count=\"20\"");
+    expect(html).toContain("data-faiss-relation=\"closest\"");
     expect(html).toContain("data-thumbnail-count=\"0\"");
     expect(html).toContain("data-thumbnail-renderer=\"instanced-atlas\"");
     expect(html).toContain("data-thumbnail-sprite-baseline-draw-calls=\"0\"");
@@ -86,6 +95,8 @@ describe("LatentMapViewer", () => {
     expect(html).toContain("name=\"latent-map-recipe\"");
     expect(html).toContain("name=\"latent-map-layout\"");
     expect(html).toContain("name=\"latent-map-cluster-result\"");
+    expect(html).toContain("name=\"latent-map-faiss-neighbor-count\"");
+    expect(html).toContain("name=\"latent-map-faiss-relation\"");
     expect(html).toContain("value=\"dinov3_vits_256\"");
     expect(html).toContain("value=\"umap_n4_mindist0p05_seed42\"");
     expect(html).toContain("value=\"kmeans_k3_seed42\"");
@@ -173,6 +184,8 @@ describe("LatentMapViewer", () => {
         }}
         initialState={{
           clusterFilter: "all",
+          faissNeighborCount: 20,
+          faissRelationMode: "closest",
           renderMode: "thumbnails",
           selectedImageId: null,
           sourceFilter: "all",
@@ -213,6 +226,8 @@ describe("LatentMapViewer", () => {
         }}
         initialState={{
           clusterFilter: "all",
+          faissNeighborCount: 20,
+          faissRelationMode: "closest",
           renderMode: "thumbnails",
           selectedImageId: null,
           sourceFilter: "all",

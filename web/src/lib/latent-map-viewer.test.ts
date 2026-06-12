@@ -7,6 +7,7 @@ import {
   createLatentMapThumbnailRendererComparison,
   createLatentMapThumbnailRenderPlan,
   createLatentMapNeighborSet,
+  createLatentMapOppositeSet,
   createLatentMapPointLayerPlan,
   createLatentMapRenderState,
   createLatentMapStats,
@@ -116,6 +117,39 @@ describe("latent map viewer model", () => {
     ).toEqual(["img_amber", "img_vermilion", "img_cobalt"]);
   });
 
+  it("limits FAISS neighbors to the selected count", () => {
+    expect(
+      [
+        ...createLatentMapNeighborSet(
+          latentMapFixture,
+          "img_saffron",
+          {},
+          2,
+        ),
+      ],
+    ).toEqual(["img_amber", "img_vermilion"]);
+  });
+
+  it("selects FAISS opposites from the selected point", () => {
+    const oppositeFixture = structuredClone(latentMapFixture);
+    const selectedPoint = oppositeFixture.points.find(
+      (point) => point.image_id === "img_saffron",
+    );
+
+    if (!selectedPoint) {
+      throw new Error("Fixture is missing selected point.");
+    }
+
+    selectedPoint.opposites = [
+      { image_id: "img_teal", score: -0.12 },
+      { image_id: "img_lime", score: -0.08 },
+    ];
+
+    expect(
+      [...createLatentMapOppositeSet(oppositeFixture, "img_saffron")],
+    ).toEqual(["img_teal", "img_lime"]);
+  });
+
   it("selects FAISS neighbors from a separately loaded neighbor index", () => {
     const splitFixture = structuredClone(latentMapFixture);
     splitFixture.points.forEach((point) => {
@@ -153,6 +187,32 @@ describe("latent map viewer model", () => {
     expect(stateById.img_vermilion).toBe("neighbor");
     expect(stateById.img_cobalt).toBe("neighbor");
     expect(stateById.img_teal).toBe("cluster");
+  });
+
+  it("marks opposite points when FAISS focus is opposite", () => {
+    const oppositeFixture = structuredClone(latentMapFixture);
+    const selectedPoint = oppositeFixture.points.find(
+      (point) => point.image_id === "img_saffron",
+    );
+
+    if (!selectedPoint) {
+      throw new Error("Fixture is missing selected point.");
+    }
+
+    selectedPoint.opposites = [{ image_id: "img_teal", score: -0.12 }];
+    const states = createLatentMapRenderState({
+      clusterColorsEnabled: true,
+      data: oppositeFixture,
+      faissRelationMode: "opposite",
+      selectedImageId: "img_saffron",
+    });
+    const stateById = Object.fromEntries(
+      states.map((point) => [point.image_id, point.point_state]),
+    );
+
+    expect(stateById.img_saffron).toBe("selected");
+    expect(stateById.img_teal).toBe("opposite");
+    expect(stateById.img_amber).toBe("cluster");
   });
 
   it("clears FAISS focus when clicking the background or selected image", () => {

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   normalizeExportedLatentMapViewerData,
   normalizeLatentMapNeighborResponse,
+  normalizeLatentMapRelationResponse,
 } from "@/lib/latent-map-viewer-data";
 
 describe("normalizeExportedLatentMapViewerData", () => {
@@ -269,6 +270,19 @@ describe("normalizeExportedLatentMapViewerData", () => {
       { image_id: "img_2", score: 0.91 },
       { image_id: "img_3", score: 0.75 },
     ]);
+    expect(
+      normalizeLatentMapRelationResponse(
+        {
+          image_id: "img_1",
+          neighbors: [{ image_id: "img_2", rank: 1, score: "0.91" }],
+          opposites: [{ image_id: "img_9", rank: 1, score: -0.21 }],
+        },
+        "img_1",
+      ),
+    ).toEqual({
+      neighbors: [{ image_id: "img_2", rank: 1, score: 0.91 }],
+      opposites: [{ image_id: "img_9", rank: 1, score: -0.21 }],
+    });
   });
 
   it("rejects missing FAISS neighbor responses clearly", () => {

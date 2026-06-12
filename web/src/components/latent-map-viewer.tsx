@@ -1,11 +1,34 @@
 "use client";
 
 import NextImage from "next/image";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import { CircleDot, Images, Palette, RotateCcw, ScanSearch } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
+import { ThemeSwitch } from "@/components/theme-switch";
 import { Badge } from "@/components/ui/badge";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarInset,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+  SidebarSeparator,
+  SidebarTrigger,
+} from "@/components/ui/sidebar";
 import {
   ToggleGroup,
   ToggleGroupItem,
@@ -19,11 +42,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import {
   createLatentMapThumbnailRendererComparison,
@@ -39,8 +57,12 @@ import {
   getLatentMapThumbnailScreenLongSide,
   getLatentMapThumbnailStateScaleMultiplier,
   DEFAULT_LATENT_MAP_HOVER_PREVIEW_SIZE,
+  LATENT_MAP_FAISS_NEIGHBOR_COUNT_OPTIONS,
+  LATENT_MAP_FAISS_RELATION_MODE_OPTIONS,
   LATENT_MAP_THUMBNAIL_SIZE_OPTIONS,
   resolveLatentMapTextureDetail,
+  type LatentMapFaissNeighborCount,
+  type LatentMapFaissRelationMode,
   type LatentMapRenderMode,
   type LatentMapRuntimePerformanceInfo,
   type LatentMapTextureDetail,
@@ -60,13 +82,14 @@ import {
   serializeLatentMapUrlState,
   type LatentMapDurableState,
 } from "@/lib/latent-map-viewer-state";
-import { normalizeLatentMapNeighborResponse } from "@/lib/latent-map-viewer-data";
+import { normalizeLatentMapRelationResponse } from "@/lib/latent-map-viewer-data";
 import {
   createLatentMapWebglRuntime,
   type LatentMapRuntimeState,
   type LatentMapViewState,
   type LatentMapWebglRuntime,
 } from "@/lib/latent-map-webgl-runtime";
+import { DEFAULT_THEME } from "@/lib/theme";
 
 type LatentMapViewerProps = {
   className?: string;
@@ -87,6 +110,16 @@ const DEFAULT_VIEW: LatentMapViewState = {
   zoom: 1,
 };
 const ATLAS_TEXTURE_SIZE = 2048;
+
+function getAppliedThemePreference(): LatentMapRuntimeState["visualTheme"] {
+  if (typeof document === "undefined") {
+    return DEFAULT_THEME;
+  }
+
+  return document.documentElement.classList.contains("dark")
+    ? "dark"
+    : "light";
+}
 
 function getAvailableRecipes(data: LatentMapViewerData) {
   return data.available_recipes && data.available_recipes.length > 0
@@ -225,6 +258,17 @@ function formatTextureDetailLabel(
   return `${detail}px`;
 }
 
+function formatFaissRelationLabel(relation: LatentMapFaissRelationMode | string) {
+  if (relation === "opposite") {
+    return "Opposite";
+  }
+  if (relation === "both") {
+    return "Both";
+  }
+
+  return "Closest";
+}
+
 function createInitialDurableState({
   data,
   initialState,
@@ -303,6 +347,8 @@ export function LatentMapViewer({
   } | null>(null);
   const viewRef = useRef<LatentMapViewState>(DEFAULT_VIEW);
   const [clusterColorsEnabled, setClusterColorsEnabled] = useState(true);
+  const [visualTheme, setVisualTheme] =
+    useState<LatentMapRuntimeState["visualTheme"]>(DEFAULT_THEME);
   const [hoveredImageId, setHoveredImageId] = useState<string | null>(null);
   const [hoverPosition, setHoverPosition] = useState<PointerPosition>({
     x: 0,
@@ -313,6 +359,9 @@ export function LatentMapViewer({
   );
   const [neighborsByImageId, setNeighborsByImageId] = useState<
     Record<string, NonNullable<LatentMapViewerData["points"][number]["neighbors"]>>
+  >({});
+  const [oppositesByImageId, setOppositesByImageId] = useState<
+    Record<string, NonNullable<LatentMapViewerData["points"][number]["opposites"]>>
   >({});
   const [loadingNeighborImageId, setLoadingNeighborImageId] = useState<
     string | null
@@ -327,6 +376,14 @@ export function LatentMapViewer({
   const [loadedThumbnailCount, setLoadedThumbnailCount] = useState(0);
   const [thumbnailSize, setThumbnailSize] =
     useState<LatentMapThumbnailSize>(initialDurableState.thumbnailSize);
+  const [faissNeighborCount, setFaissNeighborCount] =
+    useState<LatentMapFaissNeighborCount>(
+      initialDurableState.faissNeighborCount,
+    );
+  const [faissRelationMode, setFaissRelationMode] =
+    useState<LatentMapFaissRelationMode>(
+      initialDurableState.faissRelationMode,
+    );
   const [textureDetail, setTextureDetail] =
     useState<LatentMapTextureDetail>(initialDurableState.textureDetail);
   const [mapViewportSize, setMapViewportSize] = useState({
@@ -369,10 +426,21 @@ export function LatentMapViewer({
       createLatentMapRenderState({
         clusterColorsEnabled,
         data: filteredData,
+        faissNeighborCount,
+        faissRelationMode,
         neighborsByImageId,
+        oppositesByImageId,
         selectedImageId,
       }),
-    [clusterColorsEnabled, filteredData, neighborsByImageId, selectedImageId],
+    [
+      clusterColorsEnabled,
+      faissNeighborCount,
+      faissRelationMode,
+      filteredData,
+      neighborsByImageId,
+      oppositesByImageId,
+      selectedImageId,
+    ],
   );
   const spatialIndex = useMemo(
     () => createLatentMapSpatialIndex(renderPoints),
@@ -384,6 +452,29 @@ export function LatentMapViewer({
       null,
     [filteredData.points, selectedImageId],
   );
+  const selectedNeighborRows = selectedPoint
+    ? (neighborsByImageId[selectedPoint.image_id] ?? selectedPoint.neighbors ?? [])
+    : [];
+  const selectedOppositeRows = selectedPoint
+    ? (oppositesByImageId[selectedPoint.image_id] ?? selectedPoint.opposites ?? [])
+    : [];
+  const selectedVisibleClosestCount = Math.min(
+    selectedNeighborRows.length,
+    faissNeighborCount,
+  );
+  const selectedVisibleOppositeCount = Math.min(
+    selectedOppositeRows.length,
+    faissNeighborCount,
+  );
+  const selectedFocusBadgeParts = [
+    faissRelationMode !== "opposite" && selectedVisibleClosestCount > 0
+      ? `${selectedVisibleClosestCount} closest`
+      : null,
+    faissRelationMode !== "closest" && selectedVisibleOppositeCount > 0
+      ? `${selectedVisibleOppositeCount} opposite`
+      : null,
+  ].filter(Boolean);
+  const selectedFocusBadgeText = selectedFocusBadgeParts.join(" · ");
   const hoveredPoint = useMemo(
     () =>
       filteredData.points.find((point) => point.image_id === hoveredImageId) ??
@@ -523,8 +614,9 @@ export function LatentMapViewer({
       points: renderPoints,
       renderMode,
       thumbnailPlan,
+      visualTheme,
     }),
-    [pointLayer, renderMode, renderPoints, thumbnailPlan],
+    [pointLayer, renderMode, renderPoints, thumbnailPlan, visualTheme],
   );
   const dataMountKey = useMemo(
     () =>
@@ -566,6 +658,31 @@ export function LatentMapViewer({
   useEffect(() => {
     previousResolvedTextureDetailRef.current = resolvedTextureDetail;
   }, [resolvedTextureDetail]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") {
+      return;
+    }
+
+    const syncVisualTheme = () => {
+      setVisualTheme(getAppliedThemePreference());
+    };
+
+    syncVisualTheme();
+
+    if (typeof MutationObserver === "undefined") {
+      return;
+    }
+
+    const themeObserver = new MutationObserver(syncVisualTheme);
+
+    themeObserver.observe(document.documentElement, {
+      attributeFilter: ["class"],
+      attributes: true,
+    });
+
+    return () => themeObserver.disconnect();
+  }, []);
 
   useEffect(() => {
     runtimeStateRef.current = runtimeState;
@@ -661,6 +778,8 @@ export function LatentMapViewer({
     const nextSearchParams = serializeLatentMapUrlState(
       {
         clusterFilter,
+        faissNeighborCount,
+        faissRelationMode,
         renderMode,
         selectedImageId,
         sourceFilter,
@@ -678,6 +797,8 @@ export function LatentMapViewer({
   }, [
     clusterFilter,
     data,
+    faissNeighborCount,
+    faissRelationMode,
     renderMode,
     selectedImageId,
     sourceFilter,
@@ -800,22 +921,51 @@ export function LatentMapViewer({
 
   const loadNeighborsForImage = useCallback(async (imageId: string) => {
     const selectedPoint = data.points.find((point) => point.image_id === imageId);
+    const loadedNeighbors = neighborsByImageId[imageId] ?? [];
+    const loadedOpposites = oppositesByImageId[imageId] ?? [];
+    const embeddedNeighbors = selectedPoint?.neighbors ?? [];
+    const embeddedOpposites = selectedPoint?.opposites ?? [];
+    const needsClosest = faissRelationMode !== "opposite";
+    const needsOpposite = faissRelationMode !== "closest";
+    const hasClosest =
+      !needsClosest ||
+      loadedNeighbors.length >= faissNeighborCount ||
+      embeddedNeighbors.length >= faissNeighborCount;
+    const hasOpposite =
+      !needsOpposite ||
+      loadedOpposites.length >= faissNeighborCount ||
+      embeddedOpposites.length >= faissNeighborCount;
 
-    if (
-      (selectedPoint?.neighbors?.length ?? 0) > 0 ||
-      Object.hasOwn(neighborsByImageId, imageId)
-    ) {
+    if (hasClosest && hasOpposite) {
       setNeighborError(null);
       return;
     }
 
     if (!data.neighbor_lookup_path) {
-      setNeighborError("FAISS neighbors are unavailable for this image.");
+      if (
+        loadedNeighbors.length > 0 ||
+        embeddedNeighbors.length > 0 ||
+        loadedOpposites.length > 0 ||
+        embeddedOpposites.length > 0
+      ) {
+        setNeighborError(null);
+      } else {
+        setNeighborError("FAISS neighbors are unavailable for this image.");
+      }
       return;
     }
 
     const requestUrl = new URL(data.neighbor_lookup_path, window.location.origin);
     requestUrl.searchParams.set("image_id", imageId);
+    requestUrl.searchParams.set("top_k", String(faissNeighborCount));
+    requestUrl.searchParams.set(
+      "relation",
+      !hasClosest && !hasOpposite
+        ? "both"
+        : !hasOpposite
+          ? "opposite"
+          : "closest",
+    );
     setLoadingNeighborImageId(imageId);
     setNeighborError(null);
 
@@ -826,15 +976,23 @@ export function LatentMapViewer({
         throw new Error(await response.text());
       }
 
-      const neighbors = normalizeLatentMapNeighborResponse(
+      const relationSet = normalizeLatentMapRelationResponse(
         await response.json(),
         imageId,
       );
 
-      setNeighborsByImageId((current) => ({
-        ...current,
-        [imageId]: neighbors,
-      }));
+      if (relationSet.neighbors.length > 0) {
+        setNeighborsByImageId((current) => ({
+          ...current,
+          [imageId]: relationSet.neighbors,
+        }));
+      }
+      if (relationSet.opposites.length > 0) {
+        setOppositesByImageId((current) => ({
+          ...current,
+          [imageId]: relationSet.opposites,
+        }));
+      }
       setNeighborError(null);
     } catch {
       setNeighborError("FAISS neighbors are unavailable for this image.");
@@ -846,10 +1004,14 @@ export function LatentMapViewer({
   }, [
     data.neighbor_lookup_path,
     data.points,
+    faissNeighborCount,
+    faissRelationMode,
     neighborsByImageId,
+    oppositesByImageId,
     setLoadingNeighborImageId,
     setNeighborError,
     setNeighborsByImageId,
+    setOppositesByImageId,
   ]);
 
   useEffect(() => {
@@ -913,6 +1075,8 @@ export function LatentMapViewer({
       const nextSearchParams = serializeLatentMapUrlState(
         {
           clusterFilter,
+          faissNeighborCount,
+          faissRelationMode,
           renderMode,
           selectedImageId,
           sourceFilter,
@@ -935,6 +1099,8 @@ export function LatentMapViewer({
     [
       clusterFilter,
       data,
+      faissNeighborCount,
+      faissRelationMode,
       renderMode,
       selectedImageId,
       sourceFilter,
@@ -1032,581 +1198,778 @@ export function LatentMapViewer({
     void loadNeighborsForImage(nextSelectedImageId);
   }
 
+  const sidebarStyle = {
+    "--sidebar-width": "20rem",
+    "--sidebar-width-mobile": "20rem",
+  } as CSSProperties;
+
   return (
-    <main
-      className={cn(
-        "flex min-h-screen flex-col bg-background text-foreground",
-        className,
-      )}
+    <SidebarProvider
+      className={cn("min-h-screen bg-background text-foreground", className)}
+      defaultOpen
+      style={sidebarStyle}
     >
-      <header className="flex min-h-16 flex-wrap items-center justify-between gap-3 border-b bg-background px-4 py-3">
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <div className="flex min-w-0 items-center gap-2">
-            <ScanSearch className="size-4 shrink-0 text-muted-foreground" />
-            <h1 className="truncate text-sm font-semibold tracking-normal">
-              Latent Map
-            </h1>
+      <Sidebar collapsible="offcanvas" variant="inset">
+        <SidebarHeader>
+          <div className="flex h-12 min-w-0 items-center gap-3 rounded-xl px-2 group-data-[collapsible=icon]:hidden">
+            <span className="truncate text-lg font-semibold">Anacronia</span>
+            <div className="ml-auto shrink-0">
+              <ThemeSwitch />
+            </div>
           </div>
-        </div>
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <div className="flex items-center gap-1 text-xs text-muted-foreground">
-            <span>Embedding</span>
-            <Select
-              id="latent-map-recipe"
-              name="latent-map-recipe"
-              onValueChange={(nextRecipe) => {
-                if (typeof nextRecipe !== "string") {
-                  return;
-                }
+        </SidebarHeader>
 
-                navigateToMethodSelection({
-                  recipeName: nextRecipe,
-                });
-              }}
-              value={data.embedding_recipe}
-            >
-              <SelectTrigger
-                aria-label="Embedding"
-                className="w-[220px] justify-between"
-                size="sm"
-              >
-                <SelectValue>
-                  {(selectedRecipe) => {
-                    const recipe =
-                      methodOptions.recipes.find(
-                        (candidate) =>
-                          candidate.recipe_name === selectedRecipe,
-                      ) ?? methodOptions.recipes[0];
-
-                    return (
-                      <span className="truncate">
-                        {formatRecipeLabel(recipe)}
-                      </span>
-                    );
-                  }}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent align="start" className="min-w-64">
-                <SelectGroup>
-                  <SelectLabel>Embedding</SelectLabel>
-                  {methodOptions.recipes.map((recipe) => (
-                    <SelectItem
-                      key={recipe.recipe_name}
-                      label={formatRecipeLabel(recipe)}
-                      value={recipe.recipe_name}
-                    >
-                      <span className="truncate">
-                        {formatRecipeLabel(recipe)}
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex items-center gap-1 text-xs text-muted-foreground">
-            <span>Layout</span>
-            <Select
-              id="latent-map-layout"
-              name="latent-map-layout"
-              onValueChange={(nextLayout) => {
-                if (typeof nextLayout !== "string") {
-                  return;
-                }
-
-                navigateToMethodSelection({
-                  layoutId: nextLayout,
-                });
-              }}
-              value={data.layout_id}
-            >
-              <SelectTrigger
-                aria-label="Layout"
-                className="w-[220px] justify-between"
-                size="sm"
-              >
-                <SelectValue>
-                  {(selectedLayout) => {
-                    const layout =
-                      methodOptions.layouts.find(
-                        (candidate) => candidate.layout_id === selectedLayout,
-                      ) ?? methodOptions.layouts[0];
-
-                    return (
-                      <span className="truncate">
-                        {formatLayoutLabel(layout)}
-                      </span>
-                    );
-                  }}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent align="start" className="min-w-64">
-                <SelectGroup>
-                  <SelectLabel>Layout</SelectLabel>
-                  {methodOptions.layouts.map((layout) => (
-                    <SelectItem
-                      key={layout.layout_id}
-                      label={formatLayoutLabel(layout)}
-                      value={layout.layout_id}
-                    >
-                      <span className="truncate">
-                        {formatLayoutLabel(layout)}
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex items-center gap-1 text-xs text-muted-foreground">
-            <span>Clusters</span>
-            <Select
-              id="latent-map-cluster-result"
-              name="latent-map-cluster-result"
-              onValueChange={(nextClusterId) => {
-                if (typeof nextClusterId !== "string") {
-                  return;
-                }
-
-                navigateToMethodSelection({
-                  clusterId: nextClusterId,
-                });
-              }}
-              value={data.cluster_id}
-            >
-              <SelectTrigger
-                aria-label="Cluster result"
-                className="w-[190px] justify-between"
-                size="sm"
-              >
-                <SelectValue>
-                  {(selectedClusterId) => {
-                    const cluster =
-                      methodOptions.clusters.find(
-                        (candidate) =>
-                          candidate.cluster_id === selectedClusterId,
-                      ) ?? methodOptions.clusters[0];
-
-                    return (
-                      <span className="truncate">
-                        {formatClusterResultLabel(cluster)}
-                      </span>
-                    );
-                  }}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent align="start" className="min-w-56">
-                <SelectGroup>
-                  <SelectLabel>Clusters</SelectLabel>
-                  {methodOptions.clusters.map((cluster) => (
-                    <SelectItem
-                      key={cluster.cluster_id}
-                      label={formatClusterResultLabel(cluster)}
-                      value={cluster.cluster_id}
-                    >
-                      <span className="truncate">
-                        {formatClusterResultLabel(cluster)}
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </div>
-          <Select
-            id="latent-map-cluster-filter"
-            name="latent-map-cluster-filter"
-            onValueChange={(nextClusterFilter) => {
-              if (typeof nextClusterFilter === "string") {
-                handleClusterFilterChange(nextClusterFilter);
-              }
-            }}
-            value={clusterFilter}
-          >
-            <SelectTrigger
-              aria-label="Cluster filter"
-              className="w-[132px] justify-between"
-              size="sm"
-            >
-              <SelectValue>
-                {(selectedClusterFilter) =>
-                  selectedClusterFilter === "all"
-                    ? "All clusters"
-                    : `Cluster ${selectedClusterFilter}`
-                }
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent align="start">
-              <SelectGroup>
-                <SelectLabel>Cluster filter</SelectLabel>
-                <SelectItem label="All clusters" value="all">
-                  All clusters
-                </SelectItem>
-                {filterOptions.clusters.map((clusterId) => (
-                  <SelectItem
-                    key={clusterId}
-                    label={`Cluster ${clusterId}`}
-                    value={String(clusterId)}
-                  >
-                    Cluster {clusterId}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-          <Select
-            id="latent-map-source-filter"
-            name="latent-map-source-filter"
-            onValueChange={(nextSourceFilter) => {
-              if (typeof nextSourceFilter === "string") {
-                handleSourceFilterChange(nextSourceFilter);
-              }
-            }}
-            value={sourceFilter}
-          >
-            <SelectTrigger
-              aria-label="Source filter"
-              className="w-[124px] justify-between"
-              size="sm"
-            >
-              <SelectValue>
-                {(selectedSourceFilter) =>
-                  selectedSourceFilter === "all"
-                    ? "All sources"
-                    : selectedSourceFilter
-                }
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent align="start">
-              <SelectGroup>
-                <SelectLabel>Source filter</SelectLabel>
-                <SelectItem label="All sources" value="all">
-                  All sources
-                </SelectItem>
-                {filterOptions.sources.map((source) => (
-                  <SelectItem key={source} label={source} value={source}>
-                    {source}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-          <ToggleGroup
-            aria-label="Map render mode"
-            size="sm"
-            spacing={0}
-            value={[renderMode]}
-            variant="outline"
-            onValueChange={(nextValue) => {
-              const nextMode = Array.isArray(nextValue)
-                ? nextValue[0]
-                : nextValue;
-
-              if (nextMode === "points" || nextMode === "thumbnails") {
-                setRenderMode(nextMode);
-              }
-            }}
-          >
-            <ToggleGroupItem aria-label="Point mode" value="points">
-              <CircleDot data-icon="inline-start" />
-              <span className="hidden sm:inline">Points</span>
-            </ToggleGroupItem>
-            <ToggleGroupItem aria-label="Thumbnail mode" value="thumbnails">
-              <Images data-icon="inline-start" />
-              <span className="hidden sm:inline">Thumbnails</span>
-            </ToggleGroupItem>
-          </ToggleGroup>
-          {renderMode === "thumbnails" ? (
-            <>
-              <Select
-                id="latent-map-thumbnail-size"
-                name="latent-map-thumbnail-size"
-                onValueChange={(nextValue) => {
-                  const nextSize = Number(nextValue);
-
-                  if (
-                    LATENT_MAP_THUMBNAIL_SIZE_OPTIONS.includes(
-                      nextSize as LatentMapThumbnailSize,
-                    )
-                  ) {
-                    setThumbnailSize(nextSize as LatentMapThumbnailSize);
-                  }
-                }}
-                value={String(thumbnailSize)}
-              >
-                <SelectTrigger
-                  aria-label="Thumbnail display size"
-                  className="w-[146px] justify-between"
-                  size="sm"
-                >
-                  <SelectValue>
-                    {(selectedSize) => (
-                      <>
-                        <span className="text-muted-foreground">
-                          Display
-                        </span>
-                        <span>{selectedSize}px</span>
-                      </>
-                    )}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent align="start" className="min-w-44">
-                  <SelectGroup>
-                    <SelectLabel>Display size</SelectLabel>
-                    {LATENT_MAP_THUMBNAIL_SIZE_OPTIONS.map((size) => (
-                      <SelectItem
-                        key={size}
-                        label={`${size}px`}
-                        value={String(size)}
-                      >
-                        {size}px
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-              {textureDetailOptions.length > 0 ? (
-                <Select
-                  id="latent-map-texture-detail"
-                  name="latent-map-texture-detail"
-                  onValueChange={(value) => {
-                    const nextDetail =
-                      value === "auto" ? "auto" : Number(value);
-
-                    if (
-                      nextDetail === "auto" ||
-                      textureDetailOptions.includes(nextDetail)
-                    ) {
-                      setTextureDetail(nextDetail);
-                    }
-                  }}
-                  value={String(textureDetail)}
-                >
-                  <SelectTrigger
-                    aria-label="Image detail"
-                    className="w-[150px] justify-between"
+        <SidebarContent>
+          <SidebarGroup>
+            <SidebarGroupLabel>Display</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <FieldGroup className="gap-3">
+                <Field className="gap-1.5">
+                  <FieldLabel>Mode</FieldLabel>
+                  <ToggleGroup
+                    aria-label="Map render mode"
+                    className="w-full"
                     size="sm"
+                    spacing={0}
+                    value={[renderMode]}
+                    variant="outline"
+                    onValueChange={(nextValue) => {
+                      const nextMode = Array.isArray(nextValue)
+                        ? nextValue[0]
+                        : nextValue;
+
+                      if (nextMode === "points" || nextMode === "thumbnails") {
+                        setRenderMode(nextMode);
+                      }
+                    }}
                   >
-                    <SelectValue>
-                      {(selectedDetail) => (
-                        <>
-                          <span className="text-muted-foreground">Detail</span>
-                          <span>
-                            {formatTextureDetailLabel(selectedDetail)}
-                          </span>
-                        </>
-                      )}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent align="start" className="min-w-44">
-                    <SelectGroup>
-                      <SelectLabel>Atlas image detail</SelectLabel>
-                      <SelectItem label="Auto" value="auto">
-                        Auto
-                      </SelectItem>
-                      {textureDetailOptions.map((detail) => (
-                        <SelectItem
-                          key={detail}
-                          label={`${detail}px`}
-                          value={String(detail)}
+                    <ToggleGroupItem
+                      aria-label="Point mode"
+                      className="flex-1"
+                      value="points"
+                    >
+                      <CircleDot data-icon="inline-start" />
+                      <span>Points</span>
+                    </ToggleGroupItem>
+                    <ToggleGroupItem
+                      aria-label="Thumbnail mode"
+                      className="flex-1"
+                      value="thumbnails"
+                    >
+                      <Images data-icon="inline-start" />
+                      <span>Thumbnails</span>
+                    </ToggleGroupItem>
+                  </ToggleGroup>
+                </Field>
+
+                {renderMode === "thumbnails" ? (
+                  <>
+                    <Field className="gap-1.5">
+                      <FieldLabel htmlFor="latent-map-thumbnail-size">
+                        Size
+                      </FieldLabel>
+                      <Select
+                        id="latent-map-thumbnail-size"
+                        name="latent-map-thumbnail-size"
+                        onValueChange={(nextValue) => {
+                          const nextSize = Number(nextValue);
+
+                          if (
+                            LATENT_MAP_THUMBNAIL_SIZE_OPTIONS.includes(
+                              nextSize as LatentMapThumbnailSize,
+                            )
+                          ) {
+                            setThumbnailSize(
+                              nextSize as LatentMapThumbnailSize,
+                            );
+                          }
+                        }}
+                        value={String(thumbnailSize)}
+                      >
+                        <SelectTrigger
+                          aria-label="Thumbnail display size"
+                          className="w-full justify-between"
+                          size="sm"
                         >
-                          {detail}px
+                          <SelectValue>
+                            {(selectedSize) => `${selectedSize}px`}
+                          </SelectValue>
+                        </SelectTrigger>
+                        <SelectContent align="start" className="min-w-44">
+                          <SelectGroup>
+                            <SelectLabel>Display size</SelectLabel>
+                            {LATENT_MAP_THUMBNAIL_SIZE_OPTIONS.map((size) => (
+                              <SelectItem
+                                key={size}
+                                label={`${size}px`}
+                                value={String(size)}
+                              >
+                                {size}px
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                    </Field>
+
+                    {textureDetailOptions.length > 0 ? (
+                      <Field className="gap-1.5">
+                        <FieldLabel htmlFor="latent-map-texture-detail">
+                          Detail
+                        </FieldLabel>
+                        <Select
+                          id="latent-map-texture-detail"
+                          name="latent-map-texture-detail"
+                          onValueChange={(value) => {
+                            const nextDetail =
+                              value === "auto" ? "auto" : Number(value);
+
+                            if (
+                              nextDetail === "auto" ||
+                              textureDetailOptions.includes(nextDetail)
+                            ) {
+                              setTextureDetail(nextDetail);
+                            }
+                          }}
+                          value={String(textureDetail)}
+                        >
+                          <SelectTrigger
+                            aria-label="Image detail"
+                            className="w-full justify-between"
+                            size="sm"
+                          >
+                            <SelectValue>
+                              {(selectedDetail) =>
+                                formatTextureDetailLabel(selectedDetail)
+                              }
+                            </SelectValue>
+                          </SelectTrigger>
+                          <SelectContent align="start" className="min-w-44">
+                            <SelectGroup>
+                              <SelectLabel>Atlas image detail</SelectLabel>
+                              <SelectItem label="Auto" value="auto">
+                                Auto
+                              </SelectItem>
+                              {textureDetailOptions.map((detail) => (
+                                <SelectItem
+                                  key={detail}
+                                  label={`${detail}px`}
+                                  value={String(detail)}
+                                >
+                                  {detail}px
+                                </SelectItem>
+                              ))}
+                            </SelectGroup>
+                          </SelectContent>
+                        </Select>
+                      </Field>
+                    ) : null}
+                  </>
+                ) : null}
+              </FieldGroup>
+            </SidebarGroupContent>
+          </SidebarGroup>
+
+          <SidebarSeparator />
+
+          <SidebarGroup>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    aria-pressed={clusterColorsEnabled}
+                    isActive={clusterColorsEnabled}
+                    onClick={() =>
+                      setClusterColorsEnabled((isEnabled) => !isEnabled)
+                    }
+                    tooltip="Cluster colors"
+                  >
+                    <Palette />
+                    <span className="group-data-[collapsible=icon]:hidden">
+                      Cluster colors
+                    </span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    onClick={() => setView(DEFAULT_VIEW)}
+                    tooltip="Reset view"
+                  >
+                    <RotateCcw />
+                    <span className="group-data-[collapsible=icon]:hidden">
+                      Reset view
+                    </span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+
+          <SidebarSeparator />
+
+          <SidebarGroup>
+            <SidebarGroupLabel>Method</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <FieldGroup className="gap-3">
+                <Field className="gap-1.5">
+                  <FieldLabel htmlFor="latent-map-recipe">Embedding</FieldLabel>
+                  <Select
+                    id="latent-map-recipe"
+                    name="latent-map-recipe"
+                    onValueChange={(nextRecipe) => {
+                      if (typeof nextRecipe !== "string") {
+                        return;
+                      }
+
+                      navigateToMethodSelection({
+                        recipeName: nextRecipe,
+                      });
+                    }}
+                    value={data.embedding_recipe}
+                  >
+                    <SelectTrigger
+                      aria-label="Embedding"
+                      className="w-full justify-between"
+                      size="sm"
+                    >
+                      <SelectValue>
+                        {(selectedRecipe) => {
+                          const recipe =
+                            methodOptions.recipes.find(
+                              (candidate) =>
+                                candidate.recipe_name === selectedRecipe,
+                            ) ?? methodOptions.recipes[0];
+
+                          return (
+                            <span className="truncate">
+                              {formatRecipeLabel(recipe)}
+                            </span>
+                          );
+                        }}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent align="start" className="min-w-64">
+                      <SelectGroup>
+                        <SelectLabel>Embedding</SelectLabel>
+                        {methodOptions.recipes.map((recipe) => (
+                          <SelectItem
+                            key={recipe.recipe_name}
+                            label={formatRecipeLabel(recipe)}
+                            value={recipe.recipe_name}
+                          >
+                            <span className="truncate">
+                              {formatRecipeLabel(recipe)}
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </Field>
+
+                <Field className="gap-1.5">
+                  <FieldLabel htmlFor="latent-map-layout">Layout</FieldLabel>
+                  <Select
+                    id="latent-map-layout"
+                    name="latent-map-layout"
+                    onValueChange={(nextLayout) => {
+                      if (typeof nextLayout !== "string") {
+                        return;
+                      }
+
+                      navigateToMethodSelection({
+                        layoutId: nextLayout,
+                      });
+                    }}
+                    value={data.layout_id}
+                  >
+                    <SelectTrigger
+                      aria-label="Layout"
+                      className="w-full justify-between"
+                      size="sm"
+                    >
+                      <SelectValue>
+                        {(selectedLayout) => {
+                          const layout =
+                            methodOptions.layouts.find(
+                              (candidate) =>
+                                candidate.layout_id === selectedLayout,
+                            ) ?? methodOptions.layouts[0];
+
+                          return (
+                            <span className="truncate">
+                              {formatLayoutLabel(layout)}
+                            </span>
+                          );
+                        }}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent align="start" className="min-w-64">
+                      <SelectGroup>
+                        <SelectLabel>Layout</SelectLabel>
+                        {methodOptions.layouts.map((layout) => (
+                          <SelectItem
+                            key={layout.layout_id}
+                            label={formatLayoutLabel(layout)}
+                            value={layout.layout_id}
+                          >
+                            <span className="truncate">
+                              {formatLayoutLabel(layout)}
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </Field>
+
+                <Field className="gap-1.5">
+                  <FieldLabel htmlFor="latent-map-cluster-result">
+                    Clusters
+                  </FieldLabel>
+                  <Select
+                    id="latent-map-cluster-result"
+                    name="latent-map-cluster-result"
+                    onValueChange={(nextClusterId) => {
+                      if (typeof nextClusterId !== "string") {
+                        return;
+                      }
+
+                      navigateToMethodSelection({
+                        clusterId: nextClusterId,
+                      });
+                    }}
+                    value={data.cluster_id}
+                  >
+                    <SelectTrigger
+                      aria-label="Cluster result"
+                      className="w-full justify-between"
+                      size="sm"
+                    >
+                      <SelectValue>
+                        {(selectedClusterId) => {
+                          const cluster =
+                            methodOptions.clusters.find(
+                              (candidate) =>
+                                candidate.cluster_id === selectedClusterId,
+                            ) ?? methodOptions.clusters[0];
+
+                          return (
+                            <span className="truncate">
+                              {formatClusterResultLabel(cluster)}
+                            </span>
+                          );
+                        }}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent align="start" className="min-w-56">
+                      <SelectGroup>
+                        <SelectLabel>Clusters</SelectLabel>
+                        {methodOptions.clusters.map((cluster) => (
+                          <SelectItem
+                            key={cluster.cluster_id}
+                            label={formatClusterResultLabel(cluster)}
+                            value={cluster.cluster_id}
+                          >
+                            <span className="truncate">
+                              {formatClusterResultLabel(cluster)}
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </Field>
+              </FieldGroup>
+            </SidebarGroupContent>
+          </SidebarGroup>
+
+          <SidebarSeparator />
+
+          <SidebarGroup>
+            <SidebarGroupLabel>Filters</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <FieldGroup className="gap-3">
+                <Field className="gap-1.5">
+                  <FieldLabel htmlFor="latent-map-cluster-filter">
+                    Cluster
+                  </FieldLabel>
+                  <Select
+                    id="latent-map-cluster-filter"
+                    name="latent-map-cluster-filter"
+                    onValueChange={(nextClusterFilter) => {
+                      if (typeof nextClusterFilter === "string") {
+                        handleClusterFilterChange(nextClusterFilter);
+                      }
+                    }}
+                    value={clusterFilter}
+                  >
+                    <SelectTrigger
+                      aria-label="Cluster filter"
+                      className="w-full justify-between"
+                      size="sm"
+                    >
+                      <SelectValue>
+                        {(selectedClusterFilter) =>
+                          selectedClusterFilter === "all"
+                            ? "All clusters"
+                            : `Cluster ${selectedClusterFilter}`
+                        }
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent align="start">
+                      <SelectGroup>
+                        <SelectLabel>Cluster filter</SelectLabel>
+                        <SelectItem label="All clusters" value="all">
+                          All clusters
                         </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-              ) : null}
-            </>
-          ) : null}
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  aria-pressed={clusterColorsEnabled}
-                  onClick={() =>
-                    setClusterColorsEnabled((isEnabled) => !isEnabled)
-                  }
-                  size="icon"
-                  variant={clusterColorsEnabled ? "secondary" : "outline"}
-                />
-              }
-            >
-                  <Palette />
-            </TooltipTrigger>
-            <TooltipContent>Cluster colors</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  onClick={() => setView(DEFAULT_VIEW)}
-                  size="icon"
-                  variant="outline"
-                />
-              }
-            >
-              <RotateCcw />
-            </TooltipTrigger>
-            <TooltipContent>Reset view</TooltipContent>
-          </Tooltip>
-        </div>
-      </header>
+                        {filterOptions.clusters.map((clusterId) => (
+                          <SelectItem
+                            key={clusterId}
+                            label={`Cluster ${clusterId}`}
+                            value={String(clusterId)}
+                          >
+                            Cluster {clusterId}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </Field>
 
-      <section className="relative min-h-0 flex-1 overflow-hidden">
-        <div
-          ref={wrapperRef}
-          aria-label="Latent image map"
-          className="absolute inset-0 cursor-crosshair touch-none bg-[#101113]"
-          data-cluster-colors={clusterColorsEnabled}
-          data-cluster-filter={clusterFilter}
-          data-point-count={stats.pointCount}
-          data-render-mode={renderMode}
-          data-runtime-average-frame-ms={runtimeSnapshot.averageFrameMs}
-          data-runtime-average-render-ms={runtimeSnapshot.averageRenderMs}
-          data-runtime-atlas-page-count={runtimeSnapshot.atlasPageCount}
-          data-runtime-draw-calls={runtimeSnapshot.drawCalls}
-          data-runtime-estimated-fps={runtimeSnapshot.estimatedFps}
-          data-runtime-geometries={runtimeSnapshot.geometryCount}
-          data-runtime-last-render-ms={runtimeSnapshot.lastRenderMs}
-          data-runtime-loaded-thumbnails={runtimeSnapshot.loadedThumbnailCount}
-          data-runtime-renderer-points={runtimeSnapshot.rendererPointCount}
-          data-runtime-renderer-triangles={runtimeSnapshot.rendererTriangleCount}
-          data-runtime-textures={runtimeSnapshot.liveTextureCount}
-          data-selected-image-id={selectedImageId ?? undefined}
-          data-source-filter={sourceFilter}
-          data-total-point-count={totalStats.pointCount}
-          data-point-layer-size={pointLayer.pointSize}
-          data-point-layer-visible={pointLayer.visible}
-          data-thumbnail-atlas-page-count={
-            renderMode === "thumbnails"
-              ? thumbnailPlan.atlasPages.length +
-                thumbnailPlan.fallbackAtlasPages.length
-              : 0
-          }
-          data-thumbnail-atlas-cache-active={thumbnailPlan.atlasPageCacheActive}
-          data-thumbnail-atlas-page-budget={thumbnailPlan.atlasPageBudget ?? 0}
-          data-thumbnail-estimated-atlas-texture-bytes={
-            renderMode === "thumbnails"
-              ? thumbnailPlan.estimatedAtlasTextureBytes
-              : 0
-          }
-          data-thumbnail-count={
-            renderMode === "thumbnails"
-              ? thumbnailPlan.thumbnailPoints.length
-              : 0
-          }
-          data-thumbnail-hover-preview-size={thumbnailPlan.hoverPreviewSize}
-          data-thumbnail-atlas-tile-size={thumbnailAtlas?.tile_size ?? 0}
-          data-thumbnail-display-size={thumbnailPlan.displayThumbnailSize}
-          data-thumbnail-fallback-atlas-page-count={
-            thumbnailPlan.fallbackAtlasPages.length
-          }
-          data-thumbnail-fallback-texture-detail={
-            thumbnailPlan.fallbackResolvedTextureDetail ?? 0
-          }
-          data-thumbnail-instanced-draw-calls={
-            renderMode === "thumbnails"
-              ? thumbnailRendererComparison.instancedAtlas.drawCalls
-              : 0
-          }
-          data-thumbnail-instanced-textures={
-            renderMode === "thumbnails"
-              ? thumbnailRendererComparison.instancedAtlas.gpuTextures
-              : 0
-          }
-          data-thumbnail-recommendation={
-            thumbnailRendererComparison.recommendation
-          }
-          data-thumbnail-renderer="instanced-atlas"
-          data-thumbnail-resolved-texture-detail={
-            thumbnailPlan.resolvedTextureDetail
-          }
-          data-thumbnail-screen-long-side={Number(
-            displayThumbnailScreenLongSide.toFixed(2),
-          )}
-          data-thumbnail-size={thumbnailPlan.thumbnailSize}
-          data-thumbnail-sprite-baseline-draw-calls={
-            renderMode === "thumbnails"
-              ? thumbnailRendererComparison.spriteBaseline.drawCalls
-              : 0
-          }
-          data-thumbnail-sprite-baseline-textures={
-            renderMode === "thumbnails"
-              ? thumbnailRendererComparison.spriteBaseline.gpuTextures
-              : 0
-          }
-          data-thumbnail-source-kind="generated"
-          data-thumbnail-strategy={thumbnailPlan.strategy}
-          data-thumbnail-texture-detail={thumbnailPlan.textureDetail}
-          data-thumbnail-total-atlas-page-count={
-            thumbnailPlan.totalAtlasPageCount
-          }
-          data-testid="latent-map-canvas"
-          onPointerDown={handlePointerDown}
-          onPointerLeave={() => {
-            dragStartRef.current = null;
-            hoverPointerRef.current = null;
-            setHoveredImageId(null);
-          }}
-          onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerUp}
-          role="application"
-        >
-          <canvas className="block size-full" ref={canvasRef} />
+                <Field className="gap-1.5">
+                  <FieldLabel htmlFor="latent-map-source-filter">
+                    Source
+                  </FieldLabel>
+                  <Select
+                    id="latent-map-source-filter"
+                    name="latent-map-source-filter"
+                    onValueChange={(nextSourceFilter) => {
+                      if (typeof nextSourceFilter === "string") {
+                        handleSourceFilterChange(nextSourceFilter);
+                      }
+                    }}
+                    value={sourceFilter}
+                  >
+                    <SelectTrigger
+                      aria-label="Source filter"
+                      className="w-full justify-between"
+                      size="sm"
+                    >
+                      <SelectValue>
+                        {(selectedSourceFilter) =>
+                          selectedSourceFilter === "all"
+                            ? "All sources"
+                            : selectedSourceFilter
+                        }
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent align="start">
+                      <SelectGroup>
+                        <SelectLabel>Source filter</SelectLabel>
+                        <SelectItem label="All sources" value="all">
+                          All sources
+                        </SelectItem>
+                        {filterOptions.sources.map((source) => (
+                          <SelectItem key={source} label={source} value={source}>
+                            {source}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </Field>
+              </FieldGroup>
+            </SidebarGroupContent>
+          </SidebarGroup>
+
+          <SidebarSeparator />
+
+          <SidebarGroup>
+            <SidebarGroupLabel>Search</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <FieldGroup className="gap-3">
+                <Field className="gap-1.5">
+                  <FieldLabel htmlFor="latent-map-faiss-neighbor-count">
+                    Neighbors
+                  </FieldLabel>
+                  <Select
+                    id="latent-map-faiss-neighbor-count"
+                    name="latent-map-faiss-neighbor-count"
+                    onValueChange={(nextValue) => {
+                      const nextCount = Number(nextValue);
+
+                      if (
+                        LATENT_MAP_FAISS_NEIGHBOR_COUNT_OPTIONS.includes(
+                          nextCount as LatentMapFaissNeighborCount,
+                        )
+                      ) {
+                        setFaissNeighborCount(
+                          nextCount as LatentMapFaissNeighborCount,
+                        );
+                      }
+                    }}
+                    value={String(faissNeighborCount)}
+                  >
+                    <SelectTrigger
+                      aria-label="FAISS neighbor count"
+                      className="w-full justify-between"
+                      size="sm"
+                    >
+                      <SelectValue>
+                        {(selectedCount) => `${selectedCount}`}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent align="start" className="min-w-44">
+                      <SelectGroup>
+                        <SelectLabel>FAISS neighbors</SelectLabel>
+                        {LATENT_MAP_FAISS_NEIGHBOR_COUNT_OPTIONS.map((count) => (
+                          <SelectItem
+                            key={count}
+                            label={`${count} closest`}
+                            value={String(count)}
+                          >
+                            {count} closest
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </Field>
+
+                <Field className="gap-1.5">
+                  <FieldLabel htmlFor="latent-map-faiss-relation">
+                    Focus
+                  </FieldLabel>
+                  <Select
+                    id="latent-map-faiss-relation"
+                    name="latent-map-faiss-relation"
+                    onValueChange={(nextValue) => {
+                      if (
+                        LATENT_MAP_FAISS_RELATION_MODE_OPTIONS.includes(
+                          nextValue as LatentMapFaissRelationMode,
+                        )
+                      ) {
+                        setFaissRelationMode(
+                          nextValue as LatentMapFaissRelationMode,
+                        );
+                      }
+                    }}
+                    value={faissRelationMode}
+                  >
+                    <SelectTrigger
+                      aria-label="FAISS focus"
+                      className="w-full justify-between"
+                      size="sm"
+                    >
+                      <SelectValue>
+                        {(selectedRelation) =>
+                          formatFaissRelationLabel(selectedRelation)
+                        }
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent align="start" className="min-w-40">
+                      <SelectGroup>
+                        <SelectLabel>FAISS focus</SelectLabel>
+                        {LATENT_MAP_FAISS_RELATION_MODE_OPTIONS.map(
+                          (relation) => (
+                            <SelectItem
+                              key={relation}
+                              label={formatFaissRelationLabel(relation)}
+                              value={relation}
+                            >
+                              {formatFaissRelationLabel(relation)}
+                            </SelectItem>
+                          ),
+                        )}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </Field>
+              </FieldGroup>
+            </SidebarGroupContent>
+          </SidebarGroup>
+
+        </SidebarContent>
+      </Sidebar>
+
+      <SidebarInset className="min-w-0 overflow-hidden bg-[#f0f0f0] dark:bg-[#101113]">
+        <div className="pointer-events-auto absolute left-3 top-3 z-30">
+          <SidebarTrigger className="bg-background/85 shadow-sm" />
+        </div>
+        <div className="pointer-events-none absolute left-14 top-3 z-20">
+          <Badge
+            className="h-11 gap-3 rounded-2xl border-border/60 bg-background/35 px-4 text-base font-semibold text-foreground shadow-none backdrop-blur-sm"
+            variant="outline"
+          >
+            <ScanSearch data-icon="inline-start" />
+            Latent Map
+          </Badge>
         </div>
 
-        <div className="pointer-events-none absolute left-4 top-4 flex max-w-[calc(100%-2rem)] flex-wrap items-center gap-2">
-          {selectedPoint ? (
-            <>
-              <Badge className="bg-background/85 text-foreground" variant="outline">
-                {(
-                  neighborsByImageId[selectedPoint.image_id] ??
-                  selectedPoint.neighbors ??
-                  []
-                ).length} neighbors
-              </Badge>
-            </>
-          ) : null}
-          {loadingNeighborImageId ? (
-            <Badge className="bg-background/85 text-foreground" variant="outline">
-              Loading FAISS neighbors
-            </Badge>
-          ) : null}
-          {neighborError ? (
-            <Badge className="bg-background/85 text-foreground" variant="outline">
-              {neighborError}
-            </Badge>
-          ) : null}
-        </div>
-
-        {hoveredPoint && hoverPreviewBox ? (
+        <section className="relative min-h-0 flex-1 overflow-hidden">
           <div
-            className="pointer-events-none fixed z-50 overflow-hidden rounded-lg border bg-background shadow-xl"
-            style={{
-              left: Math.min(
-                hoverPosition.x + 14,
-                window.innerWidth - hoverPreviewBox.width - 16,
-              ),
-              top: Math.min(
-                hoverPosition.y + 14,
-                window.innerHeight - hoverPreviewBox.height - 16,
-              ),
-              height: hoverPreviewBox.height,
-              width: hoverPreviewBox.width,
+            ref={wrapperRef}
+            aria-label="Latent image map"
+            className="absolute inset-0 cursor-crosshair touch-none bg-[#f0f0f0] dark:bg-[#101113]"
+            data-cluster-colors={clusterColorsEnabled}
+            data-cluster-filter={clusterFilter}
+            data-faiss-neighbor-count={faissNeighborCount}
+            data-faiss-relation={faissRelationMode}
+            data-map-theme={visualTheme}
+            data-point-count={stats.pointCount}
+            data-render-mode={renderMode}
+            data-runtime-average-frame-ms={runtimeSnapshot.averageFrameMs}
+            data-runtime-average-render-ms={runtimeSnapshot.averageRenderMs}
+            data-runtime-atlas-page-count={runtimeSnapshot.atlasPageCount}
+            data-runtime-draw-calls={runtimeSnapshot.drawCalls}
+            data-runtime-estimated-fps={runtimeSnapshot.estimatedFps}
+            data-runtime-geometries={runtimeSnapshot.geometryCount}
+            data-runtime-last-render-ms={runtimeSnapshot.lastRenderMs}
+            data-runtime-loaded-thumbnails={runtimeSnapshot.loadedThumbnailCount}
+            data-runtime-renderer-points={runtimeSnapshot.rendererPointCount}
+            data-runtime-renderer-triangles={runtimeSnapshot.rendererTriangleCount}
+            data-runtime-textures={runtimeSnapshot.liveTextureCount}
+            data-selected-image-id={selectedImageId ?? undefined}
+            data-source-filter={sourceFilter}
+            data-total-point-count={totalStats.pointCount}
+            data-point-layer-size={pointLayer.pointSize}
+            data-point-layer-visible={pointLayer.visible}
+            data-thumbnail-atlas-page-count={
+              renderMode === "thumbnails"
+                ? thumbnailPlan.atlasPages.length +
+                  thumbnailPlan.fallbackAtlasPages.length
+                : 0
+            }
+            data-thumbnail-atlas-cache-active={thumbnailPlan.atlasPageCacheActive}
+            data-thumbnail-atlas-page-budget={thumbnailPlan.atlasPageBudget ?? 0}
+            data-thumbnail-estimated-atlas-texture-bytes={
+              renderMode === "thumbnails"
+                ? thumbnailPlan.estimatedAtlasTextureBytes
+                : 0
+            }
+            data-thumbnail-count={
+              renderMode === "thumbnails"
+                ? thumbnailPlan.thumbnailPoints.length
+                : 0
+            }
+            data-thumbnail-hover-preview-size={thumbnailPlan.hoverPreviewSize}
+            data-thumbnail-atlas-tile-size={thumbnailAtlas?.tile_size ?? 0}
+            data-thumbnail-display-size={thumbnailPlan.displayThumbnailSize}
+            data-thumbnail-fallback-atlas-page-count={
+              thumbnailPlan.fallbackAtlasPages.length
+            }
+            data-thumbnail-fallback-texture-detail={
+              thumbnailPlan.fallbackResolvedTextureDetail ?? 0
+            }
+            data-thumbnail-instanced-draw-calls={
+              renderMode === "thumbnails"
+                ? thumbnailRendererComparison.instancedAtlas.drawCalls
+                : 0
+            }
+            data-thumbnail-instanced-textures={
+              renderMode === "thumbnails"
+                ? thumbnailRendererComparison.instancedAtlas.gpuTextures
+                : 0
+            }
+            data-thumbnail-recommendation={
+              thumbnailRendererComparison.recommendation
+            }
+            data-thumbnail-renderer="instanced-atlas"
+            data-thumbnail-resolved-texture-detail={
+              thumbnailPlan.resolvedTextureDetail
+            }
+            data-thumbnail-screen-long-side={Number(
+              displayThumbnailScreenLongSide.toFixed(2),
+            )}
+            data-thumbnail-size={thumbnailPlan.thumbnailSize}
+            data-thumbnail-sprite-baseline-draw-calls={
+              renderMode === "thumbnails"
+                ? thumbnailRendererComparison.spriteBaseline.drawCalls
+                : 0
+            }
+            data-thumbnail-sprite-baseline-textures={
+              renderMode === "thumbnails"
+                ? thumbnailRendererComparison.spriteBaseline.gpuTextures
+                : 0
+            }
+            data-thumbnail-source-kind="generated"
+            data-thumbnail-strategy={thumbnailPlan.strategy}
+            data-thumbnail-texture-detail={thumbnailPlan.textureDetail}
+            data-thumbnail-total-atlas-page-count={
+              thumbnailPlan.totalAtlasPageCount
+            }
+            data-testid="latent-map-canvas"
+            onPointerDown={handlePointerDown}
+            onPointerLeave={() => {
+              dragStartRef.current = null;
+              hoverPointerRef.current = null;
+              setHoveredImageId(null);
             }}
-        >
-            <NextImage
-              alt=""
-              className="block size-full object-contain"
-              height={hoverPreviewBox.height}
-              src={hoveredPoint.preview_path ?? hoveredPoint.thumbnail_path}
-              unoptimized
-              width={hoverPreviewBox.width}
-            />
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            role="application"
+          >
+            <canvas className="block size-full" ref={canvasRef} />
           </div>
-        ) : null}
-      </section>
-    </main>
+
+          <div className="pointer-events-none absolute bottom-3 left-3 flex max-w-[calc(100%-1.5rem)] flex-wrap items-center gap-2">
+            {selectedPoint && selectedFocusBadgeText ? (
+              <>
+                <Badge
+                  className="bg-background/85 text-foreground"
+                  variant="outline"
+                >
+                  {selectedFocusBadgeText}
+                </Badge>
+              </>
+            ) : null}
+            {loadingNeighborImageId ? (
+              <Badge
+                className="bg-background/85 text-foreground"
+                variant="outline"
+              >
+                Loading FAISS neighbors
+              </Badge>
+            ) : null}
+            {neighborError ? (
+              <Badge
+                className="bg-background/85 text-foreground"
+                variant="outline"
+              >
+                {neighborError}
+              </Badge>
+            ) : null}
+          </div>
+
+          {hoveredPoint && hoverPreviewBox ? (
+            <div
+              className="pointer-events-none fixed z-50 overflow-hidden rounded-lg border bg-background shadow-xl"
+              style={{
+                left: Math.min(
+                  hoverPosition.x + 14,
+                  window.innerWidth - hoverPreviewBox.width - 16,
+                ),
+                top: Math.min(
+                  hoverPosition.y + 14,
+                  window.innerHeight - hoverPreviewBox.height - 16,
+                ),
+                height: hoverPreviewBox.height,
+                width: hoverPreviewBox.width,
+              }}
+            >
+              <NextImage
+                alt=""
+                className="block size-full object-contain"
+                height={hoverPreviewBox.height}
+                src={hoveredPoint.preview_path ?? hoveredPoint.thumbnail_path}
+                unoptimized
+                width={hoverPreviewBox.width}
+              />
+            </div>
+          ) : null}
+        </section>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }

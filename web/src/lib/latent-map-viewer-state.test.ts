@@ -40,12 +40,14 @@ describe("latent map viewer state", () => {
     expect(
       parseLatentMapUrlState(
         new URLSearchParams(
-          "mode=thumbnails&thumb=96&selected=img_saffron&cluster=0&source=set-a&x=0.2&y=-0.1&z=24",
+          "mode=thumbnails&thumb=96&neighbors=50&relation=both&selected=img_saffron&cluster=0&source=set-a&x=0.2&y=-0.1&z=24",
         ),
         latentMapFixture,
       ),
     ).toEqual({
       clusterFilter: "0",
+      faissNeighborCount: 50,
+      faissRelationMode: "both",
       renderMode: "thumbnails",
       selectedImageId: "img_saffron",
       sourceFilter: "set-a",
@@ -63,12 +65,14 @@ describe("latent map viewer state", () => {
     expect(
       parseLatentMapUrlState(
         new URLSearchParams(
-          "mode=bad&thumb=512&selected=missing&cluster=99&source=missing&x=nope&z=-1",
+          "mode=bad&thumb=512&neighbors=500&relation=sideways&selected=missing&cluster=99&source=missing&x=nope&z=-1",
         ),
         latentMapFixture,
       ),
     ).toEqual({
       clusterFilter: "all",
+      faissNeighborCount: 20,
+      faissRelationMode: "closest",
       renderMode: "points",
       selectedImageId: null,
       sourceFilter: "all",
@@ -87,6 +91,8 @@ describe("latent map viewer state", () => {
       serializeLatentMapUrlState(
         {
           clusterFilter: "1",
+          faissNeighborCount: 5,
+          faissRelationMode: "opposite",
           renderMode: "thumbnails",
           selectedImageId: "img_cobalt",
           sourceFilter: "set-b",
@@ -101,7 +107,7 @@ describe("latent map viewer state", () => {
         latentMapFixture,
       ).toString(),
     ).toBe(
-      "run=prototype-fixture-8&recipe=dinov3_vits_256&layout=umap_n4_mindist0p05_seed42&clusterResult=kmeans_k3_seed42&mode=thumbnails&thumb=32&detail=96&selected=img_cobalt&cluster=1&source=set-b&x=0.125&y=-0.25&z=1.5",
+      "run=prototype-fixture-8&recipe=dinov3_vits_256&layout=umap_n4_mindist0p05_seed42&clusterResult=kmeans_k3_seed42&mode=thumbnails&thumb=32&detail=96&neighbors=5&relation=opposite&selected=img_cobalt&cluster=1&source=set-b&x=0.125&y=-0.25&z=1.5",
     );
   });
 

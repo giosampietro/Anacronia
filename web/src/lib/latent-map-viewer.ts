@@ -1,5 +1,6 @@
 export type LatentMapNeighbor = {
   image_id: string;
+  rank?: number;
   score: number;
 };
 
@@ -15,6 +16,7 @@ export type LatentMapPoint = {
   width: number;
   height: number;
   neighbors?: LatentMapNeighbor[];
+  opposites?: LatentMapNeighbor[];
 };
 
 export type LatentMapViewerData = {
@@ -63,6 +65,7 @@ export type LatentMapPointState =
   | "base"
   | "cluster"
   | "neighbor"
+  | "opposite"
   | "selected";
 
 export type LatentMapRenderablePoint = LatentMapFittedPoint & {
@@ -72,6 +75,8 @@ export type LatentMapRenderablePoint = LatentMapFittedPoint & {
 
 export type LatentMapRenderMode = "points" | "thumbnails";
 
+export type LatentMapFaissNeighborCount = 3 | 5 | 10 | 20 | 50;
+export type LatentMapFaissRelationMode = "closest" | "opposite" | "both";
 export type LatentMapThumbnailSize = 32 | 64 | 96;
 export type LatentMapTextureDetail = "auto" | number;
 
@@ -224,9 +229,24 @@ export type LatentMapThumbnailRendererComparison = {
 };
 
 export const DEFAULT_LATENT_MAP_THUMBNAIL_CAP = 420;
+export const DEFAULT_LATENT_MAP_FAISS_NEIGHBOR_COUNT: LatentMapFaissNeighborCount = 20;
+export const DEFAULT_LATENT_MAP_FAISS_RELATION_MODE: LatentMapFaissRelationMode =
+  "closest";
 export const DEFAULT_LATENT_MAP_THUMBNAIL_SIZE: LatentMapThumbnailSize = 64;
 export const DEFAULT_LATENT_MAP_TEXTURE_DETAIL: LatentMapTextureDetail = "auto";
 export const DEFAULT_LATENT_MAP_HOVER_PREVIEW_SIZE = 512;
+export const LATENT_MAP_FAISS_NEIGHBOR_COUNT_OPTIONS = [
+  3,
+  5,
+  10,
+  20,
+  50,
+] as const;
+export const LATENT_MAP_FAISS_RELATION_MODE_OPTIONS = [
+  "closest",
+  "opposite",
+  "both",
+] as const;
 export const LATENT_MAP_THUMBNAIL_SIZE_OPTIONS = [32, 64, 96] as const;
 export const LATENT_MAP_THUMBNAIL_WORLD_SIZE_PER_PIXEL = 0.13 / 64;
 export const LATENT_MAP_MAX_THUMBNAIL_SCREEN_SCALE = 2;
@@ -253,6 +273,7 @@ const CLUSTER_COLORS: [number, number, number][] = [
 const BASE_POINT_COLOR: [number, number, number] = [150, 156, 166];
 const SELECTED_POINT_COLOR: [number, number, number] = [250, 250, 246];
 const NEIGHBOR_POINT_COLOR: [number, number, number] = [255, 167, 72];
+const OPPOSITE_POINT_COLOR: [number, number, number] = [95, 190, 255];
 
 export function getLatentMapClusterColor(
   clusterId: number,
@@ -305,6 +326,9 @@ export function getLatentMapThumbnailStateScaleMultiplier(
     return 1.36;
   }
   if (pointState === "neighbor") {
+    return 1.16;
+  }
+  if (pointState === "opposite") {
     return 1.16;
   }
 
@@ -544,14 +568,17 @@ export function createLatentMapNeighborSet(
   data: LatentMapViewerData,
   selectedImageId: string | null,
   loadedNeighborsByImageId: Record<string, LatentMapNeighbor[]> = {},
+  neighborCount: number = DEFAULT_LATENT_MAP_FAISS_NEIGHBOR_COUNT,
 ): Set<string> {
   if (!selectedImageId) {
     return new Set();
   }
 
+  const safeNeighborCount = Math.max(0, Math.floor(neighborCount));
+
   if (Object.hasOwn(loadedNeighborsByImageId, selectedImageId)) {
     return new Set(
-      loadedNeighborsByImageId[selectedImageId].map(
+      loadedNeighborsByImageId[selectedImageId].slice(0, safeNeighborCount).map(
         (neighbor) => neighbor.image_id,
       ),
     );
@@ -566,7 +593,44 @@ export function createLatentMapNeighborSet(
   }
 
   return new Set(
-    (selectedPoint.neighbors ?? []).map((neighbor) => neighbor.image_id),
+    (selectedPoint.neighbors ?? [])
+      .slice(0, safeNeighborCount)
+      .map((neighbor) => neighbor.image_id),
+  );
+}
+
+export function createLatentMapOppositeSet(
+  data: LatentMapViewerData,
+  selectedImageId: string | null,
+  loadedOppositesByImageId: Record<string, LatentMapNeighbor[]> = {},
+  neighborCount: number = DEFAULT_LATENT_MAP_FAISS_NEIGHBOR_COUNT,
+): Set<string> {
+  if (!selectedImageId) {
+    return new Set();
+  }
+
+  const safeNeighborCount = Math.max(0, Math.floor(neighborCount));
+
+  if (Object.hasOwn(loadedOppositesByImageId, selectedImageId)) {
+    return new Set(
+      loadedOppositesByImageId[selectedImageId].slice(0, safeNeighborCount).map(
+        (neighbor) => neighbor.image_id,
+      ),
+    );
+  }
+
+  const selectedPoint = data.points.find(
+    (point) => point.image_id === selectedImageId,
+  );
+
+  if (!selectedPoint) {
+    return new Set();
+  }
+
+  return new Set(
+    (selectedPoint.opposites ?? [])
+      .slice(0, safeNeighborCount)
+      .map((neighbor) => neighbor.image_id),
   );
 }
 
@@ -610,19 +674,38 @@ export function fitLatentMapPoints(
 export function createLatentMapRenderState({
   clusterColorsEnabled,
   data,
+  faissNeighborCount = DEFAULT_LATENT_MAP_FAISS_NEIGHBOR_COUNT,
+  faissRelationMode = DEFAULT_LATENT_MAP_FAISS_RELATION_MODE,
   neighborsByImageId,
+  oppositesByImageId,
   selectedImageId,
 }: {
   clusterColorsEnabled: boolean;
   data: LatentMapViewerData;
+  faissNeighborCount?: number;
+  faissRelationMode?: LatentMapFaissRelationMode;
   neighborsByImageId?: Record<string, LatentMapNeighbor[]>;
+  oppositesByImageId?: Record<string, LatentMapNeighbor[]>;
   selectedImageId: string | null;
 }): LatentMapRenderablePoint[] {
-  const neighborIds = createLatentMapNeighborSet(
-    data,
-    selectedImageId,
-    neighborsByImageId,
-  );
+  const neighborIds =
+    faissRelationMode === "opposite"
+      ? new Set<string>()
+      : createLatentMapNeighborSet(
+          data,
+          selectedImageId,
+          neighborsByImageId,
+          faissNeighborCount,
+        );
+  const oppositeIds =
+    faissRelationMode === "closest"
+      ? new Set<string>()
+      : createLatentMapOppositeSet(
+          data,
+          selectedImageId,
+          oppositesByImageId,
+          faissNeighborCount,
+        );
 
   return fitLatentMapPoints(data.points).map((point) => {
     if (point.image_id === selectedImageId) {
@@ -638,6 +721,14 @@ export function createLatentMapRenderState({
         ...point,
         color: NEIGHBOR_POINT_COLOR,
         point_state: "neighbor",
+      };
+    }
+
+    if (oppositeIds.has(point.image_id)) {
+      return {
+        ...point,
+        color: OPPOSITE_POINT_COLOR,
+        point_state: "opposite",
       };
     }
 
@@ -660,9 +751,7 @@ export function createLatentMapRenderState({
 export function isLatentMapThumbnailFocusActive(
   points: LatentMapRenderablePoint[],
 ): boolean {
-  return points.some((point) =>
-    point.point_state === "selected" || point.point_state === "neighbor",
-  );
+  return points.some((point) => isFocusThumbnail(point));
 }
 
 export function createLatentMapPointLayerPlan({
@@ -708,18 +797,18 @@ function getThumbnailPriority(point: LatentMapRenderablePoint): number {
   if (point.point_state === "neighbor") {
     return 1;
   }
+  if (point.point_state === "opposite") {
+    return 2;
+  }
 
-  return 2;
+  return 3;
 }
 
 function getFocusThumbnailPoints(
   points: LatentMapRenderablePoint[],
 ): LatentMapRenderablePoint[] {
   return points
-    .filter(
-      (point) =>
-        point.point_state === "selected" || point.point_state === "neighbor",
-    )
+    .filter(isFocusThumbnail)
     .sort((left, right) => {
       const priorityDelta =
         getThumbnailPriority(left) - getThumbnailPriority(right);
@@ -793,7 +882,11 @@ function createSpatialThumbnailSample({
 }
 
 function isFocusThumbnail(point: LatentMapRenderablePoint) {
-  return point.point_state === "selected" || point.point_state === "neighbor";
+  return (
+    point.point_state === "selected" ||
+    point.point_state === "neighbor" ||
+    point.point_state === "opposite"
+  );
 }
 
 function getViewportWorldBounds({
@@ -1258,7 +1351,7 @@ function createCappedThumbnailPoints({
   sortedPoints: LatentMapRenderablePoint[];
 }): LatentMapRenderablePoint[] {
   const requiredPoints = sortedPoints.filter(
-    (point) => point.point_state === "selected" || point.point_state === "neighbor",
+    isFocusThumbnail,
   );
   const requiredIds = new Set(requiredPoints.map((point) => point.image_id));
   const spatialPoints = createSpatialThumbnailSample({

@@ -1,8 +1,14 @@
 import {
+  DEFAULT_LATENT_MAP_FAISS_NEIGHBOR_COUNT,
+  DEFAULT_LATENT_MAP_FAISS_RELATION_MODE,
   DEFAULT_LATENT_MAP_TEXTURE_DETAIL,
   DEFAULT_LATENT_MAP_THUMBNAIL_SIZE,
+  LATENT_MAP_FAISS_NEIGHBOR_COUNT_OPTIONS,
+  LATENT_MAP_FAISS_RELATION_MODE_OPTIONS,
   LATENT_MAP_THUMBNAIL_SIZE_OPTIONS,
   getLatentMapAvailableTextureDetails,
+  type LatentMapFaissNeighborCount,
+  type LatentMapFaissRelationMode,
   type LatentMapRenderMode,
   type LatentMapTextureDetail,
   type LatentMapThumbnailSize,
@@ -20,6 +26,8 @@ export type LatentMapFilterState = {
 };
 
 export type LatentMapDurableState = LatentMapFilterState & {
+  faissNeighborCount: LatentMapFaissNeighborCount;
+  faissRelationMode: LatentMapFaissRelationMode;
   renderMode: LatentMapRenderMode;
   selectedImageId: string | null;
   textureDetail: LatentMapTextureDetail;
@@ -40,6 +48,8 @@ export const DEFAULT_LATENT_MAP_FILTERS: LatentMapFilterState = {
 
 export const DEFAULT_LATENT_MAP_DURABLE_STATE: LatentMapDurableState = {
   ...DEFAULT_LATENT_MAP_FILTERS,
+  faissNeighborCount: DEFAULT_LATENT_MAP_FAISS_NEIGHBOR_COUNT,
+  faissRelationMode: DEFAULT_LATENT_MAP_FAISS_RELATION_MODE,
   renderMode: "points",
   selectedImageId: null,
   textureDetail: DEFAULT_LATENT_MAP_TEXTURE_DETAIL,
@@ -106,6 +116,8 @@ export function parseLatentMapUrlState(
   const filterOptions = createLatentMapFilterOptions(data);
   const modeParam = searchParams.get("mode");
   const thumbParam = Number(searchParams.get("thumb"));
+  const neighborsParam = Number(searchParams.get("neighbors"));
+  const relationParam = searchParams.get("relation");
   const detailParam = searchParams.get("detail");
   const detailNumber = Number(detailParam);
   const availableTextureDetails = getLatentMapAvailableTextureDetails(data);
@@ -133,6 +145,16 @@ export function parseLatentMapUrlState(
 
   return {
     clusterFilter,
+    faissNeighborCount: LATENT_MAP_FAISS_NEIGHBOR_COUNT_OPTIONS.includes(
+      neighborsParam as LatentMapFaissNeighborCount,
+    )
+      ? (neighborsParam as LatentMapFaissNeighborCount)
+      : DEFAULT_LATENT_MAP_FAISS_NEIGHBOR_COUNT,
+    faissRelationMode: LATENT_MAP_FAISS_RELATION_MODE_OPTIONS.includes(
+      relationParam as LatentMapFaissRelationMode,
+    )
+      ? (relationParam as LatentMapFaissRelationMode)
+      : DEFAULT_LATENT_MAP_FAISS_RELATION_MODE,
     renderMode: modeParam === "thumbnails" ? "thumbnails" : "points",
     selectedImageId: selectedExists ? selectedParam : null,
     sourceFilter,
@@ -172,6 +194,8 @@ export function serializeLatentMapUrlState(
   searchParams.set("mode", state.renderMode);
   searchParams.set("thumb", String(state.thumbnailSize));
   searchParams.set("detail", String(state.textureDetail));
+  searchParams.set("neighbors", String(state.faissNeighborCount));
+  searchParams.set("relation", state.faissRelationMode);
 
   if (state.selectedImageId) {
     searchParams.set("selected", state.selectedImageId);

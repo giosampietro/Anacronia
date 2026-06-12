@@ -34,6 +34,7 @@ export type LatentMapRuntimeState = {
   points: LatentMapRenderablePoint[];
   renderMode: LatentMapRenderMode;
   thumbnailPlan: LatentMapThumbnailRenderPlan;
+  visualTheme: LatentMapVisualTheme;
 };
 
 export type LatentMapWebglRuntime = {
@@ -45,10 +46,49 @@ export type LatentMapWebglRuntime = {
   setView: (view: LatentMapViewState) => void;
 };
 
+export type LatentMapVisualTheme = "dark" | "light";
+
 const MAX_INTERACTION_FRAME_GAP_MS = 250;
+
+const LATENT_MAP_RUNTIME_PALETTES: Record<
+  LatentMapVisualTheme,
+  {
+    backgroundColor: number;
+    basePointColor: [number, number, number];
+    selectedPointColor: [number, number, number];
+  }
+> = {
+  dark: {
+    backgroundColor: 0x101113,
+    basePointColor: [150, 156, 166],
+    selectedPointColor: [250, 250, 246],
+  },
+  light: {
+    backgroundColor: 0xf0f0f0,
+    basePointColor: [58, 62, 70],
+    selectedPointColor: [20, 20, 20],
+  },
+};
 
 function rgbToThreeColor([r, g, b]: [number, number, number]): THREE.Color {
   return new THREE.Color(r / 255, g / 255, b / 255);
+}
+
+function getDisplayPointColor(
+  point: LatentMapRenderablePoint,
+  visualTheme: LatentMapVisualTheme,
+): [number, number, number] {
+  const palette = LATENT_MAP_RUNTIME_PALETTES[visualTheme];
+
+  if (point.point_state === "base") {
+    return palette.basePointColor;
+  }
+
+  if (point.point_state === "selected") {
+    return palette.selectedPointColor;
+  }
+
+  return point.color;
 }
 
 function updateCamera({
@@ -77,6 +117,7 @@ function updateCamera({
 function writePointGeometryAttributes(
   geometry: THREE.BufferGeometry,
   points: LatentMapRenderablePoint[],
+  visualTheme: LatentMapVisualTheme,
 ) {
   const positions = new Float32Array(points.length * 3);
   const colors = new Float32Array(points.length * 3);
@@ -86,7 +127,7 @@ function writePointGeometryAttributes(
     positions[index * 3 + 1] = point.fitted_y;
     positions[index * 3 + 2] = point.point_state === "selected" ? 0.08 : 0;
 
-    const color = rgbToThreeColor(point.color);
+    const color = rgbToThreeColor(getDisplayPointColor(point, visualTheme));
     colors[index * 3] = color.r;
     colors[index * 3 + 1] = color.g;
     colors[index * 3 + 2] = color.b;
@@ -96,10 +137,13 @@ function writePointGeometryAttributes(
   geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
 }
 
-function createPointGeometry(points: LatentMapRenderablePoint[]) {
+function createPointGeometry(
+  points: LatentMapRenderablePoint[],
+  visualTheme: LatentMapVisualTheme,
+) {
   const geometry = new THREE.BufferGeometry();
 
-  writePointGeometryAttributes(geometry, points);
+  writePointGeometryAttributes(geometry, points, visualTheme);
 
   return geometry;
 }
@@ -107,30 +151,37 @@ function createPointGeometry(points: LatentMapRenderablePoint[]) {
 function updatePointGeometry(
   geometry: THREE.BufferGeometry,
   points: LatentMapRenderablePoint[],
+  visualTheme: LatentMapVisualTheme,
 ) {
   const position = geometry.getAttribute("position");
+  const colorAttribute = geometry.getAttribute("color");
 
-  if (!position || position.count !== points.length) {
-    writePointGeometryAttributes(geometry, points);
+  if (
+    !position ||
+    !colorAttribute ||
+    position.count !== points.length ||
+    colorAttribute.count !== points.length
+  ) {
+    writePointGeometryAttributes(geometry, points, visualTheme);
     return;
   }
 
   const positions = position.array as Float32Array;
-  const colors = geometry.getAttribute("color").array as Float32Array;
+  const colors = colorAttribute.array as Float32Array;
 
   points.forEach((point, index) => {
     positions[index * 3] = point.fitted_x;
     positions[index * 3 + 1] = point.fitted_y;
     positions[index * 3 + 2] = point.point_state === "selected" ? 0.08 : 0;
 
-    const color = rgbToThreeColor(point.color);
+    const color = rgbToThreeColor(getDisplayPointColor(point, visualTheme));
     colors[index * 3] = color.r;
     colors[index * 3 + 1] = color.g;
     colors[index * 3 + 2] = color.b;
   });
 
   position.needsUpdate = true;
-  geometry.getAttribute("color").needsUpdate = true;
+  colorAttribute.needsUpdate = true;
 }
 
 export function getLatentMapThumbnailWorldScale({
@@ -197,6 +248,9 @@ function getThumbnailLayer(point: LatentMapRenderablePoint): number {
   if (point.point_state === "neighbor") {
     return 0.24;
   }
+  if (point.point_state === "opposite") {
+    return 0.22;
+  }
 
   return 0.16;
 }
@@ -206,6 +260,9 @@ function getThumbnailStateValue(point: LatentMapRenderablePoint): number {
     return 2;
   }
   if (point.point_state === "neighbor") {
+    return 1;
+  }
+  if (point.point_state === "opposite") {
     return 1;
   }
 
@@ -592,6 +649,7 @@ export function createLatentMapWebglRuntime({
   renderMode,
   thumbnailPlan,
   view,
+  visualTheme,
   wrapper,
 }: LatentMapRuntimeState & {
   canvas: HTMLCanvasElement;
@@ -605,7 +663,7 @@ export function createLatentMapWebglRuntime({
   });
   const scene = new THREE.Scene();
   const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -100, 100);
-  const pointGeometry = createPointGeometry(pointLayer.points);
+  const pointGeometry = createPointGeometry(pointLayer.points, visualTheme);
   const pointMaterial = new THREE.PointsMaterial({
     alphaTest: 0.2,
     size: pointLayer.pointSize,
@@ -627,8 +685,12 @@ export function createLatentMapWebglRuntime({
   let lastRenderMs = 0;
   let lastRenderStartedAt = 0;
   let loadedThumbnailCount = 0;
+  let currentVisualTheme = visualTheme;
 
-  renderer.setClearColor(0x101113, 1);
+  renderer.setClearColor(
+    LATENT_MAP_RUNTIME_PALETTES[currentVisualTheme].backgroundColor,
+    1,
+  );
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   camera.position.z = 4;
@@ -937,7 +999,16 @@ export function createLatentMapWebglRuntime({
 
   function setRenderState(nextState: LatentMapRuntimeState) {
     currentRenderMode = nextState.renderMode;
-    updatePointGeometry(pointGeometry, nextState.pointLayer.points);
+    currentVisualTheme = nextState.visualTheme;
+    renderer.setClearColor(
+      LATENT_MAP_RUNTIME_PALETTES[currentVisualTheme].backgroundColor,
+      1,
+    );
+    updatePointGeometry(
+      pointGeometry,
+      nextState.pointLayer.points,
+      currentVisualTheme,
+    );
     pointMaterial.size = nextState.pointLayer.pointSize;
 
     const nextSignature = createThumbnailPlanSignature(
@@ -1001,7 +1072,7 @@ export function createLatentMapWebglRuntime({
     window.addEventListener("resize", resize);
   }
 
-  setRenderState({ pointLayer, points, renderMode, thumbnailPlan });
+  setRenderState({ pointLayer, points, renderMode, thumbnailPlan, visualTheme });
   render();
 
   return {
