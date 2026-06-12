@@ -63,6 +63,15 @@ This log records the local work completed after the last pushed commit on this b
 - It starts the prebuilt Next app directly and verifies the real J Shoot latent-map URL before opening the browser.
 - It refuses to do slow generation work during daily launch, preserving the 10-15 second launch target.
 
+### Zoom performance follow-up
+
+- Dynamic high-detail atlas filtering initially coupled the thumbnail render plan to every `view` change.
+- That made wheel zoom pay for texture-detail resolution, viewport page selection, and runtime render-state updates on the same high-frequency path as camera movement.
+- The viewer now separates the live camera view from the thumbnail-planning view.
+- `setView` still updates the Three.js camera and current instance scale immediately.
+- Atlas LOD and viewport page-cache planning update only after the thumbnail-mode gesture has been idle for `220ms`.
+- The lower-detail fallback atlas remains visible while high-detail page selection catches up.
+
 ### Tests and QA
 
 - Added and updated Vitest coverage for:

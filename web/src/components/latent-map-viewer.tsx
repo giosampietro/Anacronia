@@ -110,6 +110,18 @@ const DEFAULT_VIEW: LatentMapViewState = {
   zoom: 1,
 };
 const ATLAS_TEXTURE_SIZE = 2048;
+const THUMBNAIL_PLANNING_VIEW_IDLE_DELAY_MS = 220;
+
+function areLatentMapViewsEqual(
+  left: LatentMapViewState,
+  right: LatentMapViewState,
+) {
+  return (
+    left.offsetX === right.offsetX &&
+    left.offsetY === right.offsetY &&
+    left.zoom === right.zoom
+  );
+}
 
 function getAppliedThemePreference(): LatentMapRuntimeState["visualTheme"] {
   if (typeof document === "undefined") {
@@ -393,6 +405,8 @@ export function LatentMapViewer({
   const [view, setView] = useState<LatentMapViewState>(
     initialDurableState.view,
   );
+  const [thumbnailPlanningView, setThumbnailPlanningView] =
+    useState<LatentMapViewState>(initialDurableState.view);
   const [clusterFilter, setClusterFilter] = useState(
     initialDurableState.clusterFilter,
   );
@@ -510,13 +524,13 @@ export function LatentMapViewer({
         scaleMultiplier: textureDetailScaleMultiplier,
         thumbnailSize,
         viewportHeight: mapViewportSize.height,
-        zoom: view.zoom,
+        zoom: thumbnailPlanningView.zoom,
       }),
     [
       mapViewportSize.height,
       textureDetailScaleMultiplier,
       thumbnailSize,
-      view.zoom,
+      thumbnailPlanningView.zoom,
     ],
   );
   // eslint-disable-next-line react-hooks/refs -- ref stores non-rendering LOD hysteresis memory.
@@ -559,18 +573,18 @@ export function LatentMapViewer({
       mapViewportSize.height > 0 && mapViewportSize.width > 0
         ? {
             height: mapViewportSize.height,
-            offsetX: view.offsetX,
-            offsetY: view.offsetY,
+            offsetX: thumbnailPlanningView.offsetX,
+            offsetY: thumbnailPlanningView.offsetY,
             width: mapViewportSize.width,
-            zoom: view.zoom,
+            zoom: thumbnailPlanningView.zoom,
           }
         : undefined,
     [
       mapViewportSize.height,
       mapViewportSize.width,
-      view.offsetX,
-      view.offsetY,
-      view.zoom,
+      thumbnailPlanningView.offsetX,
+      thumbnailPlanningView.offsetY,
+      thumbnailPlanningView.zoom,
     ],
   );
   const thumbnailPlan = useMemo(
@@ -723,6 +737,27 @@ export function LatentMapViewer({
     viewRef.current = view;
     runtimeRef.current?.setView(view);
   }, [view]);
+
+  useEffect(() => {
+    const updatePlanningView = () => {
+      setThumbnailPlanningView((currentView) =>
+        areLatentMapViewsEqual(currentView, view) ? currentView : view,
+      );
+    };
+
+    if (renderMode !== "thumbnails") {
+      updatePlanningView();
+      return;
+    }
+
+    // Keep atlas LOD/page-cache planning off the high-frequency wheel path.
+    const timeoutId = window.setTimeout(
+      updatePlanningView,
+      THUMBNAIL_PLANNING_VIEW_IDLE_DELAY_MS,
+    );
+
+    return () => window.clearTimeout(timeoutId);
+  }, [renderMode, view]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -1856,6 +1891,9 @@ export function LatentMapViewer({
             data-thumbnail-hover-preview-size={thumbnailPlan.hoverPreviewSize}
             data-thumbnail-atlas-tile-size={thumbnailAtlas?.tile_size ?? 0}
             data-thumbnail-display-size={thumbnailPlan.displayThumbnailSize}
+            data-thumbnail-planning-zoom={Number(
+              thumbnailPlanningView.zoom.toFixed(4),
+            )}
             data-thumbnail-fallback-atlas-page-count={
               thumbnailPlan.fallbackAtlasPages.length
             }
