@@ -15,6 +15,9 @@ import {
   fitLatentMapPoints,
   getLatentMapAvailableTextureDetails,
   getLatentMapFallbackThumbnailAtlas,
+  getLatentMapThumbnailStateScaleMultiplier,
+  getNextLatentMapTextureDetail,
+  getNextLatentMapThumbnailSize,
   getLatentMapRenderableAtlasPages,
   getLatentMapThumbnailScreenLongSide,
   getLatentMapThumbnailAtlasForSize,
@@ -23,6 +26,7 @@ import {
   resolveLatentMapTextureDetail,
   selectLatentMapAtlasPagesForViewport,
   selectLatentMapTextureDetail,
+  shouldUseLatentMapAutoFallbackAtlas,
   type LatentMapGeneratedThumbnailAtlas,
   type LatentMapRenderablePoint,
 } from "@/lib/latent-map-viewer";
@@ -213,6 +217,50 @@ describe("latent map viewer model", () => {
     expect(stateById.img_saffron).toBe("selected");
     expect(stateById.img_teal).toBe("opposite");
     expect(stateById.img_amber).toBe("cluster");
+  });
+
+  it("keeps selected and FAISS focus thumbnails at the base display size", () => {
+    expect(getLatentMapThumbnailStateScaleMultiplier("base")).toBe(1);
+    expect(getLatentMapThumbnailStateScaleMultiplier("cluster")).toBe(1);
+    expect(getLatentMapThumbnailStateScaleMultiplier("selected")).toBe(1);
+    expect(getLatentMapThumbnailStateScaleMultiplier("neighbor")).toBe(1);
+    expect(getLatentMapThumbnailStateScaleMultiplier("opposite")).toBe(1);
+  });
+
+  it("cycles canvas display control options for keyboard shortcuts", () => {
+    expect(
+      getNextLatentMapThumbnailSize({
+        currentSize: 64,
+        direction: "next",
+      }),
+    ).toBe(96);
+    expect(
+      getNextLatentMapThumbnailSize({
+        currentSize: 32,
+        direction: "previous",
+      }),
+    ).toBe(96);
+    expect(
+      getNextLatentMapTextureDetail({
+        availableDetails: [128, 32, 96, 64],
+        currentDetail: "auto",
+        direction: "next",
+      }),
+    ).toBe(32);
+    expect(
+      getNextLatentMapTextureDetail({
+        availableDetails: [128, 32, 96, 64],
+        currentDetail: 128,
+        direction: "next",
+      }),
+    ).toBe("auto");
+    expect(
+      getNextLatentMapTextureDetail({
+        availableDetails: [128, 32, 96, 64],
+        currentDetail: "auto",
+        direction: "previous",
+      }),
+    ).toBe(128);
   });
 
   it("clears FAISS focus when clicking the background or selected image", () => {
@@ -491,6 +539,49 @@ describe("latent map viewer model", () => {
 
     expect(pinnedOnlyPages.map((page) => page.index)).toEqual([2]);
     expect(visibleAndPinnedPages.map((page) => page.index)).toEqual([0, 2]);
+    expect(renderPlan.atlasPages[0].bounds).toEqual({
+      maxX: 0.75,
+      maxY: 0,
+      minX: 0,
+      minY: 0,
+    });
+    expect(renderPlan.atlasPages[0].center).toEqual({
+      x: 0.375,
+      y: 0,
+    });
+  });
+
+  it("uses atlas page bounds to avoid item scans for offscreen pages", () => {
+    const points = createRenderablePoints(4);
+    const atlasPages = createLatentMapThumbnailAtlasPages({
+      atlasSize: 256,
+      points,
+      tileSize: 128,
+    });
+    const selectedPages = selectLatentMapAtlasPagesForViewport({
+      pageBudget: 1,
+      pages: [
+        {
+          ...atlasPages[0],
+          bounds: {
+            maxX: 100,
+            maxY: 100,
+            minX: 99,
+            minY: 99,
+          },
+        },
+      ],
+      thumbnailSize: 96,
+      viewport: {
+        height: 800,
+        offsetX: 0,
+        offsetY: 0,
+        width: 1200,
+        zoom: 8,
+      },
+    });
+
+    expect(selectedPages).toEqual([]);
   });
 
   it("uses a low-detail fallback while caching high-detail atlas pages", () => {
@@ -528,6 +619,44 @@ describe("latent map viewer model", () => {
     expect(plan.textureSources).toEqual([
       "/api/latent-map/thumbnails?run=run-1&path=viewer%2Fatlases%2F64px%2Fpage-000.png",
       "/api/latent-map/thumbnails?run=run-1&path=viewer%2Fatlases%2F128px%2Fpage-000.png",
+    ]);
+  });
+
+  it("does not mix fallback atlas pages into explicit texture detail selections", () => {
+    const points = createRenderablePoints(10);
+    const highDetailAtlas = createGeneratedAtlas({
+      points,
+      tileSize: 128,
+    });
+    const fallbackAtlas = createGeneratedAtlas({
+      points,
+      tileSize: 64,
+    });
+    const plan = createLatentMapThumbnailRenderPlan({
+      atlasPageBudget: 1,
+      fallbackThumbnailAtlas: fallbackAtlas,
+      points,
+      textureDetail: 128,
+      thumbnailAtlas: highDetailAtlas,
+      thumbnailSize: 96,
+      viewport: {
+        height: 800,
+        offsetX: 0,
+        offsetY: 0,
+        width: 1200,
+        zoom: 8,
+      },
+    });
+
+    expect(plan.atlasPageCacheActive).toBe(false);
+    expect(plan.fallbackResolvedTextureDetail).toBeNull();
+    expect(plan.fallbackAtlasPages).toEqual([]);
+    expect(plan.atlasPages).toHaveLength(3);
+    expect(plan.atlasPages.every((page) => page.tileSize === 128)).toBe(true);
+    expect(plan.textureSources).toEqual([
+      "/api/latent-map/thumbnails?run=run-1&path=viewer%2Fatlases%2F128px%2Fpage-000.png",
+      "/api/latent-map/thumbnails?run=run-1&path=viewer%2Fatlases%2F128px%2Fpage-001.png",
+      "/api/latent-map/thumbnails?run=run-1&path=viewer%2Fatlases%2F128px%2Fpage-002.png",
     ]);
   });
 
@@ -884,6 +1013,32 @@ describe("latent map viewer model", () => {
         resolvedTextureDetail: 128,
       })?.tile_size,
     ).toBe(64);
+  });
+
+  it("uses the auto fallback atlas only below the sharpest available detail", () => {
+    const availableDetails = [32, 64, 96, 128, 256];
+
+    expect(
+      shouldUseLatentMapAutoFallbackAtlas({
+        availableDetails,
+        resolvedTextureDetail: 128,
+        textureDetail: "auto",
+      }),
+    ).toBe(true);
+    expect(
+      shouldUseLatentMapAutoFallbackAtlas({
+        availableDetails,
+        resolvedTextureDetail: 256,
+        textureDetail: "auto",
+      }),
+    ).toBe(false);
+    expect(
+      shouldUseLatentMapAutoFallbackAtlas({
+        availableDetails,
+        resolvedTextureDetail: 128,
+        textureDetail: 128,
+      }),
+    ).toBe(false);
   });
 
   it("resolves automatic texture detail from screen size but preserves manual detail", () => {

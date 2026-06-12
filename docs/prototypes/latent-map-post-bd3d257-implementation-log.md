@@ -103,3 +103,34 @@ This log records the local work completed after the last pushed commit on this b
   - `web/src/lib/selection-action-summary.ts:165` has an unused parameter warning.
 - Issue #211 remains the human checkpoint for tuning the extended texture LOD ladder.
 - Future FAISS exploration ideas such as a gradient/path between two images, alternate relation lenses, and richer opposite/similarity workflows are not implemented in this slice.
+
+## Update After Commit `4f47144`
+
+### Canvas display overlay and issue #212
+
+- Removed the Display controls from the sidebar and moved them into a tight shadcn canvas overlay.
+- Kept the overlay icon-only for the Points/Thumbnails mode switch.
+- Default launch state is now `thumb=64&detail=auto`; `Auto` remains the normal detail mode.
+- Moved Cluster colors and Reset view into the same canvas overlay.
+- Added keyboard shortcuts:
+  - `Left` / `Right` cycle thumbnail display size.
+  - `Up` / `Down` cycle texture detail through `Auto` and every atlas size advertised by the run manifest.
+  - `P` toggles Points/Thumbnails.
+  - `F` hides or restores the UI overlays so the canvas can be viewed alone while hover preview remains available.
+  - `H` recenters the canvas.
+- Shortcut handlers ignore focused inputs, selects, buttons, menu/listbox options, and modified browser shortcuts.
+- Selection and FAISS focus states no longer scale thumbnails larger than the current display size; emphasis stays non-scaling.
+- The hover preview overlay no longer draws a white or black border and uses only a soft shadow treatment.
+
+### Atlas detail and performance follow-up
+
+- Manual texture detail selection now resolves exactly to the selected atlas when that detail exists.
+- `Auto` detail selection uses the full sorted atlas ladder from the run manifest, including `128px`, instead of assuming a fixed three-level set.
+- The render plan keeps atlas page bounding boxes so viewport page filtering can skip whole pages before inspecting individual items.
+- The FPS counter was simplified to show only FPS and moved to the lower-right canvas corner.
+
+### Checks
+
+- Focused latent-map tests now pass with 55 tests.
+- Touched-file lint passes for the latent-map component and helper/test files.
+- `npm run build` passes for the web app.

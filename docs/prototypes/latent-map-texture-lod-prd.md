@@ -232,7 +232,10 @@ The texture LOD work now sits inside a broader latent-map viewer iteration. The 
 - `detail=auto` resolves from zoom and viewport size, while manual `detail=<size>` stays fixed.
 - The worktree launcher verifies the atlas ladder before fast launch instead of generating missing assets during daily startup.
 - FAISS focus controls now expose a durable neighbor-count dropdown and a relation dropdown for `closest`, `opposite`, or `both`.
-- The viewer uses the main shadcn sidebar pattern for Display, Method, Filters, and Search controls.
+- The viewer uses the main shadcn sidebar pattern for Method, Filters, and Search controls.
+- Display controls now live on a compact canvas overlay: icon-only Points/Thumbnails toggle, thumbnail display size, texture detail, Cluster colors, and Reset view.
+- `Left` / `Right`, `Up` / `Down`, `P`, `F`, and `H` provide keyboard control for display size, texture detail, render mode, UI visibility, and recentering. `F` hides controls, not hover inspection.
+- Selected and FAISS-focused thumbnails keep the current display size; focus emphasis is non-scaling.
 - The day/night theme now reaches the actual WebGL clear color, with light mode clearing to `#f0f0f0` and dark mode clearing to `#101113`.
 
 Detailed implementation notes since commit `bd3d257` are recorded in [Latent Map Implementation Log After `bd3d257`](latent-map-post-bd3d257-implementation-log.md).

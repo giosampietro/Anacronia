@@ -79,6 +79,7 @@ export type LatentMapFaissNeighborCount = 3 | 5 | 10 | 20 | 50;
 export type LatentMapFaissRelationMode = "closest" | "opposite" | "both";
 export type LatentMapThumbnailSize = 32 | 64 | 96;
 export type LatentMapTextureDetail = "auto" | number;
+export type LatentMapCycleDirection = "next" | "previous";
 
 export type LatentMapGeneratedThumbnailAtlas = {
   schema_version: 1;
@@ -144,8 +145,22 @@ export type LatentMapThumbnailAtlasItem = {
   uvRect: [number, number, number, number];
 };
 
+type LatentMapWorldBounds = {
+  maxX: number;
+  maxY: number;
+  minX: number;
+  minY: number;
+};
+
+type LatentMapPointCenter = {
+  x: number;
+  y: number;
+};
+
 export type LatentMapThumbnailAtlasPage = {
   atlasSize: number;
+  bounds?: LatentMapWorldBounds;
+  center?: LatentMapPointCenter;
   columns: number;
   index: number;
   items: LatentMapThumbnailAtlasItem[];
@@ -322,15 +337,7 @@ export function getLatentMapAvailableTextureDetails(
 export function getLatentMapThumbnailStateScaleMultiplier(
   pointState: LatentMapPointState,
 ) {
-  if (pointState === "selected") {
-    return 1.36;
-  }
-  if (pointState === "neighbor") {
-    return 1.16;
-  }
-  if (pointState === "opposite") {
-    return 1.16;
-  }
+  void pointState;
 
   return 1;
 }
@@ -393,6 +400,60 @@ function getSortedTextureDetails(availableDetails: number[]) {
   return [...new Set(availableDetails)]
     .filter((detail) => Number.isFinite(detail) && detail > 0)
     .sort((left, right) => left - right);
+}
+
+function cycleLatentMapOption<T>({
+  currentValue,
+  direction,
+  options,
+}: {
+  currentValue: T;
+  direction: LatentMapCycleDirection;
+  options: readonly T[];
+}) {
+  if (options.length === 0) {
+    return currentValue;
+  }
+
+  const currentIndex = options.findIndex((option) => option === currentValue);
+  const fallbackIndex = direction === "next" ? -1 : 0;
+  const baseIndex = currentIndex >= 0 ? currentIndex : fallbackIndex;
+  const offset = direction === "next" ? 1 : -1;
+  const nextIndex = (baseIndex + offset + options.length) % options.length;
+
+  return options[nextIndex] ?? currentValue;
+}
+
+export function getNextLatentMapThumbnailSize({
+  currentSize,
+  direction,
+  options = LATENT_MAP_THUMBNAIL_SIZE_OPTIONS,
+}: {
+  currentSize: LatentMapThumbnailSize;
+  direction: LatentMapCycleDirection;
+  options?: readonly LatentMapThumbnailSize[];
+}): LatentMapThumbnailSize {
+  return cycleLatentMapOption({
+    currentValue: currentSize,
+    direction,
+    options,
+  });
+}
+
+export function getNextLatentMapTextureDetail({
+  availableDetails,
+  currentDetail,
+  direction,
+}: {
+  availableDetails: number[];
+  currentDetail: LatentMapTextureDetail;
+  direction: LatentMapCycleDirection;
+}): LatentMapTextureDetail {
+  return cycleLatentMapOption({
+    currentValue: currentDetail,
+    direction,
+    options: ["auto", ...getSortedTextureDetails(availableDetails)],
+  });
 }
 
 function getNearestTextureDetailIndex({
@@ -553,6 +614,24 @@ export function getLatentMapFallbackThumbnailAtlas({
   );
 
   return budgetedAtlases.at(-1) ?? lowerDetailAtlases[0];
+}
+
+export function shouldUseLatentMapAutoFallbackAtlas({
+  availableDetails,
+  resolvedTextureDetail,
+  textureDetail,
+}: {
+  availableDetails: number[];
+  resolvedTextureDetail: number;
+  textureDetail: LatentMapTextureDetail;
+}): boolean {
+  if (textureDetail !== "auto" || availableDetails.length === 0) {
+    return false;
+  }
+
+  const maxAvailableDetail = Math.max(...availableDetails);
+
+  return resolvedTextureDetail < maxAvailableDetail;
 }
 
 export function getLatentMapRenderableAtlasPages(
@@ -895,7 +974,7 @@ function getViewportWorldBounds({
 }: {
   thumbnailSize: LatentMapThumbnailSize;
   viewport: LatentMapThumbnailViewport;
-}) {
+}): LatentMapWorldBounds {
   const width = Math.max(viewport.width, 1);
   const height = Math.max(viewport.height, 1);
   const zoom = Math.max(viewport.zoom, 0.001);
@@ -915,7 +994,7 @@ function getViewportWorldBounds({
 
 function isPointInsideBounds(
   point: LatentMapRenderablePoint,
-  bounds: ReturnType<typeof getViewportWorldBounds>,
+  bounds: LatentMapWorldBounds,
 ) {
   return (
     point.fitted_x >= bounds.minX &&
@@ -923,6 +1002,66 @@ function isPointInsideBounds(
     point.fitted_y >= bounds.minY &&
     point.fitted_y <= bounds.maxY
   );
+}
+
+function doBoundsIntersect(
+  left: LatentMapWorldBounds,
+  right: LatentMapWorldBounds,
+) {
+  return (
+    left.minX <= right.maxX &&
+    left.maxX >= right.minX &&
+    left.minY <= right.maxY &&
+    left.maxY >= right.minY
+  );
+}
+
+function getLatentMapAtlasPageCenter(
+  items: LatentMapThumbnailAtlasItem[],
+): LatentMapPointCenter {
+  if (items.length === 0) {
+    return { x: 0, y: 0 };
+  }
+
+  return items.reduce(
+    (center, item) => ({
+      x: center.x + item.point.fitted_x / items.length,
+      y: center.y + item.point.fitted_y / items.length,
+    }),
+    { x: 0, y: 0 },
+  );
+}
+
+function getLatentMapAtlasPageBounds(
+  items: LatentMapThumbnailAtlasItem[],
+): LatentMapWorldBounds | null {
+  if (items.length === 0) {
+    return null;
+  }
+
+  return items.reduce<LatentMapWorldBounds>(
+    (bounds, item) => ({
+      maxX: Math.max(bounds.maxX, item.point.fitted_x),
+      maxY: Math.max(bounds.maxY, item.point.fitted_y),
+      minX: Math.min(bounds.minX, item.point.fitted_x),
+      minY: Math.min(bounds.minY, item.point.fitted_y),
+    }),
+    {
+      maxX: -Infinity,
+      maxY: -Infinity,
+      minX: Infinity,
+      minY: Infinity,
+    },
+  );
+}
+
+function createLatentMapAtlasPageSpatialSummary(
+  items: LatentMapThumbnailAtlasItem[],
+) {
+  return {
+    bounds: getLatentMapAtlasPageBounds(items) ?? undefined,
+    center: getLatentMapAtlasPageCenter(items),
+  };
 }
 
 export function selectLatentMapAtlasPagesForViewport({
@@ -945,19 +1084,21 @@ export function selectLatentMapAtlasPagesForViewport({
     viewport,
   });
   const pageCandidates = pages.map((page) => {
-    const visibleItems = page.items.filter((item) =>
-      isPointInsideBounds(item.point, bounds),
+    const pageBounds = page.bounds ?? getLatentMapAtlasPageBounds(page.items);
+    const pageIntersectsViewport =
+      pageBounds !== null && doBoundsIntersect(pageBounds, bounds);
+    const visibleCount = pageIntersectsViewport
+      ? page.items.reduce(
+          (count, item) =>
+            isPointInsideBounds(item.point, bounds) ? count + 1 : count,
+          0,
+        )
+      : 0;
+    const pinnedCount = page.items.reduce(
+      (count, item) => isFocusThumbnail(item.point) ? count + 1 : count,
+      0,
     );
-    const pinnedItems = page.items.filter((item) =>
-      isFocusThumbnail(item.point),
-    );
-    const pageCenter = page.items.reduce(
-      (center, item) => ({
-        x: center.x + item.point.fitted_x / Math.max(page.items.length, 1),
-        y: center.y + item.point.fitted_y / Math.max(page.items.length, 1),
-      }),
-      { x: 0, y: 0 },
-    );
+    const pageCenter = page.center ?? getLatentMapAtlasPageCenter(page.items);
 
     return {
       distanceFromViewCenter: Math.hypot(
@@ -965,8 +1106,8 @@ export function selectLatentMapAtlasPagesForViewport({
         pageCenter.y - viewport.offsetY,
       ),
       page,
-      pinnedCount: pinnedItems.length,
-      visibleCount: visibleItems.length,
+      pinnedCount,
+      visibleCount,
     };
   });
   const pinnedCandidates = pageCandidates.filter(
@@ -1244,12 +1385,14 @@ function createGeneratedAtlasPagesForAtlas({
       1,
       Math.floor(thumbnailAtlas.atlas_size / thumbnailAtlas.tile_size),
     );
+    const items = itemsByPageIndex.get(page.index) ?? [];
 
     return {
       atlasSize: thumbnailAtlas.atlas_size,
+      ...createLatentMapAtlasPageSpatialSummary(items),
       columns,
       index: page.index,
-      items: itemsByPageIndex.get(page.index) ?? [],
+      items,
       renderLayer,
       rows: columns,
       texturePath: page.path,
@@ -1289,6 +1432,7 @@ function createGeneratedAtlasRenderPlan({
     thumbnailAtlas,
   });
   const shouldUsePageCache =
+    textureDetail === "auto" &&
     resolvedTextureDetail >= LATENT_MAP_HIGH_DETAIL_PAGE_CACHE_MIN_DETAIL &&
     Boolean(fallbackThumbnailAtlas) &&
     Boolean(viewport && viewport.height > 0 && viewport.width > 0);
@@ -1384,28 +1528,35 @@ export function createLatentMapThumbnailAtlasPages({
   return Array.from({ length: pageCount }, (_, pageIndex) => {
     const pageStart = pageIndex * pageCapacity;
     const pagePoints = points.slice(pageStart, pageStart + pageCapacity);
+    const items = pagePoints.map((point, itemIndex) => {
+      const atlasIndex = pageStart + itemIndex;
+      const pageItemIndex = atlasIndex % pageCapacity;
+      const column = pageItemIndex % columns;
+      const row = Math.floor(pageItemIndex / columns);
+      const u0 = column * tileSize / atlasSize + pixelInset;
+      const v0 = row * tileSize / atlasSize + pixelInset;
+      const u1 = (column + 1) * tileSize / atlasSize - pixelInset;
+      const v1 = (row + 1) * tileSize / atlasSize - pixelInset;
+
+      return {
+        column,
+        point,
+        row,
+        uvRect: [u0, v0, u1 - u0, v1 - v0] as [
+          number,
+          number,
+          number,
+          number,
+        ],
+      };
+    });
 
     return {
       atlasSize,
+      ...createLatentMapAtlasPageSpatialSummary(items),
       columns,
       index: pageIndex,
-      items: pagePoints.map((point, itemIndex) => {
-        const atlasIndex = pageStart + itemIndex;
-        const pageItemIndex = atlasIndex % pageCapacity;
-        const column = pageItemIndex % columns;
-        const row = Math.floor(pageItemIndex / columns);
-        const u0 = column * tileSize / atlasSize + pixelInset;
-        const v0 = row * tileSize / atlasSize + pixelInset;
-        const u1 = (column + 1) * tileSize / atlasSize - pixelInset;
-        const v1 = (row + 1) * tileSize / atlasSize - pixelInset;
-
-        return {
-          column,
-          point,
-          row,
-          uvRect: [u0, v0, u1 - u0, v1 - v0],
-        };
-      }),
+      items,
       rows,
       tileSize,
     };

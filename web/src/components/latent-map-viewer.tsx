@@ -9,10 +9,11 @@ import {
   useState,
   type CSSProperties,
 } from "react";
-import { CircleDot, Images, Palette, RotateCcw, ScanSearch } from "lucide-react";
+import { CircleDot, Images, Palette, RotateCcw } from "lucide-react";
 
 import { ThemeSwitch } from "@/components/theme-switch";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import {
   Sidebar,
@@ -22,9 +23,6 @@ import {
   SidebarGroupLabel,
   SidebarHeader,
   SidebarInset,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
   SidebarProvider,
   SidebarSeparator,
   SidebarTrigger,
@@ -50,6 +48,8 @@ import {
   createLatentMapPointLayerPlan,
   createLatentMapRenderState,
   createLatentMapStats,
+  getNextLatentMapTextureDetail,
+  getNextLatentMapThumbnailSize,
   getLatentMapAvailableTextureDetails,
   getLatentMapFallbackThumbnailAtlas,
   getNextLatentMapSelection,
@@ -61,6 +61,7 @@ import {
   LATENT_MAP_FAISS_RELATION_MODE_OPTIONS,
   LATENT_MAP_THUMBNAIL_SIZE_OPTIONS,
   resolveLatentMapTextureDetail,
+  shouldUseLatentMapAutoFallbackAtlas,
   type LatentMapFaissNeighborCount,
   type LatentMapFaissRelationMode,
   type LatentMapRenderMode,
@@ -110,6 +111,7 @@ const DEFAULT_VIEW: LatentMapViewState = {
   zoom: 1,
 };
 const ATLAS_TEXTURE_SIZE = 2048;
+const FPS_COUNTER_ACTIVE_TIMEOUT_MS = 700;
 const THUMBNAIL_PLANNING_VIEW_IDLE_DELAY_MS = 220;
 
 function areLatentMapViewsEqual(
@@ -281,6 +283,28 @@ function formatFaissRelationLabel(relation: LatentMapFaissRelationMode | string)
   return "Closest";
 }
 
+function getFpsIndicatorTone({
+  active,
+  estimatedFps,
+}: {
+  active: boolean;
+  estimatedFps: number;
+}) {
+  if (!active || estimatedFps <= 0) {
+    return "bg-muted-foreground";
+  }
+
+  if (estimatedFps >= 50) {
+    return "bg-emerald-500";
+  }
+
+  if (estimatedFps >= 30) {
+    return "bg-amber-400";
+  }
+
+  return "bg-rose-500";
+}
+
 function createInitialDurableState({
   data,
   initialState,
@@ -352,6 +376,7 @@ export function LatentMapViewer({
   const runtimeStateRef = useRef<LatentMapRuntimeState | null>(null);
   const hoverFrameRef = useRef<number | null>(null);
   const hoverPointerRef = useRef<PointerPosition | null>(null);
+  const fpsActivityTimeoutRef = useRef<number | null>(null);
   const previousResolvedTextureDetailRef = useRef<number | null>(null);
   const dragStartRef = useRef<{
     pointer: PointerPosition;
@@ -386,6 +411,8 @@ export function LatentMapViewer({
   const [runtimePerformanceInfo, setRuntimePerformanceInfo] =
     useState<LatentMapRuntimePerformanceInfo>();
   const [loadedThumbnailCount, setLoadedThumbnailCount] = useState(0);
+  const [fpsCounterActive, setFpsCounterActive] = useState(false);
+  const [uiOverlayHidden, setUiOverlayHidden] = useState(false);
   const [thumbnailSize, setThumbnailSize] =
     useState<LatentMapThumbnailSize>(initialDurableState.thumbnailSize);
   const [faissNeighborCount, setFaissNeighborCount] =
@@ -562,11 +589,17 @@ export function LatentMapViewer({
   );
   const fallbackThumbnailAtlas = useMemo(
     () =>
-      getLatentMapFallbackThumbnailAtlas({
-        data,
+      shouldUseLatentMapAutoFallbackAtlas({
+        availableDetails: textureDetailOptions,
         resolvedTextureDetail,
-      }),
-    [data, resolvedTextureDetail],
+        textureDetail,
+      })
+        ? getLatentMapFallbackThumbnailAtlas({
+            data,
+            resolvedTextureDetail,
+          })
+        : undefined,
+    [data, resolvedTextureDetail, textureDetail, textureDetailOptions],
   );
   const thumbnailViewport = useMemo(
     () =>
@@ -668,6 +701,27 @@ export function LatentMapViewer({
       thumbnailPlan,
     ],
   );
+  const markFpsCounterActive = useCallback(() => {
+    setFpsCounterActive(true);
+
+    if (fpsActivityTimeoutRef.current !== null) {
+      window.clearTimeout(fpsActivityTimeoutRef.current);
+    }
+
+    fpsActivityTimeoutRef.current = window.setTimeout(() => {
+      fpsActivityTimeoutRef.current = null;
+      setFpsCounterActive(false);
+    }, FPS_COUNTER_ACTIVE_TIMEOUT_MS);
+  }, []);
+
+  const fpsIndicatorText =
+    fpsCounterActive && runtimeSnapshot.estimatedFps > 0
+      ? `${Math.round(runtimeSnapshot.estimatedFps)} fps`
+      : "-- fps";
+  const fpsIndicatorTone = getFpsIndicatorTone({
+    active: fpsCounterActive,
+    estimatedFps: runtimeSnapshot.estimatedFps,
+  });
 
   useEffect(() => {
     previousResolvedTextureDetailRef.current = resolvedTextureDetail;
@@ -847,6 +901,9 @@ export function LatentMapViewer({
       if (hoverFrameRef.current !== null) {
         window.cancelAnimationFrame(hoverFrameRef.current);
       }
+      if (fpsActivityTimeoutRef.current !== null) {
+        window.clearTimeout(fpsActivityTimeoutRef.current);
+      }
     },
     [],
   );
@@ -862,6 +919,7 @@ export function LatentMapViewer({
       if (event.cancelable) {
         event.preventDefault();
       }
+      markFpsCounterActive();
       const rect = wrapper.getBoundingClientRect();
 
       setView((current) =>
@@ -885,7 +943,7 @@ export function LatentMapViewer({
     return () => {
       wrapper.removeEventListener("wheel", handleNativeWheel);
     };
-  }, []);
+  }, [markFpsCounterActive]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -895,13 +953,56 @@ export function LatentMapViewer({
 
       if (
         targetElement?.closest(
-          "input, textarea, select, button, [contenteditable='true']",
+          "input, textarea, select, button, [contenteditable='true'], [role='combobox'], [role='listbox'], [role='option'], [data-slot='select-content']",
         )
       ) {
         return;
       }
 
+      if (event.altKey || event.ctrlKey || event.metaKey) {
+        return;
+      }
+
+      if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+        event.preventDefault();
+        setThumbnailSize((currentSize) =>
+          getNextLatentMapThumbnailSize({
+            currentSize,
+            direction: event.key === "ArrowRight" ? "next" : "previous",
+          }),
+        );
+        return;
+      }
+
+      if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+        event.preventDefault();
+        setTextureDetail((currentDetail) =>
+          getNextLatentMapTextureDetail({
+            availableDetails: textureDetailOptions,
+            currentDetail,
+            direction: event.key === "ArrowDown" ? "next" : "previous",
+          }),
+        );
+        return;
+      }
+
+      if (event.key.toLowerCase() === "p") {
+        event.preventDefault();
+        setRenderMode((currentMode) =>
+          currentMode === "points" ? "thumbnails" : "points",
+        );
+        return;
+      }
+
+      if (event.key.toLowerCase() === "f") {
+        event.preventDefault();
+        setUiOverlayHidden((isHidden) => !isHidden);
+        return;
+      }
+
       if (event.key.toLowerCase() === "h") {
+        event.preventDefault();
+        markFpsCounterActive();
         setView(DEFAULT_VIEW);
       }
     };
@@ -911,7 +1012,7 @@ export function LatentMapViewer({
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, []);
+  }, [markFpsCounterActive, textureDetailOptions]);
 
   function getNearestPointAt(pointer: PointerPosition) {
     const wrapper = wrapperRef.current;
@@ -1170,6 +1271,7 @@ export function LatentMapViewer({
     const dragStart = dragStartRef.current;
 
     if (dragStart && wrapper) {
+      markFpsCounterActive();
       const rect = wrapper.getBoundingClientRect();
       const aspect = rect.width / Math.max(rect.height, 1);
       const deltaX =
@@ -1233,6 +1335,42 @@ export function LatentMapViewer({
     void loadNeighborsForImage(nextSelectedImageId);
   }
 
+  function handleRenderModeChange(nextValue: string | string[]) {
+    const nextMode = Array.isArray(nextValue) ? nextValue[0] : nextValue;
+
+    if (nextMode === "points" || nextMode === "thumbnails") {
+      setRenderMode(nextMode);
+    }
+  }
+
+  function handleThumbnailSizeChange(nextValue: string | null) {
+    if (nextValue === null) {
+      return;
+    }
+
+    const nextSize = Number(nextValue);
+
+    if (
+      LATENT_MAP_THUMBNAIL_SIZE_OPTIONS.includes(
+        nextSize as LatentMapThumbnailSize,
+      )
+    ) {
+      setThumbnailSize(nextSize as LatentMapThumbnailSize);
+    }
+  }
+
+  function handleTextureDetailChange(value: string | null) {
+    if (value === null) {
+      return;
+    }
+
+    const nextDetail = value === "auto" ? "auto" : Number(value);
+
+    if (nextDetail === "auto" || textureDetailOptions.includes(nextDetail)) {
+      setTextureDetail(nextDetail);
+    }
+  }
+
   const sidebarStyle = {
     "--sidebar-width": "20rem",
     "--sidebar-width-mobile": "20rem",
@@ -1244,208 +1382,22 @@ export function LatentMapViewer({
       defaultOpen
       style={sidebarStyle}
     >
-      <Sidebar collapsible="offcanvas" variant="inset">
-        <SidebarHeader>
-          <div className="flex h-12 min-w-0 items-center gap-3 rounded-xl px-2 group-data-[collapsible=icon]:hidden">
-            <span className="truncate text-lg font-semibold">Anacronia</span>
-            <div className="ml-auto shrink-0">
-              <ThemeSwitch />
+      {!uiOverlayHidden ? (
+        <Sidebar collapsible="offcanvas" variant="inset">
+          <SidebarHeader>
+            <div className="flex h-12 min-w-0 items-center gap-3 rounded-xl px-2 group-data-[collapsible=icon]:hidden">
+              <span className="truncate text-lg font-semibold">Anacronia</span>
+              <div className="ml-auto shrink-0">
+                <ThemeSwitch />
+              </div>
             </div>
-          </div>
-        </SidebarHeader>
+          </SidebarHeader>
 
-        <SidebarContent>
-          <SidebarGroup>
-            <SidebarGroupLabel>Display</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <FieldGroup className="gap-3">
-                <Field className="gap-1.5">
-                  <FieldLabel>Mode</FieldLabel>
-                  <ToggleGroup
-                    aria-label="Map render mode"
-                    className="w-full"
-                    size="sm"
-                    spacing={0}
-                    value={[renderMode]}
-                    variant="outline"
-                    onValueChange={(nextValue) => {
-                      const nextMode = Array.isArray(nextValue)
-                        ? nextValue[0]
-                        : nextValue;
-
-                      if (nextMode === "points" || nextMode === "thumbnails") {
-                        setRenderMode(nextMode);
-                      }
-                    }}
-                  >
-                    <ToggleGroupItem
-                      aria-label="Point mode"
-                      className="flex-1"
-                      value="points"
-                    >
-                      <CircleDot data-icon="inline-start" />
-                      <span>Points</span>
-                    </ToggleGroupItem>
-                    <ToggleGroupItem
-                      aria-label="Thumbnail mode"
-                      className="flex-1"
-                      value="thumbnails"
-                    >
-                      <Images data-icon="inline-start" />
-                      <span>Thumbnails</span>
-                    </ToggleGroupItem>
-                  </ToggleGroup>
-                </Field>
-
-                {renderMode === "thumbnails" ? (
-                  <>
-                    <Field className="gap-1.5">
-                      <FieldLabel htmlFor="latent-map-thumbnail-size">
-                        Size
-                      </FieldLabel>
-                      <Select
-                        id="latent-map-thumbnail-size"
-                        name="latent-map-thumbnail-size"
-                        onValueChange={(nextValue) => {
-                          const nextSize = Number(nextValue);
-
-                          if (
-                            LATENT_MAP_THUMBNAIL_SIZE_OPTIONS.includes(
-                              nextSize as LatentMapThumbnailSize,
-                            )
-                          ) {
-                            setThumbnailSize(
-                              nextSize as LatentMapThumbnailSize,
-                            );
-                          }
-                        }}
-                        value={String(thumbnailSize)}
-                      >
-                        <SelectTrigger
-                          aria-label="Thumbnail display size"
-                          className="w-full justify-between"
-                          size="sm"
-                        >
-                          <SelectValue>
-                            {(selectedSize) => `${selectedSize}px`}
-                          </SelectValue>
-                        </SelectTrigger>
-                        <SelectContent align="start" className="min-w-44">
-                          <SelectGroup>
-                            <SelectLabel>Display size</SelectLabel>
-                            {LATENT_MAP_THUMBNAIL_SIZE_OPTIONS.map((size) => (
-                              <SelectItem
-                                key={size}
-                                label={`${size}px`}
-                                value={String(size)}
-                              >
-                                {size}px
-                              </SelectItem>
-                            ))}
-                          </SelectGroup>
-                        </SelectContent>
-                      </Select>
-                    </Field>
-
-                    {textureDetailOptions.length > 0 ? (
-                      <Field className="gap-1.5">
-                        <FieldLabel htmlFor="latent-map-texture-detail">
-                          Detail
-                        </FieldLabel>
-                        <Select
-                          id="latent-map-texture-detail"
-                          name="latent-map-texture-detail"
-                          onValueChange={(value) => {
-                            const nextDetail =
-                              value === "auto" ? "auto" : Number(value);
-
-                            if (
-                              nextDetail === "auto" ||
-                              textureDetailOptions.includes(nextDetail)
-                            ) {
-                              setTextureDetail(nextDetail);
-                            }
-                          }}
-                          value={String(textureDetail)}
-                        >
-                          <SelectTrigger
-                            aria-label="Image detail"
-                            className="w-full justify-between"
-                            size="sm"
-                          >
-                            <SelectValue>
-                              {(selectedDetail) =>
-                                formatTextureDetailLabel(selectedDetail)
-                              }
-                            </SelectValue>
-                          </SelectTrigger>
-                          <SelectContent align="start" className="min-w-44">
-                            <SelectGroup>
-                              <SelectLabel>Atlas image detail</SelectLabel>
-                              <SelectItem label="Auto" value="auto">
-                                Auto
-                              </SelectItem>
-                              {textureDetailOptions.map((detail) => (
-                                <SelectItem
-                                  key={detail}
-                                  label={`${detail}px`}
-                                  value={String(detail)}
-                                >
-                                  {detail}px
-                                </SelectItem>
-                              ))}
-                            </SelectGroup>
-                          </SelectContent>
-                        </Select>
-                      </Field>
-                    ) : null}
-                  </>
-                ) : null}
-              </FieldGroup>
-            </SidebarGroupContent>
-          </SidebarGroup>
-
-          <SidebarSeparator />
-
-          <SidebarGroup>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    aria-pressed={clusterColorsEnabled}
-                    isActive={clusterColorsEnabled}
-                    onClick={() =>
-                      setClusterColorsEnabled((isEnabled) => !isEnabled)
-                    }
-                    tooltip="Cluster colors"
-                  >
-                    <Palette />
-                    <span className="group-data-[collapsible=icon]:hidden">
-                      Cluster colors
-                    </span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    onClick={() => setView(DEFAULT_VIEW)}
-                    tooltip="Reset view"
-                  >
-                    <RotateCcw />
-                    <span className="group-data-[collapsible=icon]:hidden">
-                      Reset view
-                    </span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-
-          <SidebarSeparator />
-
-          <SidebarGroup>
-            <SidebarGroupLabel>Method</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <FieldGroup className="gap-3">
+          <SidebarContent>
+            <SidebarGroup>
+              <SidebarGroupLabel>Method</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <FieldGroup className="gap-3">
                 <Field className="gap-1.5">
                   <FieldLabel htmlFor="latent-map-recipe">Embedding</FieldLabel>
                   <Select
@@ -1825,23 +1777,21 @@ export function LatentMapViewer({
             </SidebarGroupContent>
           </SidebarGroup>
 
-        </SidebarContent>
-      </Sidebar>
+          </SidebarContent>
+        </Sidebar>
+      ) : null}
 
-      <SidebarInset className="min-w-0 overflow-hidden bg-[#f0f0f0] dark:bg-[#101113]">
-        <div className="pointer-events-auto absolute left-3 top-3 z-30">
-          <SidebarTrigger className="bg-background/85 shadow-sm" />
-        </div>
-        <div className="pointer-events-none absolute left-14 top-3 z-20">
-          <Badge
-            className="h-11 gap-3 rounded-2xl border-border/60 bg-background/35 px-4 text-base font-semibold text-foreground shadow-none backdrop-blur-sm"
-            variant="outline"
-          >
-            <ScanSearch data-icon="inline-start" />
-            Latent Map
-          </Badge>
-        </div>
-
+      <SidebarInset
+        className={cn(
+          "min-w-0 overflow-hidden bg-[#f0f0f0] dark:bg-[#101113]",
+          uiOverlayHidden && "m-0 rounded-none shadow-none md:m-0",
+        )}
+      >
+        {!uiOverlayHidden ? (
+          <div className="pointer-events-auto absolute left-3 top-3 z-30">
+            <SidebarTrigger className="bg-background/85 shadow-sm" />
+          </div>
+        ) : null}
         <section className="relative min-h-0 flex-1 overflow-hidden">
           <div
             ref={wrapperRef}
@@ -1868,6 +1818,7 @@ export function LatentMapViewer({
             data-selected-image-id={selectedImageId ?? undefined}
             data-source-filter={sourceFilter}
             data-total-point-count={totalStats.pointCount}
+            data-ui-overlay-hidden={uiOverlayHidden}
             data-point-layer-size={pointLayer.pointSize}
             data-point-layer-visible={pointLayer.visible}
             data-thumbnail-atlas-page-count={
@@ -1951,7 +1902,179 @@ export function LatentMapViewer({
             <canvas className="block size-full" ref={canvasRef} />
           </div>
 
-          <div className="pointer-events-none absolute bottom-3 left-3 flex max-w-[calc(100%-1.5rem)] flex-wrap items-center gap-2">
+          {!uiOverlayHidden ? (
+            <div
+              className="pointer-events-auto absolute left-3 top-14 z-20 w-28 rounded-2xl border border-border/55 bg-background/80 p-1.5 shadow-sm backdrop-blur-md"
+              data-testid="latent-map-display-controls"
+            >
+              <FieldGroup className="gap-1.5">
+              <Field className="gap-1">
+                <FieldLabel className="sr-only">Mode</FieldLabel>
+                <ToggleGroup
+                  aria-label="Map render mode"
+                  className="w-full"
+                  size="sm"
+                  spacing={0}
+                  value={[renderMode]}
+                  variant="outline"
+                  onValueChange={handleRenderModeChange}
+                >
+                  <ToggleGroupItem
+                    aria-label="Points"
+                    className="h-7 flex-1 px-0"
+                    title="Points"
+                    value="points"
+                  >
+                    <CircleDot data-icon="inline-start" />
+                  </ToggleGroupItem>
+                  <ToggleGroupItem
+                    aria-label="Thumbnails"
+                    className="h-7 flex-1 px-0"
+                    title="Thumbnails"
+                    value="thumbnails"
+                  >
+                    <Images data-icon="inline-start" />
+                  </ToggleGroupItem>
+                </ToggleGroup>
+              </Field>
+
+              <Field className="gap-1">
+                <FieldLabel
+                  className="sr-only"
+                  htmlFor="latent-map-thumbnail-size"
+                >
+                  Size
+                </FieldLabel>
+                <Select
+                  id="latent-map-thumbnail-size"
+                  name="latent-map-thumbnail-size"
+                  onValueChange={handleThumbnailSizeChange}
+                  value={String(thumbnailSize)}
+                >
+                  <SelectTrigger
+                    aria-label="Thumbnail display size"
+                    className="h-7 w-full justify-between px-2 text-xs"
+                    size="sm"
+                  >
+                    <SelectValue>
+                      {(selectedSize) => `${selectedSize}px`}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent align="start" className="min-w-32">
+                    <SelectGroup>
+                      <SelectLabel>Size</SelectLabel>
+                      {LATENT_MAP_THUMBNAIL_SIZE_OPTIONS.map((size) => (
+                        <SelectItem
+                          key={size}
+                          label={`${size}px`}
+                          value={String(size)}
+                        >
+                          {size}px
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </Field>
+
+              {textureDetailOptions.length > 0 ? (
+                <Field className="gap-1">
+                  <FieldLabel
+                    className="sr-only"
+                    htmlFor="latent-map-texture-detail"
+                  >
+                    Detail
+                  </FieldLabel>
+                  <Select
+                    id="latent-map-texture-detail"
+                    name="latent-map-texture-detail"
+                    onValueChange={handleTextureDetailChange}
+                    value={String(textureDetail)}
+                  >
+                    <SelectTrigger
+                      aria-label="Image detail"
+                      className="h-7 w-full justify-between px-2 text-xs"
+                      size="sm"
+                    >
+                      <SelectValue>
+                        {(selectedDetail) =>
+                          formatTextureDetailLabel(selectedDetail)
+                        }
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent align="start" className="min-w-32">
+                      <SelectGroup>
+                        <SelectLabel>Detail</SelectLabel>
+                        <SelectItem label="Auto" value="auto">
+                          Auto
+                        </SelectItem>
+                        {textureDetailOptions.map((detail) => (
+                          <SelectItem
+                            key={detail}
+                            label={`${detail}px`}
+                            value={String(detail)}
+                          >
+                            {detail}px
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </Field>
+              ) : null}
+
+              <div className="grid grid-cols-2 gap-1">
+                <Button
+                  aria-label="Cluster colors"
+                  aria-pressed={clusterColorsEnabled}
+                  className="w-full"
+                  onClick={() =>
+                    setClusterColorsEnabled((isEnabled) => !isEnabled)
+                  }
+                  size="icon-sm"
+                  title="Cluster colors"
+                  variant={clusterColorsEnabled ? "secondary" : "outline"}
+                >
+                  <Palette data-icon="inline-start" />
+                </Button>
+                <Button
+                  aria-label="Reset view"
+                  className="w-full"
+                  onClick={() => {
+                    markFpsCounterActive();
+                    setView(DEFAULT_VIEW);
+                  }}
+                  size="icon-sm"
+                  title="Reset view"
+                  variant="outline"
+                >
+                  <RotateCcw data-icon="inline-start" />
+                </Button>
+              </div>
+              </FieldGroup>
+            </div>
+          ) : null}
+
+          {!uiOverlayHidden ? (
+            <div className="pointer-events-none absolute bottom-3 right-3 z-20">
+              <div
+                aria-label={`WebGL performance ${fpsIndicatorText}`}
+                className="flex h-7 items-center gap-2 rounded-lg border border-border/50 bg-background/70 px-2.5 font-mono text-[11px] leading-none text-foreground/85 shadow-sm backdrop-blur-sm"
+                data-testid="latent-map-fps-counter"
+              >
+                <span
+                  aria-hidden="true"
+                  className={cn("size-1.5 rounded-full", fpsIndicatorTone)}
+                />
+                <span className="min-w-10 tabular-nums">
+                  {fpsIndicatorText}
+                </span>
+              </div>
+            </div>
+          ) : null}
+
+          {!uiOverlayHidden ? (
+            <div className="pointer-events-none absolute bottom-3 left-3 flex max-w-[calc(100%-1.5rem)] flex-wrap items-center gap-2">
             {selectedPoint && selectedFocusBadgeText ? (
               <>
                 <Badge
@@ -1978,11 +2101,12 @@ export function LatentMapViewer({
                 {neighborError}
               </Badge>
             ) : null}
-          </div>
+            </div>
+          ) : null}
 
           {hoveredPoint && hoverPreviewBox ? (
             <div
-              className="pointer-events-none fixed z-50 overflow-hidden rounded-lg border bg-background shadow-xl"
+              className="pointer-events-none fixed z-50 overflow-hidden rounded-lg bg-background shadow-2xl ring-0"
               style={{
                 left: Math.min(
                   hoverPosition.x + 14,

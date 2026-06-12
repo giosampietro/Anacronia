@@ -51,9 +51,17 @@ Prep finishes by running `npm run build` for the web app. After that, the daily 
 
 The launcher opens:
 
-`http://localhost:18661/latent-map?run=20260609T130049Z-mvp1-j-shoot-20260609&recipe=dinov3_vits_384&layout=umap_n15_mindist0p05_seed42&clusterResult=kmeans_k12_seed42&mode=thumbnails&thumb=96&detail=auto&neighbors=20&relation=closest&z=0.75`
+`http://localhost:18661/latent-map?run=20260609T130049Z-mvp1-j-shoot-20260609&recipe=dinov3_vits_384&layout=umap_n15_mindist0p05_seed42&clusterResult=kmeans_k12_seed42&mode=thumbnails&thumb=64&detail=auto&neighbors=20&relation=closest&z=0.75`
 
 Use the thumbnail-size dropdown to switch the visual thumbnail size between `32px`, `64px`, and `96px`. Use the texture-detail dropdown to choose which generated atlas detail to load. `Auto` resolves from the current canvas zoom and can move through any generated atlas levels such as `32px`, `64px`, `96px`, and `128px`, while a manual detail such as `96px` stays fixed when the visual size changes.
+
+Canvas shortcuts:
+
+- `Left` / `Right`: cycle thumbnail display size.
+- `Up` / `Down`: cycle texture detail through `Auto` and available atlas sizes.
+- `P`: toggle Points/Thumbnails.
+- `F`: hide or restore the UI overlays for canvas-only viewing; hover preview still works.
+- `H`: recenter the canvas.
 
 ## Avoiding The Wrong Worktree
 
@@ -77,4 +85,4 @@ Use this as the default loop while editing the latent-map viewer:
 
 Expected dev URL:
 
-`http://localhost:18661/latent-map?run=20260609T130049Z-mvp1-j-shoot-20260609&recipe=dinov3_vits_384&layout=umap_n15_mindist0p05_seed42&clusterResult=kmeans_k12_seed42&mode=thumbnails&thumb=96&detail=auto&neighbors=20&relation=closest&z=0.75`
+`http://localhost:18661/latent-map?run=20260609T130049Z-mvp1-j-shoot-20260609&recipe=dinov3_vits_384&layout=umap_n15_mindist0p05_seed42&clusterResult=kmeans_k12_seed42&mode=thumbnails&thumb=64&detail=auto&neighbors=20&relation=closest&z=0.75`
