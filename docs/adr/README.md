@@ -31,3 +31,4 @@ Before changing Provider Search, local storage, source identity, curation semant
 - [0023 - Version Analysis Results with provenance](0023-version-analysis-results-with-provenance.md)
 - [0024 - Preserve full Provider records for imported material](0024-preserve-full-provider-records-for-imported-material.md)
 - [0025 - Use Europeana reusability for future import eligibility](0025-use-europeana-reusability-for-future-import-eligibility.md)
+- [0026 - Use concierge hosted viewers before full cloud SaaS](0026-use-concierge-hosted-viewer-before-full-cloud-saas.md)
