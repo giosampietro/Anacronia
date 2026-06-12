@@ -5,9 +5,7 @@ import json
 from pathlib import Path
 
 
-HDBSCAN_DEFERRED_REASON = (
-    "HDBSCAN is not installed or not accepted for MVP2 runtime cost."
-)
+HDBSCAN_DEFERRED_REASON = "No precomputed HDBSCAN cluster artifacts found."
 
 
 @dataclass(frozen=True)
@@ -26,10 +24,7 @@ def export_method_comparison(*, run_dir: Path) -> LatentMapMethodComparisonSumma
     embeddings = _list_embedding_metadata(resolved_run_dir / "embeddings")
     layouts = _list_layout_metadata(resolved_run_dir / "layouts")
     clusters = _list_cluster_metadata(resolved_run_dir / "clusters")
-    hdbscan = {
-        "status": "deferred",
-        "reason": HDBSCAN_DEFERRED_REASON,
-    }
+    hdbscan = _build_hdbscan_summary(clusters)
     comparison = {
         "schema_version": 1,
         "asset_kind": "latent-map-method-comparison",
@@ -121,12 +116,77 @@ def _list_cluster_metadata(directory: Path) -> list[dict[str, object]]:
                 "cluster_count": data.get("cluster_count"),
                 "method": str(data.get("method", "")),
                 "recipe_name": str(data.get("recipe_name", "")),
+                **(
+                    {"label": str(data["label"])}
+                    if isinstance(data.get("label"), str)
+                    else {}
+                ),
+                **(
+                    {"params": data["params"]}
+                    if isinstance(data.get("params"), dict)
+                    else {}
+                ),
+                **(
+                    {"unassigned_count": data["unassigned_count"]}
+                    if isinstance(data.get("unassigned_count"), int)
+                    else {}
+                ),
             }
         )
     return sorted(
         entries,
         key=lambda entry: (str(entry["recipe_name"]), str(entry["cluster_id"])),
     )
+
+
+def _build_hdbscan_summary(
+    clusters: list[dict[str, object]],
+) -> dict[str, object]:
+    presets = [
+        cluster
+        for cluster in clusters
+        if str(cluster.get("method", "")).lower() == "hdbscan"
+    ]
+
+    if not presets:
+        return {
+            "status": "deferred",
+            "reason": HDBSCAN_DEFERRED_REASON,
+        }
+
+    return {
+        "status": "available",
+        "preset_count": len(presets),
+        "presets": [
+            {
+                "cluster_id": preset["cluster_id"],
+                "label": preset.get("label", preset["cluster_id"]),
+                "recipe_name": preset["recipe_name"],
+                "cluster_count": preset.get("cluster_count"),
+                "unassigned_count": preset.get("unassigned_count"),
+                "params": preset.get("params", {}),
+            }
+            for preset in sorted(
+                presets,
+                key=lambda preset: (
+                    str(preset["recipe_name"]),
+                    _hdbscan_order(str(preset.get("label", ""))),
+                    str(preset["cluster_id"]),
+                ),
+            )
+        ],
+    }
+
+
+def _hdbscan_order(label: str) -> int:
+    labels = {
+        "HDBSCAN · Fine": 0,
+        "HDBSCAN · Detail": 1,
+        "HDBSCAN · Balanced": 2,
+        "HDBSCAN · Broad": 3,
+    }
+
+    return labels.get(label, 99)
 
 
 def _read_run_id(run_dir: Path) -> str:

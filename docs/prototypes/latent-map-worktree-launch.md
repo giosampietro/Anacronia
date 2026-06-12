@@ -24,7 +24,7 @@ It sets:
 - UI port `18661`, leaving the main Anacronia app on `18660`
 - API port `18671`
 
-The fast launcher verifies that the generated `32px`, `64px`, `96px`, and `128px` atlas manifests exist before starting the app. It does not generate missing files during normal launch, because launch must stay under 10-15 seconds.
+The fast launcher verifies that the generated `32px`, `64px`, `96px`, and `128px` atlas manifests exist before starting the app. It also verifies that the four HDBSCAN presets exist for both `dinov3_vits_256` and `dinov3_vits_384`. It does not generate missing files during normal launch, because launch must stay under 10-15 seconds.
 
 ## One-Time Prep
 
@@ -45,6 +45,13 @@ Missing layout files are generated from the existing embedding vectors with UMAP
 
 Prep also verifies the FAISS neighbor cache for both `dinov3_vits_256` and `dinov3_vits_384` contains rank-50 rows. Missing or older top-20 neighbor files are regenerated with `--top-k 50` so the viewer can slice `3`, `5`, `10`, `20`, and `50` closest neighbors from the same cache.
 
+Prep also verifies or generates the HDBSCAN preset ladder for both `dinov3_vits_256` and `dinov3_vits_384`:
+
+- `HDBSCAN · Fine`
+- `HDBSCAN · Detail`
+- `HDBSCAN · Balanced`
+- `HDBSCAN · Broad`
+
 Prep finishes by running `npm run build` for the web app. After that, the daily launcher can start from the existing `.next` build without rebuilding.
 
 ## Expected URL
@@ -54,6 +61,8 @@ The launcher opens:
 `http://localhost:18661/latent-map?run=20260609T130049Z-mvp1-j-shoot-20260609&recipe=dinov3_vits_384&layout=umap_n15_mindist0p05_seed42&clusterResult=kmeans_k12_seed42&mode=thumbnails&thumb=64&detail=auto&neighbors=20&relation=closest&z=0.75`
 
 Use the thumbnail-size dropdown to switch the visual thumbnail size between `32px`, `64px`, and `96px`. Use the texture-detail dropdown to choose which generated atlas detail to load. `Auto` resolves from the current canvas zoom and can move through any generated atlas levels such as `32px`, `64px`, `96px`, and `128px`, while a manual detail such as `96px` stays fixed when the visual size changes.
+
+Use the Clusters dropdown to switch from K-means to the HDBSCAN presets. With an HDBSCAN result selected, the Group dropdown focuses a returned group such as `Group 0`; non-focused images remain visible as small dark-pink canvas points.
 
 Canvas shortcuts:
 

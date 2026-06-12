@@ -12,7 +12,29 @@ import {
 describe("latent map viewer state", () => {
   it("derives cluster and source-folder filter options from viewer data", () => {
     expect(createLatentMapFilterOptions(latentMapFixture)).toEqual({
-      clusters: [0, 1, 2],
+      groups: [
+        {
+          cluster_id: 0,
+          count: 3,
+          group_key: "0",
+          kind: "cluster",
+          label: "Group 0",
+        },
+        {
+          cluster_id: 1,
+          count: 3,
+          group_key: "1",
+          kind: "cluster",
+          label: "Group 1",
+        },
+        {
+          cluster_id: 2,
+          count: 2,
+          group_key: "2",
+          kind: "cluster",
+          label: "Group 2",
+        },
+      ],
       sources: ["set-a", "set-b", "set-c"],
     });
   });
@@ -22,9 +44,9 @@ describe("latent map viewer state", () => {
     expect(getLatentMapSourceGroup("folder/plain-file.jpg")).toBe("folder");
   });
 
-  it("filters points by cluster and source without changing run metadata", () => {
+  it("filters points by source without applying group focus as a data filter", () => {
     const filtered = filterLatentMapViewerData(latentMapFixture, {
-      clusterFilter: "0",
+      clusterFilter: "1",
       sourceFilter: "set-a",
     });
 

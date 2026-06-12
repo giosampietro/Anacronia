@@ -24,7 +24,7 @@ def export_latent_map_results(
     run_dir: Path,
     recipe_name: str,
     selected_image_ids: list[str] | None = None,
-    selected_cluster_ids: list[int] | None = None,
+    selected_cluster_ids: list[int | str] | None = None,
     selected_neighbor_image_ids: list[str] | None = None,
     faiss_duplicate_threshold: float = 0.98,
 ) -> LatentMapResultExportSummary:
@@ -73,6 +73,7 @@ def export_latent_map_results(
         "recipe_name": recipe_name,
         "layout_id": layout_id,
         "cluster_id": cluster_result_id,
+        "cluster_result": _build_cluster_metadata(cluster),
         "diagnostics": {
             "exact_duplicates": exact_duplicates,
             "perceptual_hash_duplicates": {
@@ -180,14 +181,20 @@ def _build_selections(
     manifest_by_id: dict[str, dict[str, object]],
     neighbor_rows: list[dict[str, object]],
     recipe_name: str,
-    selected_cluster_ids: list[int],
+    selected_cluster_ids: list[int | str],
     selected_image_ids: list[str],
     selected_neighbor_image_ids: list[str],
 ) -> dict[str, object]:
     cluster_points = [
         {
             "cluster_id": int(point["cluster_id"]),
+            "group_key": str(point.get("group_key") or point["cluster_id"]),
             "image_id": str(point["image_id"]),
+            **(
+                {"membership": float(point["membership"])}
+                if isinstance(point.get("membership"), int | float)
+                else {}
+            ),
         }
         for point in cluster.get("points", [])
     ]
@@ -199,18 +206,12 @@ def _build_selections(
             for image_id in selected_image_ids
         ],
         "clusters": [
-            {
-                "cluster_id": cluster_id,
-                "image_ids": sorted(
-                    point["image_id"]
-                    for point in cluster_points
-                    if point["cluster_id"] == cluster_id
-                ),
-                "provenance": {
-                    "cluster_id": cluster_result_id,
-                    "kind": "cluster-selection",
-                },
-            }
+            _build_cluster_selection(
+                cluster_points=cluster_points,
+                cluster_result=cluster,
+                cluster_result_id=cluster_result_id,
+                selected_cluster_id=cluster_id,
+            )
             for cluster_id in selected_cluster_ids
         ],
         "neighbors": [
@@ -229,6 +230,85 @@ def _build_selections(
             "point_count": len(layout.get("points", [])),
         },
     }
+
+
+def _build_cluster_metadata(cluster: dict[str, object]) -> dict[str, object]:
+    metadata = {
+        "cluster_id": str(cluster.get("cluster_id", "")),
+        "cluster_count": cluster.get("cluster_count"),
+        "method": str(cluster.get("method", "")),
+    }
+
+    for key in (
+        "asset_kind",
+        "label",
+        "params",
+        "random_state",
+        "schema_version",
+        "unassigned_count",
+    ):
+        if key in cluster:
+            metadata[key] = cluster[key]
+
+    if isinstance(cluster.get("groups"), list):
+        metadata["groups"] = cluster["groups"]
+
+    return metadata
+
+
+def _build_cluster_selection(
+    *,
+    cluster_points: list[dict[str, object]],
+    cluster_result: dict[str, object],
+    cluster_result_id: str,
+    selected_cluster_id: int | str,
+) -> dict[str, object]:
+    selected_group_key = _selected_cluster_group_key(selected_cluster_id)
+    matching_points = [
+        point for point in cluster_points if point["group_key"] == selected_group_key
+    ]
+    selection = {
+        "cluster_id": selected_cluster_id,
+        "group_key": selected_group_key,
+        "image_ids": sorted(str(point["image_id"]) for point in matching_points),
+        "provenance": {
+            "cluster_id": cluster_result_id,
+            "kind": "cluster-selection",
+            "method": str(cluster_result.get("method", "")),
+        },
+    }
+
+    if selected_group_key == "unassigned":
+        selection["label"] = "Unassigned"
+    elif str(cluster_result.get("method", "")).lower() == "hdbscan":
+        selection["label"] = f"Group {str(selected_cluster_id).removeprefix('cluster:')}"
+
+    if any("membership" in point for point in matching_points):
+        selection["assignments"] = [
+            {
+                "image_id": str(point["image_id"]),
+                **(
+                    {"membership": float(point["membership"])}
+                    if "membership" in point
+                    else {}
+                ),
+            }
+            for point in sorted(
+                matching_points,
+                key=lambda point: str(point["image_id"]),
+            )
+        ]
+
+    return selection
+
+
+def _selected_cluster_group_key(cluster_id: int | str) -> str:
+    if cluster_id == "unassigned":
+        return "unassigned"
+    if isinstance(cluster_id, str) and cluster_id.startswith("cluster:"):
+        return cluster_id
+
+    return str(cluster_id)
 
 
 def _group_neighbors(

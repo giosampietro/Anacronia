@@ -12,6 +12,12 @@ APP_API_PORT="18671"
 APP_ORIGIN="http://localhost:$APP_UI_PORT"
 LATENT_MAP_URL="$APP_ORIGIN/latent-map?run=$RUN_ID&recipe=dinov3_vits_384&layout=umap_n15_mindist0p05_seed42&clusterResult=kmeans_k12_seed42&mode=thumbnails&thumb=64&detail=auto&neighbors=20&relation=closest&z=0.75"
 WATCHER_PID=""
+HDBSCAN_CLUSTER_IDS=(
+  hdbscan_fine_mcs10_ms5_eom
+  hdbscan_detail_mcs15_ms5_leaf
+  hdbscan_balanced_mcs25_ms10_eom
+  hdbscan_broad_mcs50_ms15_eom
+)
 
 finish() {
   status=$?
@@ -85,6 +91,22 @@ for recipe in dinov3_vits_256 dinov3_vits_384; do
       --run-dir "$RUN_DIR" \
       --recipe "$recipe" \
       --top-k 50
+  fi
+
+  hdbscan_missing=0
+  for cluster_id in "${HDBSCAN_CLUSTER_IDS[@]}"; do
+    if [ ! -f "$RUN_DIR/clusters/${recipe}_${cluster_id}.json" ]; then
+      hdbscan_missing=1
+      break
+    fi
+  done
+
+  if [ "$hdbscan_missing" -eq 1 ]; then
+    echo "Generating HDBSCAN presets for ${recipe}"
+    .venv/bin/anacronia latent-map hdbscan-build \
+      --run-dir "$RUN_DIR" \
+      --recipe "$recipe" \
+      --preset all
   fi
 done
 

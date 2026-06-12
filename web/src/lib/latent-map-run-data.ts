@@ -24,13 +24,24 @@ type LayoutFile = {
 };
 
 type ClusterFile = {
+  asset_kind?: unknown;
   cluster_count?: unknown;
   cluster_id?: unknown;
+  groups?: unknown;
+  label?: unknown;
   method?: unknown;
-  points?: { cluster_id?: unknown; image_id?: unknown }[];
+  params?: unknown;
+  points?: {
+    cluster_id?: unknown;
+    group_key?: unknown;
+    image_id?: unknown;
+    membership?: unknown;
+  }[];
   random_state?: unknown;
   recipe_name?: unknown;
   run_id?: unknown;
+  schema_version?: unknown;
+  unassigned_count?: unknown;
 };
 
 type EmbeddingMetadata = {
@@ -86,10 +97,12 @@ export async function loadLatentMapRunExportedViewerData({
     dir: path.join(resolvedRunDir, "layouts"),
     recipeName: selectedRecipe,
   });
-  const clusters = await loadRunOutputs<ClusterFile>({
-    dir: path.join(resolvedRunDir, "clusters"),
-    recipeName: selectedRecipe,
-  });
+  const clusters = sortClusterOutputs(
+    await loadRunOutputs<ClusterFile>({
+      dir: path.join(resolvedRunDir, "clusters"),
+      recipeName: selectedRecipe,
+    }),
+  );
   const layout = pickOutputById({
     idField: "layout_id",
     outputs: layouts,
@@ -129,12 +142,9 @@ export async function loadLatentMapRunExportedViewerData({
     Object.values(thumbnailAtlasManifestPaths)[0];
 
   return {
-    available_clusters: clusters.map((output) => ({
-      cluster_count: numberOrNull(output.value.cluster_count),
-      cluster_id: String(output.value.cluster_id ?? ""),
-      method: String(output.value.method ?? ""),
-      random_state: numberOrNull(output.value.random_state),
-    })),
+    available_clusters: clusters.map((output) =>
+      buildAvailableCluster(output.value),
+    ),
     available_layouts: layouts.map((output) => ({
       layout_id: String(output.value.layout_id ?? ""),
       method: String(output.value.method ?? ""),
@@ -142,6 +152,7 @@ export async function loadLatentMapRunExportedViewerData({
     })),
     available_recipes: availableRecipes,
     cluster_id: String(cluster.value.cluster_id ?? ""),
+    cluster_result: buildAvailableCluster(cluster.value),
     layout_id: String(layout.value.layout_id ?? ""),
     ...(neighborIndexPath ? { neighbor_index_path: neighborIndexPath } : {}),
     points: (layout.value.points ?? []).map((point) => {
@@ -151,6 +162,13 @@ export async function loadLatentMapRunExportedViewerData({
 
       return {
         cluster_id: Number(clusterPoint?.cluster_id ?? 0),
+        ...(typeof clusterPoint?.group_key === "string" &&
+        clusterPoint.group_key.length > 0
+          ? { cluster_group_key: clusterPoint.group_key }
+          : {}),
+        ...(typeof clusterPoint?.membership === "number"
+          ? { cluster_membership: clusterPoint.membership }
+          : {}),
         height: Number(manifestRow?.height ?? 1),
         image_id: imageId,
         preview_path: String(
@@ -172,6 +190,55 @@ export async function loadLatentMapRunExportedViewerData({
       ? { thumbnail_atlas_manifest_paths: thumbnailAtlasManifestPaths }
       : {}),
   };
+}
+
+function buildAvailableCluster(cluster: ClusterFile) {
+  return {
+    ...(typeof cluster.asset_kind === "string" && cluster.asset_kind.length > 0
+      ? { asset_kind: cluster.asset_kind }
+      : {}),
+    cluster_count: numberOrNull(cluster.cluster_count),
+    cluster_id: String(cluster.cluster_id ?? ""),
+    ...(Array.isArray(cluster.groups)
+      ? { groups: normalizeClusterGroups(cluster.groups) }
+      : {}),
+    ...(typeof cluster.label === "string" && cluster.label.length > 0
+      ? { label: cluster.label }
+      : {}),
+    method: String(cluster.method ?? ""),
+    ...(cluster.params &&
+    typeof cluster.params === "object" &&
+    !Array.isArray(cluster.params)
+      ? { params: cluster.params as Record<string, unknown> }
+      : {}),
+    random_state: numberOrNull(cluster.random_state),
+    ...(typeof cluster.schema_version === "number"
+      ? { schema_version: cluster.schema_version }
+      : {}),
+    ...(typeof cluster.unassigned_count === "number"
+      ? { unassigned_count: cluster.unassigned_count }
+      : {}),
+  };
+}
+
+function normalizeClusterGroups(groups: unknown[]) {
+  return groups
+    .filter((group): group is Record<string, unknown> =>
+      Boolean(group && typeof group === "object" && !Array.isArray(group)),
+    )
+    .map((group) => ({
+      cluster_id: Number(group.cluster_id ?? 0),
+      count: Number(group.count ?? 0),
+      group_key: String(group.group_key ?? group.cluster_id ?? ""),
+      kind: group.kind === "unassigned" ? "unassigned" : "cluster",
+      label: String(
+        group.label ??
+          (group.kind === "unassigned"
+            ? "Unassigned"
+            : `Group ${String(group.cluster_id ?? "")}`),
+      ),
+    }))
+    .filter((group) => group.group_key.length > 0);
 }
 
 async function readJsonLines<T>(filePath: string): Promise<T[]> {
@@ -261,6 +328,43 @@ function pickExisting(
   return selectedValue && values.includes(selectedValue)
     ? selectedValue
     : undefined;
+}
+
+function sortClusterOutputs(
+  outputs: LoadedRunOutput<ClusterFile>[],
+): LoadedRunOutput<ClusterFile>[] {
+  return [...outputs].sort((left, right) => {
+    const leftMethod = String(left.value.method ?? "").toLowerCase();
+    const rightMethod = String(right.value.method ?? "").toLowerCase();
+    const leftRank = leftMethod === "hdbscan" ? 0 : leftMethod === "kmeans" ? 1 : 2;
+    const rightRank =
+      rightMethod === "hdbscan" ? 0 : rightMethod === "kmeans" ? 1 : 2;
+
+    if (leftRank !== rightRank) {
+      return leftRank - rightRank;
+    }
+
+    const presetDelta =
+      getHdbscanPresetOrder(String(left.value.label ?? "")) -
+      getHdbscanPresetOrder(String(right.value.label ?? ""));
+
+    if (presetDelta !== 0) {
+      return presetDelta;
+    }
+
+    return left.fileName.localeCompare(right.fileName);
+  });
+}
+
+function getHdbscanPresetOrder(label: string): number {
+  const labels = new Map([
+    ["HDBSCAN · Fine", 0],
+    ["HDBSCAN · Detail", 1],
+    ["HDBSCAN · Balanced", 2],
+    ["HDBSCAN · Broad", 3],
+  ]);
+
+  return labels.get(label) ?? 99;
 }
 
 function pickOutputById<T>({

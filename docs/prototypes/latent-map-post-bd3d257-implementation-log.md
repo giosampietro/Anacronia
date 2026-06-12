@@ -134,3 +134,51 @@ This log records the local work completed after the last pushed commit on this b
 - Focused latent-map tests now pass with 55 tests.
 - Touched-file lint passes for the latent-map component and helper/test files.
 - `npm run build` passes for the web app.
+
+## Update After HDBSCAN Issues #214-#219
+
+### HDBSCAN cluster artifacts
+
+- Added `latent-map hdbscan-build` to generate saved HDBSCAN cluster results from existing DINO embedding matrices.
+- Added four presets for each recipe: `HDBSCAN · Fine`, `HDBSCAN · Detail`, `HDBSCAN · Balanced`, and `HDBSCAN · Broad`.
+- HDBSCAN runs on L2-normalized DINO vectors with Euclidean distance.
+- Cluster artifacts include method metadata, preset params, group summaries, unassigned count, point memberships, and stable group keys.
+- Generated the J Shoot HDBSCAN artifacts for both `dinov3_vits_256` and `dinov3_vits_384`.
+- The J Shoot `clusters/` directory is about `4.0M` after adding the HDBSCAN artifacts.
+
+### Viewer UX
+
+- The cluster result dropdown now displays HDBSCAN labels and sorts HDBSCAN presets as Fine, Detail, Balanced, Broad, with K-means still available after them.
+- The old Cluster filter is now a Group focus selector derived from the selected cluster result's saved groups.
+- Group focus is a render state, not a data filter: all images stay in the map and remain hover/click targets.
+- Focused group images stay as normal thumbnails.
+- Non-focused images become small dark-pink points using the same `3px` point layer size used for FAISS background points.
+- Selected image and FAISS closest/opposite states still take visual precedence over group focus.
+- Group focus persists through the existing `cluster=` URL parameter and invalid group values fall back to `All groups`.
+
+### Exports and comparison
+
+- Viewer exports and the live run loader now preserve `cluster_result`, HDBSCAN groups, unassigned count, params, and membership strength.
+- Result exports include cluster method metadata and group selections, including HDBSCAN membership assignments when present.
+- Method comparison exports now report available HDBSCAN presets instead of treating HDBSCAN as a permanently deferred capability.
+
+### Launch and docs
+
+- The slow prep command verifies or generates HDBSCAN presets for both DINO recipes.
+- The fast launcher verifies HDBSCAN artifacts before starting and keeps clustering out of the 10-15 second daily launch path.
+- Added [Latent Map HDBSCAN Clustering PRD](latent-map-hdbscan-clustering-prd.md).
+- No new ADR is needed; these are versioned analysis-result artifacts under ADR-0023.
+
+### Checks
+
+- Full Python tests passed: `258 passed`.
+- Full Vitest suite passed: `201 passed`.
+- Touched-file ESLint passed for the latent-map viewer/helper files.
+- `npm run build` passed.
+- Browser QA on the real J Shoot run at `localhost:18661` confirmed:
+  - `HDBSCAN · Balanced` loads in the cluster result control;
+  - `Group 0 · 154` focus persists through `cluster=cluster%3A0`;
+  - all `3184` points remain in the map data;
+  - the focused group renders `154` thumbnails;
+  - the non-focused layer remains visible at `3px`;
+  - no browser console warnings or errors were reported.

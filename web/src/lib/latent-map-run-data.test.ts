@@ -89,6 +89,38 @@ describe("loadLatentMapRunExportedViewerData", () => {
         run_id: "test-run",
       },
     );
+    await writeJson(
+      path.join(runDir, "clusters", "dinov3_vits_384_hdbscan_balanced.json"),
+      {
+        asset_kind: "latent-map-cluster-result",
+        cluster_count: 1,
+        cluster_id: "hdbscan_balanced_mcs25_ms10_eom",
+        groups: [
+          {
+            cluster_id: 0,
+            count: 1,
+            group_key: "cluster:0",
+            kind: "cluster",
+            label: "Group 0",
+          },
+        ],
+        label: "HDBSCAN · Balanced",
+        method: "hdbscan",
+        params: { preset: "balanced" },
+        points: [
+          {
+            cluster_id: 0,
+            group_key: "cluster:0",
+            image_id: "img_1",
+            membership: 0.92,
+          },
+        ],
+        recipe_name: "dinov3_vits_384",
+        run_id: "test-run",
+        schema_version: 1,
+        unassigned_count: 0,
+      },
+    );
     await writeFile(
       path.join(runDir, "indexes", "dinov3_vits_384_neighbors.jsonl"),
       `${JSON.stringify({
@@ -126,13 +158,29 @@ describe("loadLatentMapRunExportedViewerData", () => {
 
     const data = await loadLatentMapRunExportedViewerData({
       runDir,
-      selectedClusterId: "kmeans_a",
+      selectedClusterId: "hdbscan_balanced_mcs25_ms10_eom",
       selectedLayoutId: "umap_a",
       selectedRecipeName: "dinov3_vits_384",
     });
 
     expect(data).toMatchObject({
-      cluster_id: "kmeans_a",
+      cluster_id: "hdbscan_balanced_mcs25_ms10_eom",
+      cluster_result: {
+        cluster_id: "hdbscan_balanced_mcs25_ms10_eom",
+        groups: [
+          {
+            cluster_id: 0,
+            count: 1,
+            group_key: "cluster:0",
+            kind: "cluster",
+            label: "Group 0",
+          },
+        ],
+        label: "HDBSCAN · Balanced",
+        method: "hdbscan",
+        params: { preset: "balanced" },
+        unassigned_count: 0,
+      },
       layout_id: "umap_a",
       neighbor_index_path: "indexes/dinov3_vits_384_neighbors.jsonl",
       recipe_name: "dinov3_vits_384",
@@ -157,7 +205,9 @@ describe("loadLatentMapRunExportedViewerData", () => {
     ]);
     expect(data.points).toEqual([
       expect.objectContaining({
-        cluster_id: 7,
+        cluster_group_key: "cluster:0",
+        cluster_id: 0,
+        cluster_membership: 0.92,
         image_id: "img_1",
         preview_path: "previews/img_1.jpg",
         relative_path: "set/img_1.jpg",
@@ -165,6 +215,10 @@ describe("loadLatentMapRunExportedViewerData", () => {
         x: 3,
         y: 4,
       }),
+    ]);
+    expect(data.available_clusters?.map((cluster) => cluster.cluster_id)).toEqual([
+      "hdbscan_balanced_mcs25_ms10_eom",
+      "kmeans_a",
     ]);
   });
 });

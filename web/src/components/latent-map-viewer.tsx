@@ -64,6 +64,7 @@ import {
   shouldUseLatentMapAutoFallbackAtlas,
   type LatentMapFaissNeighborCount,
   type LatentMapFaissRelationMode,
+  type LatentMapClusterGroup,
   type LatentMapRenderMode,
   type LatentMapRuntimePerformanceInfo,
   type LatentMapTextureDetail,
@@ -247,6 +248,10 @@ function formatLayoutLabel(
 function formatClusterResultLabel(
   cluster: NonNullable<LatentMapViewerData["available_clusters"]>[number],
 ) {
+  if (cluster.label) {
+    return cluster.label;
+  }
+
   const clusterId = cluster.cluster_id.toLowerCase();
   const clusterMethod = cluster.method?.toLowerCase() ?? "";
   const method =
@@ -260,6 +265,10 @@ function formatClusterResultLabel(
   return [method, clusterCount ? `${clusterCount} clusters` : null]
     .filter(Boolean)
     .join(" · ");
+}
+
+function formatGroupFilterLabel(group: LatentMapClusterGroup) {
+  return `${group.label} · ${group.count}`;
 }
 
 function formatTextureDetailLabel(
@@ -466,6 +475,7 @@ export function LatentMapViewer({
     () =>
       createLatentMapRenderState({
         clusterColorsEnabled,
+        clusterFilter,
         data: filteredData,
         faissNeighborCount,
         faissRelationMode,
@@ -475,6 +485,7 @@ export function LatentMapViewer({
       }),
     [
       clusterColorsEnabled,
+      clusterFilter,
       faissNeighborCount,
       faissRelationMode,
       filteredData,
@@ -1579,7 +1590,7 @@ export function LatentMapViewer({
               <FieldGroup className="gap-3">
                 <Field className="gap-1.5">
                   <FieldLabel htmlFor="latent-map-cluster-filter">
-                    Cluster
+                    Group
                   </FieldLabel>
                   <Select
                     id="latent-map-cluster-filter"
@@ -1592,31 +1603,42 @@ export function LatentMapViewer({
                     value={clusterFilter}
                   >
                     <SelectTrigger
-                      aria-label="Cluster filter"
+                      aria-label="Group focus"
                       className="w-full justify-between"
                       size="sm"
                     >
                       <SelectValue>
                         {(selectedClusterFilter) =>
                           selectedClusterFilter === "all"
-                            ? "All clusters"
-                            : `Cluster ${selectedClusterFilter}`
+                            ? "All groups"
+                            : formatGroupFilterLabel(
+                                filterOptions.groups.find(
+                                  (group) =>
+                                    group.group_key === selectedClusterFilter,
+                                ) ?? {
+                                  cluster_id: 0,
+                                  count: 0,
+                                  group_key: selectedClusterFilter,
+                                  kind: "cluster",
+                                  label: selectedClusterFilter,
+                                },
+                              )
                         }
                       </SelectValue>
                     </SelectTrigger>
                     <SelectContent align="start">
                       <SelectGroup>
-                        <SelectLabel>Cluster filter</SelectLabel>
-                        <SelectItem label="All clusters" value="all">
-                          All clusters
+                        <SelectLabel>Group focus</SelectLabel>
+                        <SelectItem label="All groups" value="all">
+                          All groups
                         </SelectItem>
-                        {filterOptions.clusters.map((clusterId) => (
+                        {filterOptions.groups.map((group) => (
                           <SelectItem
-                            key={clusterId}
-                            label={`Cluster ${clusterId}`}
-                            value={String(clusterId)}
+                            key={group.group_key}
+                            label={formatGroupFilterLabel(group)}
+                            value={group.group_key}
                           >
-                            Cluster {clusterId}
+                            {formatGroupFilterLabel(group)}
                           </SelectItem>
                         ))}
                       </SelectGroup>

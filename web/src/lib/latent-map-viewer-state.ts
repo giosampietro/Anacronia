@@ -7,6 +7,8 @@ import {
   LATENT_MAP_FAISS_RELATION_MODE_OPTIONS,
   LATENT_MAP_THUMBNAIL_SIZE_OPTIONS,
   getLatentMapAvailableTextureDetails,
+  getLatentMapPointGroupKey,
+  type LatentMapClusterGroup,
   type LatentMapFaissNeighborCount,
   type LatentMapFaissRelationMode,
   type LatentMapRenderMode,
@@ -64,13 +66,11 @@ export function getLatentMapSourceGroup(relativePath: string): string {
 }
 
 export function createLatentMapFilterOptions(data: LatentMapViewerData): {
-  clusters: number[];
+  groups: LatentMapClusterGroup[];
   sources: string[];
 } {
   return {
-    clusters: [...new Set(data.points.map((point) => point.cluster_id))].sort(
-      (left, right) => left - right,
-    ),
+    groups: getLatentMapGroupOptions(data),
     sources: [
       ...new Set(
         data.points.map((point) =>
@@ -86,13 +86,6 @@ export function filterLatentMapViewerData(
   filters: LatentMapFilterState,
 ): LatentMapViewerData {
   const points = data.points.filter((point) => {
-    if (
-      filters.clusterFilter !== "all" &&
-      String(point.cluster_id) !== filters.clusterFilter
-    ) {
-      return false;
-    }
-
     if (
       filters.sourceFilter !== "all" &&
       getLatentMapSourceGroup(point.relative_path) !== filters.sourceFilter
@@ -128,7 +121,7 @@ export function parseLatentMapUrlState(
   const zoom = Number(searchParams.get("z"));
   const clusterFilter =
     clusterParam !== null &&
-    filterOptions.clusters.some((clusterId) => String(clusterId) === clusterParam)
+    filterOptions.groups.some((group) => group.group_key === clusterParam)
       ? clusterParam
       : "all";
   const sourceFilter =
@@ -138,7 +131,7 @@ export function parseLatentMapUrlState(
   const selectedParam = searchParams.get("selected");
   const selectedExists = selectedParam
     ? filterLatentMapViewerData(data, {
-        clusterFilter,
+        clusterFilter: "all",
         sourceFilter,
       }).points.some((point) => point.image_id === selectedParam)
     : false;
@@ -217,4 +210,56 @@ export function serializeLatentMapUrlState(
   }
 
   return searchParams;
+}
+
+function getLatentMapGroupOptions(data: LatentMapViewerData): LatentMapClusterGroup[] {
+  const selectedCluster =
+    data.cluster_result ??
+    data.available_clusters?.find(
+      (cluster) => cluster.cluster_id === data.cluster_id,
+    );
+  const metadataGroups = selectedCluster?.groups ?? [];
+
+  if (metadataGroups.length > 0) {
+    return [...metadataGroups].sort(compareLatentMapGroups);
+  }
+
+  const groupByKey = new Map<string, LatentMapClusterGroup>();
+
+  for (const point of data.points) {
+    const groupKey = getLatentMapPointGroupKey(point);
+    const existingGroup = groupByKey.get(groupKey);
+
+    if (existingGroup) {
+      existingGroup.count += 1;
+      continue;
+    }
+
+    const isUnassigned = point.cluster_id === -1 || groupKey === "unassigned";
+
+    groupByKey.set(groupKey, {
+      cluster_id: point.cluster_id,
+      count: 1,
+      group_key: groupKey,
+      kind: isUnassigned ? "unassigned" : "cluster",
+      label: isUnassigned ? "Unassigned" : `Group ${point.cluster_id}`,
+    });
+  }
+
+  return [...groupByKey.values()].sort(compareLatentMapGroups);
+}
+
+function compareLatentMapGroups(
+  left: LatentMapClusterGroup,
+  right: LatentMapClusterGroup,
+) {
+  if (left.kind !== right.kind) {
+    return left.kind === "unassigned" ? -1 : 1;
+  }
+
+  if (left.kind === "cluster" && left.count !== right.count) {
+    return right.count - left.count;
+  }
+
+  return left.label.localeCompare(right.label);
 }

@@ -150,10 +150,12 @@ def test_exports_duplicate_diagnostics_and_selected_result_provenance(tmp_path):
     assert data["selections"]["clusters"] == [
         {
             "cluster_id": 0,
+            "group_key": "0",
             "image_ids": ["img-a", "img-a-copy"],
             "provenance": {
                 "cluster_id": "kmeans_k2_seed42",
                 "kind": "cluster-selection",
+                "method": "",
             },
         }
     ]
@@ -169,6 +171,89 @@ def test_exports_duplicate_diagnostics_and_selected_result_provenance(tmp_path):
     assert "Duplicate Diagnostics" in (run.run_dir / "report.md").read_text(
         encoding="utf-8"
     )
+
+
+def test_exports_hdbscan_group_selections_with_membership(tmp_path):
+    run = create_result_run(tmp_path)
+    (run.run_dir / "clusters" / "dinov3_vits_256_hdbscan_balanced.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "asset_kind": "latent-map-cluster-result",
+                "recipe_name": "dinov3_vits_256",
+                "cluster_id": "hdbscan_balanced_mcs25_ms10_eom",
+                "label": "HDBSCAN · Balanced",
+                "method": "hdbscan",
+                "cluster_count": 1,
+                "unassigned_count": 1,
+                "params": {"preset": "balanced"},
+                "groups": [
+                    {
+                        "group_key": "cluster:0",
+                        "cluster_id": 0,
+                        "label": "Group 0",
+                        "count": 2,
+                        "kind": "cluster",
+                    },
+                    {
+                        "group_key": "unassigned",
+                        "cluster_id": -1,
+                        "label": "Unassigned",
+                        "count": 1,
+                        "kind": "unassigned",
+                    },
+                ],
+                "points": [
+                    {
+                        "image_id": "img-a",
+                        "cluster_id": 0,
+                        "group_key": "cluster:0",
+                        "membership": 0.91,
+                    },
+                    {
+                        "image_id": "img-a-copy",
+                        "cluster_id": 0,
+                        "group_key": "cluster:0",
+                        "membership": 0.87,
+                    },
+                    {
+                        "image_id": "img-b",
+                        "cluster_id": -1,
+                        "group_key": "unassigned",
+                        "membership": 0.0,
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    summary = export_latent_map_results(
+        run_dir=run.run_dir,
+        recipe_name="dinov3_vits_256",
+        selected_cluster_ids=["cluster:0", "unassigned"],
+    )
+
+    data = json.loads(summary.result_path.read_text(encoding="utf-8"))
+    assert data["cluster_result"]["label"] == "HDBSCAN · Balanced"
+    assert data["cluster_result"]["unassigned_count"] == 1
+    assert data["selections"]["clusters"][0] == {
+        "cluster_id": "cluster:0",
+        "group_key": "cluster:0",
+        "image_ids": ["img-a", "img-a-copy"],
+        "provenance": {
+            "cluster_id": "hdbscan_balanced_mcs25_ms10_eom",
+            "kind": "cluster-selection",
+            "method": "hdbscan",
+        },
+        "label": "Group 0",
+        "assignments": [
+            {"image_id": "img-a", "membership": 0.91},
+            {"image_id": "img-a-copy", "membership": 0.87},
+        ],
+    }
+    assert data["selections"]["clusters"][1]["label"] == "Unassigned"
+    assert data["selections"]["clusters"][1]["image_ids"] == ["img-b"]
 
 
 def test_result_export_rejects_umap_neighbor_substitution(tmp_path):

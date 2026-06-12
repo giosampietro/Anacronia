@@ -53,8 +53,7 @@ def export_viewer_data(
         resolved_run_dir / "indexes" / f"{recipe_name}_neighbors.jsonl"
     )
     cluster_by_id = {
-        str(point["image_id"]): int(point["cluster_id"])
-        for point in cluster.get("points", [])
+        str(point["image_id"]): point for point in cluster.get("points", [])
     }
     neighbors_by_id = _group_neighbors(
         neighbor_rows=neighbor_rows,
@@ -69,20 +68,14 @@ def export_viewer_data(
         if image_id not in cluster_by_id:
             raise ValueError(f"Cluster output is missing image ID: {image_id}")
         manifest = manifest_by_id[image_id]
+        cluster_point = cluster_by_id[image_id]
         points.append(
-            {
-                "image_id": image_id,
-                "x": float(point["x"]),
-                "y": float(point["y"]),
-                "cluster_id": cluster_by_id[image_id],
-                "thumbnail_path": str(manifest.get("thumbnail_path", "")),
-                "preview_path": str(
-                    manifest.get("preview_path") or manifest.get("thumbnail_path", "")
-                ),
-                "relative_path": str(manifest.get("relative_path", "")),
-                "width": manifest.get("width"),
-                "height": manifest.get("height"),
-            }
+            _build_viewer_point(
+                cluster_point=cluster_point,
+                image_id=image_id,
+                layout_point=point,
+                manifest=manifest,
+            )
         )
 
     viewer_dir = resolved_run_dir / "viewer"
@@ -94,6 +87,7 @@ def export_viewer_data(
         "recipe_name": recipe_name,
         "layout_id": str(layout.get("layout_id", "")),
         "cluster_id": str(cluster.get("cluster_id", "")),
+        "cluster_result": _build_cluster_metadata(cluster),
         "available_layouts": _list_available_layouts(
             directory=resolved_run_dir / "layouts",
             recipe_name=recipe_name,
@@ -181,6 +175,55 @@ def _group_neighbors(
     return grouped
 
 
+def _build_viewer_point(
+    *,
+    cluster_point: dict[str, object],
+    image_id: str,
+    layout_point: dict[str, object],
+    manifest: dict[str, object],
+) -> dict[str, object]:
+    cluster_id = int(cluster_point["cluster_id"])
+    group_key = str(cluster_point.get("group_key") or cluster_id)
+    point = {
+        "image_id": image_id,
+        "x": float(layout_point["x"]),
+        "y": float(layout_point["y"]),
+        "cluster_id": cluster_id,
+        "cluster_group_key": group_key,
+        "thumbnail_path": str(manifest.get("thumbnail_path", "")),
+        "preview_path": str(
+            manifest.get("preview_path") or manifest.get("thumbnail_path", "")
+        ),
+        "relative_path": str(manifest.get("relative_path", "")),
+        "width": manifest.get("width"),
+        "height": manifest.get("height"),
+    }
+    membership = cluster_point.get("membership")
+
+    if isinstance(membership, int | float):
+        point["cluster_membership"] = float(membership)
+
+    return point
+
+
+def _build_cluster_metadata(cluster: dict[str, object]) -> dict[str, object]:
+    metadata = {
+        "cluster_id": str(cluster.get("cluster_id", "")),
+        "cluster_count": cluster.get("cluster_count"),
+        "method": str(cluster.get("method", "")),
+        "random_state": cluster.get("random_state"),
+    }
+
+    for key in ("asset_kind", "label", "params", "schema_version", "unassigned_count"):
+        if key in cluster:
+            metadata[key] = cluster[key]
+
+    if isinstance(cluster.get("groups"), list):
+        metadata["groups"] = cluster["groups"]
+
+    return metadata
+
+
 def _load_selected_json(
     *,
     directory: Path,
@@ -235,9 +278,47 @@ def _list_available_clusters(
                 "cluster_count": data.get("cluster_count"),
                 "method": str(data.get("method", "")),
                 "random_state": data.get("random_state"),
+                **(
+                    {"label": str(data["label"])}
+                    if isinstance(data.get("label"), str)
+                    else {}
+                ),
+                **(
+                    {"params": data["params"]}
+                    if isinstance(data.get("params"), dict)
+                    else {}
+                ),
+                **(
+                    {"unassigned_count": data["unassigned_count"]}
+                    if isinstance(data.get("unassigned_count"), int)
+                    else {}
+                ),
+                **(
+                    {"groups": data["groups"]}
+                    if isinstance(data.get("groups"), list)
+                    else {}
+                ),
             }
         )
-    return sorted(clusters, key=lambda cluster: str(cluster["cluster_id"]))
+    return sorted(
+        clusters,
+        key=lambda cluster: (
+            0 if str(cluster["method"]).lower() == "hdbscan" else 1,
+            _hdbscan_order(str(cluster.get("label", ""))),
+            str(cluster["cluster_id"]),
+        ),
+    )
+
+
+def _hdbscan_order(label: str) -> int:
+    labels = {
+        "HDBSCAN · Fine": 0,
+        "HDBSCAN · Detail": 1,
+        "HDBSCAN · Balanced": 2,
+        "HDBSCAN · Broad": 3,
+    }
+
+    return labels.get(label, 99)
 
 
 def _load_jsonl(path: Path) -> list[dict[str, object]]:

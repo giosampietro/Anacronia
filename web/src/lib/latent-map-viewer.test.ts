@@ -219,6 +219,55 @@ describe("latent map viewer model", () => {
     expect(stateById.img_amber).toBe("cluster");
   });
 
+  it("renders group focus with dark-pink background points and FAISS precedence", () => {
+    const states = createLatentMapRenderState({
+      clusterColorsEnabled: true,
+      clusterFilter: "1",
+      data: latentMapFixture,
+      selectedImageId: "img_saffron",
+    });
+    const stateById = Object.fromEntries(
+      states.map((point) => [point.image_id, point.point_state]),
+    );
+    const colorById = Object.fromEntries(
+      states.map((point) => [point.image_id, point.color]),
+    );
+    const thumbnailPlan = createLatentMapThumbnailRenderPlan({
+      points: states,
+      thumbnailSize: 64,
+    });
+    const pointLayer = createLatentMapPointLayerPlan({
+      points: states,
+      renderMode: "thumbnails",
+      thumbnailPlan,
+    });
+
+    expect(stateById.img_saffron).toBe("selected");
+    expect(stateById.img_cobalt).toBe("neighbor");
+    expect(stateById.img_teal).toBe("group");
+    expect(stateById.img_glass).toBe("group");
+    expect(stateById.img_moss).toBe("group-background");
+    expect(colorById.img_moss).toEqual([190, 45, 112]);
+    expect(
+      thumbnailPlan.thumbnailPoints.map((point) => point.image_id).sort(),
+    ).toEqual([
+      "img_amber",
+      "img_cobalt",
+      "img_glass",
+      "img_saffron",
+      "img_teal",
+      "img_vermilion",
+    ]);
+    expect(pointLayer.pointSize).toBe(3);
+    expect(pointLayer.points.map((point) => point.image_id).sort()).toEqual([
+      "img_lime",
+      "img_moss",
+    ]);
+    expect(new Set(pointLayer.points.map((point) => point.point_state))).toEqual(
+      new Set(["group-background"]),
+    );
+  });
+
   it("keeps selected and FAISS focus thumbnails at the base display size", () => {
     expect(getLatentMapThumbnailStateScaleMultiplier("base")).toBe(1);
     expect(getLatentMapThumbnailStateScaleMultiplier("cluster")).toBe(1);
@@ -323,7 +372,12 @@ describe("latent map viewer model", () => {
         focusedPointLayer.points.map((point) => JSON.stringify(point.color)),
       ),
     ).toEqual(new Set([JSON.stringify([150, 156, 166])]));
-    expect(focusedPointLayer.points).toHaveLength(latentMapFixture.points.length);
+    expect(focusedPointLayer.points.map((point) => point.image_id).sort()).toEqual([
+      "img_glass",
+      "img_lime",
+      "img_moss",
+      "img_teal",
+    ]);
     expect(isLatentMapThumbnailFocusActive(unfocusedState)).toBe(false);
   });
 

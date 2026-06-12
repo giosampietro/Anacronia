@@ -13,6 +13,10 @@ import webbrowser
 
 from anacronia.latent_map_embeddings import DINO_EMBEDDING_RECIPES, embed_latent_map_run
 from anacronia.latent_map_atlas import generate_latent_map_thumbnail_atlas
+from anacronia.latent_map_clusters import (
+    HDBSCAN_PRESETS,
+    build_hdbscan_cluster_results,
+)
 from anacronia.latent_map_faiss import build_faiss_index, query_faiss_neighbors
 from anacronia.latent_map_layout import build_latent_map_layout
 from anacronia.latent_map_method_comparison import export_method_comparison
@@ -439,6 +443,39 @@ def run_latent_map_layout(
     )
 
 
+def run_latent_map_hdbscan_build(
+    *,
+    run_dir: Path,
+    recipe_name: str,
+    preset: str | None = None,
+) -> None:
+    summaries = build_hdbscan_cluster_results(
+        run_dir=run_dir,
+        recipe_name=recipe_name,
+        preset_slug=preset,
+    )
+    print(
+        json.dumps(
+            {
+                "recipe_name": recipe_name,
+                "cluster_results": [
+                    {
+                        "run_id": summary.run_id,
+                        "cluster_id": summary.cluster_id,
+                        "label": summary.label,
+                        "method": summary.method,
+                        "cluster_count": summary.cluster_count,
+                        "unassigned_count": summary.unassigned_count,
+                        "cluster_path": str(summary.cluster_path),
+                    }
+                    for summary in summaries
+                ],
+            }
+        ),
+        flush=True,
+    )
+
+
 def run_latent_map_atlas(
     *,
     run_dir: Path,
@@ -522,7 +559,7 @@ def run_latent_map_result_export(
     run_dir: Path,
     recipe_name: str,
     selected_image_ids: list[str] | None = None,
-    selected_cluster_ids: list[int] | None = None,
+    selected_cluster_ids: list[str] | None = None,
     selected_neighbor_image_ids: list[str] | None = None,
     faiss_duplicate_threshold: float = 0.98,
 ) -> None:
@@ -613,6 +650,18 @@ def main() -> None:
     latent_map_layout_parser.add_argument("--min-dist", type=float, default=0.05)
     latent_map_layout_parser.add_argument("--cluster-count", type=int, default=12)
     latent_map_layout_parser.add_argument("--random-state", type=int, default=42)
+    latent_map_hdbscan_parser = latent_map_subparsers.add_parser("hdbscan-build")
+    latent_map_hdbscan_parser.add_argument("--run-dir", required=True, type=Path)
+    latent_map_hdbscan_parser.add_argument(
+        "--recipe",
+        choices=sorted(DINO_EMBEDDING_RECIPES),
+        default="dinov3_vits_256",
+    )
+    latent_map_hdbscan_parser.add_argument(
+        "--preset",
+        choices=["all", *(preset.slug for preset in HDBSCAN_PRESETS)],
+        default="all",
+    )
     latent_map_atlas_parser = latent_map_subparsers.add_parser("atlas")
     latent_map_atlas_parser.add_argument("--run-dir", required=True, type=Path)
     latent_map_atlas_parser.add_argument(
@@ -661,7 +710,6 @@ def main() -> None:
         action="append",
         default=[],
         dest="selected_cluster_ids",
-        type=int,
     )
     latent_map_result_export_parser.add_argument(
         "--neighbor-image-id",
@@ -733,6 +781,14 @@ def main() -> None:
             min_dist=args.min_dist,
             cluster_count=args.cluster_count,
             random_state=args.random_state,
+        )
+        return
+
+    if args.command == "latent-map" and args.latent_map_command == "hdbscan-build":
+        run_latent_map_hdbscan_build(
+            run_dir=args.run_dir,
+            recipe_name=args.recipe,
+            preset=args.preset,
         )
         return
 

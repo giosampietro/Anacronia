@@ -7,6 +7,12 @@ RUN_ID="20260609T130049Z-mvp1-j-shoot-20260609"
 RUN_DIR="/private/tmp/anacronia-latent-map-runs/$RUN_ID"
 VIEWER_DATA="$RUN_DIR/viewer/map-data.json"
 WORKTREE_DATA_ROOT="/private/tmp/anacronia-latent-map-worktree-data"
+HDBSCAN_CLUSTER_IDS=(
+  hdbscan_fine_mcs10_ms5_eom
+  hdbscan_detail_mcs15_ms5_leaf
+  hdbscan_balanced_mcs25_ms10_eom
+  hdbscan_broad_mcs50_ms15_eom
+)
 
 finish() {
   status=$?
@@ -88,6 +94,24 @@ for recipe in dinov3_vits_256 dinov3_vits_384; do
       --top-k 50
   else
     echo "Found FAISS top-50 neighbors for ${recipe}"
+  fi
+
+  hdbscan_missing=0
+  for cluster_id in "${HDBSCAN_CLUSTER_IDS[@]}"; do
+    if [ ! -f "$RUN_DIR/clusters/${recipe}_${cluster_id}.json" ]; then
+      hdbscan_missing=1
+      break
+    fi
+  done
+
+  if [ "$hdbscan_missing" -eq 1 ]; then
+    echo "Generating HDBSCAN presets for ${recipe}"
+    .venv/bin/anacronia latent-map hdbscan-build \
+      --run-dir "$RUN_DIR" \
+      --recipe "$recipe" \
+      --preset all
+  else
+    echo "Found HDBSCAN presets for ${recipe}"
   fi
 done
 

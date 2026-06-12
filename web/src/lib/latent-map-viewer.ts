@@ -9,6 +9,8 @@ export type LatentMapPoint = {
   x: number;
   y: number;
   cluster_id: number;
+  cluster_group_key?: string;
+  cluster_membership?: number | null;
   thumbnail_path: string;
   preview_path?: string;
   source_path?: string;
@@ -28,6 +30,7 @@ export type LatentMapViewerData = {
   embedding_recipe: string;
   layout_id: string;
   cluster_id: string;
+  cluster_result?: LatentMapAvailableCluster;
   source_folder: string;
   neighbor_lookup_path?: string;
   thumbnail_atlas?: LatentMapGeneratedThumbnailAtlas;
@@ -50,10 +53,24 @@ export type LatentMapAvailableRecipe = {
 };
 
 export type LatentMapAvailableCluster = {
+  asset_kind?: string;
   cluster_count: number | null;
   cluster_id: string;
+  groups?: LatentMapClusterGroup[];
+  label?: string;
   method: string;
+  params?: Record<string, unknown>;
   random_state: number | null;
+  schema_version?: number;
+  unassigned_count?: number | null;
+};
+
+export type LatentMapClusterGroup = {
+  cluster_id: number;
+  count: number;
+  group_key: string;
+  kind: "cluster" | "unassigned";
+  label: string;
 };
 
 export type LatentMapFittedPoint = LatentMapPoint & {
@@ -64,6 +81,8 @@ export type LatentMapFittedPoint = LatentMapPoint & {
 export type LatentMapPointState =
   | "base"
   | "cluster"
+  | "group"
+  | "group-background"
   | "neighbor"
   | "opposite"
   | "selected";
@@ -286,6 +305,7 @@ const CLUSTER_COLORS: [number, number, number][] = [
 ];
 
 const BASE_POINT_COLOR: [number, number, number] = [150, 156, 166];
+const GROUP_BACKGROUND_POINT_COLOR: [number, number, number] = [190, 45, 112];
 const SELECTED_POINT_COLOR: [number, number, number] = [250, 250, 246];
 const NEIGHBOR_POINT_COLOR: [number, number, number] = [255, 167, 72];
 const OPPOSITE_POINT_COLOR: [number, number, number] = [95, 190, 255];
@@ -294,6 +314,10 @@ export function getLatentMapClusterColor(
   clusterId: number,
 ): [number, number, number] {
   return CLUSTER_COLORS[Math.abs(clusterId) % CLUSTER_COLORS.length];
+}
+
+export function getLatentMapPointGroupKey(point: LatentMapPoint): string {
+  return point.cluster_group_key ?? String(point.cluster_id);
 }
 
 export function createLatentMapStats(data: LatentMapViewerData): {
@@ -752,6 +776,7 @@ export function fitLatentMapPoints(
 
 export function createLatentMapRenderState({
   clusterColorsEnabled,
+  clusterFilter = "all",
   data,
   faissNeighborCount = DEFAULT_LATENT_MAP_FAISS_NEIGHBOR_COUNT,
   faissRelationMode = DEFAULT_LATENT_MAP_FAISS_RELATION_MODE,
@@ -760,6 +785,7 @@ export function createLatentMapRenderState({
   selectedImageId,
 }: {
   clusterColorsEnabled: boolean;
+  clusterFilter?: string;
   data: LatentMapViewerData;
   faissNeighborCount?: number;
   faissRelationMode?: LatentMapFaissRelationMode;
@@ -785,6 +811,7 @@ export function createLatentMapRenderState({
           oppositesByImageId,
           faissNeighborCount,
         );
+  const hasGroupFocus = clusterFilter !== "all";
 
   return fitLatentMapPoints(data.points).map((point) => {
     if (point.image_id === selectedImageId) {
@@ -808,6 +835,24 @@ export function createLatentMapRenderState({
         ...point,
         color: OPPOSITE_POINT_COLOR,
         point_state: "opposite",
+      };
+    }
+
+    if (hasGroupFocus) {
+      if (getLatentMapPointGroupKey(point) === clusterFilter) {
+        return {
+          ...point,
+          color: clusterColorsEnabled
+            ? getLatentMapClusterColor(point.cluster_id)
+            : BASE_POINT_COLOR,
+          point_state: "group",
+        };
+      }
+
+      return {
+        ...point,
+        color: GROUP_BACKGROUND_POINT_COLOR,
+        point_state: "group-background",
       };
     }
 
@@ -860,11 +905,17 @@ export function createLatentMapPointLayerPlan({
 
   return {
     pointSize: LATENT_MAP_FOCUS_BACKGROUND_POINT_SIZE,
-    points: points.map((point) => ({
-      ...point,
-      color: BASE_POINT_COLOR,
-      point_state: "base",
-    })),
+    points: points
+      .filter((point) => !isFocusThumbnail(point))
+      .map((point) =>
+        point.point_state === "group-background"
+          ? point
+          : {
+              ...point,
+              color: BASE_POINT_COLOR,
+              point_state: "base",
+            },
+      ),
     visible: true,
   };
 }
@@ -879,8 +930,11 @@ function getThumbnailPriority(point: LatentMapRenderablePoint): number {
   if (point.point_state === "opposite") {
     return 2;
   }
+  if (point.point_state === "group") {
+    return 3;
+  }
 
-  return 3;
+  return 4;
 }
 
 function getFocusThumbnailPoints(
@@ -964,7 +1018,8 @@ function isFocusThumbnail(point: LatentMapRenderablePoint) {
   return (
     point.point_state === "selected" ||
     point.point_state === "neighbor" ||
-    point.point_state === "opposite"
+    point.point_state === "opposite" ||
+    point.point_state === "group"
   );
 }
 

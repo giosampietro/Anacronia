@@ -18,6 +18,12 @@ PID_FILE="$PID_DIR/latent-map-ui-$APP_UI_PORT.pid"
 LOG_FILE="$LOG_DIR/latent-map-ui-$APP_UI_PORT.log"
 NEXT_BIN="$WORKTREE_ROOT/web/node_modules/next/dist/bin/next"
 SERVER_PID=""
+HDBSCAN_CLUSTER_IDS=(
+  hdbscan_fine_mcs10_ms5_eom
+  hdbscan_detail_mcs15_ms5_leaf
+  hdbscan_balanced_mcs25_ms10_eom
+  hdbscan_broad_mcs50_ms15_eom
+)
 
 finish() {
   status=$?
@@ -120,6 +126,10 @@ for recipe in dinov3_vits_256 dinov3_vits_384; do
 
   for n_neighbors in 2 6 10 15 30 50; do
     require_file "$RUN_DIR/layouts/${recipe}_umap_n${n_neighbors}_mindist0p1_seed42.json" "${recipe} UMAP n=${n_neighbors} min=0.1 layout" || missing=1
+  done
+
+  for cluster_id in "${HDBSCAN_CLUSTER_IDS[@]}"; do
+    require_file "$RUN_DIR/clusters/${recipe}_${cluster_id}.json" "${recipe} ${cluster_id} cluster result" || missing=1
   done
 done
 

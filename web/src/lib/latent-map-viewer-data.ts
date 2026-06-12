@@ -1,4 +1,6 @@
 import type {
+  LatentMapAvailableCluster,
+  LatentMapClusterGroup,
   LatentMapGeneratedThumbnailAtlas,
   LatentMapNeighbor,
   LatentMapPoint,
@@ -12,11 +14,29 @@ export type LatentMapRelationResponse = {
 
 export type ExportedLatentMapViewerData = {
   available_clusters?: {
+    asset_kind?: unknown;
     cluster_count?: unknown;
     cluster_id?: unknown;
+    groups?: unknown;
+    label?: unknown;
     method?: unknown;
+    params?: unknown;
     random_state?: unknown;
+    schema_version?: unknown;
+    unassigned_count?: unknown;
   }[];
+  cluster_result?: {
+    asset_kind?: unknown;
+    cluster_count?: unknown;
+    cluster_id?: unknown;
+    groups?: unknown;
+    label?: unknown;
+    method?: unknown;
+    params?: unknown;
+    random_state?: unknown;
+    schema_version?: unknown;
+    unassigned_count?: unknown;
+  };
   available_layouts?: {
     layout_id?: unknown;
     method?: unknown;
@@ -40,6 +60,9 @@ export type ExportedLatentMapViewerData = {
   thumbnail_atlas_manifest_path?: string;
   thumbnail_atlas_manifest_paths?: Record<string, string>;
 };
+
+type ExportedLatentMapCluster =
+  NonNullable<ExportedLatentMapViewerData["available_clusters"]>[number];
 
 function createResourceUrl({
   apiPath,
@@ -74,6 +97,7 @@ export function normalizeExportedLatentMapViewerData({
     singleAtlas: thumbnailAtlas,
     thumbnailApiPath,
   });
+  const clusterResult = normalizeAvailableCluster(rawData.cluster_result);
 
   return {
     schema_version: 1,
@@ -84,6 +108,7 @@ export function normalizeExportedLatentMapViewerData({
     embedding_recipe: String(rawData.recipe_name ?? "unknown_recipe"),
     layout_id: String(rawData.layout_id ?? "unknown_layout"),
     cluster_id: String(rawData.cluster_id ?? "unknown_cluster"),
+    ...(clusterResult ? { cluster_result: clusterResult } : {}),
     source_folder: sourceFolder,
     ...(typeof rawData.neighbor_index_path === "string" &&
     rawData.neighbor_index_path.length > 0
@@ -105,6 +130,13 @@ export function normalizeExportedLatentMapViewerData({
         x: Number(point.x ?? 0),
         y: Number(point.y ?? 0),
         cluster_id: Number(point.cluster_id ?? 0),
+        ...(typeof point.cluster_group_key === "string" &&
+        point.cluster_group_key.length > 0
+          ? { cluster_group_key: point.cluster_group_key }
+          : {}),
+        ...(typeof point.cluster_membership === "number"
+          ? { cluster_membership: point.cluster_membership }
+          : {}),
         thumbnail_path: createResourceUrl({
           apiPath: thumbnailApiPath,
           resourcePath: thumbnailPath,
@@ -210,19 +242,77 @@ function normalizeAvailableClusters(
   clusters: ExportedLatentMapViewerData["available_clusters"],
 ): LatentMapViewerData["available_clusters"] {
   return Array.isArray(clusters)
-    ? clusters.map((cluster) => ({
-        cluster_count:
-          typeof cluster.cluster_count === "number"
-            ? cluster.cluster_count
-            : null,
-        cluster_id: String(cluster.cluster_id ?? ""),
-        method: String(cluster.method ?? ""),
-        random_state:
-          typeof cluster.random_state === "number"
-            ? cluster.random_state
-            : null,
-      }))
+    ? clusters
+        .map(normalizeAvailableCluster)
+        .filter(
+          (cluster): cluster is LatentMapAvailableCluster => cluster !== undefined,
+        )
     : [];
+}
+
+function normalizeAvailableCluster(
+  cluster:
+    | ExportedLatentMapCluster
+    | ExportedLatentMapViewerData["cluster_result"]
+    | undefined,
+): LatentMapAvailableCluster | undefined {
+  if (!cluster) {
+    return undefined;
+  }
+
+  return {
+    ...(typeof cluster.asset_kind === "string" && cluster.asset_kind.length > 0
+      ? { asset_kind: cluster.asset_kind }
+      : {}),
+    cluster_count:
+      typeof cluster.cluster_count === "number" ? cluster.cluster_count : null,
+    cluster_id: String(cluster.cluster_id ?? ""),
+    ...(Array.isArray(cluster.groups)
+      ? { groups: normalizeClusterGroups(cluster.groups) }
+      : {}),
+    ...(typeof cluster.label === "string" && cluster.label.length > 0
+      ? { label: cluster.label }
+      : {}),
+    method: String(cluster.method ?? ""),
+    ...(cluster.params &&
+    typeof cluster.params === "object" &&
+    !Array.isArray(cluster.params)
+      ? { params: cluster.params as Record<string, unknown> }
+      : {}),
+    random_state:
+      typeof cluster.random_state === "number" ? cluster.random_state : null,
+    ...(typeof cluster.schema_version === "number"
+      ? { schema_version: cluster.schema_version }
+      : {}),
+    ...(typeof cluster.unassigned_count === "number"
+      ? { unassigned_count: cluster.unassigned_count }
+      : {}),
+  };
+}
+
+function normalizeClusterGroups(groups: unknown[]): LatentMapClusterGroup[] {
+  return groups
+    .filter((group): group is Record<string, unknown> => {
+      return Boolean(group && typeof group === "object" && !Array.isArray(group));
+    })
+    .map((group) => {
+      const kind: LatentMapClusterGroup["kind"] =
+        group.kind === "unassigned" ? "unassigned" : "cluster";
+
+      return {
+        cluster_id: Number(group.cluster_id ?? 0),
+        count: Number(group.count ?? 0),
+        group_key: String(group.group_key ?? group.cluster_id ?? ""),
+        kind,
+        label: String(
+          group.label ??
+            (kind === "unassigned"
+              ? "Unassigned"
+              : `Group ${String(group.cluster_id ?? "")}`),
+        ),
+      };
+    })
+    .filter((group) => group.group_key.length > 0);
 }
 
 function normalizeThumbnailAtlas({

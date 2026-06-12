@@ -115,7 +115,7 @@ def test_exports_method_comparison_without_overwriting_analysis_results(tmp_path
     ]
     assert data["hdbscan"] == {
         "status": "deferred",
-        "reason": "HDBSCAN is not installed or not accepted for MVP2 runtime cost.",
+        "reason": "No precomputed HDBSCAN cluster artifacts found.",
     }
     assert sorted(path.name for path in (run.run_dir / "layouts").iterdir()) == layout_paths_before
     assert summary.embedding_count == 2
@@ -124,3 +124,49 @@ def test_exports_method_comparison_without_overwriting_analysis_results(tmp_path
     report = (run.run_dir / "report.md").read_text(encoding="utf-8")
     assert "## Method Comparison" in report
     assert "HDBSCAN: deferred" in report
+
+
+def test_exports_available_hdbscan_presets_in_method_comparison(tmp_path):
+    run = create_comparison_run(tmp_path)
+    (run.run_dir / "clusters" / "dinov3_vits_256_hdbscan_balanced.json").write_text(
+        json.dumps(
+            {
+                "recipe_name": "dinov3_vits_256",
+                "cluster_id": "hdbscan_balanced_mcs25_ms10_eom",
+                "label": "HDBSCAN · Balanced",
+                "method": "hdbscan",
+                "cluster_count": 3,
+                "unassigned_count": 2,
+                "params": {
+                    "preset": "balanced",
+                    "min_cluster_size": 25,
+                    "min_samples": 10,
+                },
+                "points": [{"image_id": "img-a", "cluster_id": 0}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    summary = export_method_comparison(run_dir=run.run_dir)
+
+    data = json.loads(summary.comparison_path.read_text(encoding="utf-8"))
+    assert summary.hdbscan_status == "available"
+    assert data["hdbscan"] == {
+        "status": "available",
+        "preset_count": 1,
+        "presets": [
+            {
+                "cluster_id": "hdbscan_balanced_mcs25_ms10_eom",
+                "label": "HDBSCAN · Balanced",
+                "recipe_name": "dinov3_vits_256",
+                "cluster_count": 3,
+                "unassigned_count": 2,
+                "params": {
+                    "preset": "balanced",
+                    "min_cluster_size": 25,
+                    "min_samples": 10,
+                },
+            }
+        ],
+    }

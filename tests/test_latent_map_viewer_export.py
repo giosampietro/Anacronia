@@ -121,6 +121,7 @@ def test_exports_compact_viewer_data_with_separate_neighbor_index(tmp_path):
         "x": 1.0,
         "y": 2.0,
         "cluster_id": 0,
+        "cluster_group_key": "0",
         "thumbnail_path": "thumbnails/img-a.jpg",
         "preview_path": "previews/img-a.jpg",
         "relative_path": "a.jpg",
@@ -253,6 +254,82 @@ def test_exports_selected_comparison_layout_and_cluster_metadata(tmp_path):
             "random_state": None,
         },
     ]
+
+
+def test_exports_hdbscan_group_metadata_to_viewer_data(tmp_path):
+    run = create_viewer_run(tmp_path)
+    (run.run_dir / "clusters" / "dinov3_vits_256_hdbscan_balanced.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "asset_kind": "latent-map-cluster-result",
+                "run_id": run.run_id,
+                "recipe_name": "dinov3_vits_256",
+                "cluster_id": "hdbscan_balanced_mcs25_ms10_eom",
+                "label": "HDBSCAN · Balanced",
+                "method": "hdbscan",
+                "cluster_count": 1,
+                "unassigned_count": 1,
+                "params": {
+                    "preset": "balanced",
+                    "min_cluster_size": 25,
+                    "min_samples": 10,
+                    "cluster_selection_method": "eom",
+                    "metric": "euclidean",
+                    "vector_normalization": "l2",
+                },
+                "groups": [
+                    {
+                        "group_key": "unassigned",
+                        "cluster_id": -1,
+                        "label": "Unassigned",
+                        "count": 1,
+                        "kind": "unassigned",
+                    },
+                    {
+                        "group_key": "cluster:0",
+                        "cluster_id": 0,
+                        "label": "Group 0",
+                        "count": 1,
+                        "kind": "cluster",
+                    },
+                ],
+                "points": [
+                    {
+                        "image_id": "img-a",
+                        "cluster_id": 0,
+                        "group_key": "cluster:0",
+                        "membership": 0.9,
+                    },
+                    {
+                        "image_id": "img-b",
+                        "cluster_id": -1,
+                        "group_key": "unassigned",
+                        "membership": 0.0,
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    summary = export_viewer_data(
+        run_dir=run.run_dir,
+        recipe_name="dinov3_vits_256",
+        cluster_id="hdbscan_balanced_mcs25_ms10_eom",
+    )
+
+    data = json.loads(summary.viewer_data_path.read_text(encoding="utf-8"))
+    assert data["cluster_result"]["label"] == "HDBSCAN · Balanced"
+    assert data["cluster_result"]["unassigned_count"] == 1
+    assert data["cluster_result"]["groups"][0]["group_key"] == "unassigned"
+    assert data["available_clusters"][0]["cluster_id"] == (
+        "hdbscan_balanced_mcs25_ms10_eom"
+    )
+    assert data["points"][0]["cluster_group_key"] == "cluster:0"
+    assert data["points"][0]["cluster_membership"] == 0.9
+    assert data["points"][1]["cluster_id"] == -1
+    assert data["points"][1]["cluster_group_key"] == "unassigned"
 
 
 def test_export_rejects_missing_neighbor_references(tmp_path):

@@ -15,6 +15,26 @@ describe("normalizeExportedLatentMapViewerData", () => {
         recipe_name: "dinov3_vits_256",
         layout_id: "layout-1",
         cluster_id: "cluster-1",
+        cluster_result: {
+          asset_kind: "latent-map-cluster-result",
+          cluster_id: "cluster-1",
+          cluster_count: 4,
+          groups: [
+            {
+              cluster_id: 4,
+              count: 1,
+              group_key: "cluster:4",
+              kind: "cluster",
+              label: "Group 4",
+            },
+          ],
+          label: "HDBSCAN · Balanced",
+          method: "hdbscan",
+          params: { preset: "balanced" },
+          random_state: null,
+          schema_version: 1,
+          unassigned_count: 0,
+        },
         available_recipes: [
           {
             family: "dinov3",
@@ -44,6 +64,8 @@ describe("normalizeExportedLatentMapViewerData", () => {
             x: 1.25,
             y: -0.5,
             cluster_id: 4,
+            cluster_group_key: "cluster:4",
+            cluster_membership: 0.91,
             thumbnail_path: "thumbnails/img_1.jpg",
             preview_path: "previews/img_1.jpg",
             source_path: "/source/images/original.jpg",
@@ -62,6 +84,26 @@ describe("normalizeExportedLatentMapViewerData", () => {
       embedding_recipe: "dinov3_vits_256",
       layout_id: "layout-1",
       cluster_id: "cluster-1",
+      cluster_result: {
+        asset_kind: "latent-map-cluster-result",
+        cluster_id: "cluster-1",
+        cluster_count: 4,
+        groups: [
+          {
+            cluster_id: 4,
+            count: 1,
+            group_key: "cluster:4",
+            kind: "cluster",
+            label: "Group 4",
+          },
+        ],
+        label: "HDBSCAN · Balanced",
+        method: "hdbscan",
+        params: { preset: "balanced" },
+        random_state: null,
+        schema_version: 1,
+        unassigned_count: 0,
+      },
       source_folder: "/source/images",
       available_recipes: [
         {
@@ -92,6 +134,8 @@ describe("normalizeExportedLatentMapViewerData", () => {
       thumbnail_path:
         "/api/latent-map/thumbnails?path=thumbnails%2Fimg_1.jpg",
       preview_path: "/api/latent-map/thumbnails?path=previews%2Fimg_1.jpg",
+      cluster_group_key: "cluster:4",
+      cluster_membership: 0.91,
       source_path: "",
       relative_path: "original.jpg",
     });
