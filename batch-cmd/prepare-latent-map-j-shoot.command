@@ -13,6 +13,12 @@ HDBSCAN_CLUSTER_IDS=(
   hdbscan_balanced_mcs25_ms10_eom
   hdbscan_broad_mcs50_ms15_eom
 )
+GRAPH_COMMUNITY_CLUSTER_IDS=(
+  graph_communities_broad_k12_res0p7_min2
+  graph_communities_balanced_k8_res0p6_min2
+  graph_communities_detail_k6_res0p65_min2
+  graph_communities_fine_k3_res0p7_min2
+)
 
 finish() {
   status=$?
@@ -112,6 +118,24 @@ for recipe in dinov3_vits_256 dinov3_vits_384; do
       --preset all
   else
     echo "Found HDBSCAN presets for ${recipe}"
+  fi
+
+  graph_communities_missing=0
+  for cluster_id in "${GRAPH_COMMUNITY_CLUSTER_IDS[@]}"; do
+    if [ ! -f "$RUN_DIR/clusters/${recipe}_${cluster_id}.json" ]; then
+      graph_communities_missing=1
+      break
+    fi
+  done
+
+  if [ "$graph_communities_missing" -eq 1 ]; then
+    echo "Generating graph-community presets for ${recipe}"
+    .venv/bin/anacronia latent-map graph-communities-build \
+      --run-dir "$RUN_DIR" \
+      --recipe "$recipe" \
+      --preset all
+  else
+    echo "Found graph-community presets for ${recipe}"
   fi
 done
 

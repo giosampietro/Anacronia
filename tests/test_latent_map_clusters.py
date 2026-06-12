@@ -4,8 +4,11 @@ from datetime import datetime, timezone
 import numpy as np
 
 from anacronia.latent_map_clusters import (
+    GRAPH_COMMUNITY_PRESETS,
     HDBSCAN_PRESETS,
+    build_graph_community_cluster_result,
     build_hdbscan_cluster_result,
+    get_graph_community_presets,
     get_hdbscan_presets,
 )
 from anacronia.latent_map_runs import initialize_latent_map_run
@@ -68,6 +71,103 @@ def test_hdbscan_presets_are_ordered_for_the_ui():
         "broad",
     ]
     assert get_hdbscan_presets("balanced")[0].label == "HDBSCAN · Balanced"
+
+
+def test_builds_graph_community_cluster_result_from_faiss_neighbors(tmp_path):
+    run = create_cluster_run(tmp_path)
+    (run.run_dir / "indexes" / "dinov3_vits_256_neighbors.jsonl").write_text(
+        "\n".join(
+            json.dumps(row)
+            for row in [
+                {
+                    "image_id": "img-0",
+                    "neighbor_rank": 1,
+                    "neighbor_image_id": "img-1",
+                    "score": 0.94,
+                },
+                {
+                    "image_id": "img-1",
+                    "neighbor_rank": 1,
+                    "neighbor_image_id": "img-0",
+                    "score": 0.94,
+                },
+                {
+                    "image_id": "img-1",
+                    "neighbor_rank": 2,
+                    "neighbor_image_id": "img-2",
+                    "score": 0.82,
+                },
+                {
+                    "image_id": "img-2",
+                    "neighbor_rank": 1,
+                    "neighbor_image_id": "img-1",
+                    "score": 0.82,
+                },
+                {
+                    "image_id": "img-3",
+                    "neighbor_rank": 1,
+                    "neighbor_image_id": "img-4",
+                    "score": 0.91,
+                },
+                {
+                    "image_id": "img-4",
+                    "neighbor_rank": 1,
+                    "neighbor_image_id": "img-3",
+                    "score": 0.91,
+                },
+                {
+                    "image_id": "img-5",
+                    "neighbor_rank": 1,
+                    "neighbor_image_id": "img-0",
+                    "score": 0.62,
+                },
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    summary = build_graph_community_cluster_result(
+        run_dir=run.run_dir,
+        recipe_name="dinov3_vits_256",
+        preset=get_graph_community_presets("balanced")[0],
+    )
+
+    payload = json.loads(summary.cluster_path.read_text(encoding="utf-8"))
+    assert [preset.slug for preset in GRAPH_COMMUNITY_PRESETS] == [
+        "broad",
+        "balanced",
+        "detail",
+        "fine",
+    ]
+    assert summary.cluster_id == "graph_communities_balanced_k8_res0p6_min2"
+    assert payload["asset_kind"] == "latent-map-cluster-result"
+    assert payload["method"] == "graph_communities"
+    assert payload["label"] == "Graph communities · Balanced"
+    assert payload["cluster_count"] == 2
+    assert payload["unassigned_count"] == 0
+    assert payload["params"] == {
+        "preset": "balanced",
+        "k": 8,
+        "min_score": 0.0,
+        "min_group_size": 2,
+        "resolution": 0.6,
+        "max_iterations": 30,
+        "neighbor_source": "faiss",
+        "algorithm": "weighted_label_propagation",
+    }
+    assert [group["group_key"] for group in payload["groups"]] == [
+        "cluster:0",
+        "cluster:1",
+    ]
+    assert payload["points"] == [
+        {"image_id": "img-0", "cluster_id": 0, "group_key": "cluster:0"},
+        {"image_id": "img-1", "cluster_id": 0, "group_key": "cluster:0"},
+        {"image_id": "img-2", "cluster_id": 0, "group_key": "cluster:0"},
+        {"image_id": "img-3", "cluster_id": 1, "group_key": "cluster:1"},
+        {"image_id": "img-4", "cluster_id": 1, "group_key": "cluster:1"},
+        {"image_id": "img-5", "cluster_id": 0, "group_key": "cluster:0"},
+    ]
 
 
 def test_builds_hdbscan_cluster_result_with_groups_and_membership(tmp_path):

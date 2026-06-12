@@ -12,6 +12,9 @@ HDBSCAN_METRIC = "euclidean"
 HDBSCAN_VECTOR_NORMALIZATION = "l2"
 HDBSCAN_UNASSIGNED_CLUSTER_ID = -1
 HDBSCAN_UNASSIGNED_GROUP_KEY = "unassigned"
+GRAPH_COMMUNITY_METHOD = "graph_communities"
+GRAPH_COMMUNITY_ALGORITHM = "weighted_label_propagation"
+GRAPH_COMMUNITY_NEIGHBOR_SOURCE = "faiss"
 
 
 @dataclass(frozen=True)
@@ -60,6 +63,65 @@ HDBSCAN_PRESETS = (
         cluster_selection_method="eom",
     ),
 )
+
+
+@dataclass(frozen=True)
+class GraphCommunityPreset:
+    slug: str
+    label: str
+    k: int
+    min_score: float
+    min_group_size: int
+    resolution: float
+    max_iterations: int = 30
+
+    @property
+    def cluster_id(self) -> str:
+        return (
+            f"graph_communities_{self.slug}_k{self.k}"
+            f"_res{_format_score_for_id(self.resolution)}"
+            f"_min{self.min_group_size}"
+        )
+
+
+GRAPH_COMMUNITY_PRESETS = (
+    GraphCommunityPreset(
+        slug="broad",
+        label="Graph communities · Broad",
+        k=12,
+        min_score=0.0,
+        min_group_size=2,
+        resolution=0.70,
+    ),
+    GraphCommunityPreset(
+        slug="balanced",
+        label="Graph communities · Balanced",
+        k=8,
+        min_score=0.0,
+        min_group_size=2,
+        resolution=0.60,
+    ),
+    GraphCommunityPreset(
+        slug="detail",
+        label="Graph communities · Detail",
+        k=6,
+        min_score=0.0,
+        min_group_size=2,
+        resolution=0.65,
+    ),
+    GraphCommunityPreset(
+        slug="fine",
+        label="Graph communities · Fine",
+        k=3,
+        min_score=0.0,
+        min_group_size=2,
+        resolution=0.70,
+    ),
+)
+
+
+def _format_score_for_id(score: float) -> str:
+    return f"{score:g}".replace(".", "p")
 
 
 @dataclass(frozen=True)
@@ -191,6 +253,112 @@ def build_hdbscan_cluster_results(
     ]
 
 
+def build_graph_community_cluster_result(
+    *,
+    run_dir: Path,
+    recipe_name: str,
+    preset: GraphCommunityPreset,
+) -> LatentMapClusterSummary:
+    resolved_run_dir = run_dir.expanduser().resolve()
+    run_id = _read_run_id(resolved_run_dir)
+    manifest_rows = _load_manifest_rows(resolved_run_dir)
+    image_ids = [str(row["image_id"]) for row in manifest_rows]
+    neighbor_rows = _load_faiss_neighbor_rows(
+        run_dir=resolved_run_dir,
+        recipe_name=recipe_name,
+    )
+    labels = _cluster_faiss_neighbor_graph(
+        image_ids=image_ids,
+        neighbor_rows=neighbor_rows,
+        preset=preset,
+    )
+    cluster_labels = sorted(
+        {
+            label
+            for label in labels.values()
+            if label != HDBSCAN_UNASSIGNED_CLUSTER_ID
+        }
+    )
+    unassigned_count = sum(
+        1 for label in labels.values() if label == HDBSCAN_UNASSIGNED_CLUSTER_ID
+    )
+    points = [
+        _build_cluster_point(
+            image_id=image_id,
+            label=labels[image_id],
+            membership=None,
+        )
+        for image_id in image_ids
+    ]
+    clusters_dir = resolved_run_dir / "clusters"
+    clusters_dir.mkdir(parents=True, exist_ok=True)
+    cluster_path = clusters_dir / f"{recipe_name}_{preset.cluster_id}.json"
+    payload = {
+        "schema_version": 1,
+        "asset_kind": "latent-map-cluster-result",
+        "run_id": run_id,
+        "recipe_name": recipe_name,
+        "cluster_id": preset.cluster_id,
+        "label": preset.label,
+        "method": GRAPH_COMMUNITY_METHOD,
+        "cluster_count": len(cluster_labels),
+        "unassigned_count": unassigned_count,
+        "params": {
+            "preset": preset.slug,
+            "k": preset.k,
+            "min_score": preset.min_score,
+            "min_group_size": preset.min_group_size,
+            "resolution": preset.resolution,
+            "max_iterations": preset.max_iterations,
+            "neighbor_source": GRAPH_COMMUNITY_NEIGHBOR_SOURCE,
+            "algorithm": GRAPH_COMMUNITY_ALGORITHM,
+        },
+        "groups": _build_group_summaries(points),
+        "points": points,
+    }
+
+    cluster_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    _append_cluster_report(
+        run_dir=resolved_run_dir,
+        recipe_name=recipe_name,
+        cluster_id=preset.cluster_id,
+        label=preset.label,
+        cluster_count=len(cluster_labels),
+        unassigned_count=unassigned_count,
+        cluster_path=cluster_path,
+        heading="Graph Community Clusters",
+    )
+
+    return LatentMapClusterSummary(
+        run_id=run_id,
+        recipe_name=recipe_name,
+        cluster_id=preset.cluster_id,
+        label=preset.label,
+        method=GRAPH_COMMUNITY_METHOD,
+        cluster_count=len(cluster_labels),
+        unassigned_count=unassigned_count,
+        cluster_path=cluster_path,
+    )
+
+
+def build_graph_community_cluster_results(
+    *,
+    run_dir: Path,
+    recipe_name: str,
+    preset_slug: str | None = None,
+) -> list[LatentMapClusterSummary]:
+    presets = get_graph_community_presets(preset_slug)
+
+    return [
+        build_graph_community_cluster_result(
+            run_dir=run_dir,
+            recipe_name=recipe_name,
+            preset=preset,
+        )
+        for preset in presets
+    ]
+
+
 def get_hdbscan_presets(preset_slug: str | None = None) -> tuple[HdbscanPreset, ...]:
     if preset_slug in {None, "all"}:
         return HDBSCAN_PRESETS
@@ -201,6 +369,22 @@ def get_hdbscan_presets(preset_slug: str | None = None) -> tuple[HdbscanPreset, 
 
     valid = ", ".join(["all", *(preset.slug for preset in HDBSCAN_PRESETS)])
     raise ValueError(f"Unknown HDBSCAN preset: {preset_slug}. Expected one of: {valid}")
+
+
+def get_graph_community_presets(
+    preset_slug: str | None = None,
+) -> tuple[GraphCommunityPreset, ...]:
+    if preset_slug in {None, "all"}:
+        return GRAPH_COMMUNITY_PRESETS
+
+    for preset in GRAPH_COMMUNITY_PRESETS:
+        if preset.slug == preset_slug:
+            return (preset,)
+
+    valid = ", ".join(["all", *(preset.slug for preset in GRAPH_COMMUNITY_PRESETS)])
+    raise ValueError(
+        f"Unknown graph-community preset: {preset_slug}. Expected one of: {valid}"
+    )
 
 
 def _build_cluster_point(
@@ -286,6 +470,103 @@ def _normalize_vectors(vectors: np.ndarray) -> np.ndarray:
     return (vectors / safe_norms).astype(np.float32)
 
 
+def _cluster_faiss_neighbor_graph(
+    *,
+    image_ids: list[str],
+    neighbor_rows: list[dict[str, object]],
+    preset: GraphCommunityPreset,
+) -> dict[str, int]:
+    known_image_ids = set(image_ids)
+    adjacency = _build_weighted_adjacency(
+        known_image_ids=known_image_ids,
+        neighbor_rows=neighbor_rows,
+        preset=preset,
+    )
+    image_order = {image_id: index for index, image_id in enumerate(image_ids)}
+    labels = {image_id: image_id for image_id in image_ids}
+
+    for _ in range(preset.max_iterations):
+        changed = False
+        for image_id in image_ids:
+            label_scores: dict[str, float] = {
+                labels[image_id]: preset.resolution,
+            }
+            for neighbor_id, weight in adjacency.get(image_id, {}).items():
+                neighbor_label = labels[neighbor_id]
+                label_scores[neighbor_label] = (
+                    label_scores.get(neighbor_label, 0.0) + weight
+                )
+            best_label = max(
+                label_scores,
+                key=lambda label: (label_scores[label], -image_order[label]),
+            )
+            if best_label != labels[image_id]:
+                labels[image_id] = best_label
+                changed = True
+        if not changed:
+            break
+
+    grouped: dict[str, list[str]] = {}
+    for image_id, label in labels.items():
+        grouped.setdefault(label, []).append(image_id)
+
+    communities = [
+        sorted(members, key=image_order.get)
+        for members in grouped.values()
+        if len(members) >= preset.min_group_size
+    ]
+    communities.sort(key=lambda members: (-len(members), image_order[members[0]]))
+
+    labels = {image_id: HDBSCAN_UNASSIGNED_CLUSTER_ID for image_id in image_ids}
+    for cluster_id, community in enumerate(communities):
+        for image_id in community:
+            labels[image_id] = cluster_id
+
+    return labels
+
+
+def _build_weighted_adjacency(
+    *,
+    known_image_ids: set[str],
+    neighbor_rows: list[dict[str, object]],
+    preset: GraphCommunityPreset,
+) -> dict[str, dict[str, float]]:
+    ranked_by_anchor: dict[str, list[dict[str, object]]] = {}
+    for row in neighbor_rows:
+        image_id = str(row["image_id"])
+        neighbor_image_id = str(row["neighbor_image_id"])
+        if image_id not in known_image_ids:
+            raise ValueError(f"FAISS neighbor file references unknown image ID: {image_id}")
+        if neighbor_image_id not in known_image_ids:
+            raise ValueError(
+                f"FAISS neighbor file references unknown image ID: {neighbor_image_id}"
+            )
+        ranked_by_anchor.setdefault(image_id, []).append(row)
+
+    adjacency: dict[str, dict[str, float]] = {
+        image_id: {} for image_id in known_image_ids
+    }
+    for image_id, rows in ranked_by_anchor.items():
+        rows.sort(key=lambda row: int(row["neighbor_rank"]))
+        for row in rows[: preset.k]:
+            if float(row["score"]) < preset.min_score:
+                continue
+            neighbor_image_id = str(row["neighbor_image_id"])
+            if image_id == neighbor_image_id:
+                continue
+            weight = max((float(row["score"]) + 1.0) / 2.0, 0.0)
+            adjacency[image_id][neighbor_image_id] = max(
+                adjacency[image_id].get(neighbor_image_id, 0.0),
+                weight,
+            )
+            adjacency[neighbor_image_id][image_id] = max(
+                adjacency[neighbor_image_id].get(image_id, 0.0),
+                weight,
+            )
+
+    return adjacency
+
+
 def _build_hdbscan_clusterer(preset: HdbscanPreset):
     try:
         from sklearn.cluster import HDBSCAN
@@ -324,6 +605,21 @@ def _load_manifest_rows(run_dir: Path) -> list[dict[str, object]]:
     ]
 
 
+def _load_faiss_neighbor_rows(
+    *,
+    run_dir: Path,
+    recipe_name: str,
+) -> list[dict[str, object]]:
+    neighbors_path = run_dir / "indexes" / f"{recipe_name}_neighbors.jsonl"
+    if not neighbors_path.is_file():
+        raise ValueError(f"FAISS neighbor file not found: {neighbors_path}")
+    return [
+        json.loads(line)
+        for line in neighbors_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+
 def _read_run_id(run_dir: Path) -> str:
     config_path = run_dir / "config.json"
     if not config_path.is_file():
@@ -340,13 +636,14 @@ def _append_cluster_report(
     cluster_count: int,
     unassigned_count: int,
     cluster_path: Path,
+    heading: str = "HDBSCAN Clusters",
 ) -> None:
     report_path = run_dir / "report.md"
     existing_report = report_path.read_text(encoding="utf-8") if report_path.is_file() else ""
     addition = "\n".join(
         [
             "",
-            "## HDBSCAN Clusters",
+            f"## {heading}",
             "",
             f"- Recipe: `{recipe_name}`",
             f"- Result: `{label}`",

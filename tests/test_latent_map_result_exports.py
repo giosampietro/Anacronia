@@ -256,6 +256,91 @@ def test_exports_hdbscan_group_selections_with_membership(tmp_path):
     assert data["selections"]["clusters"][1]["image_ids"] == ["img-b"]
 
 
+def test_exports_graph_community_group_selections_with_labels(tmp_path):
+    run = create_result_run(tmp_path)
+    (run.run_dir / "clusters" / "dinov3_vits_256_graph_balanced.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "asset_kind": "latent-map-cluster-result",
+                "recipe_name": "dinov3_vits_256",
+                "cluster_id": "graph_communities_balanced_k8_res0p6_min2",
+                "label": "Graph communities · Balanced",
+                "method": "graph_communities",
+                "cluster_count": 1,
+                "unassigned_count": 1,
+                "params": {
+                    "preset": "balanced",
+                    "min_group_size": 2,
+                    "k": 8,
+                    "min_score": 0.0,
+                    "resolution": 0.6,
+                    "max_iterations": 30,
+                    "neighbor_source": "faiss",
+                    "algorithm": "weighted_label_propagation",
+                },
+                "groups": [
+                    {
+                        "group_key": "cluster:0",
+                        "cluster_id": 0,
+                        "label": "Group 0",
+                        "count": 2,
+                        "kind": "cluster",
+                    },
+                    {
+                        "group_key": "unassigned",
+                        "cluster_id": -1,
+                        "label": "Unassigned",
+                        "count": 1,
+                        "kind": "unassigned",
+                    },
+                ],
+                "points": [
+                    {
+                        "image_id": "img-a",
+                        "cluster_id": 0,
+                        "group_key": "cluster:0",
+                    },
+                    {
+                        "image_id": "img-a-copy",
+                        "cluster_id": 0,
+                        "group_key": "cluster:0",
+                    },
+                    {
+                        "image_id": "img-b",
+                        "cluster_id": -1,
+                        "group_key": "unassigned",
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    summary = export_latent_map_results(
+        run_dir=run.run_dir,
+        recipe_name="dinov3_vits_256",
+        selected_cluster_ids=["cluster:0"],
+    )
+
+    data = json.loads(summary.result_path.read_text(encoding="utf-8"))
+    assert data["cluster_result"]["label"] == "Graph communities · Balanced"
+    assert data["cluster_result"]["params"]["neighbor_source"] == "faiss"
+    assert data["selections"]["clusters"] == [
+        {
+            "cluster_id": "cluster:0",
+            "group_key": "cluster:0",
+            "image_ids": ["img-a", "img-a-copy"],
+            "provenance": {
+                "cluster_id": "graph_communities_balanced_k8_res0p6_min2",
+                "kind": "cluster-selection",
+                "method": "graph_communities",
+            },
+            "label": "Group 0",
+        }
+    ]
+
+
 def test_result_export_rejects_umap_neighbor_substitution(tmp_path):
     run = create_result_run(tmp_path)
     (run.run_dir / "indexes" / "dinov3_vits_256_neighbors.jsonl").unlink()

@@ -121,6 +121,45 @@ describe("loadLatentMapRunExportedViewerData", () => {
         unassigned_count: 0,
       },
     );
+    await writeJson(
+      path.join(runDir, "clusters", "dinov3_vits_384_graph_balanced.json"),
+      {
+        asset_kind: "latent-map-cluster-result",
+        cluster_count: 1,
+        cluster_id: "graph_communities_balanced_k8_res0p6_min2",
+        groups: [
+          {
+            cluster_id: 0,
+            count: 1,
+            group_key: "cluster:0",
+            kind: "cluster",
+            label: "Group 0",
+          },
+        ],
+        label: "Graph communities · Balanced",
+        method: "graph_communities",
+        params: {
+          algorithm: "weighted_label_propagation",
+          k: 8,
+          max_iterations: 30,
+          min_group_size: 2,
+          min_score: 0,
+          preset: "balanced",
+          resolution: 0.6,
+        },
+        points: [
+          {
+            cluster_id: 0,
+            group_key: "cluster:0",
+            image_id: "img_1",
+          },
+        ],
+        recipe_name: "dinov3_vits_384",
+        run_id: "test-run",
+        schema_version: 1,
+        unassigned_count: 0,
+      },
+    );
     await writeFile(
       path.join(runDir, "indexes", "dinov3_vits_384_neighbors.jsonl"),
       `${JSON.stringify({
@@ -217,6 +256,7 @@ describe("loadLatentMapRunExportedViewerData", () => {
       }),
     ]);
     expect(data.available_clusters?.map((cluster) => cluster.cluster_id)).toEqual([
+      "graph_communities_balanced_k8_res0p6_min2",
       "hdbscan_balanced_mcs25_ms10_eom",
       "kmeans_a",
     ]);

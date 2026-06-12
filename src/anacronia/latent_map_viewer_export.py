@@ -303,11 +303,34 @@ def _list_available_clusters(
     return sorted(
         clusters,
         key=lambda cluster: (
-            0 if str(cluster["method"]).lower() == "hdbscan" else 1,
+            _cluster_method_order(str(cluster["method"]).lower()),
+            _graph_community_order(str(cluster.get("label", ""))),
             _hdbscan_order(str(cluster.get("label", ""))),
             str(cluster["cluster_id"]),
         ),
     )
+
+
+def _cluster_method_order(method: str) -> int:
+    if method == "graph_communities":
+        return 0
+    if method == "hdbscan":
+        return 1
+    if method == "kmeans":
+        return 2
+
+    return 3
+
+
+def _graph_community_order(label: str) -> int:
+    labels = {
+        "Graph communities · Broad": 0,
+        "Graph communities · Balanced": 1,
+        "Graph communities · Detail": 2,
+        "Graph communities · Fine": 3,
+    }
+
+    return labels.get(label, 99)
 
 
 def _hdbscan_order(label: str) -> int:

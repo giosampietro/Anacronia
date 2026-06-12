@@ -278,7 +278,13 @@ def _build_cluster_selection(
         },
     }
 
-    if selected_group_key == "unassigned":
+    group_label = _cluster_group_label(
+        cluster_result=cluster_result,
+        group_key=selected_group_key,
+    )
+    if group_label:
+        selection["label"] = group_label
+    elif selected_group_key == "unassigned":
         selection["label"] = "Unassigned"
     elif str(cluster_result.get("method", "")).lower() == "hdbscan":
         selection["label"] = f"Group {str(selected_cluster_id).removeprefix('cluster:')}"
@@ -300,6 +306,27 @@ def _build_cluster_selection(
         ]
 
     return selection
+
+
+def _cluster_group_label(
+    *,
+    cluster_result: dict[str, object],
+    group_key: str,
+) -> str | None:
+    groups = cluster_result.get("groups")
+    if not isinstance(groups, list):
+        return None
+
+    for group in groups:
+        if not isinstance(group, dict):
+            continue
+        if str(group.get("group_key", "")) == group_key and isinstance(
+            group.get("label"),
+            str,
+        ):
+            return str(group["label"])
+
+    return None
 
 
 def _selected_cluster_group_key(cluster_id: int | str) -> str:

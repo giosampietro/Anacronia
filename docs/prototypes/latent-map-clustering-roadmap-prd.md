@@ -75,9 +75,8 @@ Why this should come first:
 Initial knobs:
 
 - `k`: number of neighbors used to build the graph.
-- Mutual-kNN toggle or preset: keep only links where both images select each other.
 - Similarity threshold.
-- Resolution: broad to fine grouping.
+- Resolution: how strongly images keep their own label during community propagation.
 - Minimum group size.
 
 User-facing UI:
@@ -184,3 +183,28 @@ The viewer should consume cluster artifacts uniformly. It should not need method
 2. [#222 Latent map: add hierarchical clustering with granularity control](https://github.com/giosampietro/Anacronia/issues/222)
 
 Both issues should be vertical slices through the analysis artifact generator, live/export loaders, viewer UI, URL state, tests, and real-data QA.
+
+## Issue #221 Implementation Note
+
+The first graph-community slice uses deterministic weighted label propagation over the saved FAISS nearest-neighbor graph.
+
+Why not connected components:
+
+- A thresholded connected-component pass reproduced too much of HDBSCAN's unassigned-image problem.
+- Label propagation produced more useful first-pass communities on the real J Shoot run without adding a new graph-clustering dependency.
+
+Current preset ladder:
+
+| Preset | Label | `k` | `resolution` | `min_group_size` |
+| --- | --- | ---: | ---: | ---: |
+| broad | `Graph communities · Broad` | 12 | 0.70 | 2 |
+| balanced | `Graph communities · Balanced` | 8 | 0.60 | 2 |
+| detail | `Graph communities · Detail` | 6 | 0.65 | 2 |
+| fine | `Graph communities · Fine` | 3 | 0.70 | 2 |
+
+Real J Shoot `dinov3_vits_384` counts after issue #221:
+
+- Broad: 127 communities, 1 unassigned image.
+- Balanced: 227 communities, 1 unassigned image.
+- Detail: 354 communities, 32 unassigned images.
+- Fine: 633 communities, 340 unassigned images.

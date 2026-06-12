@@ -194,3 +194,34 @@ Added [Latent Map Clustering Roadmap PRD](latent-map-clustering-roadmap-prd.md) 
 3. Cluster diagnostics to make group quality visible.
 
 This remains under ADR-0023's Analysis Result provenance boundary. No app-wide ADR is needed unless the core local app, analysis pipeline, and latent-map viewer change their artifact contract.
+
+## Update After Issue #221
+
+Implemented FAISS kNN graph-community clustering as saved latent-map cluster artifacts.
+
+### Graph-community artifacts
+
+- Added `latent-map graph-communities-build`.
+- The builder reads saved FAISS neighbor JSONL rows and writes normal `latent-map-cluster-result` artifacts under `clusters/`.
+- Presets are `Graph communities · Broad`, `Graph communities · Balanced`, `Graph communities · Detail`, and `Graph communities · Fine`.
+- The first implementation uses deterministic weighted label propagation over the FAISS neighbor graph.
+- This replaced an earlier connected-component pass because the connected-component version left too many images unassigned.
+
+Real J Shoot `dinov3_vits_384` results:
+
+- Broad: 127 communities, 1 unassigned image.
+- Balanced: 227 communities, 1 unassigned image.
+- Detail: 354 communities, 32 unassigned images.
+- Fine: 633 communities, 340 unassigned images.
+
+### Viewer and exports
+
+- Graph-community cluster results sort before HDBSCAN and K-means in live run loading and static viewer exports.
+- Group focus reuses the existing group behavior: focused images stay thumbnails and non-focused images stay visible as small dark-pink points.
+- Result exports now use saved group labels from any cluster artifact, not only HDBSCAN.
+- Method comparison exports now include a `graph_communities` summary beside the existing `hdbscan` summary.
+
+### Launch
+
+- Slow prep generates graph-community presets after FAISS top-50 neighbors exist.
+- Fast launch verifies graph-community artifacts and opens the balanced graph-community result by default.

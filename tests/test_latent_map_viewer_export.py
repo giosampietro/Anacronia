@@ -258,6 +258,53 @@ def test_exports_selected_comparison_layout_and_cluster_metadata(tmp_path):
 
 def test_exports_hdbscan_group_metadata_to_viewer_data(tmp_path):
     run = create_viewer_run(tmp_path)
+    (run.run_dir / "clusters" / "dinov3_vits_256_graph_balanced.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "asset_kind": "latent-map-cluster-result",
+                "run_id": run.run_id,
+                "recipe_name": "dinov3_vits_256",
+                "cluster_id": "graph_communities_balanced_k8_res0p6_min2",
+                "label": "Graph communities · Balanced",
+                "method": "graph_communities",
+                "cluster_count": 1,
+                "unassigned_count": 0,
+                "params": {
+                    "preset": "balanced",
+                    "min_group_size": 2,
+                    "k": 8,
+                    "min_score": 0.0,
+                    "resolution": 0.6,
+                    "max_iterations": 30,
+                    "neighbor_source": "faiss",
+                    "algorithm": "weighted_label_propagation",
+                },
+                "groups": [
+                    {
+                        "group_key": "cluster:0",
+                        "cluster_id": 0,
+                        "label": "Group 0",
+                        "count": 2,
+                        "kind": "cluster",
+                    },
+                ],
+                "points": [
+                    {
+                        "image_id": "img-a",
+                        "cluster_id": 0,
+                        "group_key": "cluster:0",
+                    },
+                    {
+                        "image_id": "img-b",
+                        "cluster_id": 0,
+                        "group_key": "cluster:0",
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
     (run.run_dir / "clusters" / "dinov3_vits_256_hdbscan_balanced.json").write_text(
         json.dumps(
             {
@@ -324,6 +371,10 @@ def test_exports_hdbscan_group_metadata_to_viewer_data(tmp_path):
     assert data["cluster_result"]["unassigned_count"] == 1
     assert data["cluster_result"]["groups"][0]["group_key"] == "unassigned"
     assert data["available_clusters"][0]["cluster_id"] == (
+        "graph_communities_balanced_k8_res0p6_min2"
+    )
+    assert data["available_clusters"][0]["label"] == "Graph communities · Balanced"
+    assert data["available_clusters"][1]["cluster_id"] == (
         "hdbscan_balanced_mcs25_ms10_eom"
     )
     assert data["points"][0]["cluster_group_key"] == "cluster:0"

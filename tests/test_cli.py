@@ -6,6 +6,7 @@ from anacronia.cli import (
     run_latent_map_atlas,
     run_latent_map_faiss_build,
     run_latent_map_faiss_query,
+    run_latent_map_graph_communities_build,
     run_latent_map_embed,
     run_latent_map_hdbscan_build,
     run_latent_map_init,
@@ -337,6 +338,50 @@ def test_latent_map_hdbscan_cli_prints_cluster_summaries(
     assert '"cluster_id": "hdbscan_balanced_mcs25_ms10_eom"' in output
     assert '"label": "HDBSCAN \\u00b7 Balanced"' in output
     assert '"unassigned_count": 1' in output
+
+
+def test_latent_map_graph_communities_cli_prints_cluster_summaries(
+    tmp_path,
+    capsys,
+    monkeypatch,
+):
+    from pathlib import Path
+
+    from anacronia.latent_map_clusters import LatentMapClusterSummary
+
+    def fake_build_graph_community_cluster_results(*, run_dir, recipe_name, preset_slug):
+        assert run_dir == tmp_path
+        assert recipe_name == "dinov3_vits_256"
+        assert preset_slug == "balanced"
+        return [
+            LatentMapClusterSummary(
+                run_id="run-1",
+                recipe_name=recipe_name,
+                cluster_id="graph_communities_balanced_k8_res0p6_min2",
+                label="Graph communities · Balanced",
+                method="graph_communities",
+                cluster_count=5,
+                unassigned_count=2,
+                cluster_path=Path("/tmp/graph-clusters.json"),
+            )
+        ]
+
+    monkeypatch.setattr(
+        "anacronia.cli.build_graph_community_cluster_results",
+        fake_build_graph_community_cluster_results,
+    )
+
+    run_latent_map_graph_communities_build(
+        run_dir=tmp_path,
+        recipe_name="dinov3_vits_256",
+        preset="balanced",
+    )
+
+    output = capsys.readouterr().out
+    assert '"cluster_id": "graph_communities_balanced_k8_res0p6_min2"' in output
+    assert '"label": "Graph communities \\u00b7 Balanced"' in output
+    assert '"method": "graph_communities"' in output
+    assert '"unassigned_count": 2' in output
 
 
 def test_latent_map_atlas_cli_prints_summary(tmp_path, capsys):

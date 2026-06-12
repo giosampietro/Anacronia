@@ -6,6 +6,9 @@ from pathlib import Path
 
 
 HDBSCAN_DEFERRED_REASON = "No precomputed HDBSCAN cluster artifacts found."
+GRAPH_COMMUNITIES_DEFERRED_REASON = (
+    "No precomputed graph-community cluster artifacts found."
+)
 
 
 @dataclass(frozen=True)
@@ -25,6 +28,7 @@ def export_method_comparison(*, run_dir: Path) -> LatentMapMethodComparisonSumma
     layouts = _list_layout_metadata(resolved_run_dir / "layouts")
     clusters = _list_cluster_metadata(resolved_run_dir / "clusters")
     hdbscan = _build_hdbscan_summary(clusters)
+    graph_communities = _build_graph_communities_summary(clusters)
     comparison = {
         "schema_version": 1,
         "asset_kind": "latent-map-method-comparison",
@@ -32,6 +36,7 @@ def export_method_comparison(*, run_dir: Path) -> LatentMapMethodComparisonSumma
         "embeddings": embeddings,
         "layouts": layouts,
         "clusters": clusters,
+        "graph_communities": graph_communities,
         "hdbscan": hdbscan,
     }
     comparison_dir = resolved_run_dir / "comparisons"
@@ -47,6 +52,7 @@ def export_method_comparison(*, run_dir: Path) -> LatentMapMethodComparisonSumma
         embedding_count=len(embeddings),
         layout_count=len(layouts),
         cluster_count=len(clusters),
+        graph_communities_status=str(graph_communities["status"]),
         hdbscan_status=str(hdbscan["status"]),
     )
 
@@ -178,6 +184,56 @@ def _build_hdbscan_summary(
     }
 
 
+def _build_graph_communities_summary(
+    clusters: list[dict[str, object]],
+) -> dict[str, object]:
+    presets = [
+        cluster
+        for cluster in clusters
+        if str(cluster.get("method", "")).lower() == "graph_communities"
+    ]
+
+    if not presets:
+        return {
+            "status": "deferred",
+            "reason": GRAPH_COMMUNITIES_DEFERRED_REASON,
+        }
+
+    return {
+        "status": "available",
+        "preset_count": len(presets),
+        "presets": [
+            {
+                "cluster_id": preset["cluster_id"],
+                "label": preset.get("label", preset["cluster_id"]),
+                "recipe_name": preset["recipe_name"],
+                "cluster_count": preset.get("cluster_count"),
+                "unassigned_count": preset.get("unassigned_count"),
+                "params": preset.get("params", {}),
+            }
+            for preset in sorted(
+                presets,
+                key=lambda preset: (
+                    str(preset["recipe_name"]),
+                    _graph_communities_order(str(preset.get("label", ""))),
+                    str(preset["cluster_id"]),
+                ),
+            )
+        ],
+    }
+
+
+def _graph_communities_order(label: str) -> int:
+    labels = {
+        "Graph communities · Broad": 0,
+        "Graph communities · Balanced": 1,
+        "Graph communities · Detail": 2,
+        "Graph communities · Fine": 3,
+    }
+
+    return labels.get(label, 99)
+
+
 def _hdbscan_order(label: str) -> int:
     labels = {
         "HDBSCAN · Fine": 0,
@@ -203,6 +259,7 @@ def _append_comparison_report(
     embedding_count: int,
     layout_count: int,
     cluster_count: int,
+    graph_communities_status: str,
     hdbscan_status: str,
 ) -> None:
     report_path = run_dir / "report.md"
@@ -215,6 +272,7 @@ def _append_comparison_report(
             f"- Embedding outputs: {embedding_count}",
             f"- Layout outputs: {layout_count}",
             f"- Cluster outputs: {cluster_count}",
+            f"- Graph communities: {graph_communities_status}",
             f"- HDBSCAN: {hdbscan_status}",
             f"- File: `{comparison_path}`",
             "",

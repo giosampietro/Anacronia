@@ -336,12 +336,19 @@ function sortClusterOutputs(
   return [...outputs].sort((left, right) => {
     const leftMethod = String(left.value.method ?? "").toLowerCase();
     const rightMethod = String(right.value.method ?? "").toLowerCase();
-    const leftRank = leftMethod === "hdbscan" ? 0 : leftMethod === "kmeans" ? 1 : 2;
-    const rightRank =
-      rightMethod === "hdbscan" ? 0 : rightMethod === "kmeans" ? 1 : 2;
+    const leftRank = getClusterMethodOrder(leftMethod);
+    const rightRank = getClusterMethodOrder(rightMethod);
 
     if (leftRank !== rightRank) {
       return leftRank - rightRank;
+    }
+
+    const graphCommunityPresetDelta =
+      getGraphCommunityPresetOrder(String(left.value.label ?? "")) -
+      getGraphCommunityPresetOrder(String(right.value.label ?? ""));
+
+    if (graphCommunityPresetDelta !== 0) {
+      return graphCommunityPresetDelta;
     }
 
     const presetDelta =
@@ -354,6 +361,31 @@ function sortClusterOutputs(
 
     return left.fileName.localeCompare(right.fileName);
   });
+}
+
+function getClusterMethodOrder(method: string): number {
+  if (method === "graph_communities") {
+    return 0;
+  }
+  if (method === "hdbscan") {
+    return 1;
+  }
+  if (method === "kmeans") {
+    return 2;
+  }
+
+  return 3;
+}
+
+function getGraphCommunityPresetOrder(label: string): number {
+  const labels = new Map([
+    ["Graph communities · Broad", 0],
+    ["Graph communities · Balanced", 1],
+    ["Graph communities · Detail", 2],
+    ["Graph communities · Fine", 3],
+  ]);
+
+  return labels.get(label) ?? 99;
 }
 
 function getHdbscanPresetOrder(label: string): number {

@@ -170,3 +170,59 @@ def test_exports_available_hdbscan_presets_in_method_comparison(tmp_path):
             }
         ],
     }
+
+
+def test_exports_available_graph_community_presets_in_method_comparison(tmp_path):
+    run = create_comparison_run(tmp_path)
+    (run.run_dir / "clusters" / "dinov3_vits_256_graph_balanced.json").write_text(
+        json.dumps(
+            {
+                "recipe_name": "dinov3_vits_256",
+                "cluster_id": "graph_communities_balanced_k8_res0p6_min2",
+                "label": "Graph communities · Balanced",
+                "method": "graph_communities",
+                "cluster_count": 4,
+                "unassigned_count": 12,
+                "params": {
+                    "preset": "balanced",
+                    "min_group_size": 2,
+                    "k": 8,
+                    "min_score": 0.0,
+                    "resolution": 0.6,
+                    "max_iterations": 30,
+                    "neighbor_source": "faiss",
+                    "algorithm": "weighted_label_propagation",
+                },
+                "points": [{"image_id": "img-a", "cluster_id": 0}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    summary = export_method_comparison(run_dir=run.run_dir)
+
+    data = json.loads(summary.comparison_path.read_text(encoding="utf-8"))
+    assert data["graph_communities"] == {
+        "status": "available",
+        "preset_count": 1,
+        "presets": [
+            {
+                "cluster_id": "graph_communities_balanced_k8_res0p6_min2",
+                "label": "Graph communities · Balanced",
+                "recipe_name": "dinov3_vits_256",
+                "cluster_count": 4,
+                "unassigned_count": 12,
+                "params": {
+                    "preset": "balanced",
+                    "min_group_size": 2,
+                    "k": 8,
+                    "min_score": 0.0,
+                    "resolution": 0.6,
+                    "max_iterations": 30,
+                    "neighbor_source": "faiss",
+                    "algorithm": "weighted_label_propagation",
+                },
+            }
+        ],
+    }
+    assert summary.cluster_count == 2
