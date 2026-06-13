@@ -48,6 +48,7 @@ type ProjectedTarget = {
     gridY?: number;
     height: number;
     kind: "anchor" | "grid";
+    maxLongSide?: number;
     row?: number;
     width: number;
     x: number;
@@ -71,6 +72,7 @@ const NEIGHBORHOOD_SELECTED_Z = 0.42;
 const NEIGHBORHOOD_RELATION_Z = 0.34;
 const NEIGHBORHOOD_BACKGROUND_Z = -0.08;
 const RECENTER_PADDING_MULTIPLIER = 1;
+const GRID_MAX_LONG_SIDE_ANCHOR_MULTIPLIER = 1.5;
 
 export function createLatentMapNeighborhoodRuntimePlan({
   neighborCount,
@@ -159,6 +161,7 @@ export function createLatentMapNeighborhoodRuntimePlan({
         tween_screen_grid_y: target.screen.gridY,
         tween_screen_height: target.screen.height,
         tween_screen_kind: target.screen.kind,
+        tween_screen_max_long_side: target.screen.maxLongSide,
         tween_screen_row: target.screen.row,
         tween_screen_width: target.screen.width,
         tween_screen_x: target.screen.x,
@@ -181,10 +184,42 @@ export function createLatentMapRestoredRuntimePoints(
     tween_alpha: NEIGHBORHOOD_RESTORE_ALPHA,
     tween_size: NEIGHBORHOOD_RESTORE_SIZE,
     tween_state: undefined,
+    tween_screen_max_long_side: undefined,
     tween_x: point.fitted_x,
     tween_y: point.fitted_y,
     tween_z: undefined,
   }));
+}
+
+export function getLatentMapNeighborhoodMaxZoom(
+  points: LatentMapRenderablePoint[],
+): number | null {
+  let maxZoom: number | null = null;
+
+  for (const point of points) {
+    if (
+      point.tween_screen_kind !== "grid" ||
+      typeof point.tween_screen_base_zoom !== "number" ||
+      typeof point.tween_screen_width !== "number" ||
+      typeof point.tween_screen_height !== "number" ||
+      typeof point.tween_screen_max_long_side !== "number"
+    ) {
+      continue;
+    }
+
+    const baseLongSide = Math.max(
+      point.tween_screen_width,
+      point.tween_screen_height,
+      1,
+    );
+    const zoomLimit =
+      Math.max(point.tween_screen_base_zoom, 0.001) *
+      Math.max(point.tween_screen_max_long_side / baseLongSide, 1);
+
+    maxZoom = maxZoom === null ? zoomLimit : Math.min(maxZoom, zoomLimit);
+  }
+
+  return maxZoom;
 }
 
 function createNeighborhoodTargetMap({
@@ -202,25 +237,27 @@ function createNeighborhoodTargetMap({
   };
 }) {
   const targets = new Map<string, ProjectedTarget>();
+  const anchorTarget = projectNeighborhoodTarget({
+    kind: "anchor",
+    layout,
+    recenterView,
+    thumbnailSize,
+    target: layout.anchor.target,
+    viewport,
+    z: NEIGHBORHOOD_SELECTED_Z,
+  });
+  const gridMaxLongSide =
+    Math.max(anchorTarget.screen.width, anchorTarget.screen.height, 1) *
+    GRID_MAX_LONG_SIDE_ANCHOR_MULTIPLIER;
 
-  targets.set(
-    layout.anchor.imageId,
-    projectNeighborhoodTarget({
-      kind: "anchor",
-      layout,
-      recenterView,
-      thumbnailSize,
-      target: layout.anchor.target,
-      viewport,
-      z: NEIGHBORHOOD_SELECTED_Z,
-    }),
-  );
+  targets.set(layout.anchor.imageId, anchorTarget);
 
   layout.rows.forEach((row) => {
     targets.set(
       row.imageId,
       projectNeighborhoodTarget({
         layout,
+        maxLongSide: gridMaxLongSide,
         recenterView,
         row,
         kind: "grid",
@@ -238,6 +275,7 @@ function createNeighborhoodTargetMap({
 function projectNeighborhoodTarget({
   kind,
   layout,
+  maxLongSide,
   recenterView,
   row,
   thumbnailSize,
@@ -247,6 +285,7 @@ function projectNeighborhoodTarget({
 }: {
   kind: "anchor" | "grid";
   layout: LatentMapNeighborhoodReadyLayout;
+  maxLongSide?: number;
   recenterView: LatentMapViewState;
   row?: LatentMapNeighborhoodReadyLayout["rows"][number];
   thumbnailSize: LatentMapThumbnailSize;
@@ -268,6 +307,7 @@ function projectNeighborhoodTarget({
     screen: createProjectedScreenTarget({
       kind,
       layout,
+      maxLongSide,
       recenterView,
       row,
       viewport,
@@ -286,6 +326,7 @@ function projectNeighborhoodTarget({
 function createProjectedScreenTarget({
   kind,
   layout,
+  maxLongSide,
   recenterView,
   row,
   viewport,
@@ -296,6 +337,7 @@ function createProjectedScreenTarget({
 }: {
   kind: "anchor" | "grid";
   layout: LatentMapNeighborhoodReadyLayout;
+  maxLongSide?: number;
   recenterView: LatentMapViewState;
   row?: LatentMapNeighborhoodReadyLayout["rows"][number];
   viewport: {
@@ -322,6 +364,7 @@ function createProjectedScreenTarget({
     gridY: kind === "grid" ? layout.grid.bounds.y : undefined,
     height: worldHeight * pixelsPerWorldUnit,
     kind,
+    maxLongSide,
     row: row?.row,
     width: worldWidth * pixelsPerWorldUnit,
     x:

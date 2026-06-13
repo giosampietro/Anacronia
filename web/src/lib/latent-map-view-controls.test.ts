@@ -155,4 +155,30 @@ describe("latent map view controls", () => {
       zoom: LATENT_MAP_MIN_ZOOM,
     });
   });
+
+  it("supports an interaction-specific max zoom without cursor drift", () => {
+    const view = {
+      offsetX: 0.2,
+      offsetY: -0.1,
+      zoom: 2.9,
+    };
+    const pointer = {
+      clientX: 750,
+      clientY: 125,
+    };
+    const before = getWorldPoint({ ...pointer, view });
+    const afterView = createLatentMapWheelZoomView({
+      deltaMode: 0,
+      deltaY: -120,
+      maxZoom: 3,
+      pointer,
+      view,
+      viewport,
+    });
+    const after = getWorldPoint({ ...pointer, view: afterView });
+
+    expect(afterView.zoom).toBe(3);
+    expect(after.x).toBeCloseTo(before.x);
+    expect(after.y).toBeCloseTo(before.y);
+  });
 });

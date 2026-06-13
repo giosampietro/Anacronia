@@ -83,7 +83,10 @@ import {
   isLatentMapNeighborRequestCurrent,
 } from "@/lib/latent-map-neighborhood-interaction";
 import { createLatentMapNeighborhoodPreviewPlan } from "@/lib/latent-map-neighborhood-previews";
-import { createLatentMapNeighborhoodRuntimePlan } from "@/lib/latent-map-neighborhood-targets";
+import {
+  createLatentMapNeighborhoodRuntimePlan,
+  getLatentMapNeighborhoodMaxZoom,
+} from "@/lib/latent-map-neighborhood-targets";
 import {
   createLatentMapFilterOptions,
   DEFAULT_LATENT_MAP_DURABLE_STATE,
@@ -400,6 +403,7 @@ export function LatentMapViewer({
   const neighborhoodRestoreRenderModeRef = useRef<LatentMapRenderMode | null>(
     null,
   );
+  const neighborhoodRestoreViewRef = useRef<LatentMapViewState | null>(null);
   const pendingNeighborhoodRecenterRef = useRef(false);
   const dragStartRef = useRef<{
     pointer: PointerPosition;
@@ -544,6 +548,13 @@ export function LatentMapViewer({
     neighborhoodModeActive && neighborhoodRuntimePlan.status === "ready";
   const neighborhoodActiveImageCount =
     neighborhoodRuntimePlan.activeImageIds.size;
+  const neighborhoodMaxZoom = useMemo(
+    () =>
+      neighborhoodLayoutActive
+        ? getLatentMapNeighborhoodMaxZoom(neighborhoodRuntimePlan.points)
+        : null,
+    [neighborhoodLayoutActive, neighborhoodRuntimePlan.points],
+  );
   const runtimeRenderPoints = useMemo(() => {
     if (!neighborhoodLayoutActive) {
       return renderPoints;
@@ -852,18 +863,29 @@ export function LatentMapViewer({
     setNeighborhoodModeActive(false);
 
     const restoreRenderMode = neighborhoodRestoreRenderModeRef.current;
+    const restoreView = neighborhoodRestoreViewRef.current;
 
     neighborhoodRestoreRenderModeRef.current = null;
+    neighborhoodRestoreViewRef.current = null;
 
     if (restoreRenderMode) {
       setRenderMode(restoreRenderMode);
+    }
+    if (restoreView) {
+      setView(restoreView);
     }
   }, []);
   const cancelNeighborhoodModeForManualModeChange = useCallback(() => {
     pendingNeighborhoodRecenterRef.current = false;
     hoverPointerRef.current = null;
     setHoveredImageId(null);
+    const restoreView = neighborhoodRestoreViewRef.current;
+
     neighborhoodRestoreRenderModeRef.current = null;
+    neighborhoodRestoreViewRef.current = null;
+    if (restoreView) {
+      setView(restoreView);
+    }
     setNeighborhoodModeActive(false);
   }, []);
   const enterNeighborhoodMode = useCallback(() => {
@@ -873,6 +895,7 @@ export function LatentMapViewer({
 
     if (!neighborhoodModeActive) {
       neighborhoodRestoreRenderModeRef.current = renderMode;
+      neighborhoodRestoreViewRef.current = viewRef.current;
     }
 
     pendingNeighborhoodRecenterRef.current = true;
@@ -1072,6 +1095,10 @@ export function LatentMapViewer({
       return;
     }
 
+    const serializedView =
+      neighborhoodModeActive && neighborhoodRestoreViewRef.current
+        ? neighborhoodRestoreViewRef.current
+        : view;
     const nextSearchParams = serializeLatentMapUrlState(
       {
         clusterFilter,
@@ -1082,7 +1109,7 @@ export function LatentMapViewer({
         sourceFilter,
         textureDetail,
         thumbnailSize,
-        view,
+        view: serializedView,
       },
       data,
     );
@@ -1096,6 +1123,7 @@ export function LatentMapViewer({
     data,
     faissNeighborCount,
     faissRelationMode,
+    neighborhoodModeActive,
     renderMode,
     selectedImageId,
     sourceFilter,
@@ -1134,6 +1162,7 @@ export function LatentMapViewer({
         createLatentMapWheelZoomView({
           deltaMode: event.deltaMode,
           deltaY: event.deltaY,
+          maxZoom: neighborhoodLayoutActive ? neighborhoodMaxZoom : null,
           pointer: {
             clientX: event.clientX,
             clientY: event.clientY,
@@ -1151,7 +1180,7 @@ export function LatentMapViewer({
     return () => {
       wrapper.removeEventListener("wheel", handleNativeWheel);
     };
-  }, [markFpsCounterActive]);
+  }, [markFpsCounterActive, neighborhoodLayoutActive, neighborhoodMaxZoom]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -1574,6 +1603,10 @@ export function LatentMapViewer({
         return;
       }
 
+      const serializedView =
+        neighborhoodModeActive && neighborhoodRestoreViewRef.current
+          ? neighborhoodRestoreViewRef.current
+          : view;
       const nextSearchParams = serializeLatentMapUrlState(
         {
           clusterFilter,
@@ -1584,7 +1617,7 @@ export function LatentMapViewer({
           sourceFilter,
           textureDetail,
           thumbnailSize,
-          view,
+          view: serializedView,
         },
         data,
       );
@@ -1603,6 +1636,7 @@ export function LatentMapViewer({
       data,
       faissNeighborCount,
       faissRelationMode,
+      neighborhoodModeActive,
       renderMode,
       selectedImageId,
       sourceFilter,

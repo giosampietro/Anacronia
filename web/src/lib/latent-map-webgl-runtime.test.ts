@@ -24,6 +24,7 @@ import {
   type LatentMapRenderablePoint,
   type LatentMapThumbnailAtlasPage,
 } from "@/lib/latent-map-viewer";
+import { createLatentMapWheelZoomView } from "@/lib/latent-map-view-controls";
 
 function createRenderablePoint(
   overrides: Partial<LatentMapRenderablePoint> = {},
@@ -80,6 +81,8 @@ function worldTransformToScreenBounds({
 
   return {
     bottom: centerY + screenHeight / 2,
+    centerX,
+    centerY,
     left: centerX - screenWidth / 2,
     right: centerX + screenWidth / 2,
     top: centerY - screenHeight / 2,
@@ -605,6 +608,81 @@ describe("latent map WebGL runtime math", () => {
     });
 
     expect(secondBounds.left - firstBounds.right).toBeCloseTo(30);
+  });
+
+  it("zooms neighborhood grid screen targets around the wheel cursor", () => {
+    const baseView = { offsetX: 0, offsetY: 0, zoom: 1 };
+    const viewport = { height: 900, left: 0, top: 0, width: 1600 };
+    const pointer = { clientX: 1100, clientY: 260 };
+    const point = createRenderablePoint({
+      image_id: "img_grid_cursor",
+      point_state: "neighbor",
+      tween_screen_base_offset_x: 0,
+      tween_screen_base_offset_y: 0,
+      tween_screen_base_zoom: 1,
+      tween_screen_cell_gap: 30,
+      tween_screen_cell_size: 160,
+      tween_screen_column: 0,
+      tween_screen_grid_x: 120,
+      tween_screen_grid_y: 90,
+      tween_screen_height: 120,
+      tween_screen_kind: "grid",
+      tween_screen_max_long_side: 900,
+      tween_screen_row: 0,
+      tween_screen_width: 160,
+      tween_screen_x: 200,
+      tween_screen_y: 150,
+    });
+    const controller = createLatentMapRuntimeTweenController([
+      createLatentMapPointTweenItem({
+        point,
+        pointSize: 3,
+        visualTheme: "dark",
+      }),
+    ]);
+    const baseTransform = getLatentMapNeighborhoodPreviewMeshTransform({
+      point,
+      thumbnailSize: 64,
+      tweenController: controller,
+      view: baseView,
+      viewportHeight: viewport.height,
+      viewportWidth: viewport.width,
+    });
+    const baseBounds = worldTransformToScreenBounds({
+      height: viewport.height,
+      transform: baseTransform,
+      view: baseView,
+      width: viewport.width,
+    });
+    const zoomedView = createLatentMapWheelZoomView({
+      deltaMode: 0,
+      deltaY: -180,
+      pointer,
+      view: baseView,
+      viewport,
+    });
+    const zoomedTransform = getLatentMapNeighborhoodPreviewMeshTransform({
+      point,
+      thumbnailSize: 64,
+      tweenController: controller,
+      view: zoomedView,
+      viewportHeight: viewport.height,
+      viewportWidth: viewport.width,
+    });
+    const zoomedBounds = worldTransformToScreenBounds({
+      height: viewport.height,
+      transform: zoomedTransform,
+      view: zoomedView,
+      width: viewport.width,
+    });
+    const zoomRatio = zoomedView.zoom / baseView.zoom;
+
+    expect(zoomedBounds.centerX).toBeCloseTo(
+      pointer.clientX + (baseBounds.centerX - pointer.clientX) * zoomRatio,
+    );
+    expect(zoomedBounds.centerY).toBeCloseTo(
+      pointer.clientY + (baseBounds.centerY - pointer.clientY) * zoomRatio,
+    );
   });
 
   it("marks only opposite neighborhood preview meshes", () => {

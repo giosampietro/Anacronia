@@ -576,6 +576,7 @@ export function writeLatentMapAtlasInstanceAttributesFromTween({
       point: item.point,
       view,
       viewportHeight,
+      viewportWidth,
     });
     const screenWorldTransform = screenBounds
       ? screenBoundsToWorldTransform({
@@ -989,6 +990,7 @@ export function getLatentMapNeighborhoodPreviewMeshTransform({
     point,
     view,
     viewportHeight,
+    viewportWidth,
   });
   const screenWorldTransform = screenBounds
     ? screenBoundsToWorldTransform({
@@ -1094,10 +1096,12 @@ function getLatentMapTweenScreenBounds({
   point,
   view,
   viewportHeight,
+  viewportWidth,
 }: {
   point: LatentMapRenderablePoint;
   view: LatentMapViewState;
   viewportHeight: number;
+  viewportWidth: number;
 }): LatentMapPointScreenBounds | null {
   if (
     point.tween_screen_kind !== "anchor" &&
@@ -1143,18 +1147,25 @@ function getLatentMapTweenScreenBounds({
     point.tween_screen_height,
     1,
   );
+  const maxLongSide =
+    typeof point.tween_screen_max_long_side === "number" &&
+    Number.isFinite(point.tween_screen_max_long_side)
+      ? point.tween_screen_max_long_side
+      : 1024;
   const zoomRatio = Math.max(
     0.1,
     Math.min(
       Math.max(view.zoom, 0.001) /
         Math.max(point.tween_screen_base_zoom, 0.001),
-      1024 / baseLongSide,
+      Math.max(maxLongSide / baseLongSide, 1),
     ),
   );
   const width = point.tween_screen_width * zoomRatio;
   const height = point.tween_screen_height * zoomRatio;
+  const safeViewportWidth = Math.max(viewportWidth, 1);
+  const safeViewportHeight = Math.max(viewportHeight, 1);
   const pixelsPerWorldUnit = getScreenPixelsPerWorldUnit({
-    viewportHeight,
+    viewportHeight: safeViewportHeight,
     zoom: view.zoom,
   });
   const panX =
@@ -1163,19 +1174,19 @@ function getLatentMapTweenScreenBounds({
     (view.offsetY - point.tween_screen_base_offset_y) * pixelsPerWorldUnit;
   const baseLeft = point.tween_screen_x - point.tween_screen_width / 2;
   const baseTop = point.tween_screen_y - point.tween_screen_height / 2;
+  const packedBaseLeft =
+    baseLeft - point.tween_screen_column * point.tween_screen_cell_gap;
+  const packedBaseTop =
+    baseTop - point.tween_screen_row * point.tween_screen_cell_gap;
   const packedLeft =
-    point.tween_screen_grid_x +
-    (baseLeft -
-      point.tween_screen_grid_x -
-      point.tween_screen_column * point.tween_screen_cell_gap) *
+    safeViewportWidth / 2 +
+    (packedBaseLeft - safeViewportWidth / 2) *
       zoomRatio +
     point.tween_screen_column * point.tween_screen_cell_gap +
     panX;
   const packedTop =
-    point.tween_screen_grid_y +
-    (baseTop -
-      point.tween_screen_grid_y -
-      point.tween_screen_row * point.tween_screen_cell_gap) *
+    safeViewportHeight / 2 +
+    (packedBaseTop - safeViewportHeight / 2) *
       zoomRatio +
     point.tween_screen_row * point.tween_screen_cell_gap +
     panY;
@@ -1960,6 +1971,7 @@ export function createLatentMapWebglRuntime({
       point,
       view: currentView,
       viewportHeight: getViewportHeight(),
+      viewportWidth: getViewportWidth(),
     });
   }
 

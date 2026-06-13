@@ -18,10 +18,27 @@ type LatentMapPointerPosition = {
   clientY: number;
 };
 
-export function clampLatentMapZoom(zoom: number): number {
+type LatentMapZoomLimits = {
+  maxZoom?: number | null;
+  minZoom?: number | null;
+};
+
+export function clampLatentMapZoom(
+  zoom: number,
+  limits: LatentMapZoomLimits = {},
+): number {
+  const minZoom =
+    typeof limits.minZoom === "number" && Number.isFinite(limits.minZoom)
+      ? limits.minZoom
+      : LATENT_MAP_MIN_ZOOM;
+  const maxZoom =
+    typeof limits.maxZoom === "number" && Number.isFinite(limits.maxZoom)
+      ? limits.maxZoom
+      : LATENT_MAP_MAX_ZOOM;
+
   return Math.min(
-    LATENT_MAP_MAX_ZOOM,
-    Math.max(LATENT_MAP_MIN_ZOOM, zoom),
+    Math.max(minZoom, maxZoom),
+    Math.max(minZoom, zoom),
   );
 }
 
@@ -48,26 +65,31 @@ export function normalizeLatentMapWheelDelta({
 export function createLatentMapWheelZoomView({
   deltaMode,
   deltaY,
+  maxZoom,
+  minZoom,
   pointer,
   view,
   viewport,
 }: {
   deltaMode: number;
   deltaY: number;
+  maxZoom?: number | null;
+  minZoom?: number | null;
   pointer: LatentMapPointerPosition;
   view: LatentMapViewState;
   viewport: LatentMapViewportRect;
 }): LatentMapViewState {
   const viewportWidth = Math.max(viewport.width, 1);
   const viewportHeight = Math.max(viewport.height, 1);
-  const currentZoom = clampLatentMapZoom(view.zoom);
+  const zoomLimits = { maxZoom, minZoom };
+  const currentZoom = clampLatentMapZoom(view.zoom, zoomLimits);
   const wheelDelta = normalizeLatentMapWheelDelta({
     deltaMode,
     deltaY,
     viewportHeight,
   });
   const zoomFactor = Math.exp(-wheelDelta * WHEEL_ZOOM_SENSITIVITY);
-  const nextZoom = clampLatentMapZoom(currentZoom * zoomFactor);
+  const nextZoom = clampLatentMapZoom(currentZoom * zoomFactor, zoomLimits);
 
   if (nextZoom === currentZoom) {
     return {

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   createLatentMapNeighborhoodRuntimePlan,
   createLatentMapRestoredRuntimePoints,
+  getLatentMapNeighborhoodMaxZoom,
 } from "@/lib/latent-map-neighborhood-targets";
 import type { LatentMapRenderablePoint } from "@/lib/latent-map-viewer";
 
@@ -99,6 +100,36 @@ describe("latent map neighborhood runtime targets", () => {
       tween_state: 0,
     });
     expect(plan.recenterView?.offsetX).toBeTypeOf("number");
+  });
+
+  it("derives neighborhood max zoom from the anchor and largest grid target", () => {
+    const plan = createLatentMapNeighborhoodRuntimePlan({
+      neighborCount: 3,
+      points: createPoints(),
+      relationMode: "closest",
+      selectedImageId: "img_000",
+      thumbnailSize: 64,
+      viewport: { width: 1600, height: 900 },
+    });
+
+    expect(plan.status).toBe("ready");
+
+    const anchor = plan.points.find((point) => point.image_id === "img_000");
+    const gridPoints = plan.points.filter(
+      (point) => point.tween_screen_kind === "grid",
+    );
+    const largestGridLongSide = Math.max(
+      ...gridPoints.map((point) =>
+        Math.max(point.tween_screen_width ?? 0, point.tween_screen_height ?? 0),
+      ),
+    );
+    const anchorMaxLongSide =
+      Math.max(anchor?.tween_screen_width ?? 0, anchor?.tween_screen_height ?? 0) *
+      1.5;
+    const maxZoom = getLatentMapNeighborhoodMaxZoom(plan.points);
+
+    expect(anchorMaxLongSide).toBeGreaterThan(largestGridLongSide);
+    expect(maxZoom).toBeCloseTo(anchorMaxLongSide / largestGridLongSide);
   });
 
   it("preserves both-mode relation order and opposite identity metadata", () => {

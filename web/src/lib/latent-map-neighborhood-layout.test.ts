@@ -263,9 +263,11 @@ describe("latent map neighborhood layout", () => {
     expect(layout.stageBounds.width).toBeGreaterThan(0);
     expect(layout.stageBounds.height).toBe(600);
     expect(layout.recenterTarget.zoom).toBeGreaterThan(0);
-    expect(layout.anchor.target.height).toBe(536);
-    expect(layout.grid.bounds.height).toBe(536);
-    expect(layout.grid.cellSize).toBeCloseTo((536 - 3 * 30) / 4);
+    expect(layout.anchor.target.height).toBe(472);
+    expect(layout.grid.bounds.height).toBe(472);
+    expect(layout.grid.cellSize).toBeCloseTo((472 - 3 * 30) / 4);
+    expect(layout.anchor.target.x - layout.anchor.target.width / 2).toBe(32);
+    expect(layout.anchor.target.y - layout.anchor.target.height / 2).toBe(64);
     expect(layout.anchor.target.x).toBeGreaterThanOrEqual(0);
     expect(layout.anchor.target.y).toBeGreaterThanOrEqual(0);
     expect(layout.anchor.target.x).toBeLessThanOrEqual(
