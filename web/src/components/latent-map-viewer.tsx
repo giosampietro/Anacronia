@@ -504,11 +504,11 @@ export function LatentMapViewer({
   const neighborhoodRuntimePlan = useMemo(
     () =>
       createLatentMapNeighborhoodRuntimePlan({
-        neighborCount: 0,
+        neighborCount: faissNeighborCount,
         neighborsByImageId,
         oppositesByImageId,
         points: renderPoints,
-        relationMode: faissRelationMode,
+        relationMode: "closest",
         selectedImageId,
         thumbnailSize,
         viewport: {
@@ -517,7 +517,7 @@ export function LatentMapViewer({
         },
       }),
     [
-      faissRelationMode,
+      faissNeighborCount,
       mapViewportSize.height,
       mapViewportSize.width,
       neighborsByImageId,
@@ -536,14 +536,23 @@ export function LatentMapViewer({
 
     return neighborhoodRuntimePlan.points.map((point) =>
       point.image_id === selectedImageId
-        ? point
-        : {
+        ? {
             ...point,
-            point_state: "base" as const,
-          },
+            point_state: "selected" as const,
+          }
+        : neighborhoodRuntimePlan.activeImageIds.has(point.image_id)
+          ? {
+              ...point,
+              point_state: "neighbor" as const,
+            }
+          : {
+              ...point,
+              point_state: "base" as const,
+            },
     );
   }, [
     neighborhoodLayoutActive,
+    neighborhoodRuntimePlan.activeImageIds,
     neighborhoodRuntimePlan.points,
     renderPoints,
     selectedImageId,
