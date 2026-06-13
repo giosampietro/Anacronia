@@ -13,6 +13,7 @@ import {
   LATENT_MAP_MAX_THUMBNAIL_SCREEN_SCALE,
   LATENT_MAP_NEIGHBORHOOD_PREVIEW_FRAGMENT_SHADER,
   LATENT_MAP_NEIGHBORHOOD_PREVIEW_VERTEX_SHADER,
+  type LatentMapViewState,
   writeLatentMapAtlasInstanceAttributesFromTween,
   writeLatentMapPointGeometryFromTween,
   writeLatentMapPointLayerGeometryFromTween,
@@ -56,6 +57,33 @@ function toScreenLongSide({
   zoom: number;
 }) {
   return Math.max(scale[0], scale[1]) * ((viewportHeight * zoom) / 2);
+}
+
+function worldTransformToScreenBounds({
+  height,
+  transform,
+  view,
+  width,
+}: {
+  height: number;
+  transform: { height: number; width: number; x: number; y: number };
+  view: LatentMapViewState;
+  width: number;
+}) {
+  const aspect = width / Math.max(height, 1);
+  const pixelsPerWorldUnit = (height * view.zoom) / 2;
+  const centerX =
+    ((transform.x - view.offsetX) * view.zoom / aspect + 1) * width / 2;
+  const centerY = (1 - (transform.y - view.offsetY) * view.zoom) * height / 2;
+  const screenWidth = transform.width * pixelsPerWorldUnit;
+  const screenHeight = transform.height * pixelsPerWorldUnit;
+
+  return {
+    bottom: centerY + screenHeight / 2,
+    left: centerX - screenWidth / 2,
+    right: centerX + screenWidth / 2,
+    top: centerY - screenHeight / 2,
+  };
 }
 
 function expectArrayCloseTo(actual: Float32Array, expected: number[]) {
@@ -497,6 +525,86 @@ describe("latent map WebGL runtime math", () => {
     expect(transform.width).toBeCloseTo(0.26);
     expect(transform.height).toBeCloseTo(0.13);
     expect(transform.z).toBeCloseTo(0.42);
+  });
+
+  it("keeps packed neighborhood grid column gaps constant while zooming", () => {
+    const view = { offsetX: 0, offsetY: 0, zoom: 2 };
+    const viewport = { height: 900, width: 1600 };
+    const firstPoint = createRenderablePoint({
+      image_id: "img_grid_a",
+      point_state: "neighbor",
+      tween_screen_base_offset_x: 0,
+      tween_screen_base_offset_y: 0,
+      tween_screen_base_zoom: 1,
+      tween_screen_cell_gap: 30,
+      tween_screen_cell_size: 120,
+      tween_screen_column: 0,
+      tween_screen_grid_x: 100,
+      tween_screen_grid_y: 80,
+      tween_screen_height: 120,
+      tween_screen_kind: "grid",
+      tween_screen_row: 0,
+      tween_screen_width: 60,
+      tween_screen_x: 130,
+      tween_screen_y: 140,
+    });
+    const secondPoint = createRenderablePoint({
+      image_id: "img_grid_b",
+      point_state: "neighbor",
+      tween_screen_base_offset_x: 0,
+      tween_screen_base_offset_y: 0,
+      tween_screen_base_zoom: 1,
+      tween_screen_cell_gap: 30,
+      tween_screen_cell_size: 120,
+      tween_screen_column: 1,
+      tween_screen_grid_x: 100,
+      tween_screen_grid_y: 80,
+      tween_screen_height: 80,
+      tween_screen_kind: "grid",
+      tween_screen_row: 0,
+      tween_screen_width: 120,
+      tween_screen_x: 250,
+      tween_screen_y: 140,
+    });
+    const controller = createLatentMapRuntimeTweenController(
+      [firstPoint, secondPoint].map((point) =>
+        createLatentMapPointTweenItem({
+          point,
+          pointSize: 3,
+          visualTheme: "dark",
+        }),
+      ),
+    );
+    const firstTransform = getLatentMapNeighborhoodPreviewMeshTransform({
+      point: firstPoint,
+      thumbnailSize: 64,
+      tweenController: controller,
+      view,
+      viewportHeight: viewport.height,
+      viewportWidth: viewport.width,
+    });
+    const secondTransform = getLatentMapNeighborhoodPreviewMeshTransform({
+      point: secondPoint,
+      thumbnailSize: 64,
+      tweenController: controller,
+      view,
+      viewportHeight: viewport.height,
+      viewportWidth: viewport.width,
+    });
+    const firstBounds = worldTransformToScreenBounds({
+      height: viewport.height,
+      transform: firstTransform,
+      view,
+      width: viewport.width,
+    });
+    const secondBounds = worldTransformToScreenBounds({
+      height: viewport.height,
+      transform: secondTransform,
+      view,
+      width: viewport.width,
+    });
+
+    expect(secondBounds.left - firstBounds.right).toBeCloseTo(30);
   });
 
   it("marks only opposite neighborhood preview meshes", () => {

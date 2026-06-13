@@ -164,6 +164,37 @@ describe("latent map neighborhood layout", () => {
     });
   });
 
+  it("packs columns with the configured edge-to-edge gap across varied aspects", () => {
+    const fixture = createFixture({ neighborCount: 8, oppositeCount: 0 });
+
+    fixture.points[1] = createPoint(1, { width: 600, height: 1200 });
+    fixture.points[5] = createPoint(5, { width: 1600, height: 800 });
+
+    const layout = createLatentMapNeighborhoodLayout({
+      neighborCount: 8,
+      points: fixture.points,
+      relationMode: "closest",
+      selectedImageId: fixture.selectedImageId,
+      viewport: { width: 1600, height: 1000 },
+    });
+
+    expectReady(layout);
+
+    const firstRowFirstColumn = layout.rows[0];
+    const firstRowSecondColumn = layout.rows[4];
+    const firstRightEdge =
+      firstRowFirstColumn.target.x + firstRowFirstColumn.target.width / 2;
+    const secondLeftEdge =
+      firstRowSecondColumn.target.x - firstRowSecondColumn.target.width / 2;
+
+    expect(firstRowFirstColumn.row).toBe(0);
+    expect(firstRowSecondColumn.row).toBe(0);
+    expect(firstRowFirstColumn.target.width).toBeLessThan(
+      firstRowSecondColumn.target.width,
+    );
+    expect(secondLeftEdge - firstRightEdge).toBeCloseTo(layout.grid.cellGap);
+  });
+
   it("sorts loaded neighbors by rank before creating grid rows", () => {
     const fixture = createFixture({ neighborCount: 5, oppositeCount: 0 });
     const layout = createLatentMapNeighborhoodLayout({

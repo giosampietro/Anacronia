@@ -123,6 +123,14 @@ type RankedNeighbor = {
   score: number;
 };
 
+type PlannedGridRowTarget = {
+  height: number;
+  imageId: string;
+  width: number;
+  x: number;
+  y: number;
+};
+
 const DEFAULT_GRID_ROWS = 4;
 const DEFAULT_PADDING = 32;
 const DEFAULT_CELL_GAP = 30;
@@ -239,12 +247,20 @@ export function createLatentMapNeighborhoodLayout({
         MIN_GRID_CELL_SIZE,
         (anchorHeight - Math.max(0, rowCount - 1) * safeCellGap) / rowCount,
       );
-  const gridWidth =
-    safeColumns * gridCellSize + Math.max(0, safeColumns - 1) * safeCellGap;
   const gridHeight =
     rowCount === 0
       ? 0
       : rowCount * gridCellSize + Math.max(0, rowCount - 1) * safeCellGap;
+  const plannedGridRows = createPackedGridRowTargets({
+    cellGap: safeCellGap,
+    cellSize: gridCellSize,
+    rows,
+    rowCount,
+  });
+  const gridWidth = Math.max(
+    0,
+    ...plannedGridRows.map((target) => target.x + target.width),
+  );
   const stageWidth =
     safePadding + anchorAreaWidth + LAYOUT_GAP + gridWidth + safePadding;
   const stageHeight = safeViewport.height;
@@ -266,22 +282,24 @@ export function createLatentMapNeighborhoodLayout({
     gridHeight,
   );
 
-  rows.forEach((row) => {
-    row.column = Math.floor(row.gridIndex / safeRows);
-    row.row = row.gridIndex % safeRows;
+  const plannedGridRowByImageId = new Map(
+    plannedGridRows.map((target) => [target.imageId, target] as const),
+  );
 
-    const cellBounds = createRect(
-      gridBounds.x + row.column * (gridCellSize + safeCellGap),
-      gridBounds.y + row.row * (gridCellSize + safeCellGap),
-      gridCellSize,
-      gridCellSize,
-    );
+  rows.forEach((row) => {
+    const plannedTarget = plannedGridRowByImageId.get(row.imageId);
+
+    if (!plannedTarget) {
+      return;
+    }
+
     row.target = rectToTarget(
-      fitRectInBounds({
-        aspectRatio: getPointAspectRatio(row.point),
-        bounds: cellBounds,
-        maxLongSide: gridCellSize,
-      }),
+      createRect(
+        gridBounds.x + plannedTarget.x,
+        gridBounds.y + plannedTarget.y,
+        plannedTarget.width,
+        plannedTarget.height,
+      ),
     );
   });
 
@@ -312,6 +330,50 @@ export function createLatentMapNeighborhoodLayout({
     stageBounds,
     status: "ready",
   };
+}
+
+function createPackedGridRowTargets({
+  cellGap,
+  cellSize,
+  rows,
+  rowCount,
+}: {
+  cellGap: number;
+  cellSize: number;
+  rows: LatentMapNeighborhoodRow[];
+  rowCount: number;
+}): PlannedGridRowTarget[] {
+  if (rowCount === 0 || cellSize <= 0) {
+    return [];
+  }
+
+  const rowCursors = Array.from({ length: rowCount }, () => 0);
+  const rowColumnCounts = Array.from({ length: rowCount }, () => 0);
+
+  return rows.map((row) => {
+    row.row = row.gridIndex % rowCount;
+    row.column = rowColumnCounts[row.row];
+    rowColumnCounts[row.row] += 1;
+
+    const fittedRect = fitRectInBounds({
+      aspectRatio: getPointAspectRatio(row.point),
+      bounds: createRect(0, 0, cellSize, cellSize),
+      maxLongSide: cellSize,
+    });
+    const x = rowCursors[row.row];
+    const y =
+      row.row * (cellSize + cellGap) + (cellSize - fittedRect.height) / 2;
+
+    rowCursors[row.row] += fittedRect.width + cellGap;
+
+    return {
+      height: fittedRect.height,
+      imageId: row.imageId,
+      width: fittedRect.width,
+      x,
+      y,
+    };
+  });
 }
 
 function createEmptyNeighborhoodLayout(

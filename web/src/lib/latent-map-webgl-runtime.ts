@@ -1151,7 +1151,8 @@ function getLatentMapTweenScreenBounds({
       1024 / baseLongSide,
     ),
   );
-  const cellSize = point.tween_screen_cell_size * zoomRatio;
+  const width = point.tween_screen_width * zoomRatio;
+  const height = point.tween_screen_height * zoomRatio;
   const pixelsPerWorldUnit = getScreenPixelsPerWorldUnit({
     viewportHeight,
     zoom: view.zoom,
@@ -1160,23 +1161,30 @@ function getLatentMapTweenScreenBounds({
     -(view.offsetX - point.tween_screen_base_offset_x) * pixelsPerWorldUnit;
   const panY =
     (view.offsetY - point.tween_screen_base_offset_y) * pixelsPerWorldUnit;
-  const centerX =
+  const baseLeft = point.tween_screen_x - point.tween_screen_width / 2;
+  const baseTop = point.tween_screen_y - point.tween_screen_height / 2;
+  const packedLeft =
     point.tween_screen_grid_x +
-    point.tween_screen_column *
-      (cellSize + point.tween_screen_cell_gap) +
-    cellSize / 2 +
+    (baseLeft -
+      point.tween_screen_grid_x -
+      point.tween_screen_column * point.tween_screen_cell_gap) *
+      zoomRatio +
+    point.tween_screen_column * point.tween_screen_cell_gap +
     panX;
-  const centerY =
+  const packedTop =
     point.tween_screen_grid_y +
-    point.tween_screen_row *
-      (cellSize + point.tween_screen_cell_gap) +
-    cellSize / 2 +
+    (baseTop -
+      point.tween_screen_grid_y -
+      point.tween_screen_row * point.tween_screen_cell_gap) *
+      zoomRatio +
+    point.tween_screen_row * point.tween_screen_cell_gap +
     panY;
+
   return createScreenBounds({
-    centerX,
-    centerY,
-    height: point.tween_screen_height * zoomRatio,
-    width: point.tween_screen_width * zoomRatio,
+    centerX: packedLeft + width / 2,
+    centerY: packedTop + height / 2,
+    height,
+    width,
   });
 }
 
