@@ -99,10 +99,20 @@ describe("latent map WebGL runtime math", () => {
       "float oppositeMarker",
     );
     expect(LATENT_MAP_ATLAS_FRAGMENT_SHADER).toContain(
+      "oppositeMarkerScreenSize",
+    );
+    expect(LATENT_MAP_ATLAS_FRAGMENT_SHADER).toContain("markerSquare");
+    expect(LATENT_MAP_ATLAS_FRAGMENT_SHADER).toContain(
       "vec3(1.0, 0.58, 0.66)",
     );
     expect(LATENT_MAP_NEIGHBORHOOD_PREVIEW_FRAGMENT_SHADER).toContain(
+      "uniform vec2 markerUvSize;",
+    );
+    expect(LATENT_MAP_NEIGHBORHOOD_PREVIEW_FRAGMENT_SHADER).toContain(
       "uniform float oppositeMarkerOpacity;",
+    );
+    expect(LATENT_MAP_NEIGHBORHOOD_PREVIEW_FRAGMENT_SHADER).toContain(
+      "markerSquare",
     );
     expect(LATENT_MAP_NEIGHBORHOOD_PREVIEW_FRAGMENT_SHADER).toContain(
       "vec3(1.0, 0.58, 0.66)",
@@ -264,6 +274,7 @@ describe("latent map WebGL runtime math", () => {
       tweenController: controller,
       view: { offsetX: 0, offsetY: 0, zoom: 1 },
       viewportHeight: 900,
+      viewportWidth: 1600,
     });
 
     const positions = geometry.getAttribute("instancePosition")
@@ -305,6 +316,7 @@ describe("latent map WebGL runtime math", () => {
       tweenController: controller,
       view: { offsetX: 0, offsetY: 0, zoom: 1 },
       viewportHeight: 900,
+      viewportWidth: 1600,
     });
 
     expectArrayCloseTo(positions, [1, 2, 0.26, 8, 9, 0.42]);
@@ -343,6 +355,7 @@ describe("latent map WebGL runtime math", () => {
         tweenController: controller,
         view: { offsetX: 0, offsetY: 0, zoom: 1 },
         viewportHeight: 900,
+        viewportWidth: 1600,
       }),
     ).not.toThrow();
 
@@ -475,6 +488,7 @@ describe("latent map WebGL runtime math", () => {
       tweenController: controller,
       view: { offsetX: 0, offsetY: 0, zoom: 1 },
       viewportHeight: 900,
+      viewportWidth: 1600,
     });
 
     expect(transform.opacity).toBe(0.5);

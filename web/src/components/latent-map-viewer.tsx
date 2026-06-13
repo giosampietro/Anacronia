@@ -752,13 +752,24 @@ export function LatentMapViewer({
     ],
   );
   const pointLayer = useMemo(
-    () =>
-      createLatentMapPointLayerPlan({
+    () => {
+      const nextPointLayer = createLatentMapPointLayerPlan({
         points: runtimeRenderPoints,
         renderMode,
         thumbnailPlan,
-      }),
-    [renderMode, runtimeRenderPoints, thumbnailPlan],
+      });
+
+      if (neighborhoodLayoutActive) {
+        return {
+          ...nextPointLayer,
+          points: [],
+          visible: false,
+        };
+      }
+
+      return nextPointLayer;
+    },
+    [neighborhoodLayoutActive, renderMode, runtimeRenderPoints, thumbnailPlan],
   );
   const thumbnailRendererComparison = useMemo(
     () => createLatentMapThumbnailRendererComparison(thumbnailPlan),
@@ -1260,7 +1271,13 @@ export function LatentMapViewer({
     });
   }
 
-  function getNeighborhoodGridPointAt(pointer: PointerPosition) {
+  function getNeighborhoodGridPointAt({
+    includeSelected = false,
+    pointer,
+  }: {
+    includeSelected?: boolean;
+    pointer: PointerPosition;
+  }) {
     const wrapper = wrapperRef.current;
     const runtime = runtimeRef.current;
     const worldPoint = runtime?.getWorldPoint(pointer.x, pointer.y) ?? null;
@@ -1270,16 +1287,43 @@ export function LatentMapViewer({
     }
 
     const rect = wrapper.getBoundingClientRect();
+    const localPointer = {
+      x: pointer.x - rect.left,
+      y: pointer.y - rect.top,
+    };
     let nearestPoint: (typeof runtimeRenderPoints)[number] | null = null;
     let nearestDistance = Number.POSITIVE_INFINITY;
 
     for (const point of runtimeRenderPoints) {
       if (
-        point.image_id === selectedImageId ||
+        (!includeSelected && point.image_id === selectedImageId) ||
         !neighborhoodRuntimePlan.activeImageIds.has(point.image_id) ||
         typeof point.tween_x !== "number" ||
         typeof point.tween_y !== "number"
       ) {
+        continue;
+      }
+
+      const screenBounds = runtime.getPointScreenBounds(point.image_id);
+
+      if (screenBounds) {
+        const dx = localPointer.x - screenBounds.centerX;
+        const dy = localPointer.y - screenBounds.centerY;
+
+        if (
+          Math.abs(dx) > screenBounds.width / 2 ||
+          Math.abs(dy) > screenBounds.height / 2
+        ) {
+          continue;
+        }
+
+        const distance = Math.hypot(dx, dy);
+
+        if (distance < nearestDistance) {
+          nearestDistance = distance;
+          nearestPoint = point;
+        }
+
         continue;
       }
 
@@ -1331,6 +1375,16 @@ export function LatentMapViewer({
       const nextPointer = hoverPointerRef.current;
 
       if (!nextPointer) {
+        return;
+      }
+
+      if (neighborhoodLayoutActive) {
+        setHoveredImageId(
+          getNeighborhoodGridPointAt({
+            includeSelected: true,
+            pointer: nextPointer,
+          })?.image_id ?? null,
+        );
         return;
       }
 
@@ -1626,8 +1680,10 @@ export function LatentMapViewer({
 
     if (neighborhoodLayoutActive) {
       const clickedPoint = getNeighborhoodGridPointAt({
-        x: event.clientX,
-        y: event.clientY,
+        pointer: {
+          x: event.clientX,
+          y: event.clientY,
+        },
       });
       const action = getLatentMapNeighborhoodClickAction({
         activeImageIds: neighborhoodRuntimePlan.activeImageIds,

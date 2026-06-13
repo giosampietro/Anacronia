@@ -66,6 +66,15 @@ export type LatentMapNeighborhoodPreviewMeshTransform = {
   z: number;
 };
 
+export type LatentMapPointScreenBounds = {
+  centerX: number;
+  centerY: number;
+  height: number;
+  width: number;
+  x: number;
+  y: number;
+};
+
 export type LatentMapNeighborhoodPreviewMarkerInput = {
   point: LatentMapRenderablePoint;
   tweenController: LatentMapRuntimeTweenController;
@@ -74,6 +83,7 @@ export type LatentMapNeighborhoodPreviewMarkerInput = {
 export type LatentMapWebglRuntime = {
   dispose: () => void;
   getDiagnostics: () => LatentMapRuntimeDiagnostics;
+  getPointScreenBounds: (imageId: string) => LatentMapPointScreenBounds | null;
   getPointTweenValues: (imageId: string) => LatentMapTweenValues | null;
   getWorldPoint: (clientX: number, clientY: number) => { x: number; y: number };
   render: () => void;
@@ -86,6 +96,8 @@ export type LatentMapVisualTheme = "dark" | "light";
 const MAX_INTERACTION_FRAME_GAP_MS = 250;
 const LATENT_MAP_POINT_TWEEN_DURATION_MS = 180;
 const LATENT_MAP_RUNTIME_DIAGNOSTICS_MIN_INTERVAL_MS = 250;
+const LATENT_MAP_OPPOSITE_MARKER_MARGIN_PX = 8;
+const LATENT_MAP_OPPOSITE_MARKER_SIZE_PX = 5;
 
 const LATENT_MAP_RUNTIME_PALETTES: Record<
   LatentMapVisualTheme,
@@ -460,6 +472,7 @@ export function writeLatentMapAtlasInstanceAttributesFromTween({
   tweenController,
   view,
   viewportHeight,
+  viewportWidth,
 }: {
   dirtyRange?: LatentMapTweenDirtyRange | null;
   geometry: THREE.InstancedBufferGeometry;
@@ -468,6 +481,7 @@ export function writeLatentMapAtlasInstanceAttributesFromTween({
   tweenController: LatentMapRuntimeTweenController;
   view: LatentMapViewState;
   viewportHeight: number;
+  viewportWidth: number;
 }) {
   const instancePosition = geometry.getAttribute("instancePosition");
   const instanceScale = geometry.getAttribute("instanceScale");
@@ -558,20 +572,39 @@ export function writeLatentMapAtlasInstanceAttributesFromTween({
       sourceOffset === null
         ? 1
         : tweenBuffer[sourceOffset + LATENT_MAP_TWEEN_VALUE_OFFSETS.size];
-    const [width, height] = getTweenedThumbnailScale({
+    const screenBounds = getLatentMapTweenScreenBounds({
       point: item.point,
-      scaleMultiplier,
-      thumbnailSize,
       view,
       viewportHeight,
     });
+    const screenWorldTransform = screenBounds
+      ? screenBoundsToWorldTransform({
+          bounds: screenBounds,
+          view,
+          viewportHeight,
+          viewportWidth,
+        })
+      : null;
+    const [width, height] = screenWorldTransform
+      ? [screenWorldTransform.width, screenWorldTransform.height]
+      : getTweenedThumbnailScale({
+          point: item.point,
+          scaleMultiplier,
+          thumbnailSize,
+          view,
+          viewportHeight,
+        });
 
     instancePositions[index * 3] =
-      sourceOffset === null
+      screenWorldTransform
+        ? screenWorldTransform.x
+        : sourceOffset === null
         ? item.point.fitted_x
         : tweenBuffer[sourceOffset + LATENT_MAP_TWEEN_VALUE_OFFSETS.x];
     instancePositions[index * 3 + 1] =
-      sourceOffset === null
+      screenWorldTransform
+        ? screenWorldTransform.y
+        : sourceOffset === null
         ? item.point.fitted_y
         : tweenBuffer[sourceOffset + LATENT_MAP_TWEEN_VALUE_OFFSETS.y];
     instancePositions[index * 3 + 2] =
@@ -614,12 +647,14 @@ function createAtlasGeometry({
   tweenController,
   view,
   viewportHeight,
+  viewportWidth,
 }: {
   page: LatentMapThumbnailAtlasPage;
   thumbnailSize: LatentMapThumbnailSize;
   tweenController: LatentMapRuntimeTweenController;
   view: LatentMapViewState;
   viewportHeight: number;
+  viewportWidth: number;
 }) {
   const geometry = new THREE.InstancedBufferGeometry();
   const positions = new Float32Array([
@@ -646,6 +681,7 @@ function createAtlasGeometry({
     tweenController,
     view,
     viewportHeight,
+    viewportWidth,
   });
 
   return geometry;
@@ -653,7 +689,11 @@ function createAtlasGeometry({
 
 export const LATENT_MAP_ATLAS_FRAGMENT_SHADER = `
   uniform sampler2D atlasTexture;
+  uniform float oppositeMarkerMargin;
+  uniform float oppositeMarkerScreenSize;
+  uniform float screenPixelsPerWorldUnit;
   varying vec2 vAtlasUv;
+  varying vec2 vInstanceScale;
   varying vec2 vLocalUv;
   varying float vOpacity;
   varying float vState;
@@ -667,8 +707,21 @@ export const LATENT_MAP_ATLAS_FRAGMENT_SHADER = `
     float selected = step(1.5, vState) * (1.0 - step(2.5, vState));
     float focusRing = (1.0 - step(0.045, edgeDistance)) * selected;
     float opposite = step(2.5, vState);
-    float markerDistance = distance(vLocalUv, vec2(0.88, 0.88));
-    float oppositeMarker = (1.0 - step(0.055, markerDistance)) * opposite;
+    vec2 markerImageSize = max(
+      vInstanceScale * max(screenPixelsPerWorldUnit, 1.0),
+      vec2(1.0)
+    );
+    vec2 markerUvSize = min(
+      vec2(oppositeMarkerScreenSize) / markerImageSize,
+      vec2(0.2)
+    );
+    vec2 markerUvMargin = vec2(oppositeMarkerMargin) / markerImageSize;
+    vec2 markerCenter = vec2(1.0) - markerUvMargin - markerUvSize * 0.5;
+    vec2 markerDelta = abs(vLocalUv - markerCenter);
+    float markerSquare =
+      (1.0 - step(markerUvSize.x * 0.5, markerDelta.x)) *
+      (1.0 - step(markerUvSize.y * 0.5, markerDelta.y));
+    float oppositeMarker = markerSquare * opposite;
     vec3 focusColor = mix(texel.rgb, vec3(1.0), focusRing);
     vec3 color = mix(focusColor, vec3(1.0, 0.58, 0.66), oppositeMarker);
 
@@ -684,6 +737,7 @@ export const LATENT_MAP_ATLAS_VERTEX_SHADER = `
   attribute vec4 instanceUvRect;
   attribute float instanceState;
   varying vec2 vAtlasUv;
+  varying vec2 vInstanceScale;
   varying vec2 vLocalUv;
   varying float vOpacity;
   varying float vState;
@@ -691,6 +745,7 @@ export const LATENT_MAP_ATLAS_VERTEX_SHADER = `
   void main() {
     vLocalUv = uv;
     vAtlasUv = instanceUvRect.xy + (uv * instanceUvRect.zw);
+    vInstanceScale = instanceScale;
     vOpacity = instanceOpacity;
     vState = instanceState;
     vec3 transformed = vec3(
@@ -708,6 +763,9 @@ function createAtlasMaterial(texture: THREE.Texture) {
     transparent: true,
     uniforms: {
       atlasTexture: { value: texture },
+      oppositeMarkerMargin: { value: 8 },
+      oppositeMarkerScreenSize: { value: 5 },
+      screenPixelsPerWorldUnit: { value: 1 },
     },
     vertexShader: LATENT_MAP_ATLAS_VERTEX_SHADER,
     fragmentShader: LATENT_MAP_ATLAS_FRAGMENT_SHADER,
@@ -715,6 +773,8 @@ function createAtlasMaterial(texture: THREE.Texture) {
 }
 
 export const LATENT_MAP_NEIGHBORHOOD_PREVIEW_FRAGMENT_SHADER = `
+  uniform vec2 markerUvMargin;
+  uniform vec2 markerUvSize;
   uniform float oppositeMarkerOpacity;
   uniform float previewOpacity;
   uniform sampler2D previewTexture;
@@ -722,9 +782,12 @@ export const LATENT_MAP_NEIGHBORHOOD_PREVIEW_FRAGMENT_SHADER = `
 
   void main() {
     vec4 texel = texture2D(previewTexture, vLocalUv);
-    float markerDistance = distance(vLocalUv, vec2(0.88, 0.88));
-    float oppositeMarker =
-      (1.0 - step(0.055, markerDistance)) * oppositeMarkerOpacity;
+    vec2 markerCenter = vec2(1.0) - markerUvMargin - markerUvSize * 0.5;
+    vec2 markerDelta = abs(vLocalUv - markerCenter);
+    float markerSquare =
+      (1.0 - step(markerUvSize.x * 0.5, markerDelta.x)) *
+      (1.0 - step(markerUvSize.y * 0.5, markerDelta.y));
+    float oppositeMarker = markerSquare * oppositeMarkerOpacity;
     vec3 color = mix(texel.rgb, vec3(1.0, 0.58, 0.66), oppositeMarker);
 
     gl_FragColor = vec4(color, texel.a * previewOpacity);
@@ -748,6 +811,8 @@ function createNeighborhoodPreviewMaterial(texture: THREE.Texture) {
     fragmentShader: LATENT_MAP_NEIGHBORHOOD_PREVIEW_FRAGMENT_SHADER,
     transparent: true,
     uniforms: {
+      markerUvMargin: { value: new THREE.Vector2(0.04, 0.04) },
+      markerUvSize: { value: new THREE.Vector2(0.05, 0.05) },
       oppositeMarkerOpacity: { value: 0 },
       previewOpacity: { value: 1 },
       previewTexture: { value: texture },
@@ -849,12 +914,14 @@ function createAtlasPageMesh({
   tweenController,
   view,
   viewportHeight,
+  viewportWidth,
 }: {
   page: LatentMapThumbnailAtlasPage;
   thumbnailSize: LatentMapThumbnailSize;
   tweenController: LatentMapRuntimeTweenController;
   view: LatentMapViewState;
   viewportHeight: number;
+  viewportWidth: number;
 }): AtlasPageMesh {
   const canvas = document.createElement("canvas");
   const context = canvas.getContext("2d");
@@ -882,6 +949,7 @@ function createAtlasPageMesh({
     tweenController,
     view,
     viewportHeight,
+    viewportWidth,
   });
   const material = createAtlasMaterial(texture);
   const mesh = new THREE.Mesh(geometry, material);
@@ -907,29 +975,46 @@ export function getLatentMapNeighborhoodPreviewMeshTransform({
   tweenController,
   view,
   viewportHeight,
+  viewportWidth,
 }: {
   point: LatentMapRenderablePoint;
   thumbnailSize: LatentMapThumbnailSize;
   tweenController: LatentMapRuntimeTweenController;
   view: LatentMapViewState;
   viewportHeight: number;
+  viewportWidth: number;
 }): LatentMapNeighborhoodPreviewMeshTransform {
   const tweenIndex = tweenController.getIndex(point.image_id);
+  const screenBounds = getLatentMapTweenScreenBounds({
+    point,
+    view,
+    viewportHeight,
+  });
+  const screenWorldTransform = screenBounds
+    ? screenBoundsToWorldTransform({
+        bounds: screenBounds,
+        view,
+        viewportHeight,
+        viewportWidth,
+      })
+    : null;
 
   if (typeof tweenIndex !== "number") {
-    const [width, height] = getThumbnailScale(
-      point,
-      thumbnailSize,
-      view,
-      viewportHeight,
-    );
+    const [width, height] = screenWorldTransform
+      ? [screenWorldTransform.width, screenWorldTransform.height]
+      : getThumbnailScale(
+          point,
+          thumbnailSize,
+          view,
+          viewportHeight,
+        );
 
     return {
       height,
       opacity: 1,
       width,
-      x: point.fitted_x,
-      y: point.fitted_y,
+      x: screenWorldTransform?.x ?? point.fitted_x,
+      y: screenWorldTransform?.y ?? point.fitted_y,
       z: getThumbnailLayer(point) + 0.08,
     };
   }
@@ -947,13 +1032,17 @@ export function getLatentMapNeighborhoodPreviewMeshTransform({
   });
 
   return {
-    height,
+    height: screenWorldTransform?.height ?? height,
     opacity: clamp01(
       current[sourceOffset + LATENT_MAP_TWEEN_VALUE_OFFSETS.alpha],
     ),
-    width,
-    x: current[sourceOffset + LATENT_MAP_TWEEN_VALUE_OFFSETS.x],
-    y: current[sourceOffset + LATENT_MAP_TWEEN_VALUE_OFFSETS.y],
+    width: screenWorldTransform?.width ?? width,
+    x:
+      screenWorldTransform?.x ??
+      current[sourceOffset + LATENT_MAP_TWEEN_VALUE_OFFSETS.x],
+    y:
+      screenWorldTransform?.y ??
+      current[sourceOffset + LATENT_MAP_TWEEN_VALUE_OFFSETS.y],
     z: current[sourceOffset + LATENT_MAP_TWEEN_VALUE_OFFSETS.z] + 0.08,
   };
 }
@@ -988,6 +1077,157 @@ function getRendererInfo(
       points: renderer.info.render.points,
       triangles: renderer.info.render.triangles,
     },
+  };
+}
+
+function getScreenPixelsPerWorldUnit({
+  viewportHeight,
+  zoom,
+}: {
+  viewportHeight: number;
+  zoom: number;
+}) {
+  return (Math.max(viewportHeight, 1) * Math.max(zoom, 0.001)) / 2;
+}
+
+function getLatentMapTweenScreenBounds({
+  point,
+  view,
+  viewportHeight,
+}: {
+  point: LatentMapRenderablePoint;
+  view: LatentMapViewState;
+  viewportHeight: number;
+}): LatentMapPointScreenBounds | null {
+  if (
+    point.tween_screen_kind !== "anchor" &&
+    point.tween_screen_kind !== "grid"
+  ) {
+    return null;
+  }
+
+  if (
+    typeof point.tween_screen_x !== "number" ||
+    typeof point.tween_screen_y !== "number" ||
+    typeof point.tween_screen_width !== "number" ||
+    typeof point.tween_screen_height !== "number"
+  ) {
+    return null;
+  }
+
+  if (point.tween_screen_kind === "anchor") {
+    return createScreenBounds({
+      centerX: point.tween_screen_x,
+      centerY: point.tween_screen_y,
+      height: point.tween_screen_height,
+      width: point.tween_screen_width,
+    });
+  }
+
+  if (
+    typeof point.tween_screen_base_offset_x !== "number" ||
+    typeof point.tween_screen_base_offset_y !== "number" ||
+    typeof point.tween_screen_base_zoom !== "number" ||
+    typeof point.tween_screen_cell_gap !== "number" ||
+    typeof point.tween_screen_cell_size !== "number" ||
+    typeof point.tween_screen_column !== "number" ||
+    typeof point.tween_screen_grid_x !== "number" ||
+    typeof point.tween_screen_grid_y !== "number" ||
+    typeof point.tween_screen_row !== "number"
+  ) {
+    return null;
+  }
+
+  const baseLongSide = Math.max(
+    point.tween_screen_width,
+    point.tween_screen_height,
+    1,
+  );
+  const zoomRatio = Math.max(
+    0.1,
+    Math.min(
+      Math.max(view.zoom, 0.001) /
+        Math.max(point.tween_screen_base_zoom, 0.001),
+      1024 / baseLongSide,
+    ),
+  );
+  const cellSize = point.tween_screen_cell_size * zoomRatio;
+  const pixelsPerWorldUnit = getScreenPixelsPerWorldUnit({
+    viewportHeight,
+    zoom: view.zoom,
+  });
+  const panX =
+    -(view.offsetX - point.tween_screen_base_offset_x) * pixelsPerWorldUnit;
+  const panY =
+    (view.offsetY - point.tween_screen_base_offset_y) * pixelsPerWorldUnit;
+  const centerX =
+    point.tween_screen_grid_x +
+    point.tween_screen_column *
+      (cellSize + point.tween_screen_cell_gap) +
+    cellSize / 2 +
+    panX;
+  const centerY =
+    point.tween_screen_grid_y +
+    point.tween_screen_row *
+      (cellSize + point.tween_screen_cell_gap) +
+    cellSize / 2 +
+    panY;
+  return createScreenBounds({
+    centerX,
+    centerY,
+    height: point.tween_screen_height * zoomRatio,
+    width: point.tween_screen_width * zoomRatio,
+  });
+}
+
+function createScreenBounds({
+  centerX,
+  centerY,
+  height,
+  width,
+}: {
+  centerX: number;
+  centerY: number;
+  height: number;
+  width: number;
+}): LatentMapPointScreenBounds {
+  return {
+    centerX,
+    centerY,
+    height,
+    width,
+    x: centerX - width / 2,
+    y: centerY - height / 2,
+  };
+}
+
+function screenBoundsToWorldTransform({
+  bounds,
+  view,
+  viewportHeight,
+  viewportWidth,
+}: {
+  bounds: LatentMapPointScreenBounds;
+  view: LatentMapViewState;
+  viewportHeight: number;
+  viewportWidth: number;
+}) {
+  const safeViewportWidth = Math.max(viewportWidth, 1);
+  const safeViewportHeight = Math.max(viewportHeight, 1);
+  const aspect = safeViewportWidth / safeViewportHeight;
+  const zoom = Math.max(view.zoom, 0.001);
+  const ndcX = (bounds.centerX / safeViewportWidth) * 2 - 1;
+  const ndcY = -((bounds.centerY / safeViewportHeight) * 2 - 1);
+  const pixelsPerWorldUnit = getScreenPixelsPerWorldUnit({
+    viewportHeight: safeViewportHeight,
+    zoom,
+  });
+
+  return {
+    height: bounds.height / pixelsPerWorldUnit,
+    width: bounds.width / pixelsPerWorldUnit,
+    x: view.offsetX + (ndcX * aspect) / zoom,
+    y: view.offsetY + ndcY / zoom,
   };
 }
 
@@ -1177,6 +1417,10 @@ export function createLatentMapWebglRuntime({
     return Math.max(wrapper.getBoundingClientRect().height, 1);
   }
 
+  function getViewportWidth() {
+    return Math.max(wrapper.getBoundingClientRect().width, 1);
+  }
+
   function applyTweenStepResult(
     result: LatentMapTweenRetargetResult | LatentMapTweenStepResult,
   ) {
@@ -1271,9 +1515,30 @@ export function createLatentMapWebglRuntime({
         tweenController: pointTweenController,
         view: currentView,
         viewportHeight: getViewportHeight(),
+        viewportWidth: getViewportWidth(),
       });
+      const markerPixelsPerWorldUnit = getScreenPixelsPerWorldUnit({
+        viewportHeight: getViewportHeight(),
+        zoom: currentView.zoom,
+      });
+      const markerImageWidth = Math.max(
+        transform.width * markerPixelsPerWorldUnit,
+        1,
+      );
+      const markerImageHeight = Math.max(
+        transform.height * markerPixelsPerWorldUnit,
+        1,
+      );
 
       previewMesh.material.uniforms.previewOpacity.value = transform.opacity;
+      previewMesh.material.uniforms.markerUvMargin.value.set(
+        LATENT_MAP_OPPOSITE_MARKER_MARGIN_PX / markerImageWidth,
+        LATENT_MAP_OPPOSITE_MARKER_MARGIN_PX / markerImageHeight,
+      );
+      previewMesh.material.uniforms.markerUvSize.value.set(
+        Math.min(LATENT_MAP_OPPOSITE_MARKER_SIZE_PX / markerImageWidth, 0.2),
+        Math.min(LATENT_MAP_OPPOSITE_MARKER_SIZE_PX / markerImageHeight, 0.2),
+      );
       previewMesh.material.uniforms.oppositeMarkerOpacity.value =
         getLatentMapNeighborhoodPreviewMarkerOpacity({
           point,
@@ -1440,6 +1705,7 @@ export function createLatentMapWebglRuntime({
         tweenController: pointTweenController,
         view: currentView,
         viewportHeight: getViewportHeight(),
+        viewportWidth: getViewportWidth(),
       });
 
       pageSet.atlasPages.push(atlasPage);
@@ -1564,6 +1830,11 @@ export function createLatentMapWebglRuntime({
     dirtyRange: LatentMapTweenDirtyRange | null = null,
   ) {
     const viewportHeight = getViewportHeight();
+    const viewportWidth = getViewportWidth();
+    const screenPixelsPerWorldUnit = getScreenPixelsPerWorldUnit({
+      viewportHeight,
+      zoom: currentView.zoom,
+    });
 
     getLatentMapRenderableAtlasPages(plan).forEach((page, index) => {
       const atlasPage = atlasPages[index];
@@ -1572,6 +1843,8 @@ export function createLatentMapWebglRuntime({
         return;
       }
 
+      atlasPage.material.uniforms.screenPixelsPerWorldUnit.value =
+        screenPixelsPerWorldUnit;
       writeLatentMapAtlasInstanceAttributesFromTween({
         dirtyRange,
         geometry: atlasPage.geometry,
@@ -1580,6 +1853,7 @@ export function createLatentMapWebglRuntime({
         tweenController: pointTweenController,
         view: currentView,
         viewportHeight,
+        viewportWidth,
       });
       atlasPage.page = page;
     });
@@ -1667,6 +1941,20 @@ export function createLatentMapWebglRuntime({
     return pointTweenController.readCurrentValues(imageId);
   }
 
+  function getPointScreenBounds(imageId: string) {
+    const point = activeTweenPointByImageId.get(imageId);
+
+    if (!point) {
+      return null;
+    }
+
+    return getLatentMapTweenScreenBounds({
+      point,
+      view: currentView,
+      viewportHeight: getViewportHeight(),
+    });
+  }
+
   const resizeObserver =
     typeof ResizeObserver === "undefined"
       ? null
@@ -1727,6 +2015,7 @@ export function createLatentMapWebglRuntime({
       renderer.dispose();
     },
     getDiagnostics,
+    getPointScreenBounds,
     getPointTweenValues,
     getWorldPoint,
     render,

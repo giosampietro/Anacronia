@@ -55,7 +55,7 @@ function createPoints() {
 }
 
 describe("latent map neighborhood runtime targets", () => {
-  it("creates selected anchor, 3-column grid targets, and a recenter view", () => {
+  it("creates selected anchor, four-row grid targets, and a left-aligned recenter view", () => {
     const plan = createLatentMapNeighborhoodRuntimePlan({
       neighborCount: 3,
       points: createPoints(),
@@ -76,7 +76,8 @@ describe("latent map neighborhood runtime targets", () => {
       throw new Error("Expected ready layout.");
     }
 
-    expect(plan.layout.grid.columns).toBe(3);
+    expect(plan.layout.grid.columns).toBe(1);
+    expect(plan.layout.grid.rowCount).toBe(3);
     expect(plan.layout.rows.map((row) => row.imageId)).toEqual([
       "img_001",
       "img_002",
@@ -93,10 +94,11 @@ describe("latent map neighborhood runtime targets", () => {
     );
     expect(firstNeighbor?.tween_state).toBe(1);
     expect(background).toMatchObject({
-      tween_alpha: 0.08,
-      tween_size: 0.35,
+      tween_alpha: 0,
+      tween_size: 0,
       tween_state: 0,
     });
+    expect(plan.recenterView?.offsetX).toBeTypeOf("number");
   });
 
   it("preserves both-mode relation order and opposite identity metadata", () => {

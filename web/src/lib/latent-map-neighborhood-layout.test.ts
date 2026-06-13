@@ -85,12 +85,18 @@ describe("latent map neighborhood layout", () => {
     );
     expect(layout.rows.every((row) => row.relation === "closest")).toBe(true);
     expect(layout.rows.every((row) => row.marker === null)).toBe(true);
-    expect(layout.grid.columns).toBe(3);
-    expect(layout.grid.rowCount).toBe(7);
+    expect(layout.grid.columns).toBe(5);
+    expect(layout.grid.rowCount).toBe(4);
+    expect(layout.grid.cellGap).toBe(30);
     expect(layout.rows[3]).toMatchObject({
       column: 0,
       gridIndex: 3,
-      row: 1,
+      row: 3,
+    });
+    expect(layout.rows[4]).toMatchObject({
+      column: 1,
+      gridIndex: 4,
+      row: 0,
     });
   });
 
@@ -127,7 +133,8 @@ describe("latent map neighborhood layout", () => {
 
     expectReady(layout);
     expect(layout.rows).toHaveLength(40);
-    expect(layout.grid.rowCount).toBe(14);
+    expect(layout.grid.columns).toBe(10);
+    expect(layout.grid.rowCount).toBe(4);
     expect(layout.rows.slice(0, 20).every((row) => row.relation === "closest"))
       .toBe(true);
     expect(layout.rows.slice(20).every((row) => row.relation === "opposite"))
@@ -136,7 +143,7 @@ describe("latent map neighborhood layout", () => {
       .toBe(true);
   });
 
-  it("supports 50 relation rows without changing the 3-column grid contract", () => {
+  it("supports 50 relation rows by expanding horizontally from four rows", () => {
     const fixture = createFixture();
     const layout = createLatentMapNeighborhoodLayout({
       neighborCount: 50,
@@ -148,12 +155,12 @@ describe("latent map neighborhood layout", () => {
 
     expectReady(layout);
     expect(layout.rows).toHaveLength(50);
-    expect(layout.grid.columns).toBe(3);
-    expect(layout.grid.rowCount).toBe(17);
+    expect(layout.grid.columns).toBe(13);
+    expect(layout.grid.rowCount).toBe(4);
     expect(layout.rows.at(-1)).toMatchObject({
-      column: 1,
+      column: 12,
       imageId: "img_050",
-      row: 16,
+      row: 1,
     });
   });
 
@@ -223,8 +230,11 @@ describe("latent map neighborhood layout", () => {
 
     expectReady(layout);
     expect(layout.stageBounds.width).toBeGreaterThan(0);
-    expect(layout.stageBounds.height).toBeGreaterThan(0);
+    expect(layout.stageBounds.height).toBe(600);
     expect(layout.recenterTarget.zoom).toBeGreaterThan(0);
+    expect(layout.anchor.target.height).toBe(536);
+    expect(layout.grid.bounds.height).toBe(536);
+    expect(layout.grid.cellSize).toBeCloseTo((536 - 3 * 30) / 4);
     expect(layout.anchor.target.x).toBeGreaterThanOrEqual(0);
     expect(layout.anchor.target.y).toBeGreaterThanOrEqual(0);
     expect(layout.anchor.target.x).toBeLessThanOrEqual(

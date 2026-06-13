@@ -104,13 +104,13 @@ export type LatentMapNeighborhoodLayout =
 
 export type LatentMapNeighborhoodLayoutInput = {
   cellGap?: number;
-  columns?: number;
   neighborCount: number;
   neighborsByImageId?: Record<string, LatentMapNeighbor[]>;
   oppositesByImageId?: Record<string, LatentMapNeighbor[]>;
   padding?: number;
   points: LatentMapPoint[];
   relationMode: LatentMapFaissRelationMode;
+  rows?: number;
   selectedImageId: string | null;
   viewport: LatentMapNeighborhoodViewport;
 };
@@ -123,24 +123,22 @@ type RankedNeighbor = {
   score: number;
 };
 
-const DEFAULT_COLUMNS = 3;
+const DEFAULT_GRID_ROWS = 4;
 const DEFAULT_PADDING = 32;
-const DEFAULT_CELL_GAP = 18;
-const MAX_ANCHOR_LONG_SIDE = 500;
-const MIN_GRID_CELL_SIZE = 112;
-const MAX_GRID_CELL_SIZE = 188;
+const DEFAULT_CELL_GAP = 30;
+const MIN_GRID_CELL_SIZE = 72;
 const LAYOUT_GAP = 40;
 const RECENTER_MARGIN = 0.88;
 
 export function createLatentMapNeighborhoodLayout({
   cellGap = DEFAULT_CELL_GAP,
-  columns = DEFAULT_COLUMNS,
   neighborCount,
   neighborsByImageId = {},
   oppositesByImageId = {},
   padding = DEFAULT_PADDING,
   points,
   relationMode,
+  rows: requestedRows = DEFAULT_GRID_ROWS,
   selectedImageId,
   viewport,
 }: LatentMapNeighborhoodLayoutInput): LatentMapNeighborhoodLayout {
@@ -157,10 +155,10 @@ export function createLatentMapNeighborhoodLayout({
     return createEmptyNeighborhoodLayout("selected-missing", selectedImageId);
   }
 
-  const safeColumns = Math.max(1, Math.floor(columns));
   const safeNeighborCount = Math.max(0, Math.floor(neighborCount));
   const safePadding = Math.max(0, padding);
   const safeCellGap = Math.max(0, cellGap);
+  const safeRows = Math.max(1, Math.floor(requestedRows));
   const safeViewport = {
     height: Math.max(1, viewport.height),
     width: Math.max(1, viewport.width),
@@ -202,16 +200,17 @@ export function createLatentMapNeighborhoodLayout({
     }
 
     usedImageIds.add(relationRow.imageId);
+    const gridIndex = rows.length;
     rows.push({
-      column: rows.length % safeColumns,
-      gridIndex: rows.length,
+      column: 0,
+      gridIndex,
       imageId: relationRow.imageId,
       isOpposite: relationRow.relation === "opposite",
       marker: relationRow.relation === "opposite" ? "opposite" : null,
       point,
       rank: relationRow.rank,
       relation: relationRow.relation,
-      row: Math.floor(rows.length / safeColumns),
+      row: 0,
       score: relationRow.score,
       source: {
         x: point.x,
@@ -227,44 +226,38 @@ export function createLatentMapNeighborhoodLayout({
     });
   }
 
-  const rowCount = rows.length === 0 ? 0 : Math.ceil(rows.length / safeColumns);
-  const anchorLongSide = clamp(
-    Math.min(
-      MAX_ANCHOR_LONG_SIDE,
-      safeViewport.width * 0.34,
-      safeViewport.height * 0.72,
-    ),
-    160,
-    MAX_ANCHOR_LONG_SIDE,
+  const rowCount = rows.length === 0 ? 0 : Math.min(safeRows, rows.length);
+  const safeColumns = rows.length === 0 ? 0 : Math.ceil(rows.length / safeRows);
+  const anchorHeight = Math.max(1, safeViewport.height - safePadding * 2);
+  const anchorAreaWidth = Math.max(
+    1,
+    anchorHeight * getPointAspectRatio(selectedPoint),
   );
-  const gridCellSize = clamp(
-    safeViewport.width * 0.11,
-    MIN_GRID_CELL_SIZE,
-    MAX_GRID_CELL_SIZE,
-  );
+  const gridCellSize = rowCount === 0
+    ? 0
+    : Math.max(
+        MIN_GRID_CELL_SIZE,
+        (anchorHeight - Math.max(0, rowCount - 1) * safeCellGap) / rowCount,
+      );
   const gridWidth =
     safeColumns * gridCellSize + Math.max(0, safeColumns - 1) * safeCellGap;
   const gridHeight =
     rowCount === 0
       ? 0
       : rowCount * gridCellSize + Math.max(0, rowCount - 1) * safeCellGap;
-  const anchorAreaWidth = anchorLongSide;
   const stageWidth =
     safePadding + anchorAreaWidth + LAYOUT_GAP + gridWidth + safePadding;
-  const stageHeight =
-    safePadding +
-    Math.max(anchorLongSide, gridHeight) +
-    safePadding;
+  const stageHeight = safeViewport.height;
   const anchorBounds = createRect(
     safePadding,
     safePadding,
     anchorAreaWidth,
-    Math.max(anchorLongSide, stageHeight - safePadding * 2),
+    anchorHeight,
   );
   const anchorRect = fitRectInBounds({
     aspectRatio: getPointAspectRatio(selectedPoint),
     bounds: anchorBounds,
-    maxLongSide: anchorLongSide,
+    maxLongSide: Math.max(anchorAreaWidth, anchorHeight),
   });
   const gridBounds = createRect(
     safePadding + anchorAreaWidth + LAYOUT_GAP,
@@ -274,6 +267,9 @@ export function createLatentMapNeighborhoodLayout({
   );
 
   rows.forEach((row) => {
+    row.column = Math.floor(row.gridIndex / safeRows);
+    row.row = row.gridIndex % safeRows;
+
     const cellBounds = createRect(
       gridBounds.x + row.column * (gridCellSize + safeCellGap),
       gridBounds.y + row.row * (gridCellSize + safeCellGap),
@@ -462,8 +458,4 @@ function getPointAspectRatio(point: LatentMapPoint): number {
   }
 
   return point.width / point.height;
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
 }
