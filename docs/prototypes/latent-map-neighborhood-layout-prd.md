@@ -135,7 +135,10 @@ The #224 parent tracker has been split into smaller implementation issues:
    - Child slices:
      - [#234 Latent map: add neighborhood mode state helpers](https://github.com/giosampietro/Anacronia/issues/234)
      - [#235 Latent map: add neighborhood runtime target planner](https://github.com/giosampietro/Anacronia/issues/235)
-     - [#236 Latent map: wire basic neighborhood layout mode in viewer](https://github.com/giosampietro/Anacronia/issues/236)
+     - [#236 Latent map: wire basic neighborhood layout mode in viewer](https://github.com/giosampietro/Anacronia/issues/236) - closed, superseded by thinner slices.
+     - [#238 Latent map: add neighborhood mode shell and selected anchor](https://github.com/giosampietro/Anacronia/issues/238)
+     - [#239 Latent map: add closest-neighbor neighborhood grid](https://github.com/giosampietro/Anacronia/issues/239)
+     - [#240 Latent map: follow active FAISS relation in neighborhood grid](https://github.com/giosampietro/Anacronia/issues/240)
      - [#237 Latent map: render opposite markers in neighborhood grid](https://github.com/giosampietro/Anacronia/issues/237)
 
 4. [#228 Latent map: add click-neighbor rebuild for neighborhood layout](https://github.com/giosampietro/Anacronia/issues/228)

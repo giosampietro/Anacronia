@@ -77,6 +77,8 @@ import {
   createLatentMapSpatialIndex,
 } from "@/lib/latent-map-spatial-index";
 import { createLatentMapWheelZoomView } from "@/lib/latent-map-view-controls";
+import { getLatentMapNeighborhoodKeyboardAction } from "@/lib/latent-map-neighborhood-mode";
+import { createLatentMapNeighborhoodRuntimePlan } from "@/lib/latent-map-neighborhood-targets";
 import {
   createLatentMapFilterOptions,
   DEFAULT_LATENT_MAP_DURABLE_STATE,
@@ -387,6 +389,10 @@ export function LatentMapViewer({
   const hoverPointerRef = useRef<PointerPosition | null>(null);
   const fpsActivityTimeoutRef = useRef<number | null>(null);
   const previousResolvedTextureDetailRef = useRef<number | null>(null);
+  const neighborhoodRestoreRenderModeRef = useRef<LatentMapRenderMode | null>(
+    null,
+  );
+  const pendingNeighborhoodRecenterRef = useRef(false);
   const dragStartRef = useRef<{
     pointer: PointerPosition;
     view: LatentMapViewState;
@@ -422,6 +428,7 @@ export function LatentMapViewer({
   const [loadedThumbnailCount, setLoadedThumbnailCount] = useState(0);
   const [fpsCounterActive, setFpsCounterActive] = useState(false);
   const [uiOverlayHidden, setUiOverlayHidden] = useState(false);
+  const [neighborhoodModeActive, setNeighborhoodModeActive] = useState(false);
   const [thumbnailSize, setThumbnailSize] =
     useState<LatentMapThumbnailSize>(initialDurableState.thumbnailSize);
   const [faissNeighborCount, setFaissNeighborCount] =
@@ -494,9 +501,56 @@ export function LatentMapViewer({
       selectedImageId,
     ],
   );
+  const neighborhoodRuntimePlan = useMemo(
+    () =>
+      createLatentMapNeighborhoodRuntimePlan({
+        neighborCount: 0,
+        neighborsByImageId,
+        oppositesByImageId,
+        points: renderPoints,
+        relationMode: faissRelationMode,
+        selectedImageId,
+        thumbnailSize,
+        viewport: {
+          height: Math.max(mapViewportSize.height, 1),
+          width: Math.max(mapViewportSize.width, 1),
+        },
+      }),
+    [
+      faissRelationMode,
+      mapViewportSize.height,
+      mapViewportSize.width,
+      neighborsByImageId,
+      oppositesByImageId,
+      renderPoints,
+      selectedImageId,
+      thumbnailSize,
+    ],
+  );
+  const neighborhoodLayoutActive =
+    neighborhoodModeActive && neighborhoodRuntimePlan.status === "ready";
+  const runtimeRenderPoints = useMemo(() => {
+    if (!neighborhoodLayoutActive) {
+      return renderPoints;
+    }
+
+    return neighborhoodRuntimePlan.points.map((point) =>
+      point.image_id === selectedImageId
+        ? point
+        : {
+            ...point,
+            point_state: "base" as const,
+          },
+    );
+  }, [
+    neighborhoodLayoutActive,
+    neighborhoodRuntimePlan.points,
+    renderPoints,
+    selectedImageId,
+  ]);
   const spatialIndex = useMemo(
-    () => createLatentMapSpatialIndex(renderPoints),
-    [renderPoints],
+    () => createLatentMapSpatialIndex(runtimeRenderPoints),
+    [runtimeRenderPoints],
   );
   const selectedPoint = useMemo(
     () =>
@@ -546,7 +600,7 @@ export function LatentMapViewer({
   );
   const textureDetailScaleMultiplier = useMemo(
     () =>
-      renderPoints.reduce(
+      runtimeRenderPoints.reduce(
         (maxScale, point) =>
           Math.max(
             maxScale,
@@ -554,7 +608,7 @@ export function LatentMapViewer({
           ),
         1,
       ),
-    [renderPoints],
+    [runtimeRenderPoints],
   );
   const displayThumbnailScreenLongSide = useMemo(
     () =>
@@ -637,7 +691,7 @@ export function LatentMapViewer({
         atlasSize: ATLAS_TEXTURE_SIZE,
         fallbackThumbnailAtlas,
         hoverPreviewSize: DEFAULT_LATENT_MAP_HOVER_PREVIEW_SIZE,
-        points: renderPoints,
+        points: runtimeRenderPoints,
         strategy: "all-atlas",
         textureDetail,
         thumbnailAtlas,
@@ -646,7 +700,7 @@ export function LatentMapViewer({
       }),
     [
       fallbackThumbnailAtlas,
-      renderPoints,
+      runtimeRenderPoints,
       textureDetail,
       thumbnailAtlas,
       thumbnailSize,
@@ -656,11 +710,11 @@ export function LatentMapViewer({
   const pointLayer = useMemo(
     () =>
       createLatentMapPointLayerPlan({
-        points: renderPoints,
+        points: runtimeRenderPoints,
         renderMode,
         thumbnailPlan,
       }),
-    [renderMode, renderPoints, thumbnailPlan],
+    [renderMode, runtimeRenderPoints, thumbnailPlan],
   );
   const thumbnailRendererComparison = useMemo(
     () => createLatentMapThumbnailRendererComparison(thumbnailPlan),
@@ -669,12 +723,12 @@ export function LatentMapViewer({
   const runtimeState = useMemo<LatentMapRuntimeState>(
     () => ({
       pointLayer,
-      points: renderPoints,
+      points: runtimeRenderPoints,
       renderMode,
       thumbnailPlan,
       visualTheme,
     }),
-    [pointLayer, renderMode, renderPoints, thumbnailPlan, visualTheme],
+    [pointLayer, renderMode, runtimeRenderPoints, thumbnailPlan, visualTheme],
   );
   const dataMountKey = useMemo(
     () =>
@@ -724,6 +778,42 @@ export function LatentMapViewer({
       setFpsCounterActive(false);
     }, FPS_COUNTER_ACTIVE_TIMEOUT_MS);
   }, []);
+  const exitNeighborhoodMode = useCallback(() => {
+    pendingNeighborhoodRecenterRef.current = false;
+    setNeighborhoodModeActive(false);
+
+    const restoreRenderMode = neighborhoodRestoreRenderModeRef.current;
+
+    neighborhoodRestoreRenderModeRef.current = null;
+
+    if (restoreRenderMode) {
+      setRenderMode(restoreRenderMode);
+    }
+  }, []);
+  const cancelNeighborhoodModeForManualModeChange = useCallback(() => {
+    pendingNeighborhoodRecenterRef.current = false;
+    neighborhoodRestoreRenderModeRef.current = null;
+    setNeighborhoodModeActive(false);
+  }, []);
+  const enterNeighborhoodMode = useCallback(() => {
+    if (!selectedImageId) {
+      return;
+    }
+
+    if (!neighborhoodModeActive) {
+      neighborhoodRestoreRenderModeRef.current = renderMode;
+    }
+
+    pendingNeighborhoodRecenterRef.current = true;
+    setRenderMode("thumbnails");
+    setNeighborhoodModeActive(true);
+    markFpsCounterActive();
+  }, [
+    markFpsCounterActive,
+    neighborhoodModeActive,
+    renderMode,
+    selectedImageId,
+  ]);
 
   const fpsIndicatorText =
     fpsCounterActive && runtimeSnapshot.estimatedFps > 0
@@ -737,6 +827,24 @@ export function LatentMapViewer({
   useEffect(() => {
     previousResolvedTextureDetailRef.current = resolvedTextureDetail;
   }, [resolvedTextureDetail]);
+
+  useEffect(() => {
+    if (
+      !neighborhoodLayoutActive ||
+      !pendingNeighborhoodRecenterRef.current ||
+      !neighborhoodRuntimePlan.recenterView
+    ) {
+      return;
+    }
+
+    pendingNeighborhoodRecenterRef.current = false;
+    markFpsCounterActive();
+    setView(neighborhoodRuntimePlan.recenterView);
+  }, [
+    markFpsCounterActive,
+    neighborhoodLayoutActive,
+    neighborhoodRuntimePlan.recenterView,
+  ]);
 
   useEffect(() => {
     if (typeof document === "undefined") {
@@ -974,6 +1082,35 @@ export function LatentMapViewer({
         return;
       }
 
+      const neighborhoodAction = getLatentMapNeighborhoodKeyboardAction({
+        key: event.key,
+        mapRecenterView: DEFAULT_VIEW,
+        mode: {
+          isActive: neighborhoodModeActive,
+          recenterView: neighborhoodRuntimePlan.recenterView,
+          selectedImageId,
+        },
+      });
+
+      if (neighborhoodAction) {
+        event.preventDefault();
+
+        if (neighborhoodAction.kind === "enter") {
+          enterNeighborhoodMode();
+          return;
+        }
+
+        if (neighborhoodAction.kind === "exit") {
+          markFpsCounterActive();
+          exitNeighborhoodMode();
+          return;
+        }
+
+        markFpsCounterActive();
+        setView(neighborhoodAction.view);
+        return;
+      }
+
       if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
         event.preventDefault();
         setThumbnailSize((currentSize) =>
@@ -999,6 +1136,7 @@ export function LatentMapViewer({
 
       if (event.key.toLowerCase() === "p") {
         event.preventDefault();
+        cancelNeighborhoodModeForManualModeChange();
         setRenderMode((currentMode) =>
           currentMode === "points" ? "thumbnails" : "points",
         );
@@ -1011,11 +1149,6 @@ export function LatentMapViewer({
         return;
       }
 
-      if (event.key.toLowerCase() === "h") {
-        event.preventDefault();
-        markFpsCounterActive();
-        setView(DEFAULT_VIEW);
-      }
     };
 
     window.addEventListener("keydown", handleKeyDown);
@@ -1023,7 +1156,16 @@ export function LatentMapViewer({
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [markFpsCounterActive, textureDetailOptions]);
+  }, [
+    cancelNeighborhoodModeForManualModeChange,
+    enterNeighborhoodMode,
+    exitNeighborhoodMode,
+    markFpsCounterActive,
+    neighborhoodModeActive,
+    neighborhoodRuntimePlan.recenterView,
+    selectedImageId,
+    textureDetailOptions,
+  ]);
 
   function getNearestPointAt(pointer: PointerPosition) {
     const wrapper = wrapperRef.current;
@@ -1338,6 +1480,7 @@ export function LatentMapViewer({
     setSelectedImageId(nextSelectedImageId);
 
     if (!nextSelectedImageId) {
+      exitNeighborhoodMode();
       setNeighborError(null);
       setLoadingNeighborImageId(null);
       return;
@@ -1350,6 +1493,7 @@ export function LatentMapViewer({
     const nextMode = Array.isArray(nextValue) ? nextValue[0] : nextValue;
 
     if (nextMode === "points" || nextMode === "thumbnails") {
+      cancelNeighborhoodModeForManualModeChange();
       setRenderMode(nextMode);
     }
   }
@@ -1824,6 +1968,17 @@ export function LatentMapViewer({
             data-faiss-neighbor-count={faissNeighborCount}
             data-faiss-relation={faissRelationMode}
             data-map-theme={visualTheme}
+            data-neighborhood-active={neighborhoodLayoutActive}
+            data-neighborhood-active-count={
+              neighborhoodRuntimePlan.activeImageIds.size
+            }
+            data-neighborhood-mode={neighborhoodModeActive}
+            data-neighborhood-row-count={
+              neighborhoodRuntimePlan.layout.status === "ready"
+                ? neighborhoodRuntimePlan.layout.rows.length
+                : 0
+            }
+            data-neighborhood-status={neighborhoodRuntimePlan.status}
             data-point-count={stats.pointCount}
             data-render-mode={renderMode}
             data-runtime-average-frame-ms={runtimeSnapshot.averageFrameMs}
@@ -2064,7 +2219,12 @@ export function LatentMapViewer({
                   className="w-full"
                   onClick={() => {
                     markFpsCounterActive();
-                    setView(DEFAULT_VIEW);
+                    setView(
+                      neighborhoodLayoutActive &&
+                        neighborhoodRuntimePlan.recenterView
+                        ? neighborhoodRuntimePlan.recenterView
+                        : DEFAULT_VIEW,
+                    );
                   }}
                   size="icon-sm"
                   title="Reset view"
