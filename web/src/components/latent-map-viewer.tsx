@@ -1262,10 +1262,10 @@ export function LatentMapViewer({
 
   function getNeighborhoodGridPointAt(pointer: PointerPosition) {
     const wrapper = wrapperRef.current;
-    const worldPoint =
-      runtimeRef.current?.getWorldPoint(pointer.x, pointer.y) ?? null;
+    const runtime = runtimeRef.current;
+    const worldPoint = runtime?.getWorldPoint(pointer.x, pointer.y) ?? null;
 
-    if (!wrapper || !worldPoint || !neighborhoodLayoutActive) {
+    if (!wrapper || !runtime || !worldPoint || !neighborhoodLayoutActive) {
       return null;
     }
 
@@ -1283,6 +1283,12 @@ export function LatentMapViewer({
         continue;
       }
 
+      const tweenValues = runtime.getPointTweenValues(point.image_id);
+
+      if (!tweenValues) {
+        continue;
+      }
+
       const [baseWidth, baseHeight] = getLatentMapThumbnailWorldScale({
         point,
         thumbnailSize,
@@ -1290,13 +1296,13 @@ export function LatentMapViewer({
         zoom: viewRef.current.zoom,
       });
       const scaleMultiplier =
-        typeof point.tween_size === "number" && Number.isFinite(point.tween_size)
-          ? point.tween_size
+        Number.isFinite(tweenValues.size) && tweenValues.size > 0
+          ? tweenValues.size
           : 1;
       const width = baseWidth * scaleMultiplier;
       const height = baseHeight * scaleMultiplier;
-      const dx = worldPoint.x - point.tween_x;
-      const dy = worldPoint.y - point.tween_y;
+      const dx = worldPoint.x - tweenValues.x;
+      const dy = worldPoint.y - tweenValues.y;
 
       if (Math.abs(dx) > width / 2 || Math.abs(dy) > height / 2) {
         continue;
@@ -1354,11 +1360,13 @@ export function LatentMapViewer({
       embeddedOpposites.length >= faissNeighborCount;
 
     if (hasClosest && hasOpposite) {
+      setLoadingNeighborImageId(null);
       setNeighborError(null);
       return;
     }
 
     if (!data.neighbor_lookup_path) {
+      setLoadingNeighborImageId(null);
       if (
         loadedNeighbors.length > 0 ||
         embeddedNeighbors.length > 0 ||

@@ -10,6 +10,7 @@ import {
   type LatentMapTweenItem,
   type LatentMapTweenRetargetResult,
   type LatentMapTweenStepResult,
+  type LatentMapTweenValues,
 } from "@/lib/latent-map-runtime-tween";
 import {
   getLatentMapRenderableAtlasPages,
@@ -65,9 +66,15 @@ export type LatentMapNeighborhoodPreviewMeshTransform = {
   z: number;
 };
 
+export type LatentMapNeighborhoodPreviewMarkerInput = {
+  point: LatentMapRenderablePoint;
+  tweenController: LatentMapRuntimeTweenController;
+};
+
 export type LatentMapWebglRuntime = {
   dispose: () => void;
   getDiagnostics: () => LatentMapRuntimeDiagnostics;
+  getPointTweenValues: (imageId: string) => LatentMapTweenValues | null;
   getWorldPoint: (clientX: number, clientY: number) => { x: number; y: number };
   render: () => void;
   setRenderState: (state: LatentMapRuntimeState) => void;
@@ -707,6 +714,48 @@ function createAtlasMaterial(texture: THREE.Texture) {
   });
 }
 
+export const LATENT_MAP_NEIGHBORHOOD_PREVIEW_FRAGMENT_SHADER = `
+  uniform float oppositeMarkerOpacity;
+  uniform float previewOpacity;
+  uniform sampler2D previewTexture;
+  varying vec2 vLocalUv;
+
+  void main() {
+    vec4 texel = texture2D(previewTexture, vLocalUv);
+    float markerDistance = distance(vLocalUv, vec2(0.88, 0.88));
+    float oppositeMarker =
+      (1.0 - step(0.055, markerDistance)) * oppositeMarkerOpacity;
+    vec3 color = mix(texel.rgb, vec3(1.0, 0.58, 0.66), oppositeMarker);
+
+    gl_FragColor = vec4(color, texel.a * previewOpacity);
+    #include <colorspace_fragment>
+  }
+`;
+
+export const LATENT_MAP_NEIGHBORHOOD_PREVIEW_VERTEX_SHADER = `
+  varying vec2 vLocalUv;
+
+  void main() {
+    vLocalUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+function createNeighborhoodPreviewMaterial(texture: THREE.Texture) {
+  return new THREE.ShaderMaterial({
+    depthTest: true,
+    depthWrite: false,
+    fragmentShader: LATENT_MAP_NEIGHBORHOOD_PREVIEW_FRAGMENT_SHADER,
+    transparent: true,
+    uniforms: {
+      oppositeMarkerOpacity: { value: 0 },
+      previewOpacity: { value: 1 },
+      previewTexture: { value: texture },
+    },
+    vertexShader: LATENT_MAP_NEIGHBORHOOD_PREVIEW_VERTEX_SHADER,
+  });
+}
+
 function loadNeighborhoodPreviewTexture(
   item: LatentMapNeighborhoodPreviewPlan["items"][number],
 ) {
@@ -780,8 +829,8 @@ type AtlasPageMesh = {
 
 type NeighborhoodPreviewMesh = {
   imageId: string;
-  material: THREE.MeshBasicMaterial;
-  mesh: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
+  material: THREE.ShaderMaterial;
+  mesh: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
   texture: THREE.Texture;
 };
 
@@ -907,6 +956,23 @@ export function getLatentMapNeighborhoodPreviewMeshTransform({
     y: current[sourceOffset + LATENT_MAP_TWEEN_VALUE_OFFSETS.y],
     z: current[sourceOffset + LATENT_MAP_TWEEN_VALUE_OFFSETS.z] + 0.08,
   };
+}
+
+export function getLatentMapNeighborhoodPreviewMarkerOpacity({
+  point,
+  tweenController,
+}: LatentMapNeighborhoodPreviewMarkerInput) {
+  const tweenIndex = tweenController.getIndex(point.image_id);
+
+  if (typeof tweenIndex !== "number") {
+    return point.point_state === "opposite" ? 1 : 0;
+  }
+
+  const current = tweenController.getCurrentBuffer();
+  const sourceOffset = tweenIndex * LATENT_MAP_TWEEN_STRIDE;
+  const state = current[sourceOffset + LATENT_MAP_TWEEN_VALUE_OFFSETS.state];
+
+  return state >= 2.5 ? 1 : 0;
 }
 
 function getRendererInfo(
@@ -1152,13 +1218,7 @@ export function createLatentMapWebglRuntime({
     rank: number;
     texture: THREE.Texture;
   }): NeighborhoodPreviewMesh {
-    const material = new THREE.MeshBasicMaterial({
-      depthTest: true,
-      depthWrite: false,
-      map: texture,
-      toneMapped: false,
-      transparent: true,
-    });
+    const material = createNeighborhoodPreviewMaterial(texture);
     const mesh = new THREE.Mesh(neighborhoodPreviewGeometry, material);
 
     mesh.frustumCulled = false;
@@ -1213,7 +1273,12 @@ export function createLatentMapWebglRuntime({
         viewportHeight: getViewportHeight(),
       });
 
-      previewMesh.material.opacity = transform.opacity;
+      previewMesh.material.uniforms.previewOpacity.value = transform.opacity;
+      previewMesh.material.uniforms.oppositeMarkerOpacity.value =
+        getLatentMapNeighborhoodPreviewMarkerOpacity({
+          point,
+          tweenController: pointTweenController,
+        });
       previewMesh.mesh.position.set(transform.x, transform.y, transform.z);
       previewMesh.mesh.scale.set(transform.width, transform.height, 1);
       previewMesh.mesh.renderOrder = 5_000 + item.rank;
@@ -1598,6 +1663,10 @@ export function createLatentMapWebglRuntime({
     return { x: vector.x, y: vector.y };
   }
 
+  function getPointTweenValues(imageId: string) {
+    return pointTweenController.readCurrentValues(imageId);
+  }
+
   const resizeObserver =
     typeof ResizeObserver === "undefined"
       ? null
@@ -1658,6 +1727,7 @@ export function createLatentMapWebglRuntime({
       renderer.dispose();
     },
     getDiagnostics,
+    getPointTweenValues,
     getWorldPoint,
     render,
     setRenderState,

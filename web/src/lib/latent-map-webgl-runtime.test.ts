@@ -5,11 +5,14 @@ import { createLatentMapRuntimeTweenController } from "@/lib/latent-map-runtime-
 import {
   createLatentMapPointTweenItem,
   createLatentMapPointTweenItems,
+  getLatentMapNeighborhoodPreviewMarkerOpacity,
   getLatentMapNeighborhoodPreviewMeshTransform,
   getLatentMapThumbnailWorldScale,
   LATENT_MAP_ATLAS_FRAGMENT_SHADER,
   LATENT_MAP_ATLAS_VERTEX_SHADER,
   LATENT_MAP_MAX_THUMBNAIL_SCREEN_SCALE,
+  LATENT_MAP_NEIGHBORHOOD_PREVIEW_FRAGMENT_SHADER,
+  LATENT_MAP_NEIGHBORHOOD_PREVIEW_VERTEX_SHADER,
   writeLatentMapAtlasInstanceAttributesFromTween,
   writeLatentMapPointGeometryFromTween,
   writeLatentMapPointLayerGeometryFromTween,
@@ -97,6 +100,18 @@ describe("latent map WebGL runtime math", () => {
     );
     expect(LATENT_MAP_ATLAS_FRAGMENT_SHADER).toContain(
       "vec3(1.0, 0.58, 0.66)",
+    );
+    expect(LATENT_MAP_NEIGHBORHOOD_PREVIEW_FRAGMENT_SHADER).toContain(
+      "uniform float oppositeMarkerOpacity;",
+    );
+    expect(LATENT_MAP_NEIGHBORHOOD_PREVIEW_FRAGMENT_SHADER).toContain(
+      "vec3(1.0, 0.58, 0.66)",
+    );
+    expect(LATENT_MAP_NEIGHBORHOOD_PREVIEW_FRAGMENT_SHADER).toContain(
+      "#include <colorspace_fragment>",
+    );
+    expect(LATENT_MAP_NEIGHBORHOOD_PREVIEW_VERTEX_SHADER).toContain(
+      "vLocalUv = uv;",
     );
   });
 
@@ -468,5 +483,42 @@ describe("latent map WebGL runtime math", () => {
     expect(transform.width).toBeCloseTo(0.26);
     expect(transform.height).toBeCloseTo(0.13);
     expect(transform.z).toBeCloseTo(0.42);
+  });
+
+  it("marks only opposite neighborhood preview meshes", () => {
+    const closestPoint = createRenderablePoint({
+      image_id: "img_closest",
+      point_state: "neighbor",
+    });
+    const oppositePoint = createRenderablePoint({
+      image_id: "img_opposite",
+      point_state: "opposite",
+      tween_state: 3,
+    });
+    const controller = createLatentMapRuntimeTweenController([
+      createLatentMapPointTweenItem({
+        point: closestPoint,
+        pointSize: 3,
+        visualTheme: "dark",
+      }),
+      createLatentMapPointTweenItem({
+        point: oppositePoint,
+        pointSize: 3,
+        visualTheme: "dark",
+      }),
+    ]);
+
+    expect(
+      getLatentMapNeighborhoodPreviewMarkerOpacity({
+        point: closestPoint,
+        tweenController: controller,
+      }),
+    ).toBe(0);
+    expect(
+      getLatentMapNeighborhoodPreviewMarkerOpacity({
+        point: oppositePoint,
+        tweenController: controller,
+      }),
+    ).toBe(1);
   });
 });
