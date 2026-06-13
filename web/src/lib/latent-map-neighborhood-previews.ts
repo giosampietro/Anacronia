@@ -1,7 +1,6 @@
 import type { LatentMapNeighborhoodLayout } from "@/lib/latent-map-neighborhood-layout";
 import type { LatentMapPoint } from "@/lib/latent-map-viewer";
 
-export const LATENT_MAP_NEIGHBORHOOD_PREVIEW_TEXTURE_BUDGET = 24;
 export const LATENT_MAP_NEIGHBORHOOD_PREVIEW_TEXTURE_SIZE = 1024;
 
 export type LatentMapNeighborhoodPreviewItem = {
@@ -21,7 +20,7 @@ export type LatentMapNeighborhoodPreviewPlan = {
 
 export function createLatentMapNeighborhoodPreviewPlan({
   activeImageIds,
-  budget = LATENT_MAP_NEIGHBORHOOD_PREVIEW_TEXTURE_BUDGET,
+  budget,
   isActive,
   layout,
   points,
@@ -34,13 +33,12 @@ export function createLatentMapNeighborhoodPreviewPlan({
   points: LatentMapPoint[];
   textureSize?: number;
 }): LatentMapNeighborhoodPreviewPlan {
-  const safeBudget = Math.max(0, Math.floor(budget));
   const safeTextureSize = Math.max(1, Math.floor(textureSize));
   const estimatedTextureBytes = safeTextureSize * safeTextureSize * 4;
 
-  if (!isActive || layout.status !== "ready" || safeBudget === 0) {
+  if (!isActive || layout.status !== "ready") {
     return {
-      budget: safeBudget,
+      budget: Math.max(0, Math.floor(budget ?? 0)),
       estimatedTextureBytes: 0,
       items: [],
       textureSize: safeTextureSize,
@@ -54,6 +52,10 @@ export function createLatentMapNeighborhoodPreviewPlan({
     layout.selectedImageId,
     ...layout.rows.map((row) => row.imageId),
   ];
+  const safeBudget = Math.max(
+    0,
+    Math.floor(budget ?? orderedImageIds.length),
+  );
   const items: LatentMapNeighborhoodPreviewItem[] = [];
 
   for (const imageId of orderedImageIds) {
@@ -73,10 +75,7 @@ export function createLatentMapNeighborhoodPreviewPlan({
 
     const previewPath = point.preview_path?.trim() ?? "";
     const thumbnailPath = point.thumbnail_path.trim();
-    const source =
-      previewPath.length > 0
-        ? previewPath
-        : thumbnailPath;
+    const source = previewPath.length > 0 ? previewPath : thumbnailPath;
 
     if (source.length === 0) {
       continue;

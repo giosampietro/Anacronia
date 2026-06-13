@@ -87,7 +87,7 @@ describe("latent map neighborhood layout", () => {
     expect(layout.rows.every((row) => row.marker === null)).toBe(true);
     expect(layout.grid.columns).toBe(5);
     expect(layout.grid.rowCount).toBe(4);
-    expect(layout.grid.cellGap).toBe(30);
+    expect(layout.grid.cellGap).toBe(32);
     expect(layout.rows[3]).toMatchObject({
       column: 0,
       gridIndex: 3,
@@ -162,6 +162,29 @@ describe("latent map neighborhood layout", () => {
       imageId: "img_050",
       row: 1,
     });
+  });
+
+  it("keeps landscape anchors inside the fixed two-fifths canvas width", () => {
+    const fixture = createFixture();
+
+    fixture.points[0] = {
+      ...fixture.points[0],
+      width: 2400,
+      height: 800,
+    };
+
+    const layout = createLatentMapNeighborhoodLayout({
+      neighborCount: 20,
+      points: fixture.points,
+      relationMode: "closest",
+      selectedImageId: fixture.selectedImageId,
+      viewport: { width: 1600, height: 1000 },
+    });
+
+    expectReady(layout);
+    expect(layout.anchor.target.width).toBeCloseTo(640);
+    expect(layout.anchor.target.height).toBeCloseTo(640 / 3);
+    expect(layout.anchor.target.x - layout.anchor.target.width / 2).toBe(32);
   });
 
   it("packs columns with the configured edge-to-edge gap across varied aspects", () => {
@@ -263,11 +286,12 @@ describe("latent map neighborhood layout", () => {
     expect(layout.stageBounds.width).toBeGreaterThan(0);
     expect(layout.stageBounds.height).toBe(600);
     expect(layout.recenterTarget.zoom).toBeGreaterThan(0);
-    expect(layout.anchor.target.height).toBe(472);
+    expect(layout.anchor.target.width).toBe(360);
+    expect(layout.anchor.target.height).toBe(240);
     expect(layout.grid.bounds.height).toBe(472);
-    expect(layout.grid.cellSize).toBeCloseTo((472 - 3 * 30) / 4);
+    expect(layout.grid.cellSize).toBeCloseTo((472 - 3 * 32) / 4);
     expect(layout.anchor.target.x - layout.anchor.target.width / 2).toBe(32);
-    expect(layout.anchor.target.y - layout.anchor.target.height / 2).toBe(64);
+    expect(layout.anchor.target.y).toBe(300);
     expect(layout.anchor.target.x).toBeGreaterThanOrEqual(0);
     expect(layout.anchor.target.y).toBeGreaterThanOrEqual(0);
     expect(layout.anchor.target.x).toBeLessThanOrEqual(

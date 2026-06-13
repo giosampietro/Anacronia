@@ -116,6 +116,40 @@ describe("latent map neighborhood preview planning", () => {
     expect(plan.budget).toBe(2);
   });
 
+  it("plans all active 50-neighbor focus textures by default", () => {
+    const points = Array.from({ length: 51 }, (_, index) => createPoint(index));
+
+    points[0] = {
+      ...points[0],
+      neighbors: Array.from({ length: 50 }, (_, index) => ({
+        image_id: `img_${String(index + 1).padStart(3, "0")}`,
+        rank: index + 1,
+        score: 1 - index * 0.01,
+      })),
+    };
+
+    const layout = createLatentMapNeighborhoodLayout({
+      neighborCount: 50,
+      points,
+      relationMode: "closest",
+      selectedImageId: "img_000",
+      viewport: {
+        height: 900,
+        width: 1600,
+      },
+    });
+    const plan = createLatentMapNeighborhoodPreviewPlan({
+      activeImageIds: new Set(points.map((point) => point.image_id)),
+      isActive: true,
+      layout,
+      points,
+    });
+
+    expect(plan.budget).toBe(51);
+    expect(plan.items).toHaveLength(51);
+    expect(plan.items.at(-1)?.imageId).toBe("img_050");
+  });
+
   it("exposes expected texture count and approximate memory bytes", () => {
     const points = createPoints();
     const layout = createReadyLayout(points);

@@ -61,7 +61,7 @@ export function createLatentMapNeighborhoodPreviewTextureCache<
   onChange?: () => void;
 }): LatentMapNeighborhoodPreviewTextureCache<TTexture> {
   const entries = new Map<string, PreviewTextureCacheEntry<TTexture>>();
-  const budget = Math.max(0, Math.floor(maxEntries));
+  let budget = Math.max(0, Math.floor(maxEntries));
   let isDisposed = false;
   let loadToken = 0;
 
@@ -176,6 +176,7 @@ export function createLatentMapNeighborhoodPreviewTextureCache<
       return;
     }
 
+    budget = Math.max(0, Math.floor(plan.budget));
     const nextItems = plan.items.slice(0, budget);
     const nextImageIds = new Set(nextItems.map((item) => item.imageId));
 

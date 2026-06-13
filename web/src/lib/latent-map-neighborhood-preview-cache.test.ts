@@ -111,13 +111,17 @@ describe("latent map neighborhood preview texture cache", () => {
     });
   });
 
-  it("bounds entries by explicit limit", async () => {
+  it("bounds entries by the current plan budget", async () => {
     const cache = createLatentMapNeighborhoodPreviewTextureCache({
       loadTexture: async (item) => createTexture(item.imageId),
       maxEntries: 2,
     });
 
-    cache.reconcile(createPlan([createItem(0), createItem(1), createItem(2)]));
+    cache.reconcile(
+      createPlan([createItem(0), createItem(1), createItem(2)], {
+        budget: 2,
+      }),
+    );
     await flushPromises();
 
     expect(cache.getEntry("img_0")?.status).toBe("ready");
@@ -127,6 +131,29 @@ describe("latent map neighborhood preview texture cache", () => {
       budget: 2,
       cachedTextureCount: 2,
       requestedTextureCount: 2,
+    });
+  });
+
+  it("expands above the initial cache size when the plan requests more previews", async () => {
+    const cache = createLatentMapNeighborhoodPreviewTextureCache({
+      loadTexture: async (item) => createTexture(item.imageId),
+      maxEntries: 2,
+    });
+
+    cache.reconcile(
+      createPlan([createItem(0), createItem(1), createItem(2)], {
+        budget: 3,
+      }),
+    );
+    await flushPromises();
+
+    expect(cache.getEntry("img_0")?.status).toBe("ready");
+    expect(cache.getEntry("img_1")?.status).toBe("ready");
+    expect(cache.getEntry("img_2")?.status).toBe("ready");
+    expect(cache.getDiagnostics()).toMatchObject({
+      budget: 3,
+      cachedTextureCount: 3,
+      requestedTextureCount: 3,
     });
   });
 

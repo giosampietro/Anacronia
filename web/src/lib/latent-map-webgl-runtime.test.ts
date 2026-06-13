@@ -539,7 +539,7 @@ describe("latent map WebGL runtime math", () => {
       tween_screen_base_offset_x: 0,
       tween_screen_base_offset_y: 0,
       tween_screen_base_zoom: 1,
-      tween_screen_cell_gap: 30,
+      tween_screen_cell_gap: 32,
       tween_screen_cell_size: 120,
       tween_screen_column: 0,
       tween_screen_grid_x: 100,
@@ -557,7 +557,7 @@ describe("latent map WebGL runtime math", () => {
       tween_screen_base_offset_x: 0,
       tween_screen_base_offset_y: 0,
       tween_screen_base_zoom: 1,
-      tween_screen_cell_gap: 30,
+      tween_screen_cell_gap: 32,
       tween_screen_cell_size: 120,
       tween_screen_column: 1,
       tween_screen_grid_x: 100,
@@ -566,7 +566,7 @@ describe("latent map WebGL runtime math", () => {
       tween_screen_kind: "grid",
       tween_screen_row: 0,
       tween_screen_width: 120,
-      tween_screen_x: 250,
+      tween_screen_x: 252,
       tween_screen_y: 140,
     });
     const controller = createLatentMapRuntimeTweenController(
@@ -607,7 +607,7 @@ describe("latent map WebGL runtime math", () => {
       width: viewport.width,
     });
 
-    expect(secondBounds.left - firstBounds.right).toBeCloseTo(30);
+    expect(secondBounds.left - firstBounds.right).toBeCloseTo(32);
   });
 
   it("zooms neighborhood grid screen targets around the wheel cursor", () => {
@@ -620,7 +620,7 @@ describe("latent map WebGL runtime math", () => {
       tween_screen_base_offset_x: 0,
       tween_screen_base_offset_y: 0,
       tween_screen_base_zoom: 1,
-      tween_screen_cell_gap: 30,
+      tween_screen_cell_gap: 32,
       tween_screen_cell_size: 160,
       tween_screen_column: 0,
       tween_screen_grid_x: 120,

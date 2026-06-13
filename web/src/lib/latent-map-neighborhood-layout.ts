@@ -133,10 +133,11 @@ type PlannedGridRowTarget = {
 
 const DEFAULT_GRID_ROWS = 4;
 const DEFAULT_PADDING = 32;
-const DEFAULT_CELL_GAP = 30;
+const DEFAULT_CELL_GAP = 32;
+const ANCHOR_AREA_WIDTH_RATIO = 2 / 5;
 const ANCHOR_VERTICAL_PADDING_MULTIPLIER = 2;
 const MIN_GRID_CELL_SIZE = 72;
-const LAYOUT_GAP = 40;
+const LAYOUT_GAP = 32;
 const RECENTER_MARGIN = 0.88;
 
 export function createLatentMapNeighborhoodLayout({
@@ -238,17 +239,21 @@ export function createLatentMapNeighborhoodLayout({
   const rowCount = rows.length === 0 ? 0 : Math.min(safeRows, rows.length);
   const safeColumns = rows.length === 0 ? 0 : Math.ceil(rows.length / safeRows);
   const safeVerticalPadding = safePadding * ANCHOR_VERTICAL_PADDING_MULTIPLIER;
-  const anchorHeight = Math.max(1, safeViewport.height - safeVerticalPadding * 2);
+  const anchorHeight = Math.max(
+    1,
+    safeViewport.height - safeVerticalPadding * 2,
+  );
   const anchorAreaWidth = Math.max(
     1,
-    anchorHeight * getPointAspectRatio(selectedPoint),
+    safeViewport.width * ANCHOR_AREA_WIDTH_RATIO,
   );
-  const gridCellSize = rowCount === 0
-    ? 0
-    : Math.max(
-        MIN_GRID_CELL_SIZE,
-        (anchorHeight - Math.max(0, rowCount - 1) * safeCellGap) / rowCount,
-      );
+  const gridCellSize =
+    rowCount === 0
+      ? 0
+      : Math.max(
+          MIN_GRID_CELL_SIZE,
+          (anchorHeight - Math.max(0, rowCount - 1) * safeCellGap) / rowCount,
+        );
   const gridHeight =
     rowCount === 0
       ? 0
