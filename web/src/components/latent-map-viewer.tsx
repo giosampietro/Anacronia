@@ -76,7 +76,11 @@ import {
   createLatentMapPointerHitRadius,
   createLatentMapSpatialIndex,
 } from "@/lib/latent-map-spatial-index";
-import { createLatentMapWheelZoomView } from "@/lib/latent-map-view-controls";
+import {
+  createLatentMapScreenSurfaceWheelZoomView,
+  createLatentMapScreenTargetWheelZoomView,
+  createLatentMapWheelZoomView,
+} from "@/lib/latent-map-view-controls";
 import { getLatentMapNeighborhoodKeyboardAction } from "@/lib/latent-map-neighborhood-mode";
 import {
   getLatentMapNeighborhoodClickAction,
@@ -1151,25 +1155,109 @@ export function LatentMapViewer({
       return;
     }
 
+    const getWheelNeighborhoodGridPointAt = (pointer: PointerPosition) => {
+      const runtime = runtimeRef.current;
+
+      if (!runtime || !neighborhoodLayoutActive) {
+        return null;
+      }
+
+      const rect = wrapper.getBoundingClientRect();
+      const localPointer = {
+        x: pointer.x - rect.left,
+        y: pointer.y - rect.top,
+      };
+      let nearestPoint: (typeof runtimeRenderPoints)[number] | null = null;
+      let nearestDistance = Number.POSITIVE_INFINITY;
+
+      for (const point of runtimeRenderPoints) {
+        if (
+          point.image_id === selectedImageId ||
+          !neighborhoodRuntimePlan.activeImageIds.has(point.image_id)
+        ) {
+          continue;
+        }
+
+        const screenBounds = runtime.getPointScreenBounds(point.image_id);
+
+        if (!screenBounds) {
+          continue;
+        }
+
+        const dx = localPointer.x - screenBounds.centerX;
+        const dy = localPointer.y - screenBounds.centerY;
+
+        if (
+          Math.abs(dx) > screenBounds.width / 2 ||
+          Math.abs(dy) > screenBounds.height / 2
+        ) {
+          continue;
+        }
+
+        const distance = Math.hypot(dx, dy);
+
+        if (distance < nearestDistance) {
+          nearestDistance = distance;
+          nearestPoint = point;
+        }
+      }
+
+      return nearestPoint;
+    };
+
     const handleNativeWheel = (event: WheelEvent) => {
       if (event.cancelable) {
         event.preventDefault();
       }
       markFpsCounterActive();
       const rect = wrapper.getBoundingClientRect();
+      const wheelPointer = {
+        clientX: event.clientX,
+        clientY: event.clientY,
+      };
+      const canvasPointer = {
+        x: event.clientX,
+        y: event.clientY,
+      };
+      const neighborhoodGridPoint =
+        neighborhoodLayoutActive
+          ? getWheelNeighborhoodGridPointAt(canvasPointer)
+          : null;
+      const neighborhoodGridBounds =
+        neighborhoodGridPoint && runtimeRef.current
+          ? runtimeRef.current.getPointScreenBounds(
+              neighborhoodGridPoint.image_id,
+            )
+          : null;
 
       setView((current) =>
-        createLatentMapWheelZoomView({
-          deltaMode: event.deltaMode,
-          deltaY: event.deltaY,
-          maxZoom: neighborhoodLayoutActive ? neighborhoodMaxZoom : null,
-          pointer: {
-            clientX: event.clientX,
-            clientY: event.clientY,
-          },
-          view: current,
-          viewport: rect,
-        }),
+        neighborhoodLayoutActive && neighborhoodRuntimePlan.recenterView
+          ? createLatentMapScreenTargetWheelZoomView({
+              bounds: neighborhoodGridBounds,
+              deltaMode: event.deltaMode,
+              deltaY: event.deltaY,
+              maxZoom: neighborhoodMaxZoom,
+              pointer: wheelPointer,
+              target: neighborhoodGridPoint,
+              view: current,
+              viewport: rect,
+            }) ??
+            createLatentMapScreenSurfaceWheelZoomView({
+              baseView: neighborhoodRuntimePlan.recenterView,
+              deltaMode: event.deltaMode,
+              deltaY: event.deltaY,
+              maxZoom: neighborhoodMaxZoom,
+              pointer: wheelPointer,
+              view: current,
+              viewport: rect,
+            })
+          : createLatentMapWheelZoomView({
+              deltaMode: event.deltaMode,
+              deltaY: event.deltaY,
+              pointer: wheelPointer,
+              view: current,
+              viewport: rect,
+            }),
       );
     };
 
@@ -1180,7 +1268,15 @@ export function LatentMapViewer({
     return () => {
       wrapper.removeEventListener("wheel", handleNativeWheel);
     };
-  }, [markFpsCounterActive, neighborhoodLayoutActive, neighborhoodMaxZoom]);
+  }, [
+    markFpsCounterActive,
+    neighborhoodLayoutActive,
+    neighborhoodMaxZoom,
+    neighborhoodRuntimePlan.activeImageIds,
+    neighborhoodRuntimePlan.recenterView,
+    runtimeRenderPoints,
+    selectedImageId,
+  ]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {

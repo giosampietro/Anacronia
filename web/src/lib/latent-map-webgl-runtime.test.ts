@@ -7,6 +7,7 @@ import {
   createLatentMapPointTweenItems,
   getLatentMapNeighborhoodPreviewMarkerOpacity,
   getLatentMapNeighborhoodPreviewMeshTransform,
+  getLatentMapNeighborhoodPreviewRenderOrder,
   getLatentMapThumbnailWorldScale,
   LATENT_MAP_ATLAS_FRAGMENT_SHADER,
   LATENT_MAP_ATLAS_VERTEX_SHADER,
@@ -753,5 +754,41 @@ describe("latent map WebGL runtime math", () => {
         tweenController: controller,
       }),
     ).toBe(1);
+  });
+
+  it("renders the selected neighborhood anchor above grid previews", () => {
+    const anchorPoint = createRenderablePoint({
+      image_id: "img_anchor",
+      point_state: "selected",
+      tween_screen_kind: "anchor",
+    });
+    const closestPoint = createRenderablePoint({
+      image_id: "img_closest",
+      point_state: "neighbor",
+      tween_screen_kind: "grid",
+    });
+    const oppositePoint = createRenderablePoint({
+      image_id: "img_opposite",
+      point_state: "opposite",
+      tween_screen_kind: "grid",
+    });
+
+    const anchorRenderOrder = getLatentMapNeighborhoodPreviewRenderOrder({
+      point: anchorPoint,
+      rank: 0,
+    });
+
+    expect(anchorRenderOrder).toBeGreaterThan(
+      getLatentMapNeighborhoodPreviewRenderOrder({
+        point: closestPoint,
+        rank: 1,
+      }),
+    );
+    expect(anchorRenderOrder).toBeGreaterThan(
+      getLatentMapNeighborhoodPreviewRenderOrder({
+        point: oppositePoint,
+        rank: 50,
+      }),
+    );
   });
 });

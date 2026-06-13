@@ -1066,6 +1066,20 @@ export function getLatentMapNeighborhoodPreviewMarkerOpacity({
   return state >= 2.5 ? 1 : 0;
 }
 
+export function getLatentMapNeighborhoodPreviewRenderOrder({
+  point,
+  rank,
+}: {
+  point: LatentMapRenderablePoint;
+  rank: number;
+}) {
+  if (point.point_state === "selected" || point.tween_screen_kind === "anchor") {
+    return 6_000;
+  }
+
+  return 5_000 + rank;
+}
+
 function getRendererInfo(
   renderer: THREE.WebGLRenderer,
 ): LatentMapRuntimeRendererInfo {
@@ -1565,7 +1579,10 @@ export function createLatentMapWebglRuntime({
         });
       previewMesh.mesh.position.set(transform.x, transform.y, transform.z);
       previewMesh.mesh.scale.set(transform.width, transform.height, 1);
-      previewMesh.mesh.renderOrder = 5_000 + item.rank;
+      previewMesh.mesh.renderOrder = getLatentMapNeighborhoodPreviewRenderOrder({
+        point,
+        rank: item.rank,
+      });
     });
 
     [...neighborhoodPreviewMeshes.entries()].forEach(([imageId, previewMesh]) => {
