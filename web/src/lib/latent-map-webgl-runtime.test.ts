@@ -530,7 +530,7 @@ describe("latent map WebGL runtime math", () => {
     expect(transform.z).toBeCloseTo(0.42);
   });
 
-  it("keeps packed neighborhood grid column gaps constant while zooming", () => {
+  it("keeps packed neighborhood grid visible gaps constant while zooming", () => {
     const view = { offsetX: 0, offsetY: 0, zoom: 2 };
     const viewport = { height: 900, width: 1600 };
     const firstPoint = createRenderablePoint({
@@ -569,8 +569,26 @@ describe("latent map WebGL runtime math", () => {
       tween_screen_x: 252,
       tween_screen_y: 140,
     });
+    const thirdPoint = createRenderablePoint({
+      image_id: "img_grid_c",
+      point_state: "neighbor",
+      tween_screen_base_offset_x: 0,
+      tween_screen_base_offset_y: 0,
+      tween_screen_base_zoom: 1,
+      tween_screen_cell_gap: 32,
+      tween_screen_cell_size: 120,
+      tween_screen_column: 0,
+      tween_screen_grid_x: 100,
+      tween_screen_grid_y: 80,
+      tween_screen_height: 120,
+      tween_screen_kind: "grid",
+      tween_screen_row: 1,
+      tween_screen_width: 80,
+      tween_screen_x: 140,
+      tween_screen_y: 292,
+    });
     const controller = createLatentMapRuntimeTweenController(
-      [firstPoint, secondPoint].map((point) =>
+      [firstPoint, secondPoint, thirdPoint].map((point) =>
         createLatentMapPointTweenItem({
           point,
           pointSize: 3,
@@ -594,6 +612,14 @@ describe("latent map WebGL runtime math", () => {
       viewportHeight: viewport.height,
       viewportWidth: viewport.width,
     });
+    const thirdTransform = getLatentMapNeighborhoodPreviewMeshTransform({
+      point: thirdPoint,
+      thumbnailSize: 64,
+      tweenController: controller,
+      view,
+      viewportHeight: viewport.height,
+      viewportWidth: viewport.width,
+    });
     const firstBounds = worldTransformToScreenBounds({
       height: viewport.height,
       transform: firstTransform,
@@ -606,8 +632,15 @@ describe("latent map WebGL runtime math", () => {
       view,
       width: viewport.width,
     });
+    const thirdBounds = worldTransformToScreenBounds({
+      height: viewport.height,
+      transform: thirdTransform,
+      view,
+      width: viewport.width,
+    });
 
     expect(secondBounds.left - firstBounds.right).toBeCloseTo(32);
+    expect(thirdBounds.top - firstBounds.bottom).toBeCloseTo(32);
   });
 
   it("zooms neighborhood grid screen targets around the wheel cursor", () => {

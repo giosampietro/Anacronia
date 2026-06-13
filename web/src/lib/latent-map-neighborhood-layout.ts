@@ -258,7 +258,7 @@ export function createLatentMapNeighborhoodLayout({
     rowCount === 0
       ? 0
       : rowCount * gridCellSize + Math.max(0, rowCount - 1) * safeCellGap;
-  const plannedGridRows = createPackedGridRowTargets({
+  const plannedGridRows = createFixedHeightGridRowTargets({
     cellGap: safeCellGap,
     cellSize: gridCellSize,
     rows,
@@ -339,7 +339,7 @@ export function createLatentMapNeighborhoodLayout({
   };
 }
 
-function createPackedGridRowTargets({
+function createFixedHeightGridRowTargets({
   cellGap,
   cellSize,
   rows,
@@ -362,21 +362,17 @@ function createPackedGridRowTargets({
     row.column = rowColumnCounts[row.row];
     rowColumnCounts[row.row] += 1;
 
-    const fittedRect = fitRectInBounds({
-      aspectRatio: getPointAspectRatio(row.point),
-      bounds: createRect(0, 0, cellSize, cellSize),
-      maxLongSide: cellSize,
-    });
+    const aspectRatio = getPointAspectRatio(row.point);
+    const width = cellSize * aspectRatio;
     const x = rowCursors[row.row];
-    const y =
-      row.row * (cellSize + cellGap) + (cellSize - fittedRect.height) / 2;
+    const y = row.row * (cellSize + cellGap);
 
-    rowCursors[row.row] += fittedRect.width + cellGap;
+    rowCursors[row.row] += width + cellGap;
 
     return {
-      height: fittedRect.height,
+      height: cellSize,
       imageId: row.imageId,
-      width: fittedRect.width,
+      width,
       x,
       y,
     };

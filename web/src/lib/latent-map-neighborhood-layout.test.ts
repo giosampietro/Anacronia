@@ -187,7 +187,7 @@ describe("latent map neighborhood layout", () => {
     expect(layout.anchor.target.x - layout.anchor.target.width / 2).toBe(32);
   });
 
-  it("packs columns with the configured edge-to-edge gap across varied aspects", () => {
+  it("packs fixed-height rows with configured visible edge gaps across varied aspects", () => {
     const fixture = createFixture({ neighborCount: 8, oppositeCount: 0 });
 
     fixture.points[1] = createPoint(1, { width: 600, height: 1200 });
@@ -205,17 +205,27 @@ describe("latent map neighborhood layout", () => {
 
     const firstRowFirstColumn = layout.rows[0];
     const firstRowSecondColumn = layout.rows[4];
+    const secondRowFirstColumn = layout.rows[1];
     const firstRightEdge =
       firstRowFirstColumn.target.x + firstRowFirstColumn.target.width / 2;
     const secondLeftEdge =
       firstRowSecondColumn.target.x - firstRowSecondColumn.target.width / 2;
+    const firstBottomEdge =
+      firstRowFirstColumn.target.y + firstRowFirstColumn.target.height / 2;
+    const secondTopEdge =
+      secondRowFirstColumn.target.y - secondRowFirstColumn.target.height / 2;
 
     expect(firstRowFirstColumn.row).toBe(0);
     expect(firstRowSecondColumn.row).toBe(0);
+    expect(secondRowFirstColumn.row).toBe(1);
+    expect(firstRowFirstColumn.target.height).toBe(layout.grid.cellSize);
+    expect(firstRowSecondColumn.target.height).toBe(layout.grid.cellSize);
+    expect(secondRowFirstColumn.target.height).toBe(layout.grid.cellSize);
     expect(firstRowFirstColumn.target.width).toBeLessThan(
       firstRowSecondColumn.target.width,
     );
     expect(secondLeftEdge - firstRightEdge).toBeCloseTo(layout.grid.cellGap);
+    expect(secondTopEdge - firstBottomEdge).toBeCloseTo(layout.grid.cellGap);
   });
 
   it("sorts loaded neighbors by rank before creating grid rows", () => {
