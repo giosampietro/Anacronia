@@ -134,6 +134,17 @@ Purpose:
 - Make it obvious whether a method is finding useful visual families or only creating technical labels.
 - Let the user compare K-means, HDBSCAN, graph communities, and hierarchy without trusting the method name.
 
+Deferred scope update:
+
+- Treat diagnostics as risk flags, not a single clustering quality score.
+- Keep the default viewer UI to a terse grouping summary, for example `Mixed · 48 groups · largest 31% · 0 unclustered`.
+- Hide raw metrics and provenance behind details using user-facing wording such as `unclustered`, `loose matches`, `many tiny groups`, and `one dominant group`.
+- Prefer a small diagnostic bundle: coverage, size balance, FAISS neighbor agreement, boundary risk, central examples, and weak or border examples.
+- Do not use 2D UMAP layout distance as a diagnostic signal.
+- For graph-community results, mark FAISS-neighbor diagnostics as same-source evidence, not independent validation.
+- Show representative examples only when a specific group is focused, so diagnostics do not compete with the canvas.
+- Known bad cases should be visible in real-data QA: HDBSCAN high-unclustered presets, hierarchy giant groups, and graph-community fine fragmentation.
+
 ### 4. HDBSCAN on Reduced Features
 
 Try HDBSCAN after reducing DINO vectors into a more clusterable lower-dimensional feature space.
