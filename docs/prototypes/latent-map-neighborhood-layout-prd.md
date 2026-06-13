@@ -132,6 +132,11 @@ The #224 parent tracker has been split into smaller implementation issues:
    - Type: AFK.
    - Blocked by: #225 and #226.
    - Purpose: `n` enters/exits, `Escape` exits, selected and active relation rows tween into anchor/grid positions using existing thumbnail/atlas texture sources, opposite rows show pale red markers, and non-neighborhood images fade out.
+   - Child slices:
+     - [#234 Latent map: add neighborhood mode state helpers](https://github.com/giosampietro/Anacronia/issues/234)
+     - [#235 Latent map: add neighborhood runtime target planner](https://github.com/giosampietro/Anacronia/issues/235)
+     - [#236 Latent map: wire basic neighborhood layout mode in viewer](https://github.com/giosampietro/Anacronia/issues/236)
+     - [#237 Latent map: render opposite markers in neighborhood grid](https://github.com/giosampietro/Anacronia/issues/237)
 
 4. [#228 Latent map: add click-neighbor rebuild for neighborhood layout](https://github.com/giosampietro/Anacronia/issues/228)
    - Type: AFK.

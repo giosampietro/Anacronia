@@ -87,10 +87,19 @@ export type LatentMapPointState =
   | "opposite"
   | "selected";
 
+export type LatentMapRuntimeTweenOverrides = {
+  tween_alpha?: number;
+  tween_size?: number;
+  tween_state?: number;
+  tween_x?: number;
+  tween_y?: number;
+  tween_z?: number;
+};
+
 export type LatentMapRenderablePoint = LatentMapFittedPoint & {
   color: [number, number, number];
   point_state: LatentMapPointState;
-};
+} & LatentMapRuntimeTweenOverrides;
 
 export type LatentMapRenderMode = "points" | "thumbnails";
 

@@ -143,15 +143,15 @@ export function createLatentMapPointTweenItem({
   return {
     imageId: point.image_id,
     values: createLatentMapTweenValues({
-      alpha: 1,
+      alpha: point.tween_alpha ?? 1,
       b: color.b,
       g: color.g,
       r: color.r,
-      size: 1,
-      state: getThumbnailStateValue(point),
-      x: point.fitted_x,
-      y: point.fitted_y,
-      z: getThumbnailLayer(point),
+      size: point.tween_size ?? 1,
+      state: point.tween_state ?? getThumbnailStateValue(point),
+      x: point.tween_x ?? point.fitted_x,
+      y: point.tween_y ?? point.fitted_y,
+      z: point.tween_z ?? getThumbnailLayer(point),
     }),
   };
 }
