@@ -110,38 +110,38 @@ Using 1024px previews for 21 images is reasonable on modern hardware if bounded 
 - Runtime tests should verify that the mode updates instance attributes or render plans rather than creating one mesh/material per image.
 - Real-data browser QA should use the J Shoot latent-map run with 20 and 50 closest neighbors, repeated neighbor clicking, zoom/pan while in neighborhood layout, mode exit, and no browser console errors.
 
-## Proposed Vertical Slices
+## Published Vertical Slices
 
-These are proposed child issues. They should not be published until the breakdown is approved.
+The #224 parent tracker has been split into smaller implementation issues:
 
-1. **Add tested neighborhood layout state and pure layout helpers**
+1. [#225 Latent map: add neighborhood layout helpers](https://github.com/giosampietro/Anacronia/issues/225)
    - Type: AFK.
-   - Blocked by: issue #224 parent approval.
+   - Blocked by: none.
    - Purpose: compute active relation rows, anchor and 3-column grid target rectangles, rank order, opposite markers, map-to-layout target transforms, and recenter targets without changing rendering.
 
-2. **Add custom runtime tween layer for neighborhood layout**
+2. [#226 Latent map: add runtime tween layer for neighborhood layout](https://github.com/giosampietro/Anacronia/issues/226)
    - Type: AFK.
-   - Blocked by: slice 1.
+   - Blocked by: #225.
    - Purpose: add typed-buffer current/target animation state keyed by `image_id`, interpolate position/color/size/opacity/state in the WebGL runtime, and keep React out of per-frame updates.
 
-3. **Add basic WebGL neighborhood layout mode with thumbnail textures**
+3. [#227 Latent map: add basic WebGL neighborhood layout mode](https://github.com/giosampietro/Anacronia/issues/227)
    - Type: AFK.
-   - Blocked by: slices 1 and 2.
+   - Blocked by: #225 and #226.
    - Purpose: `n` enters/exits, `Escape` exits, selected and active relation rows tween into anchor/grid positions using existing thumbnail/atlas texture sources, opposite rows show pale red markers, and non-neighborhood images fade out.
 
-4. **Add click-neighbor rebuild loop**
+4. [#228 Latent map: add click-neighbor rebuild for neighborhood layout](https://github.com/giosampietro/Anacronia/issues/228)
    - Type: AFK.
-   - Blocked by: slice 3.
+   - Blocked by: #227.
    - Purpose: clicking a grid item selects it, loads or reuses its active FAISS relation rows, rebuilds the in-canvas layout around it, and keeps the mode active.
 
-5. **Add bounded 1024 preview textures for active neighborhood**
+5. [#229 Latent map: add bounded 1024 previews for neighborhood layout](https://github.com/giosampietro/Anacronia/issues/229)
    - Type: AFK.
-   - Blocked by: slice 3.
+   - Blocked by: #227.
    - Purpose: lazy-load `preview_path` textures for the selected anchor and visible/ranked grid items, fallback to thumbnail textures while loading, and dispose/cache within a small budget.
 
-6. **Harden animation, interaction, and real-data QA**
+6. [#230 Latent map: harden neighborhood layout animation and QA](https://github.com/giosampietro/Anacronia/issues/230)
    - Type: AFK.
-   - Blocked by: slices 4 and 5.
+   - Blocked by: #228 and #229.
    - Purpose: tune tween timing, preserve FPS, verify 20/50 neighbors on J Shoot, ensure mode exit restores map positions, and expose runtime diagnostics for preview texture usage.
 
 ## Out Of Scope
