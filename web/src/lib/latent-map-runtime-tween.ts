@@ -74,7 +74,10 @@ const VALUE_KEYS = [
   "state",
 ] as const satisfies readonly LatentMapTweenValueKey[];
 
-const VALUE_OFFSETS: Record<LatentMapTweenValueKey, number> = {
+export const LATENT_MAP_TWEEN_VALUE_OFFSETS: Record<
+  LatentMapTweenValueKey,
+  number
+> = {
   alpha: 7,
   b: 5,
   g: 4,
@@ -402,7 +405,7 @@ function writeValues(
   values: LatentMapTweenValues,
 ) {
   VALUE_KEYS.forEach((key) => {
-    buffer[index * LATENT_MAP_TWEEN_STRIDE + VALUE_OFFSETS[key]] =
+    buffer[index * LATENT_MAP_TWEEN_STRIDE + LATENT_MAP_TWEEN_VALUE_OFFSETS[key]] =
       values[key];
   });
 }
@@ -419,7 +422,9 @@ function writePartialValues(
       return;
     }
 
-    buffer[index * LATENT_MAP_TWEEN_STRIDE + VALUE_OFFSETS[key]] = value;
+    buffer[
+      index * LATENT_MAP_TWEEN_STRIDE + LATENT_MAP_TWEEN_VALUE_OFFSETS[key]
+    ] = value;
   });
 }
 
@@ -430,15 +435,15 @@ function readValues(
   const offset = index * LATENT_MAP_TWEEN_STRIDE;
 
   return {
-    alpha: buffer[offset + VALUE_OFFSETS.alpha],
-    b: buffer[offset + VALUE_OFFSETS.b],
-    g: buffer[offset + VALUE_OFFSETS.g],
-    r: buffer[offset + VALUE_OFFSETS.r],
-    size: buffer[offset + VALUE_OFFSETS.size],
-    state: buffer[offset + VALUE_OFFSETS.state],
-    x: buffer[offset + VALUE_OFFSETS.x],
-    y: buffer[offset + VALUE_OFFSETS.y],
-    z: buffer[offset + VALUE_OFFSETS.z],
+    alpha: buffer[offset + LATENT_MAP_TWEEN_VALUE_OFFSETS.alpha],
+    b: buffer[offset + LATENT_MAP_TWEEN_VALUE_OFFSETS.b],
+    g: buffer[offset + LATENT_MAP_TWEEN_VALUE_OFFSETS.g],
+    r: buffer[offset + LATENT_MAP_TWEEN_VALUE_OFFSETS.r],
+    size: buffer[offset + LATENT_MAP_TWEEN_VALUE_OFFSETS.size],
+    state: buffer[offset + LATENT_MAP_TWEEN_VALUE_OFFSETS.state],
+    x: buffer[offset + LATENT_MAP_TWEEN_VALUE_OFFSETS.x],
+    y: buffer[offset + LATENT_MAP_TWEEN_VALUE_OFFSETS.y],
+    z: buffer[offset + LATENT_MAP_TWEEN_VALUE_OFFSETS.z],
   };
 }
 

@@ -1,6 +1,17 @@
 import * as THREE from "three";
 
 import {
+  createLatentMapRuntimeTweenController,
+  createLatentMapTweenValues,
+  LATENT_MAP_TWEEN_STRIDE,
+  LATENT_MAP_TWEEN_VALUE_OFFSETS,
+  type LatentMapRuntimeTweenController,
+  type LatentMapTweenDirtyRange,
+  type LatentMapTweenItem,
+  type LatentMapTweenRetargetResult,
+  type LatentMapTweenStepResult,
+} from "@/lib/latent-map-runtime-tween";
+import {
   getLatentMapRenderableAtlasPages,
   getLatentMapThumbnailStateScaleMultiplier,
   LATENT_MAP_MAX_THUMBNAIL_SCREEN_SCALE,
@@ -49,6 +60,8 @@ export type LatentMapWebglRuntime = {
 export type LatentMapVisualTheme = "dark" | "light";
 
 const MAX_INTERACTION_FRAME_GAP_MS = 250;
+const LATENT_MAP_POINT_TWEEN_DURATION_MS = 180;
+const LATENT_MAP_RUNTIME_DIAGNOSTICS_MIN_INTERVAL_MS = 250;
 
 const LATENT_MAP_RUNTIME_PALETTES: Record<
   LatentMapVisualTheme,
@@ -114,74 +127,114 @@ function updateCamera({
   camera.updateProjectionMatrix();
 }
 
-function writePointGeometryAttributes(
-  geometry: THREE.BufferGeometry,
-  points: LatentMapRenderablePoint[],
-  visualTheme: LatentMapVisualTheme,
-) {
-  const positions = new Float32Array(points.length * 3);
-  const colors = new Float32Array(points.length * 3);
+export function createLatentMapPointTweenItem({
+  point,
+  pointSize,
+  visualTheme,
+}: {
+  point: LatentMapRenderablePoint;
+  pointSize: number;
+  visualTheme: LatentMapVisualTheme;
+}): LatentMapTweenItem {
+  const color = rgbToThreeColor(getDisplayPointColor(point, visualTheme));
 
-  points.forEach((point, index) => {
-    positions[index * 3] = point.fitted_x;
-    positions[index * 3 + 1] = point.fitted_y;
-    positions[index * 3 + 2] = point.point_state === "selected" ? 0.08 : 0;
-
-    const color = rgbToThreeColor(getDisplayPointColor(point, visualTheme));
-    colors[index * 3] = color.r;
-    colors[index * 3 + 1] = color.g;
-    colors[index * 3 + 2] = color.b;
-  });
-
-  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+  return {
+    imageId: point.image_id,
+    values: createLatentMapTweenValues({
+      alpha: point.point_state === "base" ? 0.82 : 1,
+      b: color.b,
+      g: color.g,
+      r: color.r,
+      size: pointSize,
+      state: getThumbnailStateValue(point),
+      x: point.fitted_x,
+      y: point.fitted_y,
+      z: point.point_state === "selected" ? 0.08 : 0,
+    }),
+  };
 }
 
-function createPointGeometry(
-  points: LatentMapRenderablePoint[],
-  visualTheme: LatentMapVisualTheme,
-) {
-  const geometry = new THREE.BufferGeometry();
-
-  writePointGeometryAttributes(geometry, points, visualTheme);
-
-  return geometry;
+function createLatentMapPointTweenItems({
+  pointSize,
+  points,
+  visualTheme,
+}: {
+  pointSize: number;
+  points: LatentMapRenderablePoint[];
+  visualTheme: LatentMapVisualTheme;
+}) {
+  return points.map((point) =>
+    createLatentMapPointTweenItem({ point, pointSize, visualTheme }),
+  );
 }
 
-function updatePointGeometry(
-  geometry: THREE.BufferGeometry,
-  points: LatentMapRenderablePoint[],
-  visualTheme: LatentMapVisualTheme,
-) {
+export function writeLatentMapPointGeometryFromTween({
+  dirtyRange = null,
+  geometry,
+  tweenController,
+}: {
+  dirtyRange?: LatentMapTweenDirtyRange | null;
+  geometry: THREE.BufferGeometry;
+  tweenController: LatentMapRuntimeTweenController;
+}) {
+  const pointCount = tweenController.getImageIds().length;
   const position = geometry.getAttribute("position");
   const colorAttribute = geometry.getAttribute("color");
 
   if (
     !position ||
     !colorAttribute ||
-    position.count !== points.length ||
-    colorAttribute.count !== points.length
+    position.count !== pointCount ||
+    colorAttribute.count !== pointCount
   ) {
-    writePointGeometryAttributes(geometry, points, visualTheme);
+    geometry.setAttribute(
+      "position",
+      new THREE.BufferAttribute(new Float32Array(pointCount * 3), 3),
+    );
+    geometry.setAttribute(
+      "color",
+      new THREE.BufferAttribute(new Float32Array(pointCount * 3), 3),
+    );
+    writeLatentMapPointGeometryFromTween({
+      dirtyRange: pointCount > 0 ? { end: pointCount, start: 0 } : null,
+      geometry,
+      tweenController,
+    });
     return;
   }
 
   const positions = position.array as Float32Array;
   const colors = colorAttribute.array as Float32Array;
+  const current = tweenController.getCurrentBuffer();
+  const updateRange = dirtyRange ?? { end: pointCount, start: 0 };
 
-  points.forEach((point, index) => {
-    positions[index * 3] = point.fitted_x;
-    positions[index * 3 + 1] = point.fitted_y;
-    positions[index * 3 + 2] = point.point_state === "selected" ? 0.08 : 0;
+  for (let index = updateRange.start; index < updateRange.end; index += 1) {
+    const sourceOffset = index * LATENT_MAP_TWEEN_STRIDE;
 
-    const color = rgbToThreeColor(getDisplayPointColor(point, visualTheme));
-    colors[index * 3] = color.r;
-    colors[index * 3 + 1] = color.g;
-    colors[index * 3 + 2] = color.b;
-  });
+    positions[index * 3] =
+      current[sourceOffset + LATENT_MAP_TWEEN_VALUE_OFFSETS.x];
+    positions[index * 3 + 1] =
+      current[sourceOffset + LATENT_MAP_TWEEN_VALUE_OFFSETS.y];
+    positions[index * 3 + 2] =
+      current[sourceOffset + LATENT_MAP_TWEEN_VALUE_OFFSETS.z];
+    colors[index * 3] =
+      current[sourceOffset + LATENT_MAP_TWEEN_VALUE_OFFSETS.r];
+    colors[index * 3 + 1] =
+      current[sourceOffset + LATENT_MAP_TWEEN_VALUE_OFFSETS.g];
+    colors[index * 3 + 2] =
+      current[sourceOffset + LATENT_MAP_TWEEN_VALUE_OFFSETS.b];
+  }
 
   position.needsUpdate = true;
   colorAttribute.needsUpdate = true;
+}
+
+function createPointGeometry(tweenController: LatentMapRuntimeTweenController) {
+  const geometry = new THREE.BufferGeometry();
+
+  writeLatentMapPointGeometryFromTween({ geometry, tweenController });
+
+  return geometry;
 }
 
 export function getLatentMapThumbnailWorldScale({
@@ -641,6 +694,26 @@ function disposeAtlasPage(scene: THREE.Scene, atlasPage: AtlasPageMesh) {
   atlasPage.texture.dispose();
 }
 
+function haveSameTweenItemOrder(
+  tweenController: LatentMapRuntimeTweenController,
+  items: LatentMapTweenItem[],
+) {
+  const imageIds = tweenController.getImageIds();
+
+  if (imageIds.length !== items.length) {
+    return false;
+  }
+
+  return items.every((item, index) => item.imageId === imageIds[index]);
+}
+
+function createPointTweenTargets(items: LatentMapTweenItem[]) {
+  return items.map((item) => ({
+    imageId: item.imageId,
+    values: item.values,
+  }));
+}
+
 export function createLatentMapWebglRuntime({
   canvas,
   onDiagnosticsChange,
@@ -663,7 +736,14 @@ export function createLatentMapWebglRuntime({
   });
   const scene = new THREE.Scene();
   const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -100, 100);
-  const pointGeometry = createPointGeometry(pointLayer.points, visualTheme);
+  const pointTweenController = createLatentMapRuntimeTweenController(
+    createLatentMapPointTweenItems({
+      pointSize: pointLayer.pointSize,
+      points: pointLayer.points,
+      visualTheme,
+    }),
+  );
+  const pointGeometry = createPointGeometry(pointTweenController);
   const pointMaterial = new THREE.PointsMaterial({
     alphaTest: 0.2,
     size: pointLayer.pointSize,
@@ -686,6 +766,7 @@ export function createLatentMapWebglRuntime({
   let lastRenderStartedAt = 0;
   let loadedThumbnailCount = 0;
   let currentVisualTheme = visualTheme;
+  let lastDiagnosticsReportedAt = Number.NEGATIVE_INFINITY;
 
   renderer.setClearColor(
     LATENT_MAP_RUNTIME_PALETTES[currentVisualTheme].backgroundColor,
@@ -709,7 +790,18 @@ export function createLatentMapWebglRuntime({
     };
   }
 
-  function reportDiagnostics() {
+  function reportDiagnostics({ force = false }: { force?: boolean } = {}) {
+    const now = nowMilliseconds();
+
+    if (
+      !force &&
+      now - lastDiagnosticsReportedAt <
+        LATENT_MAP_RUNTIME_DIAGNOSTICS_MIN_INTERVAL_MS
+    ) {
+      return;
+    }
+
+    lastDiagnosticsReportedAt = now;
     onDiagnosticsChange?.(getDiagnostics());
   }
 
@@ -717,7 +809,23 @@ export function createLatentMapWebglRuntime({
     return Math.max(wrapper.getBoundingClientRect().height, 1);
   }
 
-  function render() {
+  function applyPointTweenStepResult(
+    result: LatentMapTweenRetargetResult | LatentMapTweenStepResult,
+  ) {
+    if (!result.dirtyRange) {
+      return;
+    }
+
+    writeLatentMapPointGeometryFromTween({
+      dirtyRange: result.dirtyRange,
+      geometry: pointGeometry,
+      tweenController: pointTweenController,
+    });
+  }
+
+  function render({
+    forceDiagnostics = false,
+  }: { forceDiagnostics?: boolean } = {}) {
     if (isDisposed) {
       return;
     }
@@ -749,7 +857,7 @@ export function createLatentMapWebglRuntime({
       averageRenderMs === 0
         ? lastRenderMs
         : averageRenderMs * 0.8 + lastRenderMs * 0.2;
-    reportDiagnostics();
+    reportDiagnostics({ force: forceDiagnostics });
   }
 
   function scheduleRender() {
@@ -757,9 +865,14 @@ export function createLatentMapWebglRuntime({
       return;
     }
 
-    animationFrameId = window.requestAnimationFrame(() => {
+    animationFrameId = window.requestAnimationFrame((timestamp) => {
       animationFrameId = null;
+      applyPointTweenStepResult(pointTweenController.step(timestamp));
       render();
+
+      if (pointTweenController.isAnimating()) {
+        scheduleRender();
+      }
     });
   }
 
@@ -972,7 +1085,7 @@ export function createLatentMapWebglRuntime({
       pendingAtlasPageSet = null;
       installPreparedAtlasPageSet(pageSet);
       scheduleRender();
-      reportDiagnostics();
+      reportDiagnostics({ force: true });
     });
   }
 
@@ -1004,10 +1117,24 @@ export function createLatentMapWebglRuntime({
       LATENT_MAP_RUNTIME_PALETTES[currentVisualTheme].backgroundColor,
       1,
     );
-    updatePointGeometry(
-      pointGeometry,
-      nextState.pointLayer.points,
-      currentVisualTheme,
+    const now = nowMilliseconds();
+    const nextPointTweenItems = createLatentMapPointTweenItems({
+      pointSize: nextState.pointLayer.pointSize,
+      points: nextState.pointLayer.points,
+      visualTheme: currentVisualTheme,
+    });
+
+    if (!haveSameTweenItemOrder(pointTweenController, nextPointTweenItems)) {
+      applyPointTweenStepResult(
+        pointTweenController.setItems(nextPointTweenItems, { now }),
+      );
+    }
+
+    applyPointTweenStepResult(
+      pointTweenController.retarget(createPointTweenTargets(nextPointTweenItems), {
+        durationMs: LATENT_MAP_POINT_TWEEN_DURATION_MS,
+        now,
+      }),
     );
     pointMaterial.size = nextState.pointLayer.pointSize;
 
@@ -1030,7 +1157,7 @@ export function createLatentMapWebglRuntime({
 
     pointCloud.visible = nextState.pointLayer.visible;
     scheduleRender();
-    reportDiagnostics();
+    reportDiagnostics({ force: true });
   }
 
   function setView(nextView: LatentMapViewState) {
@@ -1073,7 +1200,7 @@ export function createLatentMapWebglRuntime({
   }
 
   setRenderState({ pointLayer, points, renderMode, thumbnailPlan, visualTheme });
-  render();
+  render({ forceDiagnostics: true });
 
   return {
     dispose: () => {
@@ -1089,6 +1216,7 @@ export function createLatentMapWebglRuntime({
       unloadAtlasPages();
       pointGeometry.dispose();
       pointMaterial.dispose();
+      pointTweenController.dispose();
       renderer.dispose();
     },
     getDiagnostics,
