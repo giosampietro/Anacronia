@@ -631,7 +631,8 @@ export function LatentMapViewer({
       null,
     [filteredData.points, hoveredImageId],
   );
-  const hoverPreviewBox = hoveredPoint
+  const hoverPreviewEnabled = !neighborhoodLayoutActive;
+  const hoverPreviewBox = hoverPreviewEnabled && hoveredPoint
     ? getLatentMapPreviewBox({
         height: hoveredPoint.height,
         maxSize: DEFAULT_LATENT_MAP_HOVER_PREVIEW_SIZE,
@@ -846,6 +847,8 @@ export function LatentMapViewer({
   }, []);
   const exitNeighborhoodMode = useCallback(() => {
     pendingNeighborhoodRecenterRef.current = false;
+    hoverPointerRef.current = null;
+    setHoveredImageId(null);
     setNeighborhoodModeActive(false);
 
     const restoreRenderMode = neighborhoodRestoreRenderModeRef.current;
@@ -858,6 +861,8 @@ export function LatentMapViewer({
   }, []);
   const cancelNeighborhoodModeForManualModeChange = useCallback(() => {
     pendingNeighborhoodRecenterRef.current = false;
+    hoverPointerRef.current = null;
+    setHoveredImageId(null);
     neighborhoodRestoreRenderModeRef.current = null;
     setNeighborhoodModeActive(false);
   }, []);
@@ -871,6 +876,8 @@ export function LatentMapViewer({
     }
 
     pendingNeighborhoodRecenterRef.current = true;
+    hoverPointerRef.current = null;
+    setHoveredImageId(null);
     setRenderMode("thumbnails");
     setNeighborhoodModeActive(true);
     markFpsCounterActive();
@@ -1379,12 +1386,7 @@ export function LatentMapViewer({
       }
 
       if (neighborhoodLayoutActive) {
-        setHoveredImageId(
-          getNeighborhoodGridPointAt({
-            includeSelected: true,
-            pointer: nextPointer,
-          })?.image_id ?? null,
-        );
+        setHoveredImageId(null);
         return;
       }
 
@@ -2202,6 +2204,7 @@ export function LatentMapViewer({
             data-cluster-filter={clusterFilter}
             data-faiss-neighbor-count={faissNeighborCount}
             data-faiss-relation={faissRelationMode}
+            data-hover-preview-enabled={hoverPreviewEnabled}
             data-map-theme={visualTheme}
             data-neighborhood-active={neighborhoodLayoutActive}
             data-neighborhood-active-count={neighborhoodActiveImageCount}

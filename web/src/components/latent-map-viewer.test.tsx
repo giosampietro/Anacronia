@@ -107,6 +107,7 @@ describe("LatentMapViewer", () => {
     expect(html).toContain("data-runtime-preview-texture-requested=\"0\"");
     expect(html).toContain("data-runtime-textures=\"0\"");
     expect(html).toContain("data-map-theme=\"dark\"");
+    expect(html).toContain("data-hover-preview-enabled=\"true\"");
     expect(html).toContain("data-neighborhood-active=\"false\"");
     expect(html).toContain("data-neighborhood-active-count=\"0\"");
     expect(html).toContain("data-neighborhood-mode=\"false\"");
