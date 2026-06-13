@@ -122,7 +122,11 @@ The #224 parent tracker has been split into smaller implementation issues:
 2. [#226 Latent map: add runtime tween layer for neighborhood layout](https://github.com/giosampietro/Anacronia/issues/226)
    - Type: AFK.
    - Blocked by: #225.
-   - Purpose: add typed-buffer current/target animation state keyed by `image_id`, interpolate position/color/size/opacity/state in the WebGL runtime, and keep React out of per-frame updates.
+   - Purpose: parent runtime tracker for typed-buffer current/target animation state keyed by `image_id`, interpolation of position/color/size/opacity/state in the WebGL runtime, and keeping React out of per-frame updates.
+   - Child slices:
+     - [#231 Latent map: add typed-buffer tween controller](https://github.com/giosampietro/Anacronia/issues/231)
+     - [#232 Latent map: wire tween controller to point layer](https://github.com/giosampietro/Anacronia/issues/232)
+     - [#233 Latent map: wire tween controller to instanced thumbnails](https://github.com/giosampietro/Anacronia/issues/233)
 
 3. [#227 Latent map: add basic WebGL neighborhood layout mode](https://github.com/giosampietro/Anacronia/issues/227)
    - Type: AFK.
