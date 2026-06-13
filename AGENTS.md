@@ -30,6 +30,8 @@ Prefer Chrome-based tooling when the task benefits from inspecting the real runn
 
 Use Playwright or scripted screenshots when repeatable automated regression coverage, multi-viewport checks, pixel/canvas checks, or CI-style verification is the better fit, or when Chrome tooling is unavailable. In UI diagnosis, Playwright should complement Chrome Web Tools rather than silently replace them.
 
+For the exact local-browser QA workflow and known dead ends, see `docs/agents/browser-tooling.md`.
+
 ### Latent-map image visibility
 
 For the latent-map viewer, never treat a carpet of overlapping thumbnails as an acceptable final UX. The user needs access to all images, but not by showing every thumbnail at once in an unreadable pile.

@@ -9,6 +9,7 @@ from anacronia.cli import (
     run_latent_map_graph_communities_build,
     run_latent_map_embed,
     run_latent_map_hdbscan_build,
+    run_latent_map_hierarchy_build,
     run_latent_map_init,
     run_latent_map_layout,
     run_latent_map_method_comparison,
@@ -382,6 +383,50 @@ def test_latent_map_graph_communities_cli_prints_cluster_summaries(
     assert '"label": "Graph communities \\u00b7 Balanced"' in output
     assert '"method": "graph_communities"' in output
     assert '"unassigned_count": 2' in output
+
+
+def test_latent_map_hierarchy_cli_prints_cluster_summaries(
+    tmp_path,
+    capsys,
+    monkeypatch,
+):
+    from pathlib import Path
+
+    from anacronia.latent_map_clusters import LatentMapClusterSummary
+
+    def fake_build_hierarchy_cluster_results(*, run_dir, recipe_name, preset_slug):
+        assert run_dir == tmp_path
+        assert recipe_name == "dinov3_vits_256"
+        assert preset_slug == "balanced"
+        return [
+            LatentMapClusterSummary(
+                run_id="run-1",
+                recipe_name=recipe_name,
+                cluster_id="hierarchy_balanced_k48_average_cosine_l2",
+                label="Hierarchy · Balanced",
+                method="hierarchy",
+                cluster_count=48,
+                unassigned_count=0,
+                cluster_path=Path("/tmp/hierarchy-clusters.json"),
+            )
+        ]
+
+    monkeypatch.setattr(
+        "anacronia.cli.build_hierarchy_cluster_results",
+        fake_build_hierarchy_cluster_results,
+    )
+
+    run_latent_map_hierarchy_build(
+        run_dir=tmp_path,
+        recipe_name="dinov3_vits_256",
+        preset="balanced",
+    )
+
+    output = capsys.readouterr().out
+    assert '"cluster_id": "hierarchy_balanced_k48_average_cosine_l2"' in output
+    assert '"label": "Hierarchy \\u00b7 Balanced"' in output
+    assert '"method": "hierarchy"' in output
+    assert '"unassigned_count": 0' in output
 
 
 def test_latent_map_atlas_cli_prints_summary(tmp_path, capsys):

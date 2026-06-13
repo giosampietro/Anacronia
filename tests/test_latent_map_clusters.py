@@ -6,10 +6,13 @@ import numpy as np
 from anacronia.latent_map_clusters import (
     GRAPH_COMMUNITY_PRESETS,
     HDBSCAN_PRESETS,
+    HIERARCHY_PRESETS,
     build_graph_community_cluster_result,
     build_hdbscan_cluster_result,
+    build_hierarchy_cluster_result,
     get_graph_community_presets,
     get_hdbscan_presets,
+    get_hierarchy_presets,
 )
 from anacronia.latent_map_runs import initialize_latent_map_run
 
@@ -22,6 +25,15 @@ class CaptureClusterer:
     def fit_predict(self, vectors):
         self.fitted_vectors = vectors
         return np.asarray([0, 0, -1, 1, 1, -1])
+
+
+class CaptureHierarchyClusterer:
+    def __init__(self):
+        self.fitted_vectors = None
+
+    def fit_predict(self, vectors):
+        self.fitted_vectors = vectors
+        return np.asarray([5, 5, 3, 3, 9, 9])
 
 
 def create_cluster_run(tmp_path):
@@ -71,6 +83,19 @@ def test_hdbscan_presets_are_ordered_for_the_ui():
         "broad",
     ]
     assert get_hdbscan_presets("balanced")[0].label == "HDBSCAN · Balanced"
+
+
+def test_hierarchy_presets_are_ordered_broad_to_fine_for_the_ui():
+    assert [preset.slug for preset in HIERARCHY_PRESETS] == [
+        "broad",
+        "balanced",
+        "detail",
+        "fine",
+    ]
+    assert get_hierarchy_presets("balanced")[0].label == "Hierarchy · Balanced"
+    assert get_hierarchy_presets("balanced")[0].cluster_id == (
+        "hierarchy_balanced_k48_average_cosine_l2"
+    )
 
 
 def test_builds_graph_community_cluster_result_from_faiss_neighbors(tmp_path):
@@ -215,3 +240,48 @@ def test_builds_hdbscan_cluster_result_with_groups_and_membership(tmp_path):
         "group_key": "unassigned",
         "membership": 0.0,
     }
+
+
+def test_builds_hierarchy_cluster_result_with_broad_to_fine_metadata(tmp_path):
+    run = create_cluster_run(tmp_path)
+    clusterer = CaptureHierarchyClusterer()
+
+    summary = build_hierarchy_cluster_result(
+        run_dir=run.run_dir,
+        recipe_name="dinov3_vits_256",
+        preset=get_hierarchy_presets("balanced")[0],
+        clusterer=clusterer,
+    )
+
+    payload = json.loads(summary.cluster_path.read_text(encoding="utf-8"))
+    fitted_norms = np.linalg.norm(clusterer.fitted_vectors, axis=1)
+    assert np.allclose(fitted_norms, np.ones(6))
+    assert summary.cluster_id == "hierarchy_balanced_k48_average_cosine_l2"
+    assert payload["asset_kind"] == "latent-map-cluster-result"
+    assert payload["method"] == "hierarchy"
+    assert payload["label"] == "Hierarchy · Balanced"
+    assert payload["cluster_count"] == 3
+    assert payload["unassigned_count"] == 0
+    assert payload["params"] == {
+        "preset": "balanced",
+        "granularity_rank": 1,
+        "target_cluster_count": 48,
+        "effective_cluster_count": 6,
+        "algorithm": "agglomerative",
+        "linkage": "average",
+        "metric": "cosine",
+        "vector_normalization": "l2",
+    }
+    assert [group["group_key"] for group in payload["groups"]] == [
+        "cluster:0",
+        "cluster:1",
+        "cluster:2",
+    ]
+    assert payload["points"] == [
+        {"image_id": "img-0", "cluster_id": 0, "group_key": "cluster:0"},
+        {"image_id": "img-1", "cluster_id": 0, "group_key": "cluster:0"},
+        {"image_id": "img-2", "cluster_id": 1, "group_key": "cluster:1"},
+        {"image_id": "img-3", "cluster_id": 1, "group_key": "cluster:1"},
+        {"image_id": "img-4", "cluster_id": 2, "group_key": "cluster:2"},
+        {"image_id": "img-5", "cluster_id": 2, "group_key": "cluster:2"},
+    ]

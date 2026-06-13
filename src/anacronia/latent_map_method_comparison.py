@@ -9,6 +9,7 @@ HDBSCAN_DEFERRED_REASON = "No precomputed HDBSCAN cluster artifacts found."
 GRAPH_COMMUNITIES_DEFERRED_REASON = (
     "No precomputed graph-community cluster artifacts found."
 )
+HIERARCHY_DEFERRED_REASON = "No precomputed hierarchy cluster artifacts found."
 
 
 @dataclass(frozen=True)
@@ -18,7 +19,9 @@ class LatentMapMethodComparisonSummary:
     embedding_count: int
     layout_count: int
     cluster_count: int
+    graph_communities_status: str
     hdbscan_status: str
+    hierarchy_status: str
 
 
 def export_method_comparison(*, run_dir: Path) -> LatentMapMethodComparisonSummary:
@@ -29,6 +32,7 @@ def export_method_comparison(*, run_dir: Path) -> LatentMapMethodComparisonSumma
     clusters = _list_cluster_metadata(resolved_run_dir / "clusters")
     hdbscan = _build_hdbscan_summary(clusters)
     graph_communities = _build_graph_communities_summary(clusters)
+    hierarchy = _build_hierarchy_summary(clusters)
     comparison = {
         "schema_version": 1,
         "asset_kind": "latent-map-method-comparison",
@@ -38,6 +42,7 @@ def export_method_comparison(*, run_dir: Path) -> LatentMapMethodComparisonSumma
         "clusters": clusters,
         "graph_communities": graph_communities,
         "hdbscan": hdbscan,
+        "hierarchy": hierarchy,
     }
     comparison_dir = resolved_run_dir / "comparisons"
     comparison_dir.mkdir(parents=True, exist_ok=True)
@@ -54,6 +59,7 @@ def export_method_comparison(*, run_dir: Path) -> LatentMapMethodComparisonSumma
         cluster_count=len(clusters),
         graph_communities_status=str(graph_communities["status"]),
         hdbscan_status=str(hdbscan["status"]),
+        hierarchy_status=str(hierarchy["status"]),
     )
 
     return LatentMapMethodComparisonSummary(
@@ -62,7 +68,9 @@ def export_method_comparison(*, run_dir: Path) -> LatentMapMethodComparisonSumma
         embedding_count=len(embeddings),
         layout_count=len(layouts),
         cluster_count=len(clusters),
+        graph_communities_status=str(graph_communities["status"]),
         hdbscan_status=str(hdbscan["status"]),
+        hierarchy_status=str(hierarchy["status"]),
     )
 
 
@@ -223,12 +231,62 @@ def _build_graph_communities_summary(
     }
 
 
+def _build_hierarchy_summary(
+    clusters: list[dict[str, object]],
+) -> dict[str, object]:
+    presets = [
+        cluster
+        for cluster in clusters
+        if str(cluster.get("method", "")).lower() == "hierarchy"
+    ]
+
+    if not presets:
+        return {
+            "status": "deferred",
+            "reason": HIERARCHY_DEFERRED_REASON,
+        }
+
+    return {
+        "status": "available",
+        "preset_count": len(presets),
+        "presets": [
+            {
+                "cluster_id": preset["cluster_id"],
+                "label": preset.get("label", preset["cluster_id"]),
+                "recipe_name": preset["recipe_name"],
+                "cluster_count": preset.get("cluster_count"),
+                "unassigned_count": preset.get("unassigned_count"),
+                "params": preset.get("params", {}),
+            }
+            for preset in sorted(
+                presets,
+                key=lambda preset: (
+                    str(preset["recipe_name"]),
+                    _hierarchy_order(str(preset.get("label", ""))),
+                    str(preset["cluster_id"]),
+                ),
+            )
+        ],
+    }
+
+
 def _graph_communities_order(label: str) -> int:
     labels = {
         "Graph communities · Broad": 0,
         "Graph communities · Balanced": 1,
         "Graph communities · Detail": 2,
         "Graph communities · Fine": 3,
+    }
+
+    return labels.get(label, 99)
+
+
+def _hierarchy_order(label: str) -> int:
+    labels = {
+        "Hierarchy · Broad": 0,
+        "Hierarchy · Balanced": 1,
+        "Hierarchy · Detail": 2,
+        "Hierarchy · Fine": 3,
     }
 
     return labels.get(label, 99)
@@ -261,6 +319,7 @@ def _append_comparison_report(
     cluster_count: int,
     graph_communities_status: str,
     hdbscan_status: str,
+    hierarchy_status: str,
 ) -> None:
     report_path = run_dir / "report.md"
     existing_report = report_path.read_text(encoding="utf-8") if report_path.is_file() else ""
@@ -273,6 +332,7 @@ def _append_comparison_report(
             f"- Layout outputs: {layout_count}",
             f"- Cluster outputs: {cluster_count}",
             f"- Graph communities: {graph_communities_status}",
+            f"- Hierarchy: {hierarchy_status}",
             f"- HDBSCAN: {hdbscan_status}",
             f"- File: `{comparison_path}`",
             "",

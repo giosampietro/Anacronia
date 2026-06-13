@@ -305,6 +305,7 @@ def _list_available_clusters(
         key=lambda cluster: (
             _cluster_method_order(str(cluster["method"]).lower()),
             _graph_community_order(str(cluster.get("label", ""))),
+            _hierarchy_order(str(cluster.get("label", ""))),
             _hdbscan_order(str(cluster.get("label", ""))),
             str(cluster["cluster_id"]),
         ),
@@ -314,12 +315,14 @@ def _list_available_clusters(
 def _cluster_method_order(method: str) -> int:
     if method == "graph_communities":
         return 0
-    if method == "hdbscan":
+    if method == "hierarchy":
         return 1
-    if method == "kmeans":
+    if method == "hdbscan":
         return 2
+    if method == "kmeans":
+        return 3
 
-    return 3
+    return 4
 
 
 def _graph_community_order(label: str) -> int:
@@ -328,6 +331,17 @@ def _graph_community_order(label: str) -> int:
         "Graph communities · Balanced": 1,
         "Graph communities · Detail": 2,
         "Graph communities · Fine": 3,
+    }
+
+    return labels.get(label, 99)
+
+
+def _hierarchy_order(label: str) -> int:
+    labels = {
+        "Hierarchy · Broad": 0,
+        "Hierarchy · Balanced": 1,
+        "Hierarchy · Detail": 2,
+        "Hierarchy · Fine": 3,
     }
 
     return labels.get(label, 99)

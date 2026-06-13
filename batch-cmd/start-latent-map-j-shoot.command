@@ -11,7 +11,7 @@ WORKTREE_DATA_ROOT="/private/tmp/anacronia-latent-map-worktree-data"
 APP_UI_PORT="18661"
 APP_API_PORT="18671"
 APP_ORIGIN="http://localhost:$APP_UI_PORT"
-LATENT_MAP_URL="$APP_ORIGIN/latent-map?run=$RUN_ID&recipe=dinov3_vits_384&layout=umap_n15_mindist0p05_seed42&clusterResult=graph_communities_balanced_k8_res0p6_min2&mode=thumbnails&thumb=64&detail=auto&neighbors=20&relation=closest&z=0.75"
+LATENT_MAP_URL="$APP_ORIGIN/latent-map?run=$RUN_ID&recipe=dinov3_vits_384&layout=umap_n15_mindist0p05_seed42&clusterResult=hierarchy_balanced_k48_average_cosine_l2&mode=thumbnails&thumb=64&detail=auto&neighbors=20&relation=closest&z=0.75"
 PID_DIR="$WORKTREE_DATA_ROOT/run"
 LOG_DIR="$WORKTREE_DATA_ROOT/logs"
 PID_FILE="$PID_DIR/latent-map-ui-$APP_UI_PORT.pid"
@@ -29,6 +29,12 @@ GRAPH_COMMUNITY_CLUSTER_IDS=(
   graph_communities_balanced_k8_res0p6_min2
   graph_communities_detail_k6_res0p65_min2
   graph_communities_fine_k3_res0p7_min2
+)
+HIERARCHY_CLUSTER_IDS=(
+  hierarchy_broad_k24_average_cosine_l2
+  hierarchy_balanced_k48_average_cosine_l2
+  hierarchy_detail_k96_average_cosine_l2
+  hierarchy_fine_k192_average_cosine_l2
 )
 
 finish() {
@@ -139,6 +145,10 @@ for recipe in dinov3_vits_256 dinov3_vits_384; do
   done
 
   for cluster_id in "${GRAPH_COMMUNITY_CLUSTER_IDS[@]}"; do
+    require_file "$RUN_DIR/clusters/${recipe}_${cluster_id}.json" "${recipe} ${cluster_id} cluster result" || missing=1
+  done
+
+  for cluster_id in "${HIERARCHY_CLUSTER_IDS[@]}"; do
     require_file "$RUN_DIR/clusters/${recipe}_${cluster_id}.json" "${recipe} ${cluster_id} cluster result" || missing=1
   done
 done

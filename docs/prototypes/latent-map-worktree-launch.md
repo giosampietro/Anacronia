@@ -87,10 +87,12 @@ Use this as the default loop while editing the latent-map viewer:
 1. Keep the app fixed on `http://localhost:18661`.
 2. Use `batch-cmd/start-latent-map-j-shoot.command` for normal relaunch and user-facing QA.
 3. Keep the browser fixed on the expected URL below; only change query params needed for the feature under test.
-4. Use the in-app browser or Chrome DevTools against that tab for UI checks.
+4. Use the Browser plugin in-app browser against that tab for UI checks. If Chrome DevTools is already attached to the correct tab, it can be used, but do not keep using it when it reports `about:blank` or a different browser context.
 5. Use `batch-cmd/start-latent-map-j-shoot-dev.command` only when hot reload is worth the risk of dev-mode file watching. If dev mode reports `EMFILE` or returns `404`, stop it and use the production launcher.
 6. Do not restart the server after every UI check. Reload the browser tab first; relaunch only when the process is unhealthy or the production build changed.
 7. After code changes that need the production launcher, run `npm run build` or `batch-cmd/prepare-latent-map-j-shoot.command` before starting.
+
+Avoid standalone Playwright launching the installed macOS Chrome for routine QA. In this Codex desktop sandbox that path can hit Chrome Crashpad/profile permission failures and make Chrome appear to crash. Use the in-app browser tab's built-in inspection API instead.
 
 Expected dev URL:
 

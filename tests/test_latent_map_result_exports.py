@@ -341,6 +341,92 @@ def test_exports_graph_community_group_selections_with_labels(tmp_path):
     ]
 
 
+def test_exports_hierarchy_group_selections_with_granularity_metadata(tmp_path):
+    run = create_result_run(tmp_path)
+    (run.run_dir / "clusters" / "dinov3_vits_256_hierarchy_balanced.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "asset_kind": "latent-map-cluster-result",
+                "recipe_name": "dinov3_vits_256",
+                "cluster_id": "hierarchy_balanced_k48_average_cosine_l2",
+                "label": "Hierarchy · Balanced",
+                "method": "hierarchy",
+                "cluster_count": 2,
+                "unassigned_count": 0,
+                "params": {
+                    "preset": "balanced",
+                    "granularity_rank": 1,
+                    "target_cluster_count": 48,
+                    "effective_cluster_count": 2,
+                    "algorithm": "agglomerative",
+                    "linkage": "average",
+                    "metric": "cosine",
+                    "vector_normalization": "l2",
+                },
+                "groups": [
+                    {
+                        "group_key": "cluster:0",
+                        "cluster_id": 0,
+                        "label": "Group 0",
+                        "count": 2,
+                        "kind": "cluster",
+                    },
+                    {
+                        "group_key": "cluster:1",
+                        "cluster_id": 1,
+                        "label": "Group 1",
+                        "count": 1,
+                        "kind": "cluster",
+                    },
+                ],
+                "points": [
+                    {
+                        "image_id": "img-a",
+                        "cluster_id": 0,
+                        "group_key": "cluster:0",
+                    },
+                    {
+                        "image_id": "img-a-copy",
+                        "cluster_id": 0,
+                        "group_key": "cluster:0",
+                    },
+                    {
+                        "image_id": "img-b",
+                        "cluster_id": 1,
+                        "group_key": "cluster:1",
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    summary = export_latent_map_results(
+        run_dir=run.run_dir,
+        recipe_name="dinov3_vits_256",
+        selected_cluster_ids=["cluster:0"],
+    )
+
+    data = json.loads(summary.result_path.read_text(encoding="utf-8"))
+    assert data["cluster_result"]["label"] == "Hierarchy · Balanced"
+    assert data["cluster_result"]["params"]["preset"] == "balanced"
+    assert data["cluster_result"]["params"]["target_cluster_count"] == 48
+    assert data["selections"]["clusters"] == [
+        {
+            "cluster_id": "cluster:0",
+            "group_key": "cluster:0",
+            "image_ids": ["img-a", "img-a-copy"],
+            "provenance": {
+                "cluster_id": "hierarchy_balanced_k48_average_cosine_l2",
+                "kind": "cluster-selection",
+                "method": "hierarchy",
+            },
+            "label": "Group 0",
+        }
+    ]
+
+
 def test_result_export_rejects_umap_neighbor_substitution(tmp_path):
     run = create_result_run(tmp_path)
     (run.run_dir / "indexes" / "dinov3_vits_256_neighbors.jsonl").unlink()

@@ -359,6 +359,60 @@ def test_exports_hdbscan_group_metadata_to_viewer_data(tmp_path):
         ),
         encoding="utf-8",
     )
+    (run.run_dir / "clusters" / "dinov3_vits_256_hierarchy_balanced.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "asset_kind": "latent-map-cluster-result",
+                "run_id": run.run_id,
+                "recipe_name": "dinov3_vits_256",
+                "cluster_id": "hierarchy_balanced_k48_average_cosine_l2",
+                "label": "Hierarchy · Balanced",
+                "method": "hierarchy",
+                "cluster_count": 2,
+                "unassigned_count": 0,
+                "params": {
+                    "preset": "balanced",
+                    "granularity_rank": 1,
+                    "target_cluster_count": 48,
+                    "effective_cluster_count": 2,
+                    "algorithm": "agglomerative",
+                    "linkage": "average",
+                    "metric": "cosine",
+                    "vector_normalization": "l2",
+                },
+                "groups": [
+                    {
+                        "group_key": "cluster:0",
+                        "cluster_id": 0,
+                        "label": "Group 0",
+                        "count": 1,
+                        "kind": "cluster",
+                    },
+                    {
+                        "group_key": "cluster:1",
+                        "cluster_id": 1,
+                        "label": "Group 1",
+                        "count": 1,
+                        "kind": "cluster",
+                    },
+                ],
+                "points": [
+                    {
+                        "image_id": "img-a",
+                        "cluster_id": 0,
+                        "group_key": "cluster:0",
+                    },
+                    {
+                        "image_id": "img-b",
+                        "cluster_id": 1,
+                        "group_key": "cluster:1",
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
 
     summary = export_viewer_data(
         run_dir=run.run_dir,
@@ -375,6 +429,10 @@ def test_exports_hdbscan_group_metadata_to_viewer_data(tmp_path):
     )
     assert data["available_clusters"][0]["label"] == "Graph communities · Balanced"
     assert data["available_clusters"][1]["cluster_id"] == (
+        "hierarchy_balanced_k48_average_cosine_l2"
+    )
+    assert data["available_clusters"][1]["label"] == "Hierarchy · Balanced"
+    assert data["available_clusters"][2]["cluster_id"] == (
         "hdbscan_balanced_mcs25_ms10_eom"
     )
     assert data["points"][0]["cluster_group_key"] == "cluster:0"

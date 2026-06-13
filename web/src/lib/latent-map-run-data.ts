@@ -351,6 +351,14 @@ function sortClusterOutputs(
       return graphCommunityPresetDelta;
     }
 
+    const hierarchyPresetDelta =
+      getHierarchyPresetOrder(String(left.value.label ?? "")) -
+      getHierarchyPresetOrder(String(right.value.label ?? ""));
+
+    if (hierarchyPresetDelta !== 0) {
+      return hierarchyPresetDelta;
+    }
+
     const presetDelta =
       getHdbscanPresetOrder(String(left.value.label ?? "")) -
       getHdbscanPresetOrder(String(right.value.label ?? ""));
@@ -367,14 +375,17 @@ function getClusterMethodOrder(method: string): number {
   if (method === "graph_communities") {
     return 0;
   }
-  if (method === "hdbscan") {
+  if (method === "hierarchy") {
     return 1;
   }
-  if (method === "kmeans") {
+  if (method === "hdbscan") {
     return 2;
   }
+  if (method === "kmeans") {
+    return 3;
+  }
 
-  return 3;
+  return 4;
 }
 
 function getGraphCommunityPresetOrder(label: string): number {
@@ -383,6 +394,17 @@ function getGraphCommunityPresetOrder(label: string): number {
     ["Graph communities · Balanced", 1],
     ["Graph communities · Detail", 2],
     ["Graph communities · Fine", 3],
+  ]);
+
+  return labels.get(label) ?? 99;
+}
+
+function getHierarchyPresetOrder(label: string): number {
+  const labels = new Map([
+    ["Hierarchy · Broad", 0],
+    ["Hierarchy · Balanced", 1],
+    ["Hierarchy · Detail", 2],
+    ["Hierarchy · Fine", 3],
   ]);
 
   return labels.get(label) ?? 99;

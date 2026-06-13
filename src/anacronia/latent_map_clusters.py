@@ -15,6 +15,11 @@ HDBSCAN_UNASSIGNED_GROUP_KEY = "unassigned"
 GRAPH_COMMUNITY_METHOD = "graph_communities"
 GRAPH_COMMUNITY_ALGORITHM = "weighted_label_propagation"
 GRAPH_COMMUNITY_NEIGHBOR_SOURCE = "faiss"
+HIERARCHY_METHOD = "hierarchy"
+HIERARCHY_ALGORITHM = "agglomerative"
+HIERARCHY_LINKAGE = "average"
+HIERARCHY_METRIC = "cosine"
+HIERARCHY_VECTOR_NORMALIZATION = "l2"
 
 
 @dataclass(frozen=True)
@@ -116,6 +121,49 @@ GRAPH_COMMUNITY_PRESETS = (
         min_score=0.0,
         min_group_size=2,
         resolution=0.70,
+    ),
+)
+
+
+@dataclass(frozen=True)
+class HierarchyPreset:
+    slug: str
+    label: str
+    target_cluster_count: int
+    granularity_rank: int
+
+    @property
+    def cluster_id(self) -> str:
+        return (
+            f"hierarchy_{self.slug}_k{self.target_cluster_count}"
+            f"_{HIERARCHY_LINKAGE}_{HIERARCHY_METRIC}_{HIERARCHY_VECTOR_NORMALIZATION}"
+        )
+
+
+HIERARCHY_PRESETS = (
+    HierarchyPreset(
+        slug="broad",
+        label="Hierarchy · Broad",
+        target_cluster_count=24,
+        granularity_rank=0,
+    ),
+    HierarchyPreset(
+        slug="balanced",
+        label="Hierarchy · Balanced",
+        target_cluster_count=48,
+        granularity_rank=1,
+    ),
+    HierarchyPreset(
+        slug="detail",
+        label="Hierarchy · Detail",
+        target_cluster_count=96,
+        granularity_rank=2,
+    ),
+    HierarchyPreset(
+        slug="fine",
+        label="Hierarchy · Fine",
+        target_cluster_count=192,
+        granularity_rank=3,
     ),
 )
 
@@ -359,6 +407,112 @@ def build_graph_community_cluster_results(
     ]
 
 
+def build_hierarchy_cluster_result(
+    *,
+    run_dir: Path,
+    recipe_name: str,
+    preset: HierarchyPreset,
+    clusterer: Clusterer | None = None,
+) -> LatentMapClusterSummary:
+    resolved_run_dir = run_dir.expanduser().resolve()
+    run_id = _read_run_id(resolved_run_dir)
+    vectors = _normalize_vectors(
+        _load_vectors(resolved_run_dir=resolved_run_dir, recipe_name=recipe_name)
+    )
+    manifest_rows = _load_manifest_rows(resolved_run_dir)
+
+    if vectors.shape[0] > len(manifest_rows):
+        raise ValueError("Embedding vector count exceeds manifest image count.")
+
+    mapped_rows = manifest_rows[: vectors.shape[0]]
+    effective_cluster_count = min(preset.target_cluster_count, vectors.shape[0])
+    resolved_clusterer = clusterer or _build_hierarchy_clusterer(
+        cluster_count=effective_cluster_count,
+    )
+    raw_labels = np.asarray(resolved_clusterer.fit_predict(vectors))
+
+    if raw_labels.shape != (vectors.shape[0],):
+        raise ValueError("Clusterer must return one cluster label per vector.")
+
+    labels = _remap_labels_by_group_size(raw_labels)
+    cluster_labels = sorted({int(label) for label in labels.tolist()})
+    points = [
+        _build_cluster_point(
+            image_id=str(row["image_id"]),
+            label=int(labels[index]),
+            membership=None,
+        )
+        for index, row in enumerate(mapped_rows)
+    ]
+    clusters_dir = resolved_run_dir / "clusters"
+    clusters_dir.mkdir(parents=True, exist_ok=True)
+    cluster_path = clusters_dir / f"{recipe_name}_{preset.cluster_id}.json"
+    payload = {
+        "schema_version": 1,
+        "asset_kind": "latent-map-cluster-result",
+        "run_id": run_id,
+        "recipe_name": recipe_name,
+        "cluster_id": preset.cluster_id,
+        "label": preset.label,
+        "method": HIERARCHY_METHOD,
+        "cluster_count": len(cluster_labels),
+        "unassigned_count": 0,
+        "params": {
+            "preset": preset.slug,
+            "granularity_rank": preset.granularity_rank,
+            "target_cluster_count": preset.target_cluster_count,
+            "effective_cluster_count": effective_cluster_count,
+            "algorithm": HIERARCHY_ALGORITHM,
+            "linkage": HIERARCHY_LINKAGE,
+            "metric": HIERARCHY_METRIC,
+            "vector_normalization": HIERARCHY_VECTOR_NORMALIZATION,
+        },
+        "groups": _build_group_summaries(points),
+        "points": points,
+    }
+
+    cluster_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    _append_cluster_report(
+        run_dir=resolved_run_dir,
+        recipe_name=recipe_name,
+        cluster_id=preset.cluster_id,
+        label=preset.label,
+        cluster_count=len(cluster_labels),
+        unassigned_count=0,
+        cluster_path=cluster_path,
+        heading="Hierarchy Clusters",
+    )
+
+    return LatentMapClusterSummary(
+        run_id=run_id,
+        recipe_name=recipe_name,
+        cluster_id=preset.cluster_id,
+        label=preset.label,
+        method=HIERARCHY_METHOD,
+        cluster_count=len(cluster_labels),
+        unassigned_count=0,
+        cluster_path=cluster_path,
+    )
+
+
+def build_hierarchy_cluster_results(
+    *,
+    run_dir: Path,
+    recipe_name: str,
+    preset_slug: str | None = None,
+) -> list[LatentMapClusterSummary]:
+    presets = get_hierarchy_presets(preset_slug)
+
+    return [
+        build_hierarchy_cluster_result(
+            run_dir=run_dir,
+            recipe_name=recipe_name,
+            preset=preset,
+        )
+        for preset in presets
+    ]
+
+
 def get_hdbscan_presets(preset_slug: str | None = None) -> tuple[HdbscanPreset, ...]:
     if preset_slug in {None, "all"}:
         return HDBSCAN_PRESETS
@@ -385,6 +539,20 @@ def get_graph_community_presets(
     raise ValueError(
         f"Unknown graph-community preset: {preset_slug}. Expected one of: {valid}"
     )
+
+
+def get_hierarchy_presets(
+    preset_slug: str | None = None,
+) -> tuple[HierarchyPreset, ...]:
+    if preset_slug in {None, "all"}:
+        return HIERARCHY_PRESETS
+
+    for preset in HIERARCHY_PRESETS:
+        if preset.slug == preset_slug:
+            return (preset,)
+
+    valid = ", ".join(["all", *(preset.slug for preset in HIERARCHY_PRESETS)])
+    raise ValueError(f"Unknown hierarchy preset: {preset_slug}. Expected one of: {valid}")
 
 
 def _build_cluster_point(
@@ -525,6 +693,20 @@ def _cluster_faiss_neighbor_graph(
     return labels
 
 
+def _remap_labels_by_group_size(labels: np.ndarray) -> np.ndarray:
+    grouped: dict[int, list[int]] = {}
+    for index, label in enumerate(labels.tolist()):
+        grouped.setdefault(int(label), []).append(index)
+
+    ordered_labels = sorted(
+        grouped,
+        key=lambda label: (-len(grouped[label]), grouped[label][0], label),
+    )
+    label_map = {label: index for index, label in enumerate(ordered_labels)}
+
+    return np.asarray([label_map[int(label)] for label in labels.tolist()])
+
+
 def _build_weighted_adjacency(
     *,
     known_image_ids: set[str],
@@ -581,6 +763,22 @@ def _build_hdbscan_clusterer(preset: HdbscanPreset):
         cluster_selection_method=preset.cluster_selection_method,
         copy=True,
         metric=HDBSCAN_METRIC,
+    )
+
+
+def _build_hierarchy_clusterer(*, cluster_count: int):
+    try:
+        from sklearn.cluster import AgglomerativeClustering
+    except Exception as exc:  # pragma: no cover - covered by setup/manual checks
+        raise RuntimeError(
+            "scikit-learn AgglomerativeClustering is missing. Run batch-cmd/setup-dinov3-local.command first."
+        ) from exc
+
+    return AgglomerativeClustering(
+        n_clusters=cluster_count,
+        metric=HIERARCHY_METRIC,
+        linkage=HIERARCHY_LINKAGE,
+        compute_full_tree=True,
     )
 
 

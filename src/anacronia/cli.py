@@ -16,8 +16,10 @@ from anacronia.latent_map_atlas import generate_latent_map_thumbnail_atlas
 from anacronia.latent_map_clusters import (
     GRAPH_COMMUNITY_PRESETS,
     HDBSCAN_PRESETS,
+    HIERARCHY_PRESETS,
     build_graph_community_cluster_results,
     build_hdbscan_cluster_results,
+    build_hierarchy_cluster_results,
 )
 from anacronia.latent_map_faiss import build_faiss_index, query_faiss_neighbors
 from anacronia.latent_map_layout import build_latent_map_layout
@@ -511,6 +513,39 @@ def run_latent_map_graph_communities_build(
     )
 
 
+def run_latent_map_hierarchy_build(
+    *,
+    run_dir: Path,
+    recipe_name: str,
+    preset: str | None = None,
+) -> None:
+    summaries = build_hierarchy_cluster_results(
+        run_dir=run_dir,
+        recipe_name=recipe_name,
+        preset_slug=preset,
+    )
+    print(
+        json.dumps(
+            {
+                "recipe_name": recipe_name,
+                "cluster_results": [
+                    {
+                        "run_id": summary.run_id,
+                        "cluster_id": summary.cluster_id,
+                        "label": summary.label,
+                        "method": summary.method,
+                        "cluster_count": summary.cluster_count,
+                        "unassigned_count": summary.unassigned_count,
+                        "cluster_path": str(summary.cluster_path),
+                    }
+                    for summary in summaries
+                ],
+            }
+        ),
+        flush=True,
+    )
+
+
 def run_latent_map_atlas(
     *,
     run_dir: Path,
@@ -582,7 +617,9 @@ def run_latent_map_method_comparison(*, run_dir: Path) -> None:
                 "embedding_count": summary.embedding_count,
                 "layout_count": summary.layout_count,
                 "cluster_count": summary.cluster_count,
+                "graph_communities_status": summary.graph_communities_status,
                 "hdbscan_status": summary.hdbscan_status,
+                "hierarchy_status": summary.hierarchy_status,
             }
         ),
         flush=True,
@@ -709,6 +746,18 @@ def main() -> None:
     latent_map_graph_communities_parser.add_argument(
         "--preset",
         choices=["all", *(preset.slug for preset in GRAPH_COMMUNITY_PRESETS)],
+        default="all",
+    )
+    latent_map_hierarchy_parser = latent_map_subparsers.add_parser("hierarchy-build")
+    latent_map_hierarchy_parser.add_argument("--run-dir", required=True, type=Path)
+    latent_map_hierarchy_parser.add_argument(
+        "--recipe",
+        choices=sorted(DINO_EMBEDDING_RECIPES),
+        default="dinov3_vits_256",
+    )
+    latent_map_hierarchy_parser.add_argument(
+        "--preset",
+        choices=["all", *(preset.slug for preset in HIERARCHY_PRESETS)],
         default="all",
     )
     latent_map_atlas_parser = latent_map_subparsers.add_parser("atlas")
@@ -846,6 +895,14 @@ def main() -> None:
         and args.latent_map_command == "graph-communities-build"
     ):
         run_latent_map_graph_communities_build(
+            run_dir=args.run_dir,
+            recipe_name=args.recipe,
+            preset=args.preset,
+        )
+        return
+
+    if args.command == "latent-map" and args.latent_map_command == "hierarchy-build":
+        run_latent_map_hierarchy_build(
             run_dir=args.run_dir,
             recipe_name=args.recipe,
             preset=args.preset,

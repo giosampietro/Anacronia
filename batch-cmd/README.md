@@ -11,6 +11,6 @@ On macOS, double-click a `.command` file from Finder. A Terminal window will ope
 - `setup-dinov3-local.command` installs local image-embedding dependencies and checks Apple Silicon plus Hugging Face DINOv3 access.
 - `verify-bootstrap.command` runs the current Python and web checks. It does not open the app.
 - `start-anacronia.command` starts the local app and opens the browser when ready.
-- `prepare-latent-map-j-shoot.command` does the slow one-time work for the J Shoot latent-map run: generated atlases, comparison UMAP layouts, HDBSCAN preset cluster results, top-50 FAISS caches, and the Next production build.
-- `start-latent-map-j-shoot.command` is the fast daily-use button for this worktree on `localhost:18661`: it reuses a healthy server, repairs stale `18661` listeners, verifies the precomputed atlas/UMAP/HDBSCAN/FAISS files, starts the prebuilt Next app directly, verifies the real latent-map URL, and opens it.
+- `prepare-latent-map-j-shoot.command` does the slow one-time work for the J Shoot latent-map run: generated atlases, comparison UMAP layouts, HDBSCAN, graph-community, and hierarchy preset cluster results, top-50 FAISS caches, and the Next production build.
+- `start-latent-map-j-shoot.command` is the fast daily-use button for this worktree on `localhost:18661`: it reuses a healthy server, repairs stale `18661` listeners, verifies the precomputed atlas/UMAP/clustering/FAISS files, starts the prebuilt Next app directly, verifies the real latent-map URL, and opens it.
 - `start-latent-map-j-shoot-dev.command` starts the same real-data latent-map URL on `localhost:18661` in Next dev mode for hot reload. Prefer the fast production launcher unless you specifically need dev-mode hot reload.

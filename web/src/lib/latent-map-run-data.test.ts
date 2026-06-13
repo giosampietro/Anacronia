@@ -122,6 +122,46 @@ describe("loadLatentMapRunExportedViewerData", () => {
       },
     );
     await writeJson(
+      path.join(runDir, "clusters", "dinov3_vits_384_hierarchy_balanced.json"),
+      {
+        asset_kind: "latent-map-cluster-result",
+        cluster_count: 1,
+        cluster_id: "hierarchy_balanced_k48_average_cosine_l2",
+        groups: [
+          {
+            cluster_id: 0,
+            count: 1,
+            group_key: "cluster:0",
+            kind: "cluster",
+            label: "Group 0",
+          },
+        ],
+        label: "Hierarchy · Balanced",
+        method: "hierarchy",
+        params: {
+          algorithm: "agglomerative",
+          effective_cluster_count: 1,
+          granularity_rank: 1,
+          linkage: "average",
+          metric: "cosine",
+          preset: "balanced",
+          target_cluster_count: 48,
+          vector_normalization: "l2",
+        },
+        points: [
+          {
+            cluster_id: 0,
+            group_key: "cluster:0",
+            image_id: "img_1",
+          },
+        ],
+        recipe_name: "dinov3_vits_384",
+        run_id: "test-run",
+        schema_version: 1,
+        unassigned_count: 0,
+      },
+    );
+    await writeJson(
       path.join(runDir, "clusters", "dinov3_vits_384_graph_balanced.json"),
       {
         asset_kind: "latent-map-cluster-result",
@@ -257,6 +297,7 @@ describe("loadLatentMapRunExportedViewerData", () => {
     ]);
     expect(data.available_clusters?.map((cluster) => cluster.cluster_id)).toEqual([
       "graph_communities_balanced_k8_res0p6_min2",
+      "hierarchy_balanced_k48_average_cosine_l2",
       "hdbscan_balanced_mcs25_ms10_eom",
       "kmeans_a",
     ]);

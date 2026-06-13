@@ -117,12 +117,17 @@ def test_exports_method_comparison_without_overwriting_analysis_results(tmp_path
         "status": "deferred",
         "reason": "No precomputed HDBSCAN cluster artifacts found.",
     }
+    assert data["hierarchy"] == {
+        "status": "deferred",
+        "reason": "No precomputed hierarchy cluster artifacts found.",
+    }
     assert sorted(path.name for path in (run.run_dir / "layouts").iterdir()) == layout_paths_before
     assert summary.embedding_count == 2
     assert summary.layout_count == 2
     assert summary.cluster_count == 1
     report = (run.run_dir / "report.md").read_text(encoding="utf-8")
     assert "## Method Comparison" in report
+    assert "Hierarchy: deferred" in report
     assert "HDBSCAN: deferred" in report
 
 
@@ -226,3 +231,59 @@ def test_exports_available_graph_community_presets_in_method_comparison(tmp_path
         ],
     }
     assert summary.cluster_count == 2
+
+
+def test_exports_available_hierarchy_presets_in_method_comparison(tmp_path):
+    run = create_comparison_run(tmp_path)
+    (run.run_dir / "clusters" / "dinov3_vits_256_hierarchy_balanced.json").write_text(
+        json.dumps(
+            {
+                "recipe_name": "dinov3_vits_256",
+                "cluster_id": "hierarchy_balanced_k48_average_cosine_l2",
+                "label": "Hierarchy · Balanced",
+                "method": "hierarchy",
+                "cluster_count": 48,
+                "unassigned_count": 0,
+                "params": {
+                    "preset": "balanced",
+                    "granularity_rank": 1,
+                    "target_cluster_count": 48,
+                    "effective_cluster_count": 48,
+                    "algorithm": "agglomerative",
+                    "linkage": "average",
+                    "metric": "cosine",
+                    "vector_normalization": "l2",
+                },
+                "points": [{"image_id": "img-a", "cluster_id": 0}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    summary = export_method_comparison(run_dir=run.run_dir)
+
+    data = json.loads(summary.comparison_path.read_text(encoding="utf-8"))
+    assert summary.hierarchy_status == "available"
+    assert data["hierarchy"] == {
+        "status": "available",
+        "preset_count": 1,
+        "presets": [
+            {
+                "cluster_id": "hierarchy_balanced_k48_average_cosine_l2",
+                "label": "Hierarchy · Balanced",
+                "recipe_name": "dinov3_vits_256",
+                "cluster_count": 48,
+                "unassigned_count": 0,
+                "params": {
+                    "preset": "balanced",
+                    "granularity_rank": 1,
+                    "target_cluster_count": 48,
+                    "effective_cluster_count": 48,
+                    "algorithm": "agglomerative",
+                    "linkage": "average",
+                    "metric": "cosine",
+                    "vector_normalization": "l2",
+                },
+            }
+        ],
+    }

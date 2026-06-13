@@ -116,6 +116,20 @@ describe("LatentMapViewer", () => {
       <LatentMapViewer
         data={{
           ...latentMapFixture,
+          cluster_id: "hierarchy_balanced_k48_average_cosine_l2",
+          cluster_result: {
+            cluster_count: 48,
+            cluster_id: "hierarchy_balanced_k48_average_cosine_l2",
+            label: "Hierarchy · Balanced",
+            method: "hierarchy",
+            params: {
+              granularity_rank: 1,
+              preset: "balanced",
+              target_cluster_count: 48,
+            },
+            random_state: null,
+            unassigned_count: 0,
+          },
           available_recipes: [
             {
               family: "dinov3",
@@ -139,6 +153,19 @@ describe("LatentMapViewer", () => {
           ],
           available_clusters: [
             {
+              cluster_count: 48,
+              cluster_id: "hierarchy_balanced_k48_average_cosine_l2",
+              label: "Hierarchy · Balanced",
+              method: "hierarchy",
+              params: {
+                granularity_rank: 1,
+                preset: "balanced",
+                target_cluster_count: 48,
+              },
+              random_state: null,
+              unassigned_count: 0,
+            },
+            {
               cluster_count: 3,
               cluster_id: "kmeans_k3_seed42",
               method: "kmeans",
@@ -154,7 +181,7 @@ describe("LatentMapViewer", () => {
     expect(html).toContain("Layout");
     expect(html).toContain("UMAP · n=4");
     expect(html).toContain("Clusters");
-    expect(html).toContain("K-means · 3 clusters");
+    expect(html).toContain("Hierarchy · Balanced");
   });
 
   it("can render the map surface in thumbnail mode without originals", () => {

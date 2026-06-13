@@ -19,6 +19,12 @@ GRAPH_COMMUNITY_CLUSTER_IDS=(
   graph_communities_detail_k6_res0p65_min2
   graph_communities_fine_k3_res0p7_min2
 )
+HIERARCHY_CLUSTER_IDS=(
+  hierarchy_broad_k24_average_cosine_l2
+  hierarchy_balanced_k48_average_cosine_l2
+  hierarchy_detail_k96_average_cosine_l2
+  hierarchy_fine_k192_average_cosine_l2
+)
 
 finish() {
   status=$?
@@ -136,6 +142,24 @@ for recipe in dinov3_vits_256 dinov3_vits_384; do
       --preset all
   else
     echo "Found graph-community presets for ${recipe}"
+  fi
+
+  hierarchy_missing=0
+  for cluster_id in "${HIERARCHY_CLUSTER_IDS[@]}"; do
+    if [ ! -f "$RUN_DIR/clusters/${recipe}_${cluster_id}.json" ]; then
+      hierarchy_missing=1
+      break
+    fi
+  done
+
+  if [ "$hierarchy_missing" -eq 1 ]; then
+    echo "Generating hierarchy presets for ${recipe}"
+    .venv/bin/anacronia latent-map hierarchy-build \
+      --run-dir "$RUN_DIR" \
+      --recipe "$recipe" \
+      --preset all
+  else
+    echo "Found hierarchy presets for ${recipe}"
   fi
 done
 

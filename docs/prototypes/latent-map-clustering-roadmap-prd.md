@@ -181,8 +181,9 @@ The viewer should consume cluster artifacts uniformly. It should not need method
 
 1. [#221 Latent map: add FAISS kNN graph community clustering](https://github.com/giosampietro/Anacronia/issues/221)
 2. [#222 Latent map: add hierarchical clustering with granularity control](https://github.com/giosampietro/Anacronia/issues/222)
+3. [#223 Latent map: add cluster diagnostics summary](https://github.com/giosampietro/Anacronia/issues/223)
 
-Both issues should be vertical slices through the analysis artifact generator, live/export loaders, viewer UI, URL state, tests, and real-data QA.
+The implementation issues should be vertical slices through the analysis artifact generator, live/export loaders, viewer UI, URL state, tests, and real-data QA.
 
 ## Issue #221 Implementation Note
 

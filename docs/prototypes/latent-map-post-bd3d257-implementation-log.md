@@ -225,3 +225,54 @@ Real J Shoot `dinov3_vits_384` results:
 
 - Slow prep generates graph-community presets after FAISS top-50 neighbors exist.
 - Fast launch verifies graph-community artifacts and opens the balanced graph-community result by default.
+
+## Update After Issue #222
+
+Implemented hierarchical clustering as saved latent-map cluster artifacts.
+
+### Hierarchy artifacts
+
+- Added `latent-map hierarchy-build`.
+- The builder reads saved DINO embedding matrices, L2-normalizes vectors, and runs agglomerative clustering with average linkage and cosine distance.
+- Presets are `Hierarchy · Broad`, `Hierarchy · Balanced`, `Hierarchy · Detail`, and `Hierarchy · Fine`.
+- The first cut ladder uses target cluster counts of 24, 48, 96, and 192.
+- Cluster artifacts reuse the existing `latent-map-cluster-result` shape with method metadata, granularity params, group summaries, stable group keys, point assignments, and provenance back to the recipe inputs.
+- Hierarchy assigns every embedded image to a group, so `unassigned_count` is `0`.
+
+Real J Shoot results for both `dinov3_vits_256` and `dinov3_vits_384`:
+
+- Broad: 24 groups.
+- Balanced: 48 groups.
+- Detail: 96 groups.
+- Fine: 192 groups.
+
+### Viewer and exports
+
+- Hierarchy cluster results sort after graph communities and before HDBSCAN and K-means in live run loading and static viewer exports.
+- The existing cluster result selector acts as the finite granularity control by exposing `Hierarchy · Broad`, `Hierarchy · Balanced`, `Hierarchy · Detail`, and `Hierarchy · Fine`.
+- Group focus reuses the current behavior: focused groups stay thumbnails and non-focused images remain discoverable as 3px dark-pink background points.
+- Result exports include hierarchy method metadata and selected group labels.
+- Method comparison exports now include a `hierarchy` summary beside `graph_communities` and `hdbscan`.
+
+### Launch and browser workflow
+
+- Slow prep generates hierarchy presets for both DINO recipes when missing.
+- Fast launch verifies hierarchy artifacts and opens the balanced hierarchy result by default.
+- Added [Browser Tooling](../agents/browser-tooling.md) as agent guidance for local UI QA.
+- Updated [Latent Map Worktree Launch](latent-map-worktree-launch.md) to make the in-app browser the default rendered UI QA path and to avoid standalone Playwright launches of the installed macOS Chrome.
+- Opened [#223 Cluster diagnostics summary](https://github.com/giosampietro/Anacronia/issues/223) as the follow-up vertical slice from the clustering roadmap.
+
+### Checks
+
+- Full Python tests passed: `267 passed`.
+- Full Vitest suite passed: `201 passed`.
+- `npm run build` passed.
+- Real-data generation produced hierarchy artifacts for both `dinov3_vits_256` and `dinov3_vits_384`.
+- Method comparison reports `graph_communities`, `hierarchy`, and `hdbscan` as available.
+- In-app browser QA on the real J Shoot run at `localhost:18661` confirmed:
+  - `Hierarchy · Balanced` is selected through `clusterResult=hierarchy_balanced_k48_average_cosine_l2`;
+  - `Group 0 · 991` focus persists through `cluster=cluster%3A0`;
+  - all `3184` points remain in the map data;
+  - the focused group renders `991` thumbnails;
+  - the non-focused layer remains visible at `3px`;
+  - no in-app browser console warnings or errors were reported.
