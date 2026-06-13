@@ -56,6 +56,15 @@ export type LatentMapRuntimeState = {
   visualTheme: LatentMapVisualTheme;
 };
 
+export type LatentMapNeighborhoodPreviewMeshTransform = {
+  height: number;
+  opacity: number;
+  width: number;
+  x: number;
+  y: number;
+  z: number;
+};
+
 export type LatentMapWebglRuntime = {
   dispose: () => void;
   getDiagnostics: () => LatentMapRuntimeDiagnostics;
@@ -708,7 +717,7 @@ function loadNeighborhoodPreviewTexture(
       item.source,
       (texture) => {
         texture.colorSpace = THREE.SRGBColorSpace;
-        texture.flipY = false;
+        texture.flipY = true;
         texture.minFilter = THREE.LinearFilter;
         texture.magFilter = THREE.LinearFilter;
         texture.generateMipmaps = false;
@@ -767,6 +776,13 @@ type AtlasPageMesh = {
   mesh: THREE.Mesh;
   page: LatentMapThumbnailAtlasPage;
   texture: THREE.CanvasTexture;
+};
+
+type NeighborhoodPreviewMesh = {
+  imageId: string;
+  material: THREE.MeshBasicMaterial;
+  mesh: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
+  texture: THREE.Texture;
 };
 
 type PreparedAtlasPageSet = {
@@ -833,6 +849,63 @@ function createAtlasPageMesh({
     mesh,
     page,
     texture,
+  };
+}
+
+export function getLatentMapNeighborhoodPreviewMeshTransform({
+  point,
+  thumbnailSize,
+  tweenController,
+  view,
+  viewportHeight,
+}: {
+  point: LatentMapRenderablePoint;
+  thumbnailSize: LatentMapThumbnailSize;
+  tweenController: LatentMapRuntimeTweenController;
+  view: LatentMapViewState;
+  viewportHeight: number;
+}): LatentMapNeighborhoodPreviewMeshTransform {
+  const tweenIndex = tweenController.getIndex(point.image_id);
+
+  if (typeof tweenIndex !== "number") {
+    const [width, height] = getThumbnailScale(
+      point,
+      thumbnailSize,
+      view,
+      viewportHeight,
+    );
+
+    return {
+      height,
+      opacity: 1,
+      width,
+      x: point.fitted_x,
+      y: point.fitted_y,
+      z: getThumbnailLayer(point) + 0.08,
+    };
+  }
+
+  const current = tweenController.getCurrentBuffer();
+  const sourceOffset = tweenIndex * LATENT_MAP_TWEEN_STRIDE;
+  const scaleMultiplier =
+    current[sourceOffset + LATENT_MAP_TWEEN_VALUE_OFFSETS.size];
+  const [width, height] = getTweenedThumbnailScale({
+    point,
+    scaleMultiplier,
+    thumbnailSize,
+    view,
+    viewportHeight,
+  });
+
+  return {
+    height,
+    opacity: clamp01(
+      current[sourceOffset + LATENT_MAP_TWEEN_VALUE_OFFSETS.alpha],
+    ),
+    width,
+    x: current[sourceOffset + LATENT_MAP_TWEEN_VALUE_OFFSETS.x],
+    y: current[sourceOffset + LATENT_MAP_TWEEN_VALUE_OFFSETS.y],
+    z: current[sourceOffset + LATENT_MAP_TWEEN_VALUE_OFFSETS.z] + 0.08,
   };
 }
 
@@ -912,6 +985,10 @@ function createPointTweenTargets(items: LatentMapTweenItem[]) {
   }));
 }
 
+function createPointByImageId(points: LatentMapRenderablePoint[]) {
+  return new Map(points.map((point) => [point.image_id, point] as const));
+}
+
 export function createLatentMapWebglRuntime({
   canvas,
   onDiagnosticsChange,
@@ -947,6 +1024,7 @@ export function createLatentMapWebglRuntime({
     points: pointLayer.points,
     tweenController: pointTweenController,
   });
+  const neighborhoodPreviewGeometry = new THREE.PlaneGeometry(1, 1);
   const pointMaterial = new THREE.PointsMaterial({
     alphaTest: 0.2,
     size: pointLayer.pointSize,
@@ -963,14 +1041,19 @@ export function createLatentMapWebglRuntime({
           return;
         }
 
+        updateNeighborhoodPreviewMeshes();
         scheduleRender();
         reportDiagnostics({ force: true });
       },
     });
   const atlasPages: AtlasPageMesh[] = [];
+  const neighborhoodPreviewMeshes = new Map<string, NeighborhoodPreviewMesh>();
   let animationFrameId: number | null = null;
   let activePointLayer = pointLayer;
+  let activePreviewPlan = neighborhoodPreviewPlan;
+  let activePreviewThumbnailSize = thumbnailPlan.thumbnailSize;
   let activeThumbnailPlan = thumbnailPlan;
+  let activeTweenPointByImageId = createPointByImageId(tweenPoints);
   let activeThumbnailPlanSignature = "";
   let atlasLoadRequestId = 0;
   let currentRenderMode = renderMode;
@@ -1043,6 +1126,105 @@ export function createLatentMapWebglRuntime({
     if (currentRenderMode === "thumbnails" && atlasPages.length > 0) {
       updateAtlasInstances(activeThumbnailPlan, result.dirtyRange);
     }
+    if (neighborhoodPreviewMeshes.size > 0) {
+      updateNeighborhoodPreviewMeshes();
+    }
+  }
+
+  function disposeNeighborhoodPreviewMesh(previewMesh: NeighborhoodPreviewMesh) {
+    scene.remove(previewMesh.mesh);
+    previewMesh.material.dispose();
+  }
+
+  function unloadNeighborhoodPreviewMeshes() {
+    neighborhoodPreviewMeshes.forEach((previewMesh) => {
+      disposeNeighborhoodPreviewMesh(previewMesh);
+    });
+    neighborhoodPreviewMeshes.clear();
+  }
+
+  function createNeighborhoodPreviewMesh({
+    imageId,
+    texture,
+    rank,
+  }: {
+    imageId: string;
+    rank: number;
+    texture: THREE.Texture;
+  }): NeighborhoodPreviewMesh {
+    const material = new THREE.MeshBasicMaterial({
+      depthTest: true,
+      depthWrite: false,
+      map: texture,
+      toneMapped: false,
+      transparent: true,
+    });
+    const mesh = new THREE.Mesh(neighborhoodPreviewGeometry, material);
+
+    mesh.frustumCulled = false;
+    mesh.renderOrder = 5_000 + rank;
+    scene.add(mesh);
+
+    return {
+      imageId,
+      material,
+      mesh,
+      texture,
+    };
+  }
+
+  function updateNeighborhoodPreviewMeshes() {
+    if (isDisposed || currentRenderMode !== "thumbnails") {
+      unloadNeighborhoodPreviewMeshes();
+      return;
+    }
+
+    const readyImageIds = new Set<string>();
+
+    activePreviewPlan.items.forEach((item) => {
+      const entry = neighborhoodPreviewTextureCache.getEntry(item.imageId);
+      const point = activeTweenPointByImageId.get(item.imageId);
+
+      if (entry?.status !== "ready" || !entry.texture || !point) {
+        return;
+      }
+
+      readyImageIds.add(item.imageId);
+
+      let previewMesh = neighborhoodPreviewMeshes.get(item.imageId);
+
+      if (!previewMesh || previewMesh.texture !== entry.texture) {
+        if (previewMesh) {
+          disposeNeighborhoodPreviewMesh(previewMesh);
+        }
+        previewMesh = createNeighborhoodPreviewMesh({
+          imageId: item.imageId,
+          rank: item.rank,
+          texture: entry.texture,
+        });
+        neighborhoodPreviewMeshes.set(item.imageId, previewMesh);
+      }
+
+      const transform = getLatentMapNeighborhoodPreviewMeshTransform({
+        point,
+        thumbnailSize: activePreviewThumbnailSize,
+        tweenController: pointTweenController,
+        view: currentView,
+        viewportHeight: getViewportHeight(),
+      });
+
+      previewMesh.material.opacity = transform.opacity;
+      previewMesh.mesh.position.set(transform.x, transform.y, transform.z);
+      previewMesh.mesh.scale.set(transform.width, transform.height, 1);
+      previewMesh.mesh.renderOrder = 5_000 + item.rank;
+    });
+
+    [...neighborhoodPreviewMeshes.entries()].forEach(([imageId, previewMesh]) => {
+      if (!readyImageIds.has(imageId)) {
+        disposeNeighborhoodPreviewMesh(previewMesh);
+        neighborhoodPreviewMeshes.delete(imageId);
+      }
+    });
   }
 
   function render({
@@ -1342,6 +1524,9 @@ export function createLatentMapWebglRuntime({
     currentRenderMode = nextState.renderMode;
     currentVisualTheme = nextState.visualTheme;
     activePointLayer = nextState.pointLayer;
+    activePreviewPlan = nextState.neighborhoodPreviewPlan;
+    activePreviewThumbnailSize = nextState.thumbnailPlan.thumbnailSize;
+    activeTweenPointByImageId = createPointByImageId(nextState.tweenPoints);
     neighborhoodPreviewTextureCache.reconcile(
       nextState.neighborhoodPreviewPlan,
     );
@@ -1387,6 +1572,7 @@ export function createLatentMapWebglRuntime({
       updateAtlasInstances(nextState.thumbnailPlan);
     }
 
+    updateNeighborhoodPreviewMeshes();
     pointCloud.visible = nextState.pointLayer.visible;
     scheduleRender();
     reportDiagnostics({ force: true });
@@ -1396,6 +1582,9 @@ export function createLatentMapWebglRuntime({
     currentView = nextView;
     if (currentRenderMode === "thumbnails" && atlasPages.length > 0) {
       updateAtlasInstances(activeThumbnailPlan);
+    }
+    if (neighborhoodPreviewMeshes.size > 0) {
+      updateNeighborhoodPreviewMeshes();
     }
     scheduleRender();
   }
@@ -1416,11 +1605,17 @@ export function createLatentMapWebglRuntime({
           if (currentRenderMode === "thumbnails" && atlasPages.length > 0) {
             updateAtlasInstances(activeThumbnailPlan);
           }
+          if (neighborhoodPreviewMeshes.size > 0) {
+            updateNeighborhoodPreviewMeshes();
+          }
           scheduleRender();
         });
   const resize = () => {
     if (currentRenderMode === "thumbnails" && atlasPages.length > 0) {
       updateAtlasInstances(activeThumbnailPlan);
+    }
+    if (neighborhoodPreviewMeshes.size > 0) {
+      updateNeighborhoodPreviewMeshes();
     }
     scheduleRender();
   };
@@ -1454,7 +1649,9 @@ export function createLatentMapWebglRuntime({
         window.cancelAnimationFrame(animationFrameId);
       }
       unloadAtlasPages();
+      unloadNeighborhoodPreviewMeshes();
       pointGeometry.dispose();
+      neighborhoodPreviewGeometry.dispose();
       pointMaterial.dispose();
       neighborhoodPreviewTextureCache.dispose();
       pointTweenController.dispose();

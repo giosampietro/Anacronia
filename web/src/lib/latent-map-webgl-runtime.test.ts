@@ -5,6 +5,7 @@ import { createLatentMapRuntimeTweenController } from "@/lib/latent-map-runtime-
 import {
   createLatentMapPointTweenItem,
   createLatentMapPointTweenItems,
+  getLatentMapNeighborhoodPreviewMeshTransform,
   getLatentMapThumbnailWorldScale,
   LATENT_MAP_ATLAS_FRAGMENT_SHADER,
   LATENT_MAP_ATLAS_VERTEX_SHADER,
@@ -418,5 +419,54 @@ describe("latent map WebGL runtime math", () => {
     expect(controller.getIndex("img_selected")).toBe(0);
     expect(controller.getIndex("img_neighbor")).toBe(1);
     expectArrayCloseTo(positions, [3, 3, 0.16]);
+  });
+
+  it("positions neighborhood preview meshes from tween values", () => {
+    const point = createRenderablePoint({
+      fitted_x: 1,
+      fitted_y: 2,
+      image_id: "img_preview",
+      point_state: "neighbor",
+      width: 1600,
+      height: 800,
+    });
+    const controller = createLatentMapRuntimeTweenController([
+      createLatentMapPointTweenItem({
+        point,
+        pointSize: 3,
+        visualTheme: "dark",
+      }),
+    ]);
+
+    controller.retarget(
+      [
+        {
+          imageId: "img_preview",
+          values: {
+            alpha: 0.5,
+            size: 2,
+            x: 6,
+            y: 7,
+            z: 0.34,
+          },
+        },
+      ],
+      { durationMs: 0, now: 0 },
+    );
+
+    const transform = getLatentMapNeighborhoodPreviewMeshTransform({
+      point,
+      thumbnailSize: 64,
+      tweenController: controller,
+      view: { offsetX: 0, offsetY: 0, zoom: 1 },
+      viewportHeight: 900,
+    });
+
+    expect(transform.opacity).toBe(0.5);
+    expect(transform.x).toBe(6);
+    expect(transform.y).toBe(7);
+    expect(transform.width).toBeCloseTo(0.26);
+    expect(transform.height).toBeCloseTo(0.13);
+    expect(transform.z).toBeCloseTo(0.42);
   });
 });
