@@ -25,6 +25,11 @@ import {
   type LatentMapThumbnailRenderPlan,
   type LatentMapThumbnailSize,
 } from "@/lib/latent-map-viewer";
+import {
+  createLatentMapNeighborhoodPreviewTextureCache,
+  type LatentMapNeighborhoodPreviewTextureDiagnostics,
+} from "@/lib/latent-map-neighborhood-preview-cache";
+import type { LatentMapNeighborhoodPreviewPlan } from "@/lib/latent-map-neighborhood-previews";
 
 export { LATENT_MAP_MAX_THUMBNAIL_SCREEN_SCALE };
 
@@ -36,6 +41,7 @@ export type LatentMapViewState = {
 
 export type LatentMapRuntimeDiagnostics = {
   loadedThumbnailCount: number;
+  neighborhoodPreviewTextures: LatentMapNeighborhoodPreviewTextureDiagnostics;
   performanceInfo: LatentMapRuntimePerformanceInfo;
   rendererInfo: LatentMapRuntimeRendererInfo;
 };
@@ -43,6 +49,7 @@ export type LatentMapRuntimeDiagnostics = {
 export type LatentMapRuntimeState = {
   pointLayer: LatentMapPointLayerPlan;
   points: LatentMapRenderablePoint[];
+  neighborhoodPreviewPlan: LatentMapNeighborhoodPreviewPlan;
   renderMode: LatentMapRenderMode;
   thumbnailPlan: LatentMapThumbnailRenderPlan;
   visualTheme: LatentMapVisualTheme;
@@ -613,6 +620,29 @@ function createAtlasMaterial(texture: THREE.Texture) {
   });
 }
 
+function loadNeighborhoodPreviewTexture(
+  item: LatentMapNeighborhoodPreviewPlan["items"][number],
+) {
+  return new Promise<THREE.Texture>((resolve, reject) => {
+    const loader = new THREE.TextureLoader();
+
+    loader.load(
+      item.source,
+      (texture) => {
+        texture.colorSpace = THREE.SRGBColorSpace;
+        texture.flipY = false;
+        texture.minFilter = THREE.LinearFilter;
+        texture.magFilter = THREE.LinearFilter;
+        texture.generateMipmaps = false;
+        texture.premultiplyAlpha = false;
+        resolve(texture);
+      },
+      undefined,
+      reject,
+    );
+  });
+}
+
 function drawAtlasTile({
   context,
   image,
@@ -807,6 +837,7 @@ function createPointTweenTargets(items: LatentMapTweenItem[]) {
 export function createLatentMapWebglRuntime({
   canvas,
   onDiagnosticsChange,
+  neighborhoodPreviewPlan,
   pointLayer,
   points,
   renderMode,
@@ -841,6 +872,19 @@ export function createLatentMapWebglRuntime({
     vertexColors: true,
   });
   const pointCloud = new THREE.Points(pointGeometry, pointMaterial);
+  const neighborhoodPreviewTextureCache =
+    createLatentMapNeighborhoodPreviewTextureCache({
+      loadTexture: loadNeighborhoodPreviewTexture,
+      maxEntries: neighborhoodPreviewPlan.budget,
+      onChange: () => {
+        if (isDisposed) {
+          return;
+        }
+
+        scheduleRender();
+        reportDiagnostics({ force: true });
+      },
+    });
   const atlasPages: AtlasPageMesh[] = [];
   let animationFrameId: number | null = null;
   let activeThumbnailPlan = thumbnailPlan;
@@ -870,6 +914,8 @@ export function createLatentMapWebglRuntime({
   function getDiagnostics(): LatentMapRuntimeDiagnostics {
     return {
       loadedThumbnailCount,
+      neighborhoodPreviewTextures:
+        neighborhoodPreviewTextureCache.getDiagnostics(),
       performanceInfo: {
         averageFrameMs,
         averageRenderMs,
@@ -1212,6 +1258,9 @@ export function createLatentMapWebglRuntime({
   function setRenderState(nextState: LatentMapRuntimeState) {
     currentRenderMode = nextState.renderMode;
     currentVisualTheme = nextState.visualTheme;
+    neighborhoodPreviewTextureCache.reconcile(
+      nextState.neighborhoodPreviewPlan,
+    );
     renderer.setClearColor(
       LATENT_MAP_RUNTIME_PALETTES[currentVisualTheme].backgroundColor,
       1,
@@ -1298,7 +1347,14 @@ export function createLatentMapWebglRuntime({
     window.addEventListener("resize", resize);
   }
 
-  setRenderState({ pointLayer, points, renderMode, thumbnailPlan, visualTheme });
+  setRenderState({
+    neighborhoodPreviewPlan,
+    pointLayer,
+    points,
+    renderMode,
+    thumbnailPlan,
+    visualTheme,
+  });
   render({ forceDiagnostics: true });
 
   return {
@@ -1315,6 +1371,7 @@ export function createLatentMapWebglRuntime({
       unloadAtlasPages();
       pointGeometry.dispose();
       pointMaterial.dispose();
+      neighborhoodPreviewTextureCache.dispose();
       pointTweenController.dispose();
       renderer.dispose();
     },

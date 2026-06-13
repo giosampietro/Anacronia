@@ -82,6 +82,7 @@ import {
   getLatentMapNeighborhoodClickAction,
   isLatentMapNeighborRequestCurrent,
 } from "@/lib/latent-map-neighborhood-interaction";
+import { createLatentMapNeighborhoodPreviewPlan } from "@/lib/latent-map-neighborhood-previews";
 import { createLatentMapNeighborhoodRuntimePlan } from "@/lib/latent-map-neighborhood-targets";
 import {
   createLatentMapFilterOptions,
@@ -97,6 +98,7 @@ import {
   type LatentMapRuntimeState,
   type LatentMapViewState,
   type LatentMapWebglRuntime,
+  type LatentMapRuntimeDiagnostics,
 } from "@/lib/latent-map-webgl-runtime";
 import { DEFAULT_THEME } from "@/lib/theme";
 
@@ -431,6 +433,10 @@ export function LatentMapViewer({
     useState<LatentMapRuntimeRendererInfo>();
   const [runtimePerformanceInfo, setRuntimePerformanceInfo] =
     useState<LatentMapRuntimePerformanceInfo>();
+  const [runtimePreviewTextureInfo, setRuntimePreviewTextureInfo] =
+    useState<
+      LatentMapRuntimeDiagnostics["neighborhoodPreviewTextures"] | undefined
+    >();
   const [loadedThumbnailCount, setLoadedThumbnailCount] = useState(0);
   const [fpsCounterActive, setFpsCounterActive] = useState(false);
   const [uiOverlayHidden, setUiOverlayHidden] = useState(false);
@@ -571,6 +577,21 @@ export function LatentMapViewer({
     renderPoints,
     selectedImageId,
   ]);
+  const neighborhoodPreviewPlan = useMemo(
+    () =>
+      createLatentMapNeighborhoodPreviewPlan({
+        activeImageIds: neighborhoodRuntimePlan.activeImageIds,
+        isActive: neighborhoodLayoutActive,
+        layout: neighborhoodRuntimePlan.layout,
+        points: runtimeRenderPoints,
+      }),
+    [
+      neighborhoodLayoutActive,
+      neighborhoodRuntimePlan.activeImageIds,
+      neighborhoodRuntimePlan.layout,
+      runtimeRenderPoints,
+    ],
+  );
   const spatialIndex = useMemo(
     () => createLatentMapSpatialIndex(runtimeRenderPoints),
     [runtimeRenderPoints],
@@ -745,13 +766,21 @@ export function LatentMapViewer({
   );
   const runtimeState = useMemo<LatentMapRuntimeState>(
     () => ({
+      neighborhoodPreviewPlan,
       pointLayer,
       points: runtimeRenderPoints,
       renderMode,
       thumbnailPlan,
       visualTheme,
     }),
-    [pointLayer, renderMode, runtimeRenderPoints, thumbnailPlan, visualTheme],
+    [
+      neighborhoodPreviewPlan,
+      pointLayer,
+      renderMode,
+      runtimeRenderPoints,
+      thumbnailPlan,
+      visualTheme,
+    ],
   );
   const dataMountKey = useMemo(
     () =>
@@ -774,6 +803,7 @@ export function LatentMapViewer({
     () =>
       createLatentMapRuntimeSnapshot({
         loadedThumbnailCount,
+        neighborhoodPreviewTextureInfo: runtimePreviewTextureInfo,
         performanceInfo: runtimePerformanceInfo,
         pointCount: stats.pointCount,
         renderMode,
@@ -783,6 +813,7 @@ export function LatentMapViewer({
     [
       loadedThumbnailCount,
       renderMode,
+      runtimePreviewTextureInfo,
       runtimePerformanceInfo,
       runtimeRendererInfo,
       stats.pointCount,
@@ -927,6 +958,7 @@ export function LatentMapViewer({
       canvas,
       onDiagnosticsChange: (diagnostics) => {
         setLoadedThumbnailCount(diagnostics.loadedThumbnailCount);
+        setRuntimePreviewTextureInfo(diagnostics.neighborhoodPreviewTextures);
         setRuntimePerformanceInfo(diagnostics.performanceInfo);
         setRuntimeRendererInfo(diagnostics.rendererInfo);
       },
@@ -2125,6 +2157,24 @@ export function LatentMapViewer({
             data-runtime-geometries={runtimeSnapshot.geometryCount}
             data-runtime-last-render-ms={runtimeSnapshot.lastRenderMs}
             data-runtime-loaded-thumbnails={runtimeSnapshot.loadedThumbnailCount}
+            data-runtime-preview-texture-budget={
+              runtimeSnapshot.neighborhoodPreviewTextureBudget
+            }
+            data-runtime-preview-texture-bytes={
+              runtimeSnapshot.neighborhoodPreviewTextureBytes
+            }
+            data-runtime-preview-texture-count={
+              runtimeSnapshot.neighborhoodPreviewTextureCount
+            }
+            data-runtime-preview-texture-failed={
+              runtimeSnapshot.neighborhoodPreviewFailedTextureCount
+            }
+            data-runtime-preview-texture-loading={
+              runtimeSnapshot.neighborhoodPreviewLoadingTextureCount
+            }
+            data-runtime-preview-texture-requested={
+              runtimeSnapshot.neighborhoodPreviewRequestedTextureCount
+            }
             data-runtime-renderer-points={runtimeSnapshot.rendererPointCount}
             data-runtime-renderer-triangles={runtimeSnapshot.rendererTriangleCount}
             data-runtime-textures={runtimeSnapshot.liveTextureCount}

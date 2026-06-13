@@ -1240,6 +1240,14 @@ describe("latent map viewer model", () => {
     expect(
       createLatentMapRuntimeSnapshot({
         loadedThumbnailCount: 5,
+        neighborhoodPreviewTextureInfo: {
+          budget: 24,
+          cachedTextureCount: 2,
+          estimatedTextureBytes: 8_388_608,
+          failedTextureCount: 1,
+          loadingTextureCount: 3,
+          requestedTextureCount: 6,
+        },
         performanceInfo: {
           averageFrameMs: 17.372,
           averageRenderMs: 3.243,
@@ -1271,6 +1279,12 @@ describe("latent map viewer model", () => {
       lastRenderMs: 2.19,
       liveTextureCount: 1,
       loadedThumbnailCount: 5,
+      neighborhoodPreviewFailedTextureCount: 1,
+      neighborhoodPreviewLoadingTextureCount: 3,
+      neighborhoodPreviewRequestedTextureCount: 6,
+      neighborhoodPreviewTextureBudget: 24,
+      neighborhoodPreviewTextureBytes: 8388608,
+      neighborhoodPreviewTextureCount: 2,
       pointCount: 8,
       rendererPointCount: 8,
       rendererTriangleCount: 16,

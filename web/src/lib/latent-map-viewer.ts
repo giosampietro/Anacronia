@@ -235,6 +235,12 @@ export type LatentMapRuntimeSnapshot = {
   lastRenderMs: number;
   liveTextureCount: number;
   loadedThumbnailCount: number;
+  neighborhoodPreviewFailedTextureCount: number;
+  neighborhoodPreviewLoadingTextureCount: number;
+  neighborhoodPreviewRequestedTextureCount: number;
+  neighborhoodPreviewTextureBudget: number;
+  neighborhoodPreviewTextureBytes: number;
+  neighborhoodPreviewTextureCount: number;
   pointCount: number;
   rendererPointCount: number;
   rendererTriangleCount: number;
@@ -1321,6 +1327,7 @@ export function createLatentMapThumbnailRenderPlan({
 
 export function createLatentMapRuntimeSnapshot({
   loadedThumbnailCount = 0,
+  neighborhoodPreviewTextureInfo,
   performanceInfo,
   pointCount,
   renderMode,
@@ -1328,6 +1335,14 @@ export function createLatentMapRuntimeSnapshot({
   thumbnailPlan,
 }: {
   loadedThumbnailCount?: number;
+  neighborhoodPreviewTextureInfo?: {
+    budget?: number;
+    cachedTextureCount?: number;
+    estimatedTextureBytes?: number;
+    failedTextureCount?: number;
+    loadingTextureCount?: number;
+    requestedTextureCount?: number;
+  };
   performanceInfo?: LatentMapRuntimePerformanceInfo;
   pointCount: number;
   renderMode: LatentMapRenderMode;
@@ -1347,6 +1362,18 @@ export function createLatentMapRuntimeSnapshot({
     lastRenderMs: Number((performanceInfo?.lastRenderMs ?? 0).toFixed(2)),
     liveTextureCount: rendererInfo?.memory?.textures ?? 0,
     loadedThumbnailCount,
+    neighborhoodPreviewFailedTextureCount:
+      neighborhoodPreviewTextureInfo?.failedTextureCount ?? 0,
+    neighborhoodPreviewLoadingTextureCount:
+      neighborhoodPreviewTextureInfo?.loadingTextureCount ?? 0,
+    neighborhoodPreviewRequestedTextureCount:
+      neighborhoodPreviewTextureInfo?.requestedTextureCount ?? 0,
+    neighborhoodPreviewTextureBudget:
+      neighborhoodPreviewTextureInfo?.budget ?? 0,
+    neighborhoodPreviewTextureBytes:
+      neighborhoodPreviewTextureInfo?.estimatedTextureBytes ?? 0,
+    neighborhoodPreviewTextureCount:
+      neighborhoodPreviewTextureInfo?.cachedTextureCount ?? 0,
     pointCount,
     rendererPointCount: rendererInfo?.render?.points ?? 0,
     rendererTriangleCount: rendererInfo?.render?.triangles ?? 0,
