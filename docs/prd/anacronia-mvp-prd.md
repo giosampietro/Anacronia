@@ -18,7 +18,7 @@ The user will run Anacronia locally from the terminal. A single command will sta
 
 The MVP will not try to become the future visual atlas. It will provide the operational foundation: start locked Collections, search Met in resumable batches, stop and resume safely, monitor Object/Image counters, inspect downloaded Museum Objects, view details and source metadata, and export imported Image Assets as JSONL/CSV or complete packages.
 
-The next architecture phase is governed by the Analysis Studio PRD and ADR-0026. That phase keeps Library/Collections as the source-material owner, adds Analysis Studio as the place where Analysis Jobs produce durable Analysis Results, and keeps the Latent Space Explorer as a viewer over existing Analysis Results. This does not turn the collection-builder MVP into a hosted SaaS or client-upload product; it adds local durable analysis foundations that can later support Project Viewer Export.
+The next architecture phase is governed by the Analysis Studio PRD, ADR-0026, and ADR-0027. That phase keeps Library / Collections as the source-material owner, adds Analysis Studio as the place where Analysis Jobs produce durable Analysis Results, and keeps the Latent Space Explorer as a peer App Space that visualizes existing Analysis Results. The three App Spaces should be switched through a persistent narrow Navigation Rail, while Explorer immersion is handled through Focus Mode. This does not turn the collection-builder MVP into a hosted SaaS or client-upload product; it adds local durable analysis foundations that can later support Project Viewer Export.
 
 ## User Stories
 

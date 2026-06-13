@@ -12,6 +12,28 @@ Anacronia is a single-user local application in the MVP.
 
 The project and product name. It replaces the earlier working name "OpenMuseum".
 
+### App Space
+
+A primary work area in Anacronia. The current product direction has three first-class App Spaces:
+
+- `Library / Collections`: source material, imports, User Library, Collection Membership, curation, source metadata, and local material lifecycle.
+- `Analysis Studio`: Analysis Scope selection, Analysis Recipe selection, Analysis Jobs, durable Analysis Results, and analysis status/history.
+- `Latent Space Explorer`: visual navigation of an existing Analysis Result.
+
+These App Spaces are peers in the product shell. The Latent Space Explorer is not a separate decorative mode outside the app by default; it uses the same app shell unless the user explicitly enters Focus Mode.
+
+### Navigation Rail
+
+The persistent narrow app-level navigation used to switch between the three App Spaces: Library / Collections, Analysis Studio, and Latent Space Explorer.
+
+The Navigation Rail decides where the user is in the app. It should stay available in the Latent Space Explorer by default so visual exploration remains part of Anacronia's normal workspace model.
+
+### Focus Mode
+
+An immersive UI state that hides application chrome so the active workspace can use the full viewport. In the Latent Space Explorer, Focus Mode is toggled with `f` and hides the Navigation Rail and other UI controls until focus is exited.
+
+Focus Mode is distinct from the Explorer App Space. The Explorer remains a normal App Space; Focus Mode is a temporary viewing state.
+
 ### Provider
 
 A museum or cultural data source that exposes collection records and image references, such as the Met, Europeana, or the V&A.

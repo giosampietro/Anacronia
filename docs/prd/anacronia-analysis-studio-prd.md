@@ -6,6 +6,7 @@ Related ADRs:
 
 - [0023 - Version Analysis Results with provenance](../adr/0023-version-analysis-results-with-provenance.md)
 - [0026 - Use concierge hosted viewers before full cloud SaaS](../adr/0026-use-concierge-hosted-viewer-before-full-cloud-saas.md)
+- [0027 - Use a persistent nav rail for app spaces](../adr/0027-use-persistent-nav-rail-for-app-spaces.md)
 
 Related GitHub PRD: [Issue 220 - PRD: Analysis Studio, Analysis Scope, and Latent Space Explorer integration](https://github.com/giosampietro/Anacronia/issues/220)
 
@@ -19,7 +20,7 @@ ADR-0026 adds another requirement: a local Analysis Result must be strong enough
 
 ## Solution
 
-Add **Analysis Studio** as a top-level Anacronia app space beside **Library/Collections** and the full-screen **Latent Space Explorer**.
+Add **Analysis Studio** as a top-level Anacronia App Space beside **Library / Collections** and the **Latent Space Explorer**.
 
 Analysis Studio lets the user define an **Analysis Scope**, choose one or more **Analysis Recipes**, and run an **Analysis Job** in the background. Each selected recipe produces one immutable **Analysis Result**. The Latent Space Explorer opens existing Analysis Results and visualizes them as a 2D WebGL latent map.
 
@@ -44,6 +45,22 @@ The first implementation treats cross-Collection scope as first-class. One Colle
 Reusable per-image embeddings are stored separately as **Image Embedding Results**. Scope-level outputs such as FAISS indexes, UMAP layouts, HDBSCAN labels, cluster metadata, render caches, and viewer manifests are stored as immutable **Analysis Results** with an artifact manifest.
 
 The default durable result stays compact. A 32px atlas is generated with the analysis as a baseline render cache; sharper 64/96/128 atlases are generated on demand and can be evicted. Numeric/provenance artifacts remain durable; texture pages and higher-detail render caches are disposable unless explicitly retained.
+
+## App Shell And Navigation
+
+The three App Spaces should be reachable through a persistent narrow Navigation Rail:
+
+```text
+Library / Collections
+Analysis Studio
+Latent Space Explorer
+```
+
+The rail switches where the user is in Anacronia. It should not trigger analysis computation by itself and should not replace contextual actions such as opening a specific Analysis Result in the Explorer.
+
+The Latent Space Explorer stays inside the normal app shell by default, with the same Navigation Rail visible. It can still provide an immersive view through Focus Mode: pressing `f` hides the rail and surrounding UI chrome so the canvas can use the full viewport. Focus Mode is a temporary viewing state, not a separate Explorer architecture.
+
+Contextual entry points should remain conservative. Collection pages may link to relevant analyses, Analysis Results may open in Explorer, and the Explorer may return to its source Analysis Result. The product should avoid scattering generic analysis buttons until the Analysis Studio workflow is implemented and tested.
 
 ## User Stories
 
@@ -92,7 +109,7 @@ The default durable result stays compact. A 32px atlas is generated with the ana
 43. As an Anacronia user, I want to delete an Analysis Result, so that unwanted experiments can be removed.
 44. As an Anacronia user, I want deleting an Analysis Result not to delete reusable Image Embedding Results by default, so that expensive embeddings remain available.
 45. As an Anacronia user, I want a separate cleanup for unused embeddings, so that storage cleanup is intentional.
-46. As an Anacronia user, I want the Latent Space Explorer to be full-screen, so that visual exploration has enough space.
+46. As an Anacronia user, I want the Latent Space Explorer to use the same app shell and Navigation Rail as Library and Analysis Studio, so that visual exploration still feels like part of Anacronia.
 47. As an Anacronia user, I want the Explorer to open from an Analysis Result, so that the visual map always has clear provenance.
 48. As an Anacronia user, I want the Explorer to switch between existing Analysis Results, so that I can move between Collections, scopes, and recipes from the exploration environment.
 49. As an Anacronia user, I want the Explorer to show which scope and recipe I am viewing, so that I never lose method context.
@@ -107,20 +124,26 @@ The default durable result stays compact. A 32px atlas is generated with the ana
 58. As an Anacronia user, I want future comparison views to be possible, so that I can inspect differences between methods later.
 59. As an Anacronia user, I want image-level latent maps now, so that the integrated product can move forward before region-level analysis is designed.
 60. As an Anacronia user, I want patch-token research recorded in the PRD, so that local visual-similarity ideas are not lost.
-61. As a future project operator, I want a durable Analysis Result to include a viewer-exportable manifest, so that a local analysis can later become a private hosted client viewer.
-62. As a future project operator, I want viewer exports to omit local absolute paths, so that client-facing packages do not leak private machine details.
-63. As a future project operator, I want viewer exports to omit originals by default, so that hosted review uses generated derivatives and atlases unless a project explicitly requires more.
-64. As a future project operator, I want artifact sizes and retention classes recorded, so that storage cleanup and consulting estimates are possible.
-65. As a developer, I want Analysis Scope resolution to be a deep module, so that multi-Collection dedupe and snapshot rules are tested in one place.
-66. As a developer, I want Analysis Recipe registration to be a deep module, so that DINOv3, future SigLIP2, and fusion recipes share one interface.
-67. As a developer, I want Analysis Job orchestration to be a deep module, so that stage progress, reuse, failure, and output creation are reliable.
-68. As a developer, I want Artifact Store access to be a deep module, so that local filesystem storage can later be replaced by R2/S3 without rewriting analysis algorithms.
-69. As a developer, I want render-cache policy to be a deep module, so that cache cleanup can evolve without touching Explorer logic.
-70. As a developer, I want Explorer data contracts to distinguish durable analysis data from disposable render cache, so that viewer performance does not dictate storage truth.
+61. As an Anacronia user, I want the `f` shortcut to hide all app chrome in the Explorer, so that I can inspect the map in an immersive Focus Mode when needed.
+62. As an Anacronia user, I want pressing `f` again or exiting Focus Mode to restore the Navigation Rail and controls, so that immersion is reversible and not a separate route.
+63. As a future project operator, I want a durable Analysis Result to include a viewer-exportable manifest, so that a local analysis can later become a private hosted client viewer.
+64. As a future project operator, I want viewer exports to omit local absolute paths, so that client-facing packages do not leak private machine details.
+65. As a future project operator, I want viewer exports to omit originals by default, so that hosted review uses generated derivatives and atlases unless a project explicitly requires more.
+66. As a future project operator, I want artifact sizes and retention classes recorded, so that storage cleanup and consulting estimates are possible.
+67. As a developer, I want Analysis Scope resolution to be a deep module, so that multi-Collection dedupe and snapshot rules are tested in one place.
+68. As a developer, I want Analysis Recipe registration to be a deep module, so that DINOv3, future SigLIP2, and fusion recipes share one interface.
+69. As a developer, I want Analysis Job orchestration to be a deep module, so that stage progress, reuse, failure, and output creation are reliable.
+70. As a developer, I want Artifact Store access to be a deep module, so that local filesystem storage can later be replaced by R2/S3 without rewriting analysis algorithms.
+71. As a developer, I want render-cache policy to be a deep module, so that cache cleanup can evolve without touching Explorer logic.
+72. As a developer, I want Explorer data contracts to distinguish durable analysis data from disposable render cache, so that viewer performance does not dictate storage truth.
 
 ## Implementation Decisions
 
 - Add **Analysis Studio** as a top-level app space for defining scopes, selecting recipes, running jobs, and browsing Analysis Results.
+- Use a persistent narrow Navigation Rail as the primary app-level switcher across Library / Collections, Analysis Studio, and Latent Space Explorer.
+- Keep the Navigation Rail visible in the Latent Space Explorer by default. The Explorer is a peer App Space, not a separate full-screen-only shell.
+- Preserve Focus Mode through the existing `f` shortcut. Focus Mode hides the Navigation Rail and surrounding UI chrome temporarily, then restores them when exited.
+- Treat contextual entry points as shortcuts to specific work, not as the primary app-space model. For example, an Analysis Result can open in Explorer, but the Explorer rail item still represents the Explorer App Space.
 - Treat **Analysis Scope** as the population definition for an analysis. The first-class scope types are one Collection and multiple Collections. Whole-Library scope is a designed future scope.
 - Treat **Collection Analysis** as a collection-scoped Analysis Result, not the top-level feature name.
 - Treat **Analysis Job** as the user-triggered background run. A job can produce multiple sibling Analysis Results.
@@ -153,7 +176,7 @@ The default durable result stays compact. A 32px atlas is generated with the ana
 - Higher-detail atlases such as 64px, 96px, and 128px are generated on demand from the Explorer or Analysis Studio.
 - Render caches are disposable and can be evicted according to storage policy.
 - Durable analysis truth is numeric/provenance data, not generated viewer JSON or texture pages.
-- The Explorer is a full-screen visual environment for existing Analysis Results.
+- The Explorer is a visual App Space for existing Analysis Results and should use the same shell as Library and Analysis Studio by default.
 - The Explorer should not be trapped inside one Collection route, although Collection pages can open it with a selected result.
 - The Explorer opens one primary Analysis Result at a time for the integrated MVP.
 - The Explorer can later add side-by-side comparison, animated layout tweening, and weighted fusion controls.
@@ -213,6 +236,8 @@ Required manifest groups:
 - Deletion tests must prove deleting an Analysis Result does not delete reusable Image Embedding Results by default.
 - Project Viewer Export tests should prove exports include required viewer artifacts, exclude local paths and originals by default, validate independently, and remain package-relative.
 - Explorer data-contract tests should prove that durable result metadata and disposable render cache metadata are distinct.
+- App shell tests should prove the Navigation Rail switches among Library / Collections, Analysis Studio, and Latent Space Explorer without starting computation.
+- Explorer browser checks should verify that the rail is visible by default and that `f` enters and exits Focus Mode by hiding and restoring app chrome.
 - FAISS relation lookup tests should prove that removed images are filtered and new images are not included in old results.
 - HDBSCAN tests should prove cluster labels and Unclustered/noise handling are stable and user-facing.
 - Analysis Studio component tests should cover scope selection, recipe selection, job dashboard states, stale status, and Run updated analysis defaults.
@@ -235,6 +260,7 @@ Required manifest groups:
 - Automatically generating all high-detail atlas levels for every Analysis Result.
 - Hosted, multi-user, sync, or collaboration behavior.
 - Decorative 3D metaphors for the Explorer.
+- Replacing the persistent Navigation Rail with page-level tabs or a separate Explorer-only shell.
 
 ## Further Notes
 
@@ -242,4 +268,4 @@ Patch-token analysis remains strategically important. DINOv3 patch tokens could 
 
 The first integrated product should stay image-level. Patch-token analysis should get its own grilling/design pass before implementation because it changes storage volume, index size, UI interaction, and the meaning of similarity.
 
-The PRD intentionally separates three concerns: Library/Collections manage material, Analysis Studio creates immutable analysis artifacts, and Latent Space Explorer visualizes existing Analysis Results. ADR-0026 adds a fourth output contract: Project Viewer Export packages an Analysis Result for controlled hosted review later. This keeps the current prototype's strongest work while preventing script artifacts, viewer caches, Collection state, and hosted-project needs from collapsing into one fragile concept.
+The PRD intentionally separates three concerns: Library/Collections manage material, Analysis Studio creates immutable analysis artifacts, and Latent Space Explorer visualizes existing Analysis Results. ADR-0027 keeps those concerns visible through a persistent Navigation Rail, while Focus Mode preserves the Explorer's immersive canvas when needed. ADR-0026 adds a fourth output contract: Project Viewer Export packages an Analysis Result for controlled hosted review later. This keeps the current prototype's strongest work while preventing script artifacts, viewer caches, Collection state, navigation state, and hosted-project needs from collapsing into one fragile concept.
