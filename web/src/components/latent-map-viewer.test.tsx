@@ -5,6 +5,7 @@ import { LatentMapViewer } from "@/components/latent-map-viewer";
 import { latentMapFixture } from "@/lib/latent-map-fixture";
 import type {
   LatentMapGeneratedThumbnailAtlas,
+  LatentMapViewerData,
   LatentMapThumbnailSize,
 } from "@/lib/latent-map-viewer";
 
@@ -53,6 +54,23 @@ function createFixtureAtlas(
         width: point.width,
       };
     }),
+  };
+}
+
+function createFixtureWithOpposites(): LatentMapViewerData {
+  return {
+    ...latentMapFixture,
+    points: latentMapFixture.points.map((point) =>
+      point.image_id === "img_saffron"
+        ? {
+            ...point,
+            opposites: [
+              { image_id: "img_moss", score: 0.12 },
+              { image_id: "img_lime", score: 0.1 },
+            ],
+          }
+        : point,
+    ),
   };
 }
 
@@ -311,5 +329,61 @@ describe("LatentMapViewer", () => {
     expect(html).toContain("data-point-layer-visible=\"true\"");
     expect(html).toContain("data-point-layer-size=\"3\"");
     expect(html).not.toContain("4 thumbnails");
+  });
+
+  it("plans opposite relation rows for neighborhood layout state", () => {
+    const html = renderToString(
+      <LatentMapViewer
+        data={createFixtureWithOpposites()}
+        initialState={{
+          clusterFilter: "all",
+          faissNeighborCount: 20,
+          faissRelationMode: "opposite",
+          renderMode: "thumbnails",
+          selectedImageId: "img_saffron",
+          sourceFilter: "all",
+          textureDetail: "auto",
+          thumbnailSize: 64,
+          view: {
+            offsetX: 0,
+            offsetY: 0,
+            zoom: 1,
+          },
+        }}
+      />,
+    ).replaceAll("<!-- -->", "");
+
+    expect(html).toContain("data-faiss-relation=\"opposite\"");
+    expect(html).toContain("data-neighborhood-active-count=\"3\"");
+    expect(html).toContain("data-neighborhood-row-count=\"2\"");
+    expect(html).toContain("data-thumbnail-count=\"3\"");
+  });
+
+  it("plans combined relation rows for neighborhood layout state", () => {
+    const html = renderToString(
+      <LatentMapViewer
+        data={createFixtureWithOpposites()}
+        initialState={{
+          clusterFilter: "all",
+          faissNeighborCount: 20,
+          faissRelationMode: "both",
+          renderMode: "thumbnails",
+          selectedImageId: "img_saffron",
+          sourceFilter: "all",
+          textureDetail: "auto",
+          thumbnailSize: 64,
+          view: {
+            offsetX: 0,
+            offsetY: 0,
+            zoom: 1,
+          },
+        }}
+      />,
+    ).replaceAll("<!-- -->", "");
+
+    expect(html).toContain("data-faiss-relation=\"both\"");
+    expect(html).toContain("data-neighborhood-active-count=\"6\"");
+    expect(html).toContain("data-neighborhood-row-count=\"5\"");
+    expect(html).toContain("data-thumbnail-count=\"6\"");
   });
 });

@@ -508,7 +508,7 @@ export function LatentMapViewer({
         neighborsByImageId,
         oppositesByImageId,
         points: renderPoints,
-        relationMode: "closest",
+        relationMode: faissRelationMode,
         selectedImageId,
         thumbnailSize,
         viewport: {
@@ -518,6 +518,7 @@ export function LatentMapViewer({
       }),
     [
       faissNeighborCount,
+      faissRelationMode,
       mapViewportSize.height,
       mapViewportSize.width,
       neighborsByImageId,
