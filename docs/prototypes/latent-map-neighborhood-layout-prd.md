@@ -150,6 +150,10 @@ The #224 parent tracker has been split into smaller implementation issues:
    - Type: AFK.
    - Blocked by: #227.
    - Purpose: lazy-load `preview_path` textures for the selected anchor and visible/ranked grid items, fallback to thumbnail textures while loading, and dispose/cache within a small budget.
+   - Child slices:
+     - [#241 Latent map: add neighborhood preview source plan](https://github.com/giosampietro/Anacronia/issues/241)
+     - [#242 Latent map: add bounded neighborhood preview texture cache](https://github.com/giosampietro/Anacronia/issues/242)
+     - [#243 Latent map: render active neighborhood previews over atlas fallback](https://github.com/giosampietro/Anacronia/issues/243)
 
 6. [#230 Latent map: harden neighborhood layout animation and QA](https://github.com/giosampietro/Anacronia/issues/230)
    - Type: AFK.
