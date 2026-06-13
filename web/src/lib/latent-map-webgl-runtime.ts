@@ -136,20 +136,22 @@ export function createLatentMapPointTweenItem({
   pointSize: number;
   visualTheme: LatentMapVisualTheme;
 }): LatentMapTweenItem {
+  void pointSize;
+
   const color = rgbToThreeColor(getDisplayPointColor(point, visualTheme));
 
   return {
     imageId: point.image_id,
     values: createLatentMapTweenValues({
-      alpha: point.point_state === "base" ? 0.82 : 1,
+      alpha: 1,
       b: color.b,
       g: color.g,
       r: color.r,
-      size: pointSize,
+      size: 1,
       state: getThumbnailStateValue(point),
       x: point.fitted_x,
       y: point.fitted_y,
-      z: point.point_state === "selected" ? 0.08 : 0,
+      z: getThumbnailLayer(point),
     }),
   };
 }
@@ -322,129 +324,199 @@ function getThumbnailStateValue(point: LatentMapRenderablePoint): number {
   return 0;
 }
 
-function writeAtlasInstanceAttributes({
-  geometry,
-  page,
+function getTweenedThumbnailScale({
+  point,
+  scaleMultiplier,
   thumbnailSize,
   view,
   viewportHeight,
 }: {
-  geometry: THREE.InstancedBufferGeometry;
-  page: LatentMapThumbnailAtlasPage;
+  point: LatentMapRenderablePoint;
+  scaleMultiplier: number;
   thumbnailSize: LatentMapThumbnailSize;
   view: LatentMapViewState;
   viewportHeight: number;
-}) {
-  const instancePositions = new Float32Array(page.items.length * 3);
-  const instanceScales = new Float32Array(page.items.length * 2);
-  const instanceUvRects = new Float32Array(page.items.length * 4);
-  const instanceStates = new Float32Array(page.items.length);
+}): [number, number] {
+  const [width, height] = getThumbnailScale(
+    point,
+    thumbnailSize,
+    view,
+    viewportHeight,
+  );
+  const safeScaleMultiplier =
+    Number.isFinite(scaleMultiplier) && scaleMultiplier > 0
+      ? scaleMultiplier
+      : 1;
 
-  page.items.forEach((item, index) => {
-    const [width, height] = getThumbnailScale(
-      item.point,
-      thumbnailSize,
-      view,
-      viewportHeight,
-    );
-
-    instancePositions[index * 3] = item.point.fitted_x;
-    instancePositions[index * 3 + 1] = item.point.fitted_y;
-    instancePositions[index * 3 + 2] =
-      getThumbnailLayer(item.point) +
-      (page.renderLayer === "primary" ? 0.02 : 0);
-    instanceScales[index * 2] = width;
-    instanceScales[index * 2 + 1] = height;
-    instanceUvRects.set(item.uvRect, index * 4);
-    instanceStates[index] = getThumbnailStateValue(item.point);
-  });
-
-  geometry.setAttribute(
-    "instancePosition",
-    new THREE.InstancedBufferAttribute(instancePositions, 3),
-  );
-  geometry.setAttribute(
-    "instanceScale",
-    new THREE.InstancedBufferAttribute(instanceScales, 2),
-  );
-  geometry.setAttribute(
-    "instanceUvRect",
-    new THREE.InstancedBufferAttribute(instanceUvRects, 4),
-  );
-  geometry.setAttribute(
-    "instanceState",
-    new THREE.InstancedBufferAttribute(instanceStates, 1),
-  );
-  geometry.instanceCount = page.items.length;
+  return [width * safeScaleMultiplier, height * safeScaleMultiplier];
 }
 
-function updateAtlasInstanceAttributes({
+export function writeLatentMapAtlasInstanceAttributesFromTween({
+  dirtyRange = null,
   geometry,
   page,
   thumbnailSize,
+  tweenController,
   view,
   viewportHeight,
 }: {
+  dirtyRange?: LatentMapTweenDirtyRange | null;
   geometry: THREE.InstancedBufferGeometry;
   page: LatentMapThumbnailAtlasPage;
   thumbnailSize: LatentMapThumbnailSize;
+  tweenController: LatentMapRuntimeTweenController;
   view: LatentMapViewState;
   viewportHeight: number;
 }) {
   const instancePosition = geometry.getAttribute("instancePosition");
+  const instanceScale = geometry.getAttribute("instanceScale");
+  const instanceUvRect = geometry.getAttribute("instanceUvRect");
+  const instanceState = geometry.getAttribute("instanceState");
+  const instanceOpacity = geometry.getAttribute("instanceOpacity");
+  const needsAttributeReset =
+    !instancePosition ||
+    !instanceScale ||
+    !instanceUvRect ||
+    !instanceState ||
+    !instanceOpacity ||
+    instancePosition.count !== page.items.length ||
+    instanceScale.count !== page.items.length ||
+    instanceUvRect.count !== page.items.length ||
+    instanceState.count !== page.items.length ||
+    instanceOpacity.count !== page.items.length;
 
-  if (!instancePosition || instancePosition.count !== page.items.length) {
-    writeAtlasInstanceAttributes({
-      geometry,
-      page,
-      thumbnailSize,
-      view,
-      viewportHeight,
-    });
-    return;
+  if (needsAttributeReset) {
+    geometry.setAttribute(
+      "instancePosition",
+      new THREE.InstancedBufferAttribute(
+        new Float32Array(page.items.length * 3),
+        3,
+      ),
+    );
+    geometry.setAttribute(
+      "instanceScale",
+      new THREE.InstancedBufferAttribute(
+        new Float32Array(page.items.length * 2),
+        2,
+      ),
+    );
+    geometry.setAttribute(
+      "instanceUvRect",
+      new THREE.InstancedBufferAttribute(
+        new Float32Array(page.items.length * 4),
+        4,
+      ),
+    );
+    geometry.setAttribute(
+      "instanceState",
+      new THREE.InstancedBufferAttribute(
+        new Float32Array(page.items.length),
+        1,
+      ),
+    );
+    geometry.setAttribute(
+      "instanceOpacity",
+      new THREE.InstancedBufferAttribute(
+        new Float32Array(page.items.length),
+        1,
+      ),
+    );
   }
 
-  const instancePositions = instancePosition.array as Float32Array;
+  const instancePositions = geometry.getAttribute("instancePosition")
+    .array as Float32Array;
   const instanceScales = geometry.getAttribute("instanceScale")
     .array as Float32Array;
   const instanceUvRects = geometry.getAttribute("instanceUvRect")
     .array as Float32Array;
   const instanceStates = geometry.getAttribute("instanceState")
     .array as Float32Array;
+  const instanceOpacities = geometry.getAttribute("instanceOpacity")
+    .array as Float32Array;
+  const tweenBuffer = tweenController.getCurrentBuffer();
+  const zOffset = page.renderLayer === "primary" ? 0.02 : 0;
+  let touched = needsAttributeReset;
 
   page.items.forEach((item, index) => {
-    const [width, height] = getThumbnailScale(
-      item.point,
+    const tweenIndex = tweenController.getIndex(item.point.image_id);
+
+    if (
+      dirtyRange &&
+      typeof tweenIndex === "number" &&
+      !needsAttributeReset &&
+      (tweenIndex < dirtyRange.start || tweenIndex >= dirtyRange.end)
+    ) {
+      return;
+    }
+
+    const sourceOffset =
+      typeof tweenIndex === "number"
+        ? tweenIndex * LATENT_MAP_TWEEN_STRIDE
+        : null;
+    const scaleMultiplier =
+      sourceOffset === null
+        ? 1
+        : tweenBuffer[sourceOffset + LATENT_MAP_TWEEN_VALUE_OFFSETS.size];
+    const [width, height] = getTweenedThumbnailScale({
+      point: item.point,
+      scaleMultiplier,
       thumbnailSize,
       view,
       viewportHeight,
-    );
+    });
 
-    instancePositions[index * 3] = item.point.fitted_x;
-    instancePositions[index * 3 + 1] = item.point.fitted_y;
+    instancePositions[index * 3] =
+      sourceOffset === null
+        ? item.point.fitted_x
+        : tweenBuffer[sourceOffset + LATENT_MAP_TWEEN_VALUE_OFFSETS.x];
+    instancePositions[index * 3 + 1] =
+      sourceOffset === null
+        ? item.point.fitted_y
+        : tweenBuffer[sourceOffset + LATENT_MAP_TWEEN_VALUE_OFFSETS.y];
     instancePositions[index * 3 + 2] =
-      getThumbnailLayer(item.point) +
-      (page.renderLayer === "primary" ? 0.02 : 0);
+      (sourceOffset === null
+        ? getThumbnailLayer(item.point)
+        : tweenBuffer[sourceOffset + LATENT_MAP_TWEEN_VALUE_OFFSETS.z]) +
+      zOffset;
     instanceScales[index * 2] = width;
     instanceScales[index * 2 + 1] = height;
     instanceUvRects.set(item.uvRect, index * 4);
-    instanceStates[index] = getThumbnailStateValue(item.point);
+    instanceStates[index] =
+      sourceOffset === null
+        ? getThumbnailStateValue(item.point)
+        : tweenBuffer[sourceOffset + LATENT_MAP_TWEEN_VALUE_OFFSETS.state];
+    instanceOpacities[index] =
+      sourceOffset === null
+        ? 1
+        : clamp01(
+            tweenBuffer[sourceOffset + LATENT_MAP_TWEEN_VALUE_OFFSETS.alpha],
+          );
+    touched = true;
   });
 
-  instancePosition.needsUpdate = true;
+  geometry.instanceCount = page.items.length;
+
+  if (!touched) {
+    return;
+  }
+
+  geometry.getAttribute("instancePosition").needsUpdate = true;
   geometry.getAttribute("instanceScale").needsUpdate = true;
   geometry.getAttribute("instanceUvRect").needsUpdate = true;
   geometry.getAttribute("instanceState").needsUpdate = true;
+  geometry.getAttribute("instanceOpacity").needsUpdate = true;
 }
 
 function createAtlasGeometry({
   page,
   thumbnailSize,
+  tweenController,
   view,
   viewportHeight,
 }: {
   page: LatentMapThumbnailAtlasPage;
   thumbnailSize: LatentMapThumbnailSize;
+  tweenController: LatentMapRuntimeTweenController;
   view: LatentMapViewState;
   viewportHeight: number;
 }) {
@@ -466,10 +538,11 @@ function createAtlasGeometry({
   geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
   geometry.setAttribute("uv", new THREE.BufferAttribute(uvs, 2));
   geometry.setIndex(indices);
-  writeAtlasInstanceAttributes({
+  writeLatentMapAtlasInstanceAttributesFromTween({
     geometry,
     page,
     thumbnailSize,
+    tweenController,
     view,
     viewportHeight,
   });
@@ -481,6 +554,7 @@ export const LATENT_MAP_ATLAS_FRAGMENT_SHADER = `
   uniform sampler2D atlasTexture;
   varying vec2 vAtlasUv;
   varying vec2 vLocalUv;
+  varying float vOpacity;
   varying float vState;
 
   void main() {
@@ -493,8 +567,32 @@ export const LATENT_MAP_ATLAS_FRAGMENT_SHADER = `
     float focusRing = (1.0 - step(0.045, edgeDistance)) * selected;
     vec3 color = mix(texel.rgb, vec3(1.0), focusRing);
 
-    gl_FragColor = vec4(color, 1.0);
+    gl_FragColor = vec4(color, texel.a * vOpacity);
     #include <colorspace_fragment>
+  }
+`;
+
+export const LATENT_MAP_ATLAS_VERTEX_SHADER = `
+  attribute vec3 instancePosition;
+  attribute vec2 instanceScale;
+  attribute float instanceOpacity;
+  attribute vec4 instanceUvRect;
+  attribute float instanceState;
+  varying vec2 vAtlasUv;
+  varying vec2 vLocalUv;
+  varying float vOpacity;
+  varying float vState;
+
+  void main() {
+    vLocalUv = uv;
+    vAtlasUv = instanceUvRect.xy + (uv * instanceUvRect.zw);
+    vOpacity = instanceOpacity;
+    vState = instanceState;
+    vec3 transformed = vec3(
+      (position.xy * instanceScale) + instancePosition.xy,
+      instancePosition.z
+    );
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(transformed, 1.0);
   }
 `;
 
@@ -502,30 +600,11 @@ function createAtlasMaterial(texture: THREE.Texture) {
   return new THREE.ShaderMaterial({
     depthTest: true,
     depthWrite: true,
-    transparent: false,
+    transparent: true,
     uniforms: {
       atlasTexture: { value: texture },
     },
-    vertexShader: `
-      attribute vec3 instancePosition;
-      attribute vec2 instanceScale;
-      attribute vec4 instanceUvRect;
-      attribute float instanceState;
-      varying vec2 vAtlasUv;
-      varying vec2 vLocalUv;
-      varying float vState;
-
-      void main() {
-        vLocalUv = uv;
-        vAtlasUv = instanceUvRect.xy + (uv * instanceUvRect.zw);
-        vState = instanceState;
-        vec3 transformed = vec3(
-          (position.xy * instanceScale) + instancePosition.xy,
-          instancePosition.z
-        );
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(transformed, 1.0);
-      }
-    `,
+    vertexShader: LATENT_MAP_ATLAS_VERTEX_SHADER,
     fragmentShader: LATENT_MAP_ATLAS_FRAGMENT_SHADER,
   });
 }
@@ -590,11 +669,13 @@ type PreparedAtlasPageSet = {
 function createAtlasPageMesh({
   page,
   thumbnailSize,
+  tweenController,
   view,
   viewportHeight,
 }: {
   page: LatentMapThumbnailAtlasPage;
   thumbnailSize: LatentMapThumbnailSize;
+  tweenController: LatentMapRuntimeTweenController;
   view: LatentMapViewState;
   viewportHeight: number;
 }): AtlasPageMesh {
@@ -621,6 +702,7 @@ function createAtlasPageMesh({
   const geometry = createAtlasGeometry({
     page,
     thumbnailSize,
+    tweenController,
     view,
     viewportHeight,
   });
@@ -660,6 +742,10 @@ function getRendererInfo(
 
 function nowMilliseconds() {
   return typeof performance === "undefined" ? Date.now() : performance.now();
+}
+
+function clamp01(value: number) {
+  return Math.max(0, Math.min(1, value));
 }
 
 function createThumbnailPlanSignature(plan: LatentMapThumbnailRenderPlan) {
@@ -809,7 +895,7 @@ export function createLatentMapWebglRuntime({
     return Math.max(wrapper.getBoundingClientRect().height, 1);
   }
 
-  function applyPointTweenStepResult(
+  function applyTweenStepResult(
     result: LatentMapTweenRetargetResult | LatentMapTweenStepResult,
   ) {
     if (!result.dirtyRange) {
@@ -821,6 +907,9 @@ export function createLatentMapWebglRuntime({
       geometry: pointGeometry,
       tweenController: pointTweenController,
     });
+    if (currentRenderMode === "thumbnails" && atlasPages.length > 0) {
+      updateAtlasInstances(activeThumbnailPlan, result.dirtyRange);
+    }
   }
 
   function render({
@@ -867,7 +956,7 @@ export function createLatentMapWebglRuntime({
 
     animationFrameId = window.requestAnimationFrame((timestamp) => {
       animationFrameId = null;
-      applyPointTweenStepResult(pointTweenController.step(timestamp));
+      applyTweenStepResult(pointTweenController.step(timestamp));
       render();
 
       if (pointTweenController.isAnimating()) {
@@ -968,6 +1057,7 @@ export function createLatentMapWebglRuntime({
       const atlasPage = createAtlasPageMesh({
         page,
         thumbnailSize: plan.thumbnailSize,
+        tweenController: pointTweenController,
         view: currentView,
         viewportHeight: getViewportHeight(),
       });
@@ -1089,7 +1179,10 @@ export function createLatentMapWebglRuntime({
     });
   }
 
-  function updateAtlasInstances(plan: LatentMapThumbnailRenderPlan) {
+  function updateAtlasInstances(
+    plan: LatentMapThumbnailRenderPlan,
+    dirtyRange: LatentMapTweenDirtyRange | null = null,
+  ) {
     const viewportHeight = getViewportHeight();
 
     getLatentMapRenderableAtlasPages(plan).forEach((page, index) => {
@@ -1099,10 +1192,12 @@ export function createLatentMapWebglRuntime({
         return;
       }
 
-      updateAtlasInstanceAttributes({
+      writeLatentMapAtlasInstanceAttributesFromTween({
+        dirtyRange,
         geometry: atlasPage.geometry,
         page,
         thumbnailSize: plan.thumbnailSize,
+        tweenController: pointTweenController,
         view: currentView,
         viewportHeight,
       });
@@ -1125,12 +1220,12 @@ export function createLatentMapWebglRuntime({
     });
 
     if (!haveSameTweenItemOrder(pointTweenController, nextPointTweenItems)) {
-      applyPointTweenStepResult(
+      applyTweenStepResult(
         pointTweenController.setItems(nextPointTweenItems, { now }),
       );
     }
 
-    applyPointTweenStepResult(
+    applyTweenStepResult(
       pointTweenController.retarget(createPointTweenTargets(nextPointTweenItems), {
         durationMs: LATENT_MAP_POINT_TWEEN_DURATION_MS,
         now,
