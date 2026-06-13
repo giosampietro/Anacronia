@@ -563,9 +563,13 @@ export const LATENT_MAP_ATLAS_FRAGMENT_SHADER = `
       min(vLocalUv.x, 1.0 - vLocalUv.x),
       min(vLocalUv.y, 1.0 - vLocalUv.y)
     );
-    float selected = step(1.5, vState);
+    float selected = step(1.5, vState) * (1.0 - step(2.5, vState));
     float focusRing = (1.0 - step(0.045, edgeDistance)) * selected;
-    vec3 color = mix(texel.rgb, vec3(1.0), focusRing);
+    float opposite = step(2.5, vState);
+    float markerDistance = distance(vLocalUv, vec2(0.88, 0.88));
+    float oppositeMarker = (1.0 - step(0.055, markerDistance)) * opposite;
+    vec3 focusColor = mix(texel.rgb, vec3(1.0), focusRing);
+    vec3 color = mix(focusColor, vec3(1.0, 0.58, 0.66), oppositeMarker);
 
     gl_FragColor = vec4(color, texel.a * vOpacity);
     #include <colorspace_fragment>

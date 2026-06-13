@@ -49,6 +49,7 @@ const NEIGHBORHOOD_RESTORE_SIZE = 1;
 const NEIGHBORHOOD_RESTORE_ALPHA = 1;
 const NEIGHBORHOOD_SELECTED_STATE = 2;
 const NEIGHBORHOOD_RELATION_STATE = 1;
+const NEIGHBORHOOD_OPPOSITE_STATE = 3;
 const NEIGHBORHOOD_BACKGROUND_STATE = 0;
 const NEIGHBORHOOD_SELECTED_Z = 0.42;
 const NEIGHBORHOOD_RELATION_Z = 0.34;
@@ -123,6 +124,8 @@ export function createLatentMapNeighborhoodRuntimePlan({
         tween_state:
           point.image_id === layout.selectedImageId
             ? NEIGHBORHOOD_SELECTED_STATE
+            : oppositeImageIds.has(point.image_id)
+              ? NEIGHBORHOOD_OPPOSITE_STATE
             : NEIGHBORHOOD_RELATION_STATE,
         tween_x: target.x,
         tween_y: target.y,

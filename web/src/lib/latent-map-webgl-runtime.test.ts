@@ -87,6 +87,12 @@ describe("latent map WebGL runtime math", () => {
     expect(LATENT_MAP_ATLAS_FRAGMENT_SHADER).toContain(
       "#include <colorspace_fragment>",
     );
+    expect(LATENT_MAP_ATLAS_FRAGMENT_SHADER).toContain(
+      "float oppositeMarker",
+    );
+    expect(LATENT_MAP_ATLAS_FRAGMENT_SHADER).toContain(
+      "vec3(1.0, 0.58, 0.66)",
+    );
   });
 
   it("preserves original thumbnail aspect ratio", () => {

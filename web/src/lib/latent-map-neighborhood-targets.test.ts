@@ -111,6 +111,9 @@ describe("latent map neighborhood runtime targets", () => {
 
     expect(plan.status).toBe("ready");
     expect(plan.oppositeImageIds).toEqual(new Set(["img_004", "img_005"]));
+    expect(
+      plan.points.find((point) => point.image_id === "img_004")?.tween_state,
+    ).toBe(3);
 
     if (plan.layout.status !== "ready") {
       throw new Error("Expected ready layout.");

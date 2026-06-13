@@ -544,7 +544,11 @@ export function LatentMapViewer({
         : neighborhoodRuntimePlan.activeImageIds.has(point.image_id)
           ? {
               ...point,
-              point_state: "neighbor" as const,
+              point_state: neighborhoodRuntimePlan.oppositeImageIds.has(
+                point.image_id,
+              )
+                ? "opposite" as const
+                : "neighbor" as const,
             }
           : {
               ...point,
@@ -554,6 +558,7 @@ export function LatentMapViewer({
   }, [
     neighborhoodLayoutActive,
     neighborhoodRuntimePlan.activeImageIds,
+    neighborhoodRuntimePlan.oppositeImageIds,
     neighborhoodRuntimePlan.points,
     renderPoints,
     selectedImageId,
