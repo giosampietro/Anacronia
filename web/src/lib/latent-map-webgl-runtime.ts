@@ -52,6 +52,7 @@ export type LatentMapRuntimeState = {
   neighborhoodPreviewPlan: LatentMapNeighborhoodPreviewPlan;
   renderMode: LatentMapRenderMode;
   thumbnailPlan: LatentMapThumbnailRenderPlan;
+  tweenPoints: LatentMapRenderablePoint[];
   visualTheme: LatentMapVisualTheme;
 };
 
@@ -163,7 +164,7 @@ export function createLatentMapPointTweenItem({
   };
 }
 
-function createLatentMapPointTweenItems({
+export function createLatentMapPointTweenItems({
   pointSize,
   points,
   visualTheme,
@@ -238,10 +239,87 @@ export function writeLatentMapPointGeometryFromTween({
   colorAttribute.needsUpdate = true;
 }
 
-function createPointGeometry(tweenController: LatentMapRuntimeTweenController) {
+export function writeLatentMapPointLayerGeometryFromTween({
+  geometry,
+  points,
+  tweenController,
+}: {
+  geometry: THREE.BufferGeometry;
+  points: LatentMapRenderablePoint[];
+  tweenController: LatentMapRuntimeTweenController;
+}) {
+  const pointCount = points.length;
+  const position = geometry.getAttribute("position");
+  const colorAttribute = geometry.getAttribute("color");
+
+  if (
+    !position ||
+    !colorAttribute ||
+    position.count !== pointCount ||
+    colorAttribute.count !== pointCount
+  ) {
+    geometry.setAttribute(
+      "position",
+      new THREE.BufferAttribute(new Float32Array(pointCount * 3), 3),
+    );
+    geometry.setAttribute(
+      "color",
+      new THREE.BufferAttribute(new Float32Array(pointCount * 3), 3),
+    );
+  }
+
+  const positions = geometry.getAttribute("position").array as Float32Array;
+  const colors = geometry.getAttribute("color").array as Float32Array;
+  const current = tweenController.getCurrentBuffer();
+
+  points.forEach((point, pointIndex) => {
+    const tweenIndex = tweenController.getIndex(point.image_id);
+
+    if (typeof tweenIndex !== "number") {
+      positions[pointIndex * 3] = point.fitted_x;
+      positions[pointIndex * 3 + 1] = point.fitted_y;
+      positions[pointIndex * 3 + 2] = getThumbnailLayer(point);
+      const fallbackColor = rgbToThreeColor(point.color);
+      colors[pointIndex * 3] = fallbackColor.r;
+      colors[pointIndex * 3 + 1] = fallbackColor.g;
+      colors[pointIndex * 3 + 2] = fallbackColor.b;
+      return;
+    }
+
+    const sourceOffset = tweenIndex * LATENT_MAP_TWEEN_STRIDE;
+
+    positions[pointIndex * 3] =
+      current[sourceOffset + LATENT_MAP_TWEEN_VALUE_OFFSETS.x];
+    positions[pointIndex * 3 + 1] =
+      current[sourceOffset + LATENT_MAP_TWEEN_VALUE_OFFSETS.y];
+    positions[pointIndex * 3 + 2] =
+      current[sourceOffset + LATENT_MAP_TWEEN_VALUE_OFFSETS.z];
+    colors[pointIndex * 3] =
+      current[sourceOffset + LATENT_MAP_TWEEN_VALUE_OFFSETS.r];
+    colors[pointIndex * 3 + 1] =
+      current[sourceOffset + LATENT_MAP_TWEEN_VALUE_OFFSETS.g];
+    colors[pointIndex * 3 + 2] =
+      current[sourceOffset + LATENT_MAP_TWEEN_VALUE_OFFSETS.b];
+  });
+
+  geometry.getAttribute("position").needsUpdate = true;
+  geometry.getAttribute("color").needsUpdate = true;
+}
+
+function createPointGeometry({
+  points,
+  tweenController,
+}: {
+  points: LatentMapRenderablePoint[];
+  tweenController: LatentMapRuntimeTweenController;
+}) {
   const geometry = new THREE.BufferGeometry();
 
-  writeLatentMapPointGeometryFromTween({ geometry, tweenController });
+  writeLatentMapPointLayerGeometryFromTween({
+    geometry,
+    points,
+    tweenController,
+  });
 
   return geometry;
 }
@@ -842,6 +920,7 @@ export function createLatentMapWebglRuntime({
   points,
   renderMode,
   thumbnailPlan,
+  tweenPoints,
   view,
   visualTheme,
   wrapper,
@@ -860,11 +939,14 @@ export function createLatentMapWebglRuntime({
   const pointTweenController = createLatentMapRuntimeTweenController(
     createLatentMapPointTweenItems({
       pointSize: pointLayer.pointSize,
-      points: pointLayer.points,
+      points: tweenPoints,
       visualTheme,
     }),
   );
-  const pointGeometry = createPointGeometry(pointTweenController);
+  const pointGeometry = createPointGeometry({
+    points: pointLayer.points,
+    tweenController: pointTweenController,
+  });
   const pointMaterial = new THREE.PointsMaterial({
     alphaTest: 0.2,
     size: pointLayer.pointSize,
@@ -887,6 +969,7 @@ export function createLatentMapWebglRuntime({
     });
   const atlasPages: AtlasPageMesh[] = [];
   let animationFrameId: number | null = null;
+  let activePointLayer = pointLayer;
   let activeThumbnailPlan = thumbnailPlan;
   let activeThumbnailPlanSignature = "";
   let atlasLoadRequestId = 0;
@@ -952,9 +1035,9 @@ export function createLatentMapWebglRuntime({
       return;
     }
 
-    writeLatentMapPointGeometryFromTween({
-      dirtyRange: result.dirtyRange,
+    writeLatentMapPointLayerGeometryFromTween({
       geometry: pointGeometry,
+      points: activePointLayer.points,
       tweenController: pointTweenController,
     });
     if (currentRenderMode === "thumbnails" && atlasPages.length > 0) {
@@ -1258,6 +1341,7 @@ export function createLatentMapWebglRuntime({
   function setRenderState(nextState: LatentMapRuntimeState) {
     currentRenderMode = nextState.renderMode;
     currentVisualTheme = nextState.visualTheme;
+    activePointLayer = nextState.pointLayer;
     neighborhoodPreviewTextureCache.reconcile(
       nextState.neighborhoodPreviewPlan,
     );
@@ -1268,7 +1352,7 @@ export function createLatentMapWebglRuntime({
     const now = nowMilliseconds();
     const nextPointTweenItems = createLatentMapPointTweenItems({
       pointSize: nextState.pointLayer.pointSize,
-      points: nextState.pointLayer.points,
+      points: nextState.tweenPoints,
       visualTheme: currentVisualTheme,
     });
 
@@ -1353,6 +1437,7 @@ export function createLatentMapWebglRuntime({
     points,
     renderMode,
     thumbnailPlan,
+    tweenPoints,
     visualTheme,
   });
   render({ forceDiagnostics: true });

@@ -154,6 +154,8 @@ The #224 parent tracker has been split into smaller implementation issues:
      - [#241 Latent map: add neighborhood preview source plan](https://github.com/giosampietro/Anacronia/issues/241)
      - [#242 Latent map: add bounded neighborhood preview texture cache](https://github.com/giosampietro/Anacronia/issues/242)
      - [#243 Latent map: render active neighborhood previews over atlas fallback](https://github.com/giosampietro/Anacronia/issues/243)
+   - Rendering blocker:
+     - [#244 Latent map: keep thumbnail tween targets in runtime controller](https://github.com/giosampietro/Anacronia/issues/244)
 
 6. [#230 Latent map: harden neighborhood layout animation and QA](https://github.com/giosampietro/Anacronia/issues/230)
    - Type: AFK.

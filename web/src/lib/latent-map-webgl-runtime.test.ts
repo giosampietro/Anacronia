@@ -4,16 +4,20 @@ import * as THREE from "three";
 import { createLatentMapRuntimeTweenController } from "@/lib/latent-map-runtime-tween";
 import {
   createLatentMapPointTweenItem,
+  createLatentMapPointTweenItems,
   getLatentMapThumbnailWorldScale,
   LATENT_MAP_ATLAS_FRAGMENT_SHADER,
   LATENT_MAP_ATLAS_VERTEX_SHADER,
   LATENT_MAP_MAX_THUMBNAIL_SCREEN_SCALE,
   writeLatentMapAtlasInstanceAttributesFromTween,
   writeLatentMapPointGeometryFromTween,
+  writeLatentMapPointLayerGeometryFromTween,
 } from "@/lib/latent-map-webgl-runtime";
-import type {
-  LatentMapRenderablePoint,
-  LatentMapThumbnailAtlasPage,
+import {
+  createLatentMapPointLayerPlan,
+  createLatentMapThumbnailRenderPlan,
+  type LatentMapRenderablePoint,
+  type LatentMapThumbnailAtlasPage,
 } from "@/lib/latent-map-viewer";
 
 function createRenderablePoint(
@@ -333,5 +337,86 @@ describe("latent map WebGL runtime math", () => {
 
     expectArrayCloseTo(positions, [1, 2, 0.26, 5, 6, 0.34]);
     expectArrayCloseTo(states, [1, 2]);
+  });
+
+  it("keeps active thumbnail ids in the tween source when the point layer filters them", () => {
+    const selectedPoint = createRenderablePoint({
+      image_id: "img_selected",
+      point_state: "selected",
+    });
+    const neighborPoint = createRenderablePoint({
+      image_id: "img_neighbor",
+      point_state: "neighbor",
+    });
+    const backgroundPoint = createRenderablePoint({
+      image_id: "img_background",
+      point_state: "base",
+    });
+    const points = [selectedPoint, neighborPoint, backgroundPoint];
+    const thumbnailPlan = createLatentMapThumbnailRenderPlan({
+      points,
+      thumbnailSize: 64,
+    });
+    const pointLayer = createLatentMapPointLayerPlan({
+      points,
+      renderMode: "thumbnails",
+      thumbnailPlan,
+    });
+    const tweenItems = createLatentMapPointTweenItems({
+      pointSize: pointLayer.pointSize,
+      points,
+      visualTheme: "dark",
+    });
+
+    expect(pointLayer.points.map((point) => point.image_id)).toEqual([
+      "img_background",
+    ]);
+    expect(tweenItems.map((item) => item.imageId)).toEqual([
+      "img_selected",
+      "img_neighbor",
+      "img_background",
+    ]);
+  });
+
+  it("draws only filtered point-layer points while atlas tween state keeps active thumbnails", () => {
+    const selectedPoint = createRenderablePoint({
+      fitted_x: 1,
+      fitted_y: 1,
+      image_id: "img_selected",
+      point_state: "selected",
+    });
+    const neighborPoint = createRenderablePoint({
+      fitted_x: 2,
+      fitted_y: 2,
+      image_id: "img_neighbor",
+      point_state: "neighbor",
+    });
+    const backgroundPoint = createRenderablePoint({
+      fitted_x: 3,
+      fitted_y: 3,
+      image_id: "img_background",
+      point_state: "base",
+    });
+    const points = [selectedPoint, neighborPoint, backgroundPoint];
+    const controller = createLatentMapRuntimeTweenController(
+      createLatentMapPointTweenItems({
+        pointSize: 3,
+        points,
+        visualTheme: "dark",
+      }),
+    );
+    const geometry = new THREE.BufferGeometry();
+
+    writeLatentMapPointLayerGeometryFromTween({
+      geometry,
+      points: [backgroundPoint],
+      tweenController: controller,
+    });
+
+    const positions = geometry.getAttribute("position").array as Float32Array;
+
+    expect(controller.getIndex("img_selected")).toBe(0);
+    expect(controller.getIndex("img_neighbor")).toBe(1);
+    expectArrayCloseTo(positions, [3, 3, 0.16]);
   });
 });

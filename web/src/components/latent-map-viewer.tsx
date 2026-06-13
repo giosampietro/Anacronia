@@ -771,6 +771,7 @@ export function LatentMapViewer({
       points: runtimeRenderPoints,
       renderMode,
       thumbnailPlan,
+      tweenPoints: runtimeRenderPoints,
       visualTheme,
     }),
     [
