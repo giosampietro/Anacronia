@@ -147,16 +147,8 @@ function projectGridTargetLocalPoint({
   const panY =
     (view.offsetY - (target.tween_screen_base_offset_y ?? 0)) *
     pixelsPerWorldUnit;
-  const baseLeft = (target.tween_screen_x ?? 0) - baseWidth / 2;
-  const baseTop = (target.tween_screen_y ?? 0) - baseHeight / 2;
-  const packedBaseX =
-    baseLeft +
-    localX * baseWidth -
-    (target.tween_screen_column ?? 0) * (target.tween_screen_cell_gap ?? 0);
-  const packedBaseY =
-    baseTop +
-    localY * baseHeight -
-    (target.tween_screen_row ?? 0) * (target.tween_screen_cell_gap ?? 0);
+  const packedBaseX = (target.tween_screen_packed_left ?? 0) + localX * baseWidth;
+  const packedBaseY = (target.tween_screen_packed_top ?? 0) + localY * baseHeight;
 
   return {
     clientX:
@@ -377,6 +369,8 @@ describe("latent map view controls", () => {
       tween_screen_height: 120,
       tween_screen_kind: "grid",
       tween_screen_max_long_side: 900,
+      tween_screen_packed_left: 606,
+      tween_screen_packed_top: 228,
       tween_screen_row: 1,
       tween_screen_width: 180,
       tween_screen_x: 760,

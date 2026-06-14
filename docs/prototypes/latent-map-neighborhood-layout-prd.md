@@ -4,7 +4,7 @@ Date: June 13, 2026
 
 Branch: `codex/latent-map-instanced-thumbnails`
 
-Status: implementation planning draft for issue #224. This supersedes the previous drawer/panel direction for the same feature.
+Status: implemented through issue #224 and child issues, with post-close UX refinements recorded below. This supersedes the previous drawer/panel direction for the same feature.
 
 ## Problem Statement
 
@@ -46,14 +46,14 @@ This is a data-visualization mode, not an HTML drawer and not a modal overlay. T
 ## Implementation Decisions
 
 - Issue #224 now tracks WebGL Neighborhood Layout Mode, not a DOM drawer.
-- The mode visualizes saved FAISS closest-neighbor rows from the current Analysis Result. It does not compute FAISS in the browser and does not use UMAP layout distance as a relationship source.
+- The mode visualizes query-time FAISS relation rows from the current Analysis Result's FAISS index and ID map. It does not compute FAISS in the browser and does not use UMAP layout distance as a relationship source. Saved neighbor JSONL rows are legacy prototype artifacts, not the viewer contract.
 - The mode follows the existing sidebar FAISS relation setting. If the user selected `closest`, it visualizes closest neighbors. If the user selected `opposite`, it visualizes opposite rows. If the user selected `both`, it visualizes both sets in the grid.
 - Opposite grid tiles should carry a small pale red dot overlay so the user can distinguish them without permanent rank or score clutter.
 - Clicking a neighbor in the grid selects that neighbor and rebuilds the layout around it. This is the preferred behavior, not an optional branch.
 - Use the existing 1024px preview derivatives for the active neighborhood set when available. This is acceptable for the selected image plus a bounded neighbor set such as 20 or 50 images.
 - Do not use 1024px images for the whole latent map. Normal map rendering should keep using thumbnails, atlas pages, and the existing level-of-detail path.
 - The 1024 preview texture path should be lazy and scoped to Neighborhood Layout Mode. Load previews for the selected anchor and visible/ranked neighbors, keep a bounded cache, and fall back to existing atlas thumbnails while previews load or fail.
-- The large selected anchor can target roughly 500px on its long side, but should use responsive bounds so it does not consume the whole canvas on smaller windows.
+- The large selected anchor uses a responsive left comparison area. The current target is roughly two fifths of the WebGL canvas width, with vertical padding so square and landscape anchors do not consume the whole viewport.
 - The grid should be computed in view/canvas space and projected into the existing orthographic world model so WebGL pan/zoom still works.
 - The animation should tween instance position, color, size, opacity, and selection state between map coordinates and neighborhood layout coordinates. Do not rebuild Three.js objects during the tween.
 - React declares the next logical state only. The WebGL runtime owns frame timing, interpolation, buffer updates, and rendering.
@@ -79,15 +79,44 @@ The first layout should be intentionally simple:
 
 - selected anchor on the left;
 - neighbor grid on the right;
-- initial grid uses 3 columns; rows follow from the active relation item count;
-- rank order proceeds left-to-right, top-to-bottom within the grid;
+- current grid uses 4 fixed rows; columns follow from the active relation item count and extend horizontally;
+- rank order fills down the 4 rows, then starts the next column;
 - opposite items use a small pale red dot overlay;
-- grid cell size is derived from available canvas area and neighbor count;
-- grid images maintain aspect ratio within their cells;
+- grid row image size is derived from the available anchor height, the 4 rows, and the fixed gutter;
+- grid images maintain their source aspect ratio;
+- visible grid gutters are intended to stay fixed at 32px in screen space while preserving image aspect ratio;
 - selected anchor and neighbor grid share one coherent camera space;
 - map background is hidden or heavily deemphasized.
 
 The layout should work for the active sidebar FAISS count and relation mode. It should be tested with 20 and 50 rows, and with `closest`, `opposite`, and `both`.
+
+## Post-Implementation UI Refinement Log
+
+After #224 was closed as implemented, the real J Shoot QA session uncovered several UX and interaction refinements that were still part of making the feature usable:
+
+- Neighborhood mode should hide dense-map background points and disable hover previews. The mode is a comparison view, not a map plus a floating inspector.
+- The selected anchor should remain visually dominant and render above the grid when the user pans or zooms the neighborhood surface. The user explicitly liked the anchor being able to cover grid items.
+- The normal UMAP map view should preserve its own pan/zoom state. Entering, zooming, and panning in neighborhood mode must not mutate the map view that the user returns to on exit.
+- The neighborhood grid should zoom around the cursor like a continuous image surface, whether the cursor is over an image tile or empty canvas.
+- The grid should use available 1024px preview derivatives for the active anchor and relation set, with atlas thumbnails only as loading fallback.
+- The active FAISS count should be honored in the grid; selecting `50` must not silently fall back to `20`.
+- FAISS relation rows should be requested live from the server-side FAISS index and ID map. Precomputed neighbor JSONL rows are retained only as old prototype artifacts.
+- The anchor area uses roughly `2/5` of the WebGL canvas width. Anchor vertical padding is larger than the side padding so square/landscape images do not dominate the viewport.
+- The grid uses 4 rows and a 32px gutter. The implementation should treat this as an edge-to-edge visual spacing contract, not only a center-to-center layout hint.
+- Because grid images preserve aspect ratio, exact CSS-column alignment and exact edge-to-edge gutters are competing constraints. The current preference is fixed visible gutters and preserved aspect ratio over cropped equal boxes.
+- The WebGL runtime should carry the packed screen-space grid origin for each tile instead of reconstructing packed positions from row/column indexes later. That prevents zoom and mixed image aspect ratios from reintroducing gutter drift.
+
+### Issue Closure Pattern
+
+For this feature family, an issue is "solved" when its agreed acceptance criteria and child slices are implemented, tested, and verified on the real J Shoot run. Closing the parent issue should include:
+
+- the implemented behavior;
+- the commit or branch where it landed;
+- the focused automated checks;
+- the real-data browser QA summary;
+- any explicit follow-up risks or UX polish that should not block closure.
+
+Post-close refinements should not reopen the parent issue unless the original acceptance criteria were actually false. Instead, record the intent in this PRD or the implementation log, then create small follow-up issues when the refinement is not handled immediately.
 
 ## Texture Detail Contract
 

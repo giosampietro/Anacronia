@@ -49,6 +49,8 @@ type ProjectedTarget = {
     height: number;
     kind: "anchor" | "grid";
     maxLongSide?: number;
+    packedLeft?: number;
+    packedTop?: number;
     row?: number;
     width: number;
     x: number;
@@ -162,6 +164,8 @@ export function createLatentMapNeighborhoodRuntimePlan({
         tween_screen_height: target.screen.height,
         tween_screen_kind: target.screen.kind,
         tween_screen_max_long_side: target.screen.maxLongSide,
+        tween_screen_packed_left: target.screen.packedLeft,
+        tween_screen_packed_top: target.screen.packedTop,
         tween_screen_row: target.screen.row,
         tween_screen_width: target.screen.width,
         tween_screen_x: target.screen.x,
@@ -352,29 +356,50 @@ function createProjectedScreenTarget({
   const aspect = Math.max(viewport.width, 1) / Math.max(viewport.height, 1);
   const pixelsPerWorldUnit =
     (Math.max(viewport.height, 1) * Math.max(recenterView.zoom, 0.001)) / 2;
+  const width = worldWidth * pixelsPerWorldUnit;
+  const height = worldHeight * pixelsPerWorldUnit;
+  const screenX =
+    ((x - recenterView.offsetX) * recenterView.zoom / aspect + 1) *
+    Math.max(viewport.width, 1) /
+    2;
+  const screenY =
+    (1 - (y - recenterView.offsetY) * recenterView.zoom) *
+    Math.max(viewport.height, 1) /
+    2;
+  const left = screenX - width / 2;
+  const top = screenY - height / 2;
+  const column = row?.column;
+  const rowIndex = row?.row;
+  const cellGap = kind === "grid" ? layout.grid.cellGap : undefined;
 
   return {
     baseOffsetX: recenterView.offsetX,
     baseOffsetY: recenterView.offsetY,
     baseZoom: recenterView.zoom,
-    cellGap: kind === "grid" ? layout.grid.cellGap : undefined,
+    cellGap,
     cellSize: kind === "grid" ? layout.grid.cellSize : undefined,
-    column: row?.column,
+    column,
     gridX: kind === "grid" ? layout.grid.bounds.x : undefined,
     gridY: kind === "grid" ? layout.grid.bounds.y : undefined,
-    height: worldHeight * pixelsPerWorldUnit,
+    height,
     kind,
     maxLongSide,
-    row: row?.row,
-    width: worldWidth * pixelsPerWorldUnit,
-    x:
-      ((x - recenterView.offsetX) * recenterView.zoom / aspect + 1) *
-      Math.max(viewport.width, 1) /
-      2,
-    y:
-      (1 - (y - recenterView.offsetY) * recenterView.zoom) *
-      Math.max(viewport.height, 1) /
-      2,
+    packedLeft:
+      kind === "grid" &&
+      typeof column === "number" &&
+      typeof cellGap === "number"
+        ? left - column * cellGap
+        : undefined,
+    packedTop:
+      kind === "grid" &&
+      typeof rowIndex === "number" &&
+      typeof cellGap === "number"
+        ? top - rowIndex * cellGap
+        : undefined,
+    row: rowIndex,
+    width,
+    x: screenX,
+    y: screenY,
   };
 }
 

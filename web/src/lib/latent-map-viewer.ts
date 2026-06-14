@@ -102,6 +102,8 @@ export type LatentMapRuntimeTweenOverrides = {
   tween_screen_height?: number;
   tween_screen_kind?: "anchor" | "grid";
   tween_screen_max_long_side?: number;
+  tween_screen_packed_left?: number;
+  tween_screen_packed_top?: number;
   tween_screen_row?: number;
   tween_screen_width?: number;
   tween_screen_x?: number;

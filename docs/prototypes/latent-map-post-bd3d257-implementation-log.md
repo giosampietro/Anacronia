@@ -276,3 +276,38 @@ Real J Shoot results for both `dinov3_vits_256` and `dinov3_vits_384`:
   - the focused group renders `991` thumbnails;
   - the non-focused layer remains visible at `3px`;
   - no in-app browser console warnings or errors were reported.
+
+## Update After Issue #224
+
+Issue #224 was closed once the in-canvas Neighborhood Layout Mode landed through its child slices. The follow-up UI work below happened after that closure because real-data QA made several product intentions clearer than the original implementation tracker.
+
+### Neighborhood comparison UX
+
+- Kept the drawer direction obsolete. The comparison experience remains inside the WebGL canvas.
+- Kept `n` as the fast entry/exit shortcut for the selected image's FAISS neighborhood.
+- Disabled hover detail previews in neighborhood mode. They made the comparison layout confusing and duplicated the large preview role.
+- Hid the dense-map visual layer during neighborhood mode so the user sees a comparison surface, not a map carpet behind a grid.
+- Preserved the normal UMAP map view state while in neighborhood mode. Exiting returns to the pan/zoom state from entry instead of inheriting neighborhood zoom.
+- Kept the selected anchor visually dominant and rendered above the grid. This is intentional because the anchor is the comparison reference.
+
+### Grid and zoom behavior
+
+- Changed the layout from the original 3-column plan to a fixed 4-row grid, with columns expanding horizontally from the active FAISS count.
+- Set the anchor area to roughly `2/5` of the WebGL canvas width, with larger top/bottom padding so square and landscape anchors do not overtake the viewport.
+- Used a 32px grid gutter to match the anchor padding rhythm.
+- Treated the gutter as a visible edge-to-edge spacing contract. Because thumbnails preserve aspect ratio, the implementation prioritizes fixed visible gaps over perfect CSS-like column alignment.
+- Added screen-surface zoom behavior so neighborhood zoom follows the cursor over both image tiles and empty canvas.
+- Capped grid zoom relative to the anchor long side so the user can inspect 1024px previews without the grid drifting sideways at max scale.
+- Stored packed screen-space grid origins in the runtime target data so later render and wheel math do not reconstruct gutters from row/column indexes and mixed aspect ratios.
+
+### Preview and relation data
+
+- Used 1024px preview derivatives for the active anchor and relation grid, with atlas thumbnails only as loading fallback.
+- Kept the active FAISS neighbor count honored in neighborhood mode; `50` should render 50 closest rows, not silently fall back to 20.
+- Moved FAISS relation lookup to live server-side queries over the selected recipe's FAISS index and ID map. Saved neighbor JSONL rows are legacy prototype artifacts, not the current viewer contract.
+
+### Checks and documentation
+
+- Updated [Latent Map Neighborhood Layout PRD](latent-map-neighborhood-layout-prd.md) with the post-close UI contract and issue closure pattern.
+- Focused Vitest coverage now includes neighborhood layout targets, screen-space zoom controls, WebGL preview transforms, and packed gutter behavior.
+- Rebuilt and relaunched the worktree app on `localhost:18661`, opened the real J Shoot run with `neighbors=50`, entered neighborhood mode, zoomed the grid, and confirmed the browser console stayed clean.

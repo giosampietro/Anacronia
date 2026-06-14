@@ -220,6 +220,8 @@ export function createLatentMapScreenTargetWheelZoomView({
     typeof target.tween_screen_cell_gap !== "number" ||
     typeof target.tween_screen_column !== "number" ||
     typeof target.tween_screen_height !== "number" ||
+    typeof target.tween_screen_packed_left !== "number" ||
+    typeof target.tween_screen_packed_top !== "number" ||
     typeof target.tween_screen_row !== "number" ||
     typeof target.tween_screen_width !== "number" ||
     typeof target.tween_screen_x !== "number" ||
@@ -288,19 +290,13 @@ export function createLatentMapScreenTargetWheelZoomView({
   const nextHeight = target.tween_screen_height * nextZoomRatio;
   const nextLeft = pointerX - localX * nextWidth;
   const nextTop = pointerY - localY * nextHeight;
-  const baseLeft = target.tween_screen_x - target.tween_screen_width / 2;
-  const baseTop = target.tween_screen_y - target.tween_screen_height / 2;
-  const packedBaseLeft =
-    baseLeft - target.tween_screen_column * target.tween_screen_cell_gap;
-  const packedBaseTop =
-    baseTop - target.tween_screen_row * target.tween_screen_cell_gap;
   const noPanLeft =
     viewportWidth / 2 +
-    (packedBaseLeft - viewportWidth / 2) * nextZoomRatio +
+    (target.tween_screen_packed_left - viewportWidth / 2) * nextZoomRatio +
     target.tween_screen_column * target.tween_screen_cell_gap;
   const noPanTop =
     viewportHeight / 2 +
-    (packedBaseTop - viewportHeight / 2) * nextZoomRatio +
+    (target.tween_screen_packed_top - viewportHeight / 2) * nextZoomRatio +
     target.tween_screen_row * target.tween_screen_cell_gap;
   const nextPanX = nextLeft - noPanLeft;
   const nextPanY = nextTop - noPanTop;
