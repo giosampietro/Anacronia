@@ -9,14 +9,7 @@ import {
   useState,
   type CSSProperties,
 } from "react";
-import {
-  CircleDot,
-  Images,
-  Keyboard,
-  Palette,
-  RotateCcw,
-  X,
-} from "lucide-react";
+import { Keyboard, Palette, X } from "lucide-react";
 
 import { ThemeSwitch } from "@/components/theme-switch";
 import { Badge } from "@/components/ui/badge";
@@ -42,10 +35,6 @@ import {
   SidebarSeparator,
   SidebarTrigger,
 } from "@/components/ui/sidebar";
-import {
-  ToggleGroup,
-  ToggleGroupItem,
-} from "@/components/ui/toggle-group";
 import {
   Select,
   SelectContent,
@@ -2045,15 +2034,6 @@ export function LatentMapViewer({
     void loadNeighborsForImage(nextSelectedImageId);
   }
 
-  function handleRenderModeChange(nextValue: string | string[]) {
-    const nextMode = Array.isArray(nextValue) ? nextValue[0] : nextValue;
-
-    if (nextMode === "points" || nextMode === "thumbnails") {
-      cancelNeighborhoodModeForManualModeChange();
-      setRenderMode(nextMode);
-    }
-  }
-
   function handleThumbnailSizeChange(nextValue: string | null) {
     if (nextValue === null) {
       return;
@@ -2656,166 +2636,11 @@ export function LatentMapViewer({
           </div>
 
           {!uiOverlayHidden ? (
-            <div
-              className="pointer-events-auto absolute left-3 top-14 z-20 w-28 rounded-2xl border border-border/55 bg-background/80 p-1.5 shadow-sm backdrop-blur-md"
-              data-testid="latent-map-display-controls"
-            >
-              <FieldGroup className="gap-1.5">
-              <Field className="gap-1">
-                <FieldLabel className="sr-only">Mode</FieldLabel>
-                <ToggleGroup
-                  aria-label="Map render mode"
-                  className="w-full"
-                  size="sm"
-                  spacing={0}
-                  value={[renderMode]}
-                  variant="outline"
-                  onValueChange={handleRenderModeChange}
-                >
-                  <ToggleGroupItem
-                    aria-label="Points"
-                    className="h-7 flex-1 px-0"
-                    title="Points"
-                    value="points"
-                  >
-                    <CircleDot data-icon="inline-start" />
-                  </ToggleGroupItem>
-                  <ToggleGroupItem
-                    aria-label="Thumbnails"
-                    className="h-7 flex-1 px-0"
-                    title="Thumbnails"
-                    value="thumbnails"
-                  >
-                    <Images data-icon="inline-start" />
-                  </ToggleGroupItem>
-                </ToggleGroup>
-              </Field>
-
-              <Field className="gap-1">
-                <FieldLabel
-                  className="sr-only"
-                  htmlFor="latent-map-thumbnail-size"
-                >
-                  Size
-                </FieldLabel>
-                <Select
-                  id="latent-map-thumbnail-size"
-                  name="latent-map-thumbnail-size"
-                  onValueChange={handleThumbnailSizeChange}
-                  value={String(thumbnailSize)}
-                >
-                  <SelectTrigger
-                    aria-label="Thumbnail display size"
-                    className="h-7 w-full justify-between px-2 text-xs"
-                    size="sm"
-                  >
-                    <SelectValue>
-                      {(selectedSize) => `${selectedSize}px`}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent align="start" className="min-w-32">
-                    <SelectGroup>
-                      <SelectLabel>Size</SelectLabel>
-                      {LATENT_MAP_THUMBNAIL_SIZE_OPTIONS.map((size) => (
-                        <SelectItem
-                          key={size}
-                          label={`${size}px`}
-                          value={String(size)}
-                        >
-                          {size}px
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-              </Field>
-
-              {textureDetailOptions.length > 0 ? (
-                <Field className="gap-1">
-                  <FieldLabel
-                    className="sr-only"
-                    htmlFor="latent-map-texture-detail"
-                  >
-                    Detail
-                  </FieldLabel>
-                  <Select
-                    id="latent-map-texture-detail"
-                    name="latent-map-texture-detail"
-                    onValueChange={handleTextureDetailChange}
-                    value={String(textureDetail)}
-                  >
-                    <SelectTrigger
-                      aria-label="Image detail"
-                      className="h-7 w-full justify-between px-2 text-xs"
-                      size="sm"
-                    >
-                      <SelectValue>
-                        {(selectedDetail) =>
-                          formatTextureDetailLabel(selectedDetail)
-                        }
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent align="start" className="min-w-32">
-                      <SelectGroup>
-                        <SelectLabel>Detail</SelectLabel>
-                        <SelectItem label="Auto" value="auto">
-                          Auto
-                        </SelectItem>
-                        {textureDetailOptions.map((detail) => (
-                          <SelectItem
-                            key={detail}
-                            label={`${detail}px`}
-                            value={String(detail)}
-                          >
-                            {detail}px
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                </Field>
-              ) : null}
-
-              <div className="grid grid-cols-2 gap-1">
-                <Button
-                  aria-label="Cluster colors"
-                  aria-pressed={clusterColorsEnabled}
-                  className="w-full"
-                  onClick={() =>
-                    setClusterColorsEnabled((isEnabled) => !isEnabled)
-                  }
-                  size="icon-sm"
-                  title="Cluster colors"
-                  variant={clusterColorsEnabled ? "secondary" : "outline"}
-                >
-                  <Palette data-icon="inline-start" />
-                </Button>
-                <Button
-                  aria-label="Reset view"
-                  className="w-full"
-                  onClick={() => {
-                    markFpsCounterActive();
-                    setViewImmediately(
-                      neighborhoodLayoutActive &&
-                        neighborhoodRuntimePlan.recenterView
-                        ? neighborhoodRuntimePlan.recenterView
-                        : DEFAULT_VIEW,
-                    );
-                  }}
-                  size="icon-sm"
-                  title="Reset view"
-                  variant="outline"
-                >
-                  <RotateCcw data-icon="inline-start" />
-                </Button>
-              </div>
-              </FieldGroup>
-            </div>
-          ) : null}
-
-          {!uiOverlayHidden ? (
             <div className="pointer-events-none absolute bottom-3 right-3 z-20 flex items-end gap-2">
-              <div className="pointer-events-auto relative flex items-end gap-2">
+              <div
+                className="pointer-events-auto relative flex items-end gap-2"
+                data-testid="latent-map-canvas-control-strip"
+              >
                 {shortcutsHelpOpen ? (
                   <Card
                     aria-label="Latent map shortcuts"
@@ -2865,6 +2690,108 @@ export function LatentMapViewer({
                     </CardContent>
                   </Card>
                 ) : null}
+
+                <Field className="gap-0">
+                  <FieldLabel
+                    className="sr-only"
+                    htmlFor="latent-map-thumbnail-size"
+                  >
+                    Thumbnail display size
+                  </FieldLabel>
+                  <Select
+                    id="latent-map-thumbnail-size"
+                    name="latent-map-thumbnail-size"
+                    onValueChange={handleThumbnailSizeChange}
+                    value={String(thumbnailSize)}
+                  >
+                    <SelectTrigger
+                      aria-label="Thumbnail display size"
+                      className="h-7 w-[4.75rem] justify-between rounded-lg border-border/50 bg-background/70 px-2 text-xs text-foreground/85 shadow-sm backdrop-blur-sm"
+                      data-testid="latent-map-thumbnail-size-control"
+                      size="sm"
+                    >
+                      <SelectValue>
+                        {(selectedSize) => `${selectedSize}px`}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent align="end" className="min-w-32">
+                      <SelectGroup>
+                        <SelectLabel>Size</SelectLabel>
+                        {LATENT_MAP_THUMBNAIL_SIZE_OPTIONS.map((size) => (
+                          <SelectItem
+                            key={size}
+                            label={`${size}px`}
+                            value={String(size)}
+                          >
+                            {size}px
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </Field>
+
+                {textureDetailOptions.length > 0 ? (
+                  <Field className="gap-0">
+                    <FieldLabel
+                      className="sr-only"
+                      htmlFor="latent-map-texture-detail"
+                    >
+                      Thumbnail detail
+                    </FieldLabel>
+                    <Select
+                      id="latent-map-texture-detail"
+                      name="latent-map-texture-detail"
+                      onValueChange={handleTextureDetailChange}
+                      value={String(textureDetail)}
+                    >
+                      <SelectTrigger
+                        aria-label="Thumbnail detail"
+                        className="h-7 w-[4.75rem] justify-between rounded-lg border-border/50 bg-background/70 px-2 text-xs text-foreground/85 shadow-sm backdrop-blur-sm"
+                        data-testid="latent-map-texture-detail-control"
+                        size="sm"
+                      >
+                        <SelectValue>
+                          {(selectedDetail) =>
+                            formatTextureDetailLabel(selectedDetail)
+                          }
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent align="end" className="min-w-32">
+                        <SelectGroup>
+                          <SelectLabel>Detail</SelectLabel>
+                          <SelectItem label="Auto" value="auto">
+                            Auto
+                          </SelectItem>
+                          {textureDetailOptions.map((detail) => (
+                            <SelectItem
+                              key={detail}
+                              label={`${detail}px`}
+                              value={String(detail)}
+                            >
+                              {detail}px
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                ) : null}
+
+                <Button
+                  aria-label="Cluster colors"
+                  aria-pressed={clusterColorsEnabled}
+                  className="h-7 rounded-lg border-border/50 bg-background/70 text-foreground/85 shadow-sm backdrop-blur-sm"
+                  data-testid="latent-map-cluster-colors-button"
+                  onClick={() =>
+                    setClusterColorsEnabled((isEnabled) => !isEnabled)
+                  }
+                  size="icon-sm"
+                  title="Cluster colors"
+                  variant={clusterColorsEnabled ? "secondary" : "outline"}
+                >
+                  <Palette data-icon="inline-start" />
+                </Button>
 
                 <Button
                   aria-controls="latent-map-shortcuts-help"
