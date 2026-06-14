@@ -12,19 +12,21 @@ export type LoadedLatentMapAnalysisResultViewerData = {
 };
 
 export async function loadLatentMapAnalysisResultViewerData({
+  additionalRunsRoots = [],
   analysisResultId,
   runsRoot,
   selectedClusterId,
   selectedLayoutId,
   selectedRecipeName,
 }: {
+  additionalRunsRoots?: string[];
   analysisResultId: string;
   runsRoot: string;
   selectedClusterId?: string | null;
   selectedLayoutId?: string | null;
   selectedRecipeName?: string | null;
 }): Promise<LoadedLatentMapAnalysisResultViewerData> {
-  const store = createLocalAnalysisResultStore({ runsRoot });
+  const store = createLocalAnalysisResultStore({ additionalRunsRoots, runsRoot });
   const runDir = await store.resolveRunDir(analysisResultId);
 
   if (!runDir) {

@@ -13,11 +13,13 @@ export type AnalysisResultListItem = {
 };
 
 export async function listAnalysisResults({
+  additionalRunsRoots = [],
   runsRoot,
 }: {
+  additionalRunsRoots?: string[];
   runsRoot: string;
 }): Promise<AnalysisResultListItem[]> {
-  const store = createLocalAnalysisResultStore({ runsRoot });
+  const store = createLocalAnalysisResultStore({ additionalRunsRoots, runsRoot });
   const items = await store.list();
 
   return items.map((item) => ({

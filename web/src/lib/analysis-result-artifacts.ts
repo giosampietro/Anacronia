@@ -15,16 +15,21 @@ export class UnsafeArtifactKeyError extends Error {
 }
 
 export async function resolveAnalysisResultArtifact({
+  additionalRunsRoots = [],
   analysisResultId,
   artifactKey,
   runsRoot,
 }: {
+  additionalRunsRoots?: string[];
   analysisResultId: string;
   artifactKey: string;
   runsRoot: string;
 }): Promise<ResolvedAnalysisResultArtifact | null> {
   try {
-    return await createLocalAnalysisResultStore({ runsRoot }).resolveArtifact({
+    return await createLocalAnalysisResultStore({
+      additionalRunsRoots,
+      runsRoot,
+    }).resolveArtifact({
       analysisResultId,
       artifactKey,
     });
@@ -38,15 +43,18 @@ export async function resolveAnalysisResultArtifact({
 }
 
 export async function resolveAnalysisResultRunDir({
+  additionalRunsRoots = [],
   analysisResultId,
   runsRoot,
 }: {
+  additionalRunsRoots?: string[];
   analysisResultId: string;
   runsRoot: string;
 }): Promise<string | null> {
-  return createLocalAnalysisResultStore({ runsRoot }).resolveRunDir(
-    analysisResultId,
-  );
+  return createLocalAnalysisResultStore({
+    additionalRunsRoots,
+    runsRoot,
+  }).resolveRunDir(analysisResultId);
 }
 
 export function inferContentType(filePath: string): string {
