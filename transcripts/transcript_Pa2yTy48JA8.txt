@@ -1,0 +1,1083 @@
+
+0:00
+dinov V2 which you've probably heard
+0:01
+about is a self-supervised model created
+0:04
+by meta it's a very powerful model it's
+0:06
+winning a lot of Benchmark competitions
+0:08
+uh it does depth estimation image
+0:10
+segmentation based off of these latent
+0:12
+space representation that are
+0:14
+self-learned I've been studying this
+0:16
+model for about a year now and I
+0:17
+condensed everything I've learned so far
+0:20
+into a kind of visual understanding so
+0:22
+that you can get quickly understand
+0:24
+exactly what's going on and then I've
+0:26
+also adapted code that's kind of concise
+0:28
+and kind of to the point about what's
+0:30
+exactly going on within the model uh but
+DINOv2 Explained
+0:33
+first I want to lay some groundwork
+0:34
+about what's happening so if you imagine
+0:35
+you have a classifier that just
+0:37
+classifies dogs or cats you could paste
+0:38
+a dog image through this model and you
+0:41
+get a soft Max probability of it being a
+0:43
+dog or a cat and if you remove that
+0:46
+classification head those red nodes
+0:48
+there you just will have a a model that
+0:51
+creates a latent space representation
+0:54
+and if you add a decoder onto that and
+0:55
+the reason I want to kind of explain
+0:57
+this is that Laten space is kind of an
+0:58
+important kind of topic for the the dyo
+1:00
+model but this would be a vae a
+1:03
+representation of it you pass a dog
+1:05
+image through you get values within the
+1:07
+center that are latent space and the
+1:08
+decoder tries to reconstruct that same
+1:11
+image so that's a self-supervised model
+1:13
+VA is a little bit different it's a
+1:14
+little bit older but the idea is that
+1:16
+you have this kind of constructed latent
+1:18
+space that is kind of has knowledge of
+1:20
+the images that you pass through it and
+1:22
+if you make changes to it it changes the
+1:24
+output so this is an intelligent uh kind
+1:27
+of compressed version of what the image
+1:30
+that are passed through it and it's kind
+1:31
+of organized and it has an idea about
+1:33
+the differences and the variations that
+1:36
+pass through this type of encoder and on
+1:39
+the other side if you just take the
+1:40
+encoder instead of the decoder you pass
+1:41
+images through and since I chose three
+1:44
+values that latent space will look like
+1:46
+a three-dimensional kind of space so
+1:48
+it's easy to see typically this space is
+1:52
+much larger but it's the same idea but
+1:54
+you pass these images through and what
+1:56
+happens similar images get put in
+1:58
+similar areas within the Laten space and
+2:01
+if you walk along this Laten space you
+2:03
+should be able to get mixes between so
+2:04
+if you chose a point between these sets
+2:07
+of images it should be a mix of a dog
+2:09
+and a cat in some sort of intelligent
+2:10
+way and if you move in any direction you
+2:13
+get that different variation now the
+2:15
+dino encoder takes a little bit a
+2:18
+different approach where it uses a
+2:19
+vision Transformer and it wraps that so
+2:22
+the dyo model is actually just a wrapper
+2:24
+around a vision Transformer and then a
+2:26
+vision Transformer just takes an image
+2:28
+divides it into passes patches passes it
+2:31
+through you get that softmax
+2:32
+classification if you have that MLP head
+2:36
+but you take that classification token
+2:38
+there on the end and that's what
+2:39
+actually goes through the MLP head but
+2:41
+the dyo model passes it through a dino
+2:43
+head which is just a little bit
+2:44
+different but it's really not that
+2:46
+complex so the dyo model is more about a
+2:48
+CH a change in kind of the training and
+2:50
+it's kind of a clever training and a
+2:53
+clever augmentation to kind of get a
+2:54
+self-supervised approach so here's a
+2:57
+representation of the augmentation you
+2:58
+get two global crops and you get local
+3:01
+crops so local crops have more of a
+3:04
+zoomed in kind of more localized
+3:06
+features and the global crops have more
+3:08
+Global Information a teacher and a
+3:10
+student are the copies of the same thing
+3:13
+uh but the teacher only gets the global
+3:15
+images the student gets the global and
+3:17
+the local images and then you're able to
+3:21
+self-supervised the distance between the
+3:24
+output of the teacher and the output of
+3:25
+the student and by doing that you're
+3:28
+you're kind of saying that these images
+3:29
+are the the same find out what's kind of
+3:31
+same about them without having to get
+3:33
+any labels onto it or anything like that
+3:35
+it's kind of reducing the space now that
+3:37
+image is a little bit wrong because the
+3:40
+dyno does something a little bit
+3:41
+different than just encoding to a space
+3:43
+kind of like a vae what it does is it
+3:45
+takes the outputs which are kind of like
+3:47
+that Laten space it's the the embedding
+3:50
+token uh for the teacher It Centers it
+3:53
+meaning it subtracts its own mean uh
+3:55
+from previous batches this sort of thing
+3:58
+and it centers it around zero
+4:00
+so you don't get these values that are
+4:01
+really far out it regularizes it but
+4:03
+then you apply a temperature softmax
+4:05
+usually softmax is used for
+4:07
+classification uh but they use this in a
+4:09
+kind of interesting sort of way if you
+4:11
+look up at the top you get a typical
+4:13
+output of a of a uh soft Max but if you
+4:16
+add temperature to it it regularizes it
+4:18
+and you don't have these extreme
+4:19
+differences in predictions the higher
+4:21
+the temperature the less kind of
+4:23
+differences you have and then then the
+4:25
+the dyo model has 65,000 of these so as
+4:29
+if you had
+4:30
+65,000 uh of these classes and it
+4:32
+Compares those teacher outputs to the
+4:34
+student outputs now the teacher outputs
+4:36
+are regularized and then you do a binary
+4:39
+or sorry not a binary but you do cross
+4:41
+interpre between the two and that's
+4:43
+actually what gives you your loss so
+4:45
+it's kind of this kind of augmented
+4:47
+latent space is kind of what's giving
+4:49
+you this kind of uh output but you also
+4:52
+do something a little bit different as
+4:53
+well at each update step the the student
+4:57
+is actually the only thing that learns
+4:59
+the teacher is just a copy of the
+5:00
+student so after the student learns what
+5:03
+it needs to update it updates itself and
+5:05
+then the teacher is an exponential
+5:07
+moving average of the student an
+5:10
+exponential moving average is something
+5:11
+that you'll see in finance so to get
+5:13
+that kind of idea of what's actually
+5:14
+going on here's kind of a plot of kind
+5:17
+of what an exponential moving average
+5:19
+would be to a trend and then if you look
+5:22
+up there and the kind of values there
+5:23
+that's the alpha values as the alpha
+5:26
+value increases the T the trend fits
+5:28
+Tighter and Tighter to it uh so the
+5:31
+teacher is the same thing as the student
+5:33
+but you have this kind of regularized
+5:35
+version you're taking the parameters
+5:36
+that are updated through the student and
+5:38
+applying this exponential moving average
+5:41
+so the teacher is in all ways a
+5:43
+regularized version of the student
+5:45
+you're regularizing the teacher by
+5:46
+centering it you're regularizing the
+5:49
+teacher by applying uh this exponential
+5:52
+moving average and then you're also
+5:54
+doing a kind of regularization by only
+5:56
+passing Global crops through it where
+5:58
+the student is built around exploration
+6:01
+and I'll kind of show this how it's
+6:02
+reflected in the code as well so we can
+6:05
+go to the code and look at
+Example Code
+6:07
+that okay so here's an example of the
+6:10
+code I have first we'll talk about the
+6:12
+data augmentation the dyo model Training
+6:15
+Method so you can actually train your
+6:17
+own dyo model from scratch and then a
+6:20
+demonstration of the model and then also
+6:21
+have some pre-trained models here the
+6:23
+Publications for the two uh papers that
+6:26
+came out around Dino the first one kind
+6:27
+of just talks about the general idea of
+6:29
+the training Loop process that we talked
+6:31
+about before and then V2 has you know
+6:34
+Rob robust uh kind of version of it it
+6:37
+has a lot of stuff for like uh
+6:38
+distributed computing this sort of like
+6:40
+optimization the sort of thing but data
+Data Augmentation
+6:43
+augmentation we talked about that before
+6:45
+we wait for this to start over where you
+6:47
+have just an image that passes through
+6:49
+it has variations of global crops and
+6:53
+you keep doing that and you do as many
+6:55
+local crops as you have set I think they
+6:57
+have like eight local crops set as the
+6:59
+default but these contain most of the
+7:02
+information the global crops and the
+7:04
+local crops are more fine grained
+7:06
+information and the teacher model only
+7:08
+gets the the global crops while the
+7:10
+student model gets both the global and
+7:13
+the local crops but the student and the
+7:16
+teacher aren't compared if they have if
+7:18
+the same images pass through it so I can
+Code Walkthrough
+7:21
+show you where that at in the code uh I
+7:23
+have some text that kind of goes through
+7:25
+everything but here's the main thing uh
+7:27
+seating I just make sure that all the
+7:29
+seat match so that you get the same
+7:31
+outputs that I do uh I'm loading a uh a
+7:35
+version of the uh the data set that uses
+7:38
+imag net imag net is what they talked
+7:39
+about using on uh the paper that they
+7:42
+published so that's what I used as well
+7:44
+here so this is a data loader although
+7:46
+my image net version is images that are
+7:48
+64x 64 I have a sample that you can use
+7:52
+but but you can use a larger size it's
+7:54
+it's easy as well uh this is the main
+7:57
+thing uh the data the the dyno
+8:02
+augmentation uh and that's where kind of
+8:03
+all this code is at um this is kind of
+8:06
+the ugly side of self-supervision in
+8:08
+quotation marks because these values you
+8:12
+set here these will determine a lot
+8:14
+about how well the model performs and
+8:17
+these are very data set specific values
+8:21
+and what I can mean by that is if we
+8:22
+look back up here and you have these
+8:24
+Global and local crop things that we
+8:26
+talked about
+8:27
+before if you're local crop is too fine
+8:32
+like maybe it just Zooms in on only the
+8:34
+tooth that's obviously not going to get
+8:36
+a good connection between the the large
+8:38
+image and the small image uh so it's
+8:41
+very data specific and these values
+8:44
+would would work differently with
+8:45
+different models especially these random
+8:48
+cropping uh values so different data
+8:52
+sets would probably require different
+8:54
+croppings to be able to kind of get this
+8:57
+self-supervision you need so this is
+8:59
+kind of the ugly side of uh the in
+9:02
+quotation mark
+9:03
+self-supervision uh this needs to be
+9:05
+adapted or changed or researched a
+9:07
+little bit more to do this a little bit
+9:09
+more
+9:10
+intelligently um and something that
+9:12
+could be done that allows you to have
+9:14
+these values that generalize to all
+9:16
+images which is probably not the case
+9:18
+for what we have now and then if you
+9:21
+open that up then you could have that
+9:22
+kind of large language model effect uh
+9:26
+but that's just a little two cents there
+9:28
+but this is global crop local crop you
+9:30
+can see the local crop just has options
+9:33
+that are more uh fine grain you can see
+9:36
+the scales this sort of
+9:38
+thing number of local crops I have it
+9:40
+set to four I think the traditional is
+9:43
+eight if you load the data set we can
+9:46
+just look at what the data set looks
+9:47
+like so this would be taking one image
+9:49
+of our 64x 64
+9:52
+images uh this would be the the second
+9:55
+Global crop or the first Global crop
+9:58
+second Global crop and these are the
+9:59
+fine grain crops or local crops and you
+10:03
+see has very specific information about
+10:05
+the
+10:05
+images um and then we can talk about the
+10:08
+dyo model what's kind of going on
+10:10
+exactly in
+10:12
+here um so here's where the the dino
+10:16
+loss is kind of initiated and the dino
+10:19
+class which has the dino head in
+10:22
+it so the dino loss uh this is the part
+10:25
+where it Loops through like we had
+10:27
+talked about before uh it skips over if
+10:31
+the the global crop that's passed
+10:33
+through the teacher is the same as the
+10:36
+global crop that's passed through the
+10:37
+student and then everything else gets
+10:39
+that that log of the student's output
+10:43
+and then just the the teachers's output
+10:45
+and you do the sum and that's the the
+10:47
+loss it's pretty simple uh nothing too
+10:50
+complex
+10:51
+there
+10:54
+um let's see this is centering this is
+10:57
+what we talked about before where they
+10:58
+use Center CER the teacher but not the
+11:00
+student you can see the teacher outputs
+11:02
+get centered this
+11:03
+way um the dyo model is here uh you have
+11:07
+the dyo head which you just have the
+11:10
+embedding and then the output and
+11:13
+whether you use batch Norm but the dino
+11:15
+head is very
+11:16
+simple
+11:18
+um nothing crazy here so you can see
+11:21
+that you get the the sequential of just
+11:24
+the teacher model which is this the dyo
+11:26
+instant which is just Vision
+11:27
+Transformers that you choose use and
+11:30
+then the output of the vision
+11:31
+Transformer gets passed to the dino head
+11:34
+and that is the same for the teacher as
+11:36
+it is for the
+11:38
+student
+11:40
+simple um let's see I have this method
+11:43
+here they use get last attention so you
+11:45
+can look at the attention output of the
+11:48
+the teacher or the student and the
+11:50
+interesting thing is when in inference
+11:52
+you can use the outputs of the teacher
+11:53
+or the student and the teacher or the
+11:54
+students have different characteristics
+11:56
+after you finish training and different
+11:59
+ones are better for or more suited for
+12:01
+different task um generally I think the
+12:04
+teacher is kind of uh maybe a little bit
+12:06
+better actually but uh I think that's
+12:09
+just in
+12:10
+general Adam W if you don't know uh this
+12:14
+has some sort of weight Decay so if you
+12:17
+have really large weights adom W in my
+12:20
+experience almost always outperforms
+12:24
+atom uh especially the case with large
+12:27
+language models or of of course large
+12:30
+but I meant large models with like some
+12:32
+sort of deep network uh the atom W with
+12:35
+the weighted Decay almost always works
+12:39
+better okay so you initiate your dyo
+12:42
+loss simple stuff there here's your
+12:45
+training Loop you get this is your un
+12:48
+augmented images these are your
+12:50
+augmented
+12:51
+images they get past through uh the
+12:54
+teacher and the student except the
+12:55
+teacher only gets the the global crops
+12:58
+the student gets all of them and then
+13:01
+you compare those losses but you only uh
+13:04
+you never compare something that matches
+13:06
+that's been passed to the student to
+13:07
+something that matches that's been
+13:09
+passed to the teacher and you sum those
+13:11
+and that gives you your output
+13:14
+loss obviously you have a backwards step
+13:17
+and then optimization or Optimizer
+13:20
+step I have where you save the weights
+13:23
+here pretty simple stuff um nothing
+13:27
+seems to be of too much interest here um
+13:31
+this is where you apply the exponential
+13:33
+moving average this is your momentum
+13:35
+value and I have another notebook that
+13:37
+we'll talk about but this is your
+13:39
+momentum uh or Alpha
+13:41
+value um this is a very high value means
+13:46
+that it's going to be very close to what
+13:48
+the student model is it's just going to
+13:50
+shave off those really really extreme
+13:53
+values during your update of these
+13:57
+parameters okay okay uh this is if you
+14:00
+want to load the model after you've
+14:02
+trained it uh you can load the model and
+14:06
+get some predictions out so this is what
+14:08
+it's attending to these are the heat
+14:10
+maps of the attention head this is the
+14:12
+overlay
+14:14
+obviously uh these are different heads
+14:17
+so this is one head here that seems to
+14:19
+tend this is kind of a weird image but
+14:22
+it attends a lot to this box you can see
+14:25
+that and then it kind of ignores the
+14:27
+background and you see the different
+14:29
+things that it attends to on the box as
+14:31
+well and you see this other head has
+14:33
+different attention
+14:34
+Maps I also have where you can load uh a
+14:38
+pre-trained model so you can specify
+14:42
+which dyo it is it loads from this Hub
+14:45
+which just loads the pre-trained dyno
+14:48
+model um and then I have where how you
+14:50
+can use it so if you just pass your
+14:52
+image here uh I have loading this this
+14:55
+image here um you just change this to
+14:58
+the path of your
+15:00
+image and you get some output there this
+15:03
+would be your attention map you can look
+15:05
+at what that is but if you want to
+15:06
+actually visualize the attention map
+15:09
+overlaid on the image you can pass it
+15:11
+through this thing I have here which is
+15:14
+visualize attention this wasn't in the
+15:16
+the the dyo code a lot actually all this
+15:18
+code that's in this notebook isn't in
+15:20
+the actual dyo repo it's all kind of my
+15:23
+wrapper
+15:25
+functions um but I'll show you what this
+Over Relay
+15:27
+does uh this is the over relay of the
+15:29
+tension uh so you just pass this image
+15:33
+through the the dyo model and you look
+15:34
+at all the different heads and you see
+15:37
+what they're attending to and you can
+15:39
+see they attend to all different things
+15:40
+some attend to the shoes some attend to
+15:42
+the phone the hands uh some this like
+15:46
+kind of like a menu back here uh but you
+15:49
+can see kind of what all it looks at and
+15:51
+different things that ignores one of it
+15:52
+tends to the plant um but it's very
+15:54
+interesting seeing kind of what's the
+15:55
+output here and how this kind of works
+Large Language Models
+15:59
+but in general like I talked about
+16:00
+before the the dyo model is going to
+16:02
+kind of in effect be a large language
+16:05
+model version of vision so it's where
+16:09
+you can dump just every image that
+16:11
+you've seen online and have a model
+16:13
+become generally functional which is
+16:16
+what we've seen with large language
+16:18
+models is if you just keep dumping data
+16:21
+onto a a model it gets kind of like
+16:25
+really seemingly intelligent gets really
+16:27
+good outputs so if we open this up to
+16:30
+this self-supervised Dyno kind of
+16:32
+approach we're getting in the area where
+16:34
+we can just dump all these images all
+16:36
+these videos that we have access to
+16:38
+online and learn something from them
+16:40
+which is probably something that are
+16:42
+learn which is kind of the if you think
+16:43
+about large language models they can
+16:45
+just take any text predict the next word
+16:48
+you know so this is kind of something
+16:49
+like that uh and I think this is kind of
+16:52
+the direction of all these Vision models
+16:54
+are going to have something like this
+16:55
+where you're getting you're using the
+16:57
+weights of the these large language
+16:59
+models as kind of part of your your
+17:03
+vision model so you're going to have
+17:04
+these pre-trained models kind of kind of
+17:06
+feed into your models probably this one
+17:09
+and that segment everything model these
+17:11
+sort of things kind of all feed into a
+17:14
+model that actually give you some
+17:15
+predictions uh I think that's the future
+Miscellaneous Files
+17:17
+of this sort of
+17:18
+thing I also have some other things as
+17:20
+well here so if we look at uh this
+17:23
+miscellaneous
+17:24
+file uh I have some explanation here uh
+17:28
+this is the actual dyo loss they have a
+17:31
+version of this in the paper um but I
+17:34
+explain kind of exactly what it does I
+17:36
+put it into python code very simple
+17:39
+you're taking the output of the teacher
+17:41
+and the student which is that that
+17:43
+classification key uh from the vision
+17:46
+Transformer of the the student and the
+17:48
+teacher
+17:50
+model and then this would be the output
+17:52
+pass to the dino head and then what
+17:55
+you're doing is you're applying a
+17:57
+softmax to the student with temperature
+17:59
+which temperature means you divide by
+18:01
+some value and then you have a soft Max
+18:04
+of the teacher but then you have
+18:05
+centering the center value comes from uh
+18:09
+from previous Epoch you're going to
+18:11
+center around zero so you're going to
+18:12
+have to try to make your teacher output
+18:14
+have a a mean of
+18:17
+zero uh and then you're just doing a
+18:21
+cross entropy loss between your soft Max
+18:24
+of your teacher and your student and
+18:26
+this kind of mix that Laten space a
+18:28
+little bit different a little bit more
+18:31
+concise Works a little bit better uh
+18:34
+this is just a this just shows the log
+18:37
+curve so what you're doing is you're
+18:39
+taking your values that are output for
+18:42
+your
+18:43
+probabilities and you're doing a log of
+18:46
+those so you get these values and
+18:49
+then you're multiplying that by your
+18:51
+teacher's outputs and that gives you a
+18:56
+loss uh this is the explanation of the
+18:58
+exponential moving average so your Alpha
+19:01
+value is that exponential moving average
+19:04
+value uh for the dyno model is that I
+19:07
+think it's 996 or something like that
+19:10
+very
+19:11
+high um but this kind of shows you how I
+19:13
+generated that graph uh and it actually
+19:16
+has the GIF here uh where you keep
+19:19
+increasing the alpha and it fits really
+19:21
+tight to the data and they their their
+19:23
+Alpha value is so large here um but you
+19:26
+can kind of see kind of how it works as
+19:28
+you increase the alpha value how it fits
+19:30
+more and more and then also how it
+19:32
+leaves out like this mean here it
+19:35
+doesn't get all the way there uh even
+19:37
+higher ups and it doesn't kind of have
+19:39
+all these kind of variations with the
+19:41
+data it just kind of centers around uh
+19:44
+the mean without having these extreme
+19:46
+outliers which helps regularize the
+19:49
+teacher and this is what it's kind of
+19:50
+all
+19:52
+about um I hope that makes sense I have
+19:55
+all this posted on my G GitHub so you
+19:59
+just go to my GitHub you can see these
+20:02
+values are kind of reflected or these
+20:04
+fold these uh files are reflected here
+20:07
+uh so if you found this interesting uh
+20:09
+like leave a comment about uh kind of a
+20:11
+model that you would like to see uh this
+20:13
+is kind of my traditional method when I
+20:15
+first get a model I have to go through
+20:17
+and kind of make it more concise so I
+20:19
+think since I already do that I'm just
+20:21
+going to go ahead and keep posting these
+20:24
+uh so that you guys can kind of benefit
+20:26
+from that as well I did a lot of
+20:27
+research so um I'm always kind of
+20:30
+covering different versions of these
+20:31
+models uh but like the video and and
+20:35
+star the repo if you found it
+20:37
+interesting
+

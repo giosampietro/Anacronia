@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import shutil
 from typing import Annotated, Callable, Literal, Mapping, TypeVar
 
@@ -6,6 +7,13 @@ from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
+from anacronia.analysis_jobs import (
+    ANALYSIS_JOB_MANIFEST_NAME,
+    AnalysisJobSummary,
+    AnalysisStageRunner,
+    run_analysis_job,
+)
+from anacronia.analysis_stage_runner import LatentMapAnalysisStageRunner
 from anacronia.collection_runs import (
     CandidateRun,
     DEFAULT_BATCH_TARGET,
@@ -189,6 +197,11 @@ class CollectionCurationRequest(BaseModel):
     selection: CollectionExportSelection = Field(default_factory=CollectionExportSelection)
 
 
+class AnalysisJobRequest(BaseModel):
+    collection_slugs: list[str] = Field(default_factory=list)
+    recipe_ids: list[str] | None = None
+
+
 def serialize_search_set(search_set: SearchSet) -> dict[str, object]:
     return {
         "display_name": search_set.display_name,
@@ -280,6 +293,46 @@ def serialize_local_folder_import_summary(
             for skipped_file in summary.skipped_files
         ],
     }
+
+
+def serialize_analysis_job_summary(summary: AnalysisJobSummary) -> dict[str, object]:
+    return serialize_analysis_job_manifest(summary.manifest_path)
+
+
+def serialize_analysis_job_manifest(manifest_path: Path) -> dict[str, object]:
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    analysis_result_ids = [
+        str(analysis_result_id)
+        for analysis_result_id in manifest.get("analysis_result_ids", [])
+    ]
+    scope_snapshot = manifest.get("scope_snapshot", {})
+    if not isinstance(scope_snapshot, dict):
+        scope_snapshot = {}
+    return {
+        "analysis_job_id": manifest["analysis_job_id"],
+        "analysis_result_ids": analysis_result_ids,
+        "manifest_path": str(manifest_path),
+        "recipe_ids": list(manifest.get("recipe_ids", [])),
+        "scope_snapshot_id": scope_snapshot.get("snapshot_id"),
+        "sibling_group_id": manifest.get("sibling_group_id"),
+        "stages": list(manifest.get("stages", [])),
+        "status": manifest["status"],
+        "viewer_hrefs": [
+            f"/latent-map?analysisResultId={analysis_result_id}"
+            for analysis_result_id in analysis_result_ids
+        ],
+    }
+
+
+def list_analysis_job_manifest_paths(data_root: Path) -> list[Path]:
+    jobs_root = data_root.expanduser().resolve() / "analysis-jobs"
+    if not jobs_root.is_dir():
+        return []
+    return sorted(
+        jobs_root.glob(f"*/{ANALYSIS_JOB_MANIFEST_NAME}"),
+        key=lambda path: path.parent.name,
+        reverse=True,
+    )
 
 
 def serialize_met_ingest_summary(summary: MetIngestSummary) -> dict[str, object]:
@@ -630,6 +683,7 @@ def create_app(
     download_image_bytes: Callable[[str], bytes] | None = None,
     provider_adapters: Mapping[str, OnlineProviderAdapter] | None = None,
     local_folder_picker: Callable[[], Path] | None = None,
+    analysis_stage_runner: AnalysisStageRunner | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Anacronia")
     project_root = Path(__file__).resolve().parents[2]
@@ -645,6 +699,7 @@ def create_app(
     resolved_met_record_client = met_record_client or HttpMetCandidateClient()
     resolved_download_image_bytes = download_image_bytes or fetch_bytes_url
     resolved_local_folder_picker = local_folder_picker or choose_local_folder_path
+    resolved_analysis_stage_runner = analysis_stage_runner or LatentMapAnalysisStageRunner()
     default_met_adapter = MetProviderAdapter(
         candidate_client=resolved_met_candidate_client,
         record_client=resolved_met_record_client,
@@ -681,6 +736,34 @@ def create_app(
                 "status": worker_status.status,
                 "active_collect_job_id": worker_status.active_collect_job_id,
             },
+        }
+
+    @app.post("/analysis-jobs", status_code=201)
+    def create_analysis_job(request: AnalysisJobRequest) -> dict[str, object]:
+        try:
+            summary = run_analysis_job(
+                database_path=resolved_database_path,
+                data_root=resolved_data_root,
+                collection_slugs=request.collection_slugs,
+                recipe_ids=request.recipe_ids,
+                stage_runner=resolved_analysis_stage_runner,
+            )
+        except LookupError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
+        return serialize_analysis_job_summary(summary)
+
+    @app.get("/analysis-jobs")
+    def get_analysis_jobs() -> dict[str, object]:
+        return {
+            "jobs": [
+                serialize_analysis_job_manifest(manifest_path)
+                for manifest_path in list_analysis_job_manifest_paths(
+                    resolved_data_root
+                )
+            ]
         }
 
     @app.post("/search-sets")
