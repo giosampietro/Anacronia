@@ -13,6 +13,7 @@ export type AnalysisResultArtifactLike = {
 };
 
 export type AnalysisResultStatusState =
+  | "deleted"
   | "ready"
   | "stale"
   | "incomplete"
@@ -72,7 +73,9 @@ export function summarizeAnalysisResultStatus({
     relationArtifacts.length > 0 &&
     missingRequiredRelationArtifactKeys.length === 0;
   const canOpenExplorer =
-    manifest.status !== "failed" && missingRequiredViewerArtifactKeys.length === 0;
+    manifest.status !== "deleted" &&
+    manifest.status !== "failed" &&
+    missingRequiredViewerArtifactKeys.length === 0;
   const state = pickStatusState({
     canOpenExplorer,
     hasSourceChanges:
@@ -137,6 +140,9 @@ function pickStatusState({
 }): AnalysisResultStatusState {
   if (manifestStatus === "failed") {
     return "failed";
+  }
+  if (manifestStatus === "deleted") {
+    return "deleted";
   }
   if (
     !canOpenExplorer ||

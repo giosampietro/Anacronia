@@ -50,5 +50,9 @@ describe("AnalysisResultsPage", () => {
     expect(html).toContain(
       "/latent-map?analysisResultId=latent-map-20260609T123000Z-j-shoot",
     );
+    expect(html).toContain(
+      "/api/analysis-results/latent-map-20260609T123000Z-j-shoot",
+    );
+    expect(html).toContain("Delete");
   });
 });

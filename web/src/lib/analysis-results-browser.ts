@@ -9,6 +9,7 @@ type AnalysisResultManifest = {
   item_count?: unknown;
   recipes?: unknown;
   source?: unknown;
+  status?: unknown;
 };
 
 type AnalysisResultSource = {
@@ -51,6 +52,9 @@ export async function listAnalysisResults({
 
         const analysisResultId = String(manifest.analysis_result_id ?? "");
         if (!analysisResultId) {
+          return null;
+        }
+        if (manifest.status === "deleted") {
           return null;
         }
 

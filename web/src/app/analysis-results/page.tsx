@@ -46,7 +46,7 @@ export default async function AnalysisResultsPage() {
                   <th className="px-4 py-3 font-medium">Images</th>
                   <th className="px-4 py-3 font-medium">Status</th>
                   <th className="px-4 py-3 font-medium">Run</th>
-                  <th className="px-4 py-3 font-medium">Explorer</th>
+                  <th className="px-4 py-3 font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-800 bg-neutral-950">
@@ -72,18 +72,33 @@ export default async function AnalysisResultsPage() {
                       {result.runId}
                     </td>
                     <td className="px-4 py-4">
-                      {result.canOpenExplorer ? (
-                        <Link
-                          className="rounded-md border border-neutral-700 px-3 py-2 text-sm font-medium text-neutral-100 transition hover:border-neutral-500 hover:bg-neutral-900"
-                          href={result.explorerHref}
+                      <div className="flex items-center gap-2">
+                        {result.canOpenExplorer ? (
+                          <Link
+                            className="rounded-md border border-neutral-700 px-3 py-2 text-sm font-medium text-neutral-100 transition hover:border-neutral-500 hover:bg-neutral-900"
+                            href={result.explorerHref}
+                          >
+                            Open Explorer
+                          </Link>
+                        ) : (
+                          <span className="text-sm text-neutral-500">
+                            Unavailable
+                          </span>
+                        )}
+                        <form
+                          action={`/api/analysis-results/${encodeURIComponent(
+                            result.analysisResultId,
+                          )}`}
+                          method="post"
                         >
-                          Open Explorer
-                        </Link>
-                      ) : (
-                        <span className="text-sm text-neutral-500">
-                          Unavailable
-                        </span>
-                      )}
+                          <button
+                            className="rounded-md border border-red-950 px-3 py-2 text-sm font-medium text-red-300 transition hover:border-red-800 hover:bg-red-950/30"
+                            type="submit"
+                          >
+                            Delete
+                          </button>
+                        </form>
+                      </div>
                     </td>
                   </tr>
                 ))}
