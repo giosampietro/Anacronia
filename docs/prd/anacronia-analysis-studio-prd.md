@@ -2,6 +2,8 @@
 
 Date: June 12, 2026
 
+Updated: June 14, 2026
+
 Related ADRs:
 
 - [0023 - Version Analysis Results with provenance](../adr/0023-version-analysis-results-with-provenance.md)
@@ -44,7 +46,7 @@ The first implementation treats cross-Collection scope as first-class. One Colle
 
 Reusable per-image embeddings are stored separately as **Image Embedding Results**. Scope-level outputs such as FAISS indexes, UMAP layouts, HDBSCAN labels, cluster metadata, render caches, and viewer manifests are stored as immutable **Analysis Results** with an artifact manifest.
 
-The default durable result stays compact. A 32px atlas is generated with the analysis as a baseline render cache; sharper 64/96/128 atlases are generated on demand and can be evicted. Numeric/provenance artifacts remain durable; texture pages and higher-detail render caches are disposable unless explicitly retained.
+An Analysis Recipe owns the complete Explorer-ready artifact plan for its Analysis Result. For the default DINOv3 Explorer recipes, the Analysis Job should generate the numeric/provenance artifacts plus viewer manifest data, FAISS relation index, UMAP layout data, HDBSCAN cluster data, and 32px, 64px, and 96px atlas render caches during the analysis pass. 128px atlases are optional recipe configuration. The Latent Space Explorer consumes completed Analysis Results and must not generate, mutate, or repair analysis artifacts. It may keep temporary view state such as zoom, pan, selection, filters, thumbnail mode, and URL state.
 
 ## App Shell And Navigation
 
@@ -61,6 +63,45 @@ The rail switches where the user is in Anacronia. It should not trigger analysis
 The Latent Space Explorer stays inside the normal app shell by default, with the same Navigation Rail visible. It can still provide an immersive view through Focus Mode: pressing `f` hides the rail and surrounding UI chrome so the canvas can use the full viewport. Focus Mode is a temporary viewing state, not a separate Explorer architecture.
 
 Contextual entry points should remain conservative. Collection pages may link to relevant analyses, Analysis Results may open in Explorer, and the Explorer may return to its source Analysis Result. The product should avoid scattering generic analysis buttons until the Analysis Studio workflow is implemented and tested.
+
+## Analysis Studio Workspace UI
+
+Analysis Studio should mirror the dense operational rhythm of the Library / Collections App Space. It should not remain a standalone dark dashboard page.
+
+The global Navigation Rail remains the App Space switcher. Inside Analysis Studio, a Studio-local sidebar should provide:
+
+- `New Analysis`, equivalent to `New Collection` in the Collections workspace.
+- `Analysis Results`, listing completed or openable durable Analysis Results.
+- `Jobs`, listing running, failed, partial, or recent Analysis Jobs.
+- Optional filtering across results and jobs.
+- A compact runtime/status footer when useful.
+
+The main panel should change according to URL-addressable Studio state:
+
+- `overview`: neutral landing state with recent jobs, ready results, and storage/status summaries.
+- `new-analysis`: Analysis Scope picker, Analysis Recipe picker, resolved scope preview, and `Run Analysis`.
+- `selected-result`: Analysis Result dashboard with `Open Explorer` as the primary action.
+- `selected-job`: stage timeline, per-recipe status, failure details, and links to produced sibling Analysis Results.
+
+URL state should make these states shareable and reload-safe, for example `?mode=new-analysis`, a selected Analysis Result parameter, and a selected Analysis Job parameter. Analysis Studio should choose one canonical URL helper for parsing and href creation, define deterministic precedence when conflicting parameters are manually present, and render dedicated missing Result or missing Job states instead of silently falling back. Analysis Studio should not silently select the first Collection, first Result, or first Job.
+
+An Analysis Result sidebar item should use human-readable labels rather than raw recipe IDs. Example: `Bread / DINOv3 384 / 318 images / ready`. In tables and dashboards, use `Scope`, `Recipe`, `Images`, `Status`, and `Actions`; avoid using `Source` or `Run` as primary user-facing columns for Analysis Results.
+
+When an Analysis Result is selected, the main panel should show:
+
+- Header: result title, status, created date, and `Open Explorer`.
+- Scope: Collection or Collections, active image count, duplicates collapsed, removed images, newly added images not included in the result, and staleness status.
+- Recipe: user-facing label such as `DINOv3 384`, with model, preprocessing, vector kind, normalization, and provenance details available below.
+- Outputs: FAISS relation availability, UMAP layout, HDBSCAN clusters, KMeans if present, atlas levels, cache health, and viewer readiness.
+- Artifacts and storage: durable artifacts versus render cache, byte sizes, missing required artifacts, missing optional render cache artifacts, and export-readiness status.
+- Job provenance: Analysis Job ID, sibling results from the same multi-recipe job, stage summary, elapsed time, and failure information if relevant.
+- Actions: `Open Explorer`, `Run updated analysis` when new images make the result stale, and guarded `Delete Result`.
+
+When an Analysis Job is selected, the main panel should show the job as process/provenance, not as the durable object the user explores. Running jobs show stage progress. Failed jobs show failed stage, failed recipe, error detail, and a retry/new-analysis path. Partial jobs show completed sibling Analysis Results explicitly by recipe; they must not expose a generic job-level `Open Explorer` action that silently opens the first result.
+
+The Analysis Studio UI should be fully shadcn-compliant and should reuse the same shell primitives as the Collections workspace. Use semantic tokens and shadcn primitives for layout, forms, lists, status, empty states, loading, and destructive confirmations. Do not custom-build raw cards, raw tables, custom status pills, or immediate destructive buttons where shadcn primitives already exist.
+
+Starting an Analysis Job should redirect back into the selected-job state for the newly created Analysis Job. Opening the Explorer remains a separate action from an Analysis Result and should continue to target the selected Analysis Result.
 
 ## User Stories
 
@@ -80,7 +121,7 @@ Contextual entry points should remain conservative. Collection pages may link to
 14. As an Anacronia user, I want Run updated analysis to copy the previous analysis choices by default, so that updating a scope is simple.
 15. As an Anacronia user, I want Run updated analysis to reuse existing Image Embedding Results, so that adding new images does not force all embeddings to be recomputed.
 16. As an Anacronia user, I want each Analysis Job to run in the background, so that I can navigate away while embeddings and map outputs are generated.
-17. As an Anacronia user, I want to see the current analysis stage, so that I know whether the job is embedding, building FAISS, running UMAP, clustering, or generating the baseline atlas.
+17. As an Anacronia user, I want to see the current analysis stage, so that I know whether the job is embedding, building FAISS, running UMAP, clustering, or generating Explorer atlas artifacts.
 18. As an Anacronia user, I want per-recipe progress, so that multi-recipe jobs are understandable.
 19. As an Anacronia user, I want elapsed time and approximate output size where possible, so that I can understand performance and disk cost.
 20. As an Anacronia user, I want failures to be reported per stage, so that one failure does not make the entire system opaque.
@@ -99,9 +140,9 @@ Contextual entry points should remain conservative. Collection pages may link to
 33. As an Anacronia user, I want cluster controls to present clusters as lenses, so that I do not mistake them for ground truth.
 34. As an Anacronia user, I want a muted note about patch-token analysis, so that I remember this important future direction when generating embeddings.
 35. As an Anacronia user, I want patch-token analysis not to be generated by default yet, so that the first integrated workflow stays manageable.
-36. As an Anacronia user, I want the baseline 32px atlas generated with the analysis, so that opening the Explorer can show immediate low-detail visual context.
-37. As an Anacronia user, I want higher-detail atlases generated on demand, so that daily experiments do not create huge render caches by default.
-38. As an Anacronia user, I want the Explorer to make newly generated detail atlases available without a restart, so that the map improves while I work.
+36. As an Anacronia user, I want default DINOv3 recipes to generate 32px, 64px, and 96px atlases with the Analysis Job, so that opening the Explorer shows useful visual context immediately.
+37. As an Anacronia user, I want 128px atlases to be optional recipe configuration, so that sharper maps are an explicit storage and runtime choice.
+38. As an Anacronia user, I want the Explorer to use available atlas artifacts without generating missing required artifacts itself, so that computation remains owned by Analysis Studio.
 39. As an Anacronia user, I want render caches to be disposable, so that I can keep many Analysis Results without keeping every texture level forever.
 40. As an Anacronia user, I want 32px baseline caches preserved by default, so that old Analysis Results still open with visual context.
 41. As an Anacronia user, I want higher-detail render caches evicted before durable analysis data, so that storage cleanup does not destroy research outputs.
@@ -136,6 +177,28 @@ Contextual entry points should remain conservative. Collection pages may link to
 70. As a developer, I want Artifact Store access to be a deep module, so that local filesystem storage can later be replaced by R2/S3 without rewriting analysis algorithms.
 71. As a developer, I want render-cache policy to be a deep module, so that cache cleanup can evolve without touching Explorer logic.
 72. As a developer, I want Explorer data contracts to distinguish durable analysis data from disposable render cache, so that viewer performance does not dictate storage truth.
+73. As an Anacronia user, I want Analysis Studio to use the same sidebar rhythm as Collections, so that analysis feels like a normal workspace rather than a separate dashboard.
+74. As an Anacronia user, I want a `New Analysis` sidebar action, so that starting analysis feels parallel to starting a New Collection.
+75. As an Anacronia user, I want the Analysis Studio sidebar to list Analysis Results, so that completed analysis outputs are easy to reopen.
+76. As an Anacronia user, I want the Analysis Studio sidebar to separate Jobs from Results, so that process history does not blur with durable outputs.
+77. As an Anacronia user, I want Analysis Result sidebar labels to show scope, recipe, image count, and status, so that I can choose the right result without decoding raw IDs.
+78. As an Anacronia user, I want clicking an Analysis Result to show a dashboard in the main panel, so that I can inspect what was analyzed before opening the visual map.
+79. As an Anacronia user, I want the selected Analysis Result dashboard to show an `Open Explorer` action, so that I can move from audit/status into visual exploration.
+80. As an Anacronia user, I want the selected Analysis Result dashboard to show scope, recipe, outputs, artifacts, storage, and job provenance, so that the result is understandable and trustworthy.
+81. As an Anacronia user, I want `overview`, `new-analysis`, `selected-result`, and `selected-job` states to be URL-addressable, so that reloading or sharing an Analysis Studio view preserves context.
+82. As an Anacronia user, I want the New Analysis flow to include scope selection, recipe selection, and a resolved scope review, so that I know what will be analyzed before running it.
+83. As an Anacronia user, I want the resolved scope review to show active images and duplicates collapsed, so that multi-Collection analysis is understandable before computation starts.
+84. As an Anacronia user, I want job details to show stage timeline and per-recipe failures, so that I can diagnose what happened without opening the Explorer.
+85. As an Anacronia user, I want partial multi-recipe jobs to show completed sibling Results explicitly, so that I can open successful outputs even when another recipe failed.
+86. As an Anacronia user, I want stale Analysis Results to remain openable, so that historical maps are still useful even after Collection membership changes.
+87. As an Anacronia user, I want `Run updated analysis` to appear only when new images exist, so that I do not recompute just because old images were removed.
+88. As an Anacronia user, I want default DINOv3 Analysis Recipes to produce 32px, 64px, and 96px atlas levels during analysis, so that the Explorer opens with useful visual context without generating data itself.
+89. As an Anacronia user, I want 128px atlas generation to be optional recipe configuration, so that I can opt into sharper maps when the storage and runtime cost is worthwhile.
+90. As an Anacronia user, I want the Explorer to be read-only over Analysis Results, so that visual exploration cannot accidentally mutate analysis data.
+91. As an Anacronia user, I want Analysis Studio to use shadcn UI primitives consistently, so that it shares the same UI quality and behavior as Collections.
+92. As a developer, I want Analysis Recipe to expose an executable stage plan, so that stage order, expected artifacts, and Explorer-ready outputs are tested through one interface.
+93. As a developer, I want Analysis Studio to consume one read model for Collections, Jobs, Results, status, and artifacts, so that the UI does not stitch together inconsistent local and backend sources.
+94. As a developer, I want the Analysis Studio shell and panels split into testable modules, so that UI state and shadcn composition can evolve without rebuilding the whole page.
 
 ## Implementation Decisions
 
@@ -165,15 +228,33 @@ Contextual entry points should remain conservative. Collection pages may link to
 - KMeans remains optional and secondary for legacy/historical comparison.
 - HDBSCAN is the primary cluster model.
 - HDBSCAN unassigned/noise points are surfaced as Unclustered.
-- Analysis Studio should show background job stages: embedding, FAISS, UMAP, HDBSCAN, optional KMeans, and baseline atlas generation.
+- Analysis Studio should show background job stages: embedding, FAISS, UMAP, HDBSCAN, optional KMeans, and Explorer atlas generation.
 - Analysis Studio should expose job progress without blocking navigation.
+- Analysis Studio should be a workspace with a Studio-local sidebar and main panel, mirroring the Collections workspace. It should not be a standalone dashboard-style page.
+- The sidebar primary action is `New Analysis`. The sidebar should list durable Analysis Results separately from Analysis Jobs.
+- Analysis Studio state should be URL-addressable as `overview`, `new-analysis`, `selected-result`, and `selected-job`.
+- Selecting an Analysis Result opens a result dashboard in the main panel. The primary action from that dashboard is `Open Explorer`.
+- Selecting an Analysis Job opens a process dashboard in the main panel. Jobs show progress, failures, and links to produced sibling Results, but Jobs are not the durable objects the Explorer opens.
+- Analysis Result labels should be human-readable and should prioritize Analysis Scope and Analysis Recipe labels over raw IDs.
+- The Analysis Studio UI should be fully shadcn-compliant. It should use the existing shadcn shell, sidebar, card, field, select, checkbox, toggle, button, badge, table, empty, alert, progress, spinner, and alert-dialog primitives rather than raw custom markup.
+- The Analysis Studio UI should use semantic shadcn tokens such as background, foreground, border, card, and muted foreground. It should not recreate the current custom dark dashboard palette with one-off neutral color classes.
+- The Analysis Studio UI should follow the installed Base UI shadcn composition style used elsewhere in the app, including local `render={...}` composition where applicable rather than assuming Radix-style `asChild`.
+- New Analysis should use step-card composition parallel to New Collection: scope selection, recipe selection, and resolved scope review.
+- Scope selection should support one Collection and multiple Collections. Multi-Collection selection should use an appropriate shadcn-compliant multi-select or combobox pattern.
+- Recipe selection should remain checkbox-based because one Analysis Job can select multiple Analysis Recipes and produce sibling Analysis Results.
+- Starting an Analysis Job should return the user to the selected-job state for the newly created job.
+- Missing selected Analysis Result and missing selected Analysis Job states should be explicit empty/error states.
+- Analysis Studio needs one coherent read model for Collections, resolved scope summaries, Analysis Recipes, Analysis Jobs, Analysis Results, artifact health, storage size, staleness, and Explorer links.
+- The Analysis Studio read model should not expose local absolute manifest paths to the browser-facing UI. It should expose stable IDs, artifact keys, labels, counts, status, and actions.
 - The Analysis Result manifest is the source of truth for opening an Explorer view or exporting a hosted viewer package.
 - The manifest should record stable result ID, scope snapshot ID, recipe ID, recipe parameters, model identity, model revision when available, preprocessing settings, embedding dimension, package versions, creation time, status, item count, output counts, artifact list, artifact sizes, optional checksums, and provenance notes.
 - Artifact records should include logical role, stable key, media/content type, byte size, optional checksum, retention class, and whether the artifact is durable data or disposable render cache.
 - Artifact keys should be stable and cloud-compatible. They must not depend on incidental local absolute paths.
 - The first Artifact Store implementation can be the local filesystem. Analysis and viewer code should access artifacts through logical keys and metadata so R2/S3 can be introduced later.
-- 32px atlas generation is part of the default analysis pass as baseline render cache.
-- Higher-detail atlases such as 64px, 96px, and 128px are generated on demand from the Explorer or Analysis Studio.
+- Analysis Recipe should expose an executable stage plan. Stage order, expected artifact roles, recipe parameters, and Explorer-ready artifact requirements should live behind the recipe interface instead of being duplicated across job orchestration, stage dispatch, and UI assumptions.
+- For default DINOv3 Explorer recipes, 32px, 64px, and 96px atlas generation are part of the Analysis Job output plan.
+- 128px atlas generation is optional recipe configuration.
+- The Explorer is read-only over completed Analysis Results. It may request artifacts and relation data, but it must not generate, mutate, or repair Analysis Result artifacts.
 - Render caches are disposable and can be evicted according to storage policy.
 - Durable analysis truth is numeric/provenance data, not generated viewer JSON or texture pages.
 - The Explorer is a visual App Space for existing Analysis Results and should use the same shell as Library and Analysis Studio by default.
@@ -192,6 +273,18 @@ Contextual entry points should remain conservative. Collection pages may link to
 - Patch-token analysis should be treated as a separate future analysis mode because it changes storage, FAISS scale, and UI from image-level points to region-level features.
 - The existing latent-map prototype work should be consolidated into these domain concepts before building additional ad hoc viewer features.
 
+## Module Deepening Plan
+
+The implementation should prefer deep modules with small, stable interfaces over page-level wiring or duplicated manifest/path logic.
+
+- **Executable Analysis Recipe Stage Plan**: the Analysis Recipe interface should expose canonical stage IDs, stage order, recipe-specific parameters, expected artifact roles, retention classes, and Explorer-ready artifact requirements. This should reconcile current drift between recipe `downstream_stages` vocabulary and Analysis Job stage names.
+- **Analysis Result Registry**: a backend module should own registering, listing, loading, summarizing, deleting, and checking Analysis Results. It should be the source of truth for result manifests, sibling grouping, status, storage totals, staleness summaries, Explorer readiness, and Project Viewer Export readiness.
+- **Artifact Store**: a backend module should own stable artifact keys, key validation, local filesystem reads/writes, size/checksum accounting where required, retention classes, deletion plans, and future object-storage adapter compatibility. Browser-facing payloads should not need local absolute paths.
+- **Analysis Studio Read Model**: a read model should aggregate Collection choices, resolved scope summaries, Analysis Recipe choices, Analysis Job summaries, Analysis Result cards, artifact health, storage size, staleness, and Explorer links for the shadcn UI. Listing or opening Analysis Studio should not trigger computation.
+- **Analysis Studio Shell**: the UI should be split into a Studio shell, Studio sidebar, New Analysis flow, selected Result dashboard, selected Job dashboard, status summary, Results list, Jobs list, and guarded actions. The page route should load data and compose these modules rather than owning all UI behavior directly.
+- **Analysis Job Runtime**: a later module should own enqueueing, processing, status polling, stage progress persistence, cancellation/stop behavior, failure recording, restart behavior, and per-recipe partial failures. Stage runners should execute stages; they should not become the job runtime.
+- **Project Viewer Export Adapter**: a later adapter should package a Project Viewer Export from an Analysis Result through the Analysis Result Registry and Artifact Store. It should not package arbitrary run folders.
+
 ## Manifest And Artifact Contract
 
 The manifest is the durable contract between local analysis, the Explorer, and future hosted viewer export. It should be JSON-serializable and avoid local machine assumptions.
@@ -204,6 +297,8 @@ Required manifest groups:
 - Provenance: Anacronia version or git revision when available, Python/package versions for analysis-critical libraries, platform notes, random seeds, and warnings.
 - Artifacts: stable artifact keys with role, content type, byte size, optional checksum, retention class, durable/cache classification, and required/optional status.
 - Viewer: layout artifact key, cluster result keys, atlas page metadata, thumbnail/detail image roles, item display dimensions, and URL-state defaults.
+- Explorer-ready artifacts: which atlas levels were generated, which atlas levels are required for default opening, which optional atlas levels are available, and whether relation lookup is available.
+- UI summary: scope label, recipe label, status, item count, artifact size totals, staleness summary, storage summary, export readiness, and primary actions needed by the Analysis Result dashboard.
 - Staleness: source snapshot counts, current active/missing/new counts when evaluated, and whether the result can be updated by copying prior settings.
 - Export safety: whether the manifest is safe for Project Viewer Export, whether originals are included, whether local paths were stripped, and validation status.
 
@@ -211,7 +306,9 @@ Required manifest groups:
 
 - Deleting an Analysis Result deletes its scope-level artifacts and render caches, but does not delete source Image Assets, permanent derivatives, raw provider records, or reusable Image Embedding Results by default.
 - Unused Image Embedding Results require a separate cleanup operation because they may be expensive to recompute.
-- Higher-detail atlases and other render caches are evicted before durable numeric/provenance artifacts.
+- Render caches, including atlas levels, are evicted before durable numeric/provenance artifacts.
+- Optional 128px atlas render caches should be evicted before default 32px, 64px, and 96px atlas render caches.
+- Evicting render caches does not authorize the Explorer to regenerate them. Missing optional render caches should be reported; missing required Explorer artifacts should make the affected view or control unavailable until a new Analysis Job or explicit cache-generation job produces them.
 - Project Viewer Export packages are outputs derived from Analysis Results. Deleting a local Analysis Result should not silently delete an already exported or hosted package without an explicit project retention rule.
 - Hosted viewer retention is governed by ADR-0026 and the concierge hosted viewer PRD. The local Analysis Studio PRD only prepares the data contract.
 
@@ -229,10 +326,14 @@ Required manifest groups:
 - Analysis Scope resolution needs focused tests for one Collection, multiple Collections, duplicate Image Assets, contributing Collection metadata, and snapshot immutability.
 - Staleness detection needs tests for removed images, added images, and unchanged scopes.
 - Analysis Recipe registration needs tests for default DINOv3 384 selection, optional DINOv3 256/512, multiple selected recipes, and future recipe extensibility.
+- Executable Analysis Recipe stage-plan tests should prove that default DINOv3 recipes declare FAISS, UMAP, HDBSCAN, required Explorer artifacts, and 32px/64px/96px atlas outputs, with 128px only when selected by recipe configuration.
+- Stage-plan tests should prove canonical stage IDs, artifact role declarations, retention declarations, unsafe artifact rejection, and future SigLIP2/fusion extensibility.
 - Analysis Job orchestration needs tests for stage ordering, progress states, per-recipe outputs, reuse of existing embeddings, and missing-embedding computation.
 - Analysis Result creation needs tests for immutability, provenance, recipe parameters, scope snapshot membership, sibling result grouping, manifest completeness, and artifact accounting.
 - Artifact Store tests should prove local filesystem artifacts can be written, read, listed, checksummed where required, deleted by key, and addressed without leaking absolute paths into public payloads.
-- Render-cache policy needs tests for 32px baseline cache generation, higher-detail on-demand cache creation, and eviction order.
+- Analysis Result Registry tests should prove list/load/register/delete behavior, storage accounting, staleness summaries, sibling grouping, Explorer readiness, deletion retention classes, and reusable embedding preservation.
+- Analysis Studio Read Model tests should prove listing does not compute, Collection choices and recipe choices are complete, result cards are grouped correctly, stale/update state is correct, and update defaults copy prior choices.
+- Render-cache policy needs tests for default 32px/64px/96px atlas generation, optional 128px atlas generation, missing optional cache reporting, missing required artifact handling, and eviction order.
 - Deletion tests must prove deleting an Analysis Result does not delete reusable Image Embedding Results by default.
 - Project Viewer Export tests should prove exports include required viewer artifacts, exclude local paths and originals by default, validate independently, and remain package-relative.
 - Explorer data-contract tests should prove that durable result metadata and disposable render cache metadata are distinct.
@@ -241,7 +342,16 @@ Required manifest groups:
 - FAISS relation lookup tests should prove that removed images are filtered and new images are not included in old results.
 - HDBSCAN tests should prove cluster labels and Unclustered/noise handling are stable and user-facing.
 - Analysis Studio component tests should cover scope selection, recipe selection, job dashboard states, stale status, and Run updated analysis defaults.
+- Analysis Studio shell tests should cover the Studio-local sidebar, `New Analysis`, Analysis Results list, Jobs list, selected-result dashboard, selected-job dashboard, and URL-addressable states.
+- Analysis Studio UI tests should verify that the selected Analysis Result dashboard exposes `Open Explorer` and shows scope, recipe, outputs, artifact health, storage, staleness, and job provenance.
+- Analysis Studio URL helper tests should cover overview, New Analysis, selected Result, selected Job, filter text, missing IDs, and conflicting selected Result/Job parameters.
+- New Analysis form tests should cover default DINOv3 384 selection, multi-Collection scope serialization, disabled submit states, validation messaging, and the job-create redirect into selected-job state.
+- Analysis Job view tests should cover running, ready, failed, partial-failed, and multi-result jobs.
+- Analysis Job Runtime tests, when that module is introduced, should cover async creation, persisted stage progress, per-recipe partial failure, cancellation/stop, restart/idempotency, and disk/error handling.
+- Analysis Result dashboard tests should cover ready, stale, incomplete, failed, deleted, missing required artifact, and missing optional render-cache states.
+- Analysis Studio shadcn composition should be tested at the behavior level. Tests should verify accessible controls, labels, states, and actions rather than specific internal class names.
 - Browser checks should use real run data and verify that Analysis Results open in the Latent Space Explorer, method state is visible, thumbnails use generated caches, and console output stays clean.
+- Project Viewer Export tests, when that adapter is introduced, should prove package-relative manifests, required viewer artifacts, exclusion of originals/raw records/secrets, checksum validation, and independent viewer-load smoke checks.
 - Existing latent-map viewer tests, run-data tests, curation tests, and User Library server-side query tests are the closest prior art for this work.
 
 ## Out Of Scope
@@ -257,7 +367,9 @@ Required manifest groups:
 - Semantic text search over embeddings.
 - Exposing low-level runtime controls such as batch size, MPS/PyTorch/Core ML backend choice, padding color, or raw model backbone selection in the first user-facing Analysis Studio.
 - Recomputing existing Analysis Results in place.
-- Automatically generating all high-detail atlas levels for every Analysis Result.
+- Automatically generating non-recipe-selected high-detail atlas levels for every Analysis Result.
+- Allowing the Latent Space Explorer to generate, mutate, or repair Analysis Result artifacts.
+- Treating Analysis Jobs as the primary object opened by the Explorer.
 - Hosted, multi-user, sync, or collaboration behavior.
 - Decorative 3D metaphors for the Explorer.
 - Replacing the persistent Navigation Rail with page-level tabs or a separate Explorer-only shell.
