@@ -64,6 +64,7 @@ class ServicePlan:
     cwd: Path
     environment: dict[str, str]
     setup_command: Optional[list[str]] = None
+    required: bool = True
 
 
 @dataclass(frozen=True)
@@ -165,6 +166,7 @@ def build_startup_plan(
             command=[sys.executable, "-m", "anacronia.worker"],
             cwd=resolved_project_root,
             environment=service_environment,
+            required=False,
         ),
         ServicePlan(
             name="Next.js UI",
@@ -220,7 +222,10 @@ def run_startup_plan(plan: StartupPlan) -> None:
         if plan.open_browser:
             webbrowser.open(plan.ui_url)
 
-        while all(process.poll() is None for process in processes):
+        required_processes = [
+            process for process, service in zip(processes, plan.services, strict=True) if service.required
+        ]
+        while all(process.poll() is None for process in required_processes):
             time.sleep(0.25)
     except KeyboardInterrupt:
         print("Stopping Anacronia...", flush=True)

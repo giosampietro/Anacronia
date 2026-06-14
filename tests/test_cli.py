@@ -68,6 +68,7 @@ def test_startup_plan_includes_backend_worker_and_ui_services(tmp_path):
         "Python worker",
         "Next.js UI",
     ]
+    assert [service.required for service in plan.services] == [True, False, True]
     assert "anacronia.api:create_app" in plan.services[0].command
     assert "--factory" in plan.services[0].command
     assert plan.services[0].command[-5:] == [
