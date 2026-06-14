@@ -1,6 +1,8 @@
 import json
 from datetime import datetime, timezone
 
+import pytest
+
 from anacronia.latent_map_result_exports import export_latent_map_results
 from anacronia.latent_map_runs import initialize_latent_map_run
 
@@ -171,6 +173,39 @@ def test_exports_duplicate_diagnostics_and_selected_result_provenance(tmp_path):
     assert "Duplicate Diagnostics" in (run.run_dir / "report.md").read_text(
         encoding="utf-8"
     )
+
+
+def test_result_export_detects_pinned_vector_row_order_mismatch(tmp_path):
+    run = create_result_run(tmp_path)
+    (run.run_dir / "indexes" / "dinov3_vits_256_faiss_id_map.json").write_text(
+        json.dumps({"ids": ["img-b", "img-a", "img-a-copy"]}),
+        encoding="utf-8",
+    )
+    (run.run_dir / "analysis-result.json").write_text(
+        json.dumps(
+            {
+                "analysis_result_id": f"latent-map-{run.run_id}",
+                "recipes": [
+                    {
+                        "recipe_name": "dinov3_vits_256",
+                        "artifact_keys": {
+                            "vector_id_map": "indexes/dinov3_vits_256_faiss_id_map.json",
+                        },
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Pinned Analysis Result row order mismatch for layout umap_n15_mindist0p05_seed42.",
+    ):
+        export_latent_map_results(
+            run_dir=run.run_dir,
+            recipe_name="dinov3_vits_256",
+        )
 
 
 def test_exports_hdbscan_group_selections_with_membership(tmp_path):

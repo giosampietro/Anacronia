@@ -92,6 +92,17 @@ def create_legacy_latent_map_run(tmp_path):
         json.dumps({"run_id": run.run_id}),
         encoding="utf-8",
     )
+    (run.run_dir / "viewer" / "atlases" / "32px").mkdir(parents=True)
+    (run.run_dir / "viewer" / "atlases" / "32px" / "atlas-manifest.json").write_text(
+        json.dumps(
+            {
+                "asset_kind": "latent-map-thumbnail-atlas",
+                "page_count": 0,
+                "tile_size": 32,
+            }
+        ),
+        encoding="utf-8",
+    )
 
     return run
 
@@ -137,12 +148,41 @@ def test_wraps_legacy_run_as_path_clean_analysis_result_manifest(tmp_path):
                 "indexes": 3,
                 "layouts": 1,
             },
+            "artifact_keys": {
+                "baseline_atlas_manifest": "viewer/atlases/32px/atlas-manifest.json",
+                "clusters": [
+                    {
+                        "cluster_id": "hdbscan_detail_mcs15_ms5_leaf",
+                        "key": "clusters/dinov3_vits_256_hdbscan_detail_mcs15_ms5_leaf.json",
+                    }
+                ],
+                "embedding_vectors": "embeddings/dinov3_vits_256_embeddings.npy",
+                "faiss_id_map": "indexes/dinov3_vits_256_faiss_id_map.json",
+                "faiss_index": "indexes/dinov3_vits_256_flat_ip.faiss",
+                "image_manifest": "manifest.jsonl",
+                "layouts": [
+                    {
+                        "key": "layouts/dinov3_vits_256_umap_n15_seed42.json",
+                        "layout_id": "umap_n15_seed42",
+                    }
+                ],
+                "thumbnail_atlas_manifests": {
+                    "32": "viewer/atlases/32px/atlas-manifest.json"
+                },
+                "vector_id_map": "indexes/dinov3_vits_256_faiss_id_map.json",
+                "viewer_data": "viewer/map-data.json",
+            },
+            "vector_mapping": {
+                "image_id_order_format": "faiss-id-map-json",
+                "image_id_order_key": "indexes/dinov3_vits_256_faiss_id_map.json",
+            },
         }
     ]
     assert "config.json" in artifact_keys
     assert "manifest.jsonl" in artifact_keys
     assert "layouts/dinov3_vits_256_umap_n15_seed42.json" in artifact_keys
     assert "clusters/dinov3_vits_256_hdbscan_detail_mcs15_ms5_leaf.json" in artifact_keys
+    assert "viewer/atlases/32px/atlas-manifest.json" in artifact_keys
     assert all(artifact["byte_size"] > 0 for artifact in manifest["artifacts"])
     assert str(run.source_folder) not in serialized
     assert "source_path" not in serialized

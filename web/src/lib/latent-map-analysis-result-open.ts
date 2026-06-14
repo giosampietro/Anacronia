@@ -31,12 +31,35 @@ export async function loadLatentMapAnalysisResultViewerData({
     throw new Error(`Analysis Result not found: ${analysisResultId}`);
   }
 
+  const pinnedRecipeArtifacts = await store.loadPinnedLatentMapRecipeArtifacts({
+    analysisResultId,
+    selectedRecipeName,
+  });
+
   return {
     rawData: await loadLatentMapRunExportedViewerData({
+      pinnedArtifacts: pinnedRecipeArtifacts
+        ? {
+            ...(pinnedRecipeArtifacts.imageManifestKey
+              ? { imageManifestKey: pinnedRecipeArtifacts.imageManifestKey }
+              : {}),
+            clusterKeys: pinnedRecipeArtifacts.clusterArtifacts.map(
+              (artifact) => artifact.key,
+            ),
+            layoutKeys: pinnedRecipeArtifacts.layoutArtifacts.map(
+              (artifact) => artifact.key,
+            ),
+            thumbnailAtlasManifestPaths:
+              pinnedRecipeArtifacts.thumbnailAtlasManifestPaths,
+            ...(pinnedRecipeArtifacts.vectorIdMapKey
+              ? { vectorIdMapKey: pinnedRecipeArtifacts.vectorIdMapKey }
+              : {}),
+          }
+        : null,
       runDir,
       selectedClusterId,
       selectedLayoutId,
-      selectedRecipeName,
+      selectedRecipeName: pinnedRecipeArtifacts?.recipeName ?? selectedRecipeName,
     }),
     runDir,
     status: await store.loadStatus(analysisResultId),

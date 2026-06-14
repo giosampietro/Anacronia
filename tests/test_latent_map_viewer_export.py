@@ -2,6 +2,7 @@ import json
 from datetime import datetime, timezone
 
 from PIL import Image
+import pytest
 
 from anacronia.latent_map_atlas import generate_latent_map_thumbnail_atlas
 from anacronia.latent_map_runs import initialize_latent_map_run
@@ -166,6 +167,39 @@ def test_exports_viewer_data_with_generated_atlas_manifest_path(tmp_path):
     assert data["thumbnail_atlas_manifest_path"] == (
         "viewer/atlases/32px/atlas-manifest.json"
     )
+
+
+def test_viewer_export_detects_pinned_vector_row_order_mismatch(tmp_path):
+    run = create_viewer_run(tmp_path)
+    (run.run_dir / "indexes" / "dinov3_vits_256_faiss_id_map.json").write_text(
+        json.dumps({"ids": ["img-b", "img-a"]}),
+        encoding="utf-8",
+    )
+    (run.run_dir / "analysis-result.json").write_text(
+        json.dumps(
+            {
+                "analysis_result_id": f"latent-map-{run.run_id}",
+                "recipes": [
+                    {
+                        "recipe_name": "dinov3_vits_256",
+                        "artifact_keys": {
+                            "vector_id_map": "indexes/dinov3_vits_256_faiss_id_map.json",
+                        },
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Pinned Analysis Result row order mismatch for layout umap_n4_mindist0p05_seed42.",
+    ):
+        export_viewer_data(
+            run_dir=run.run_dir,
+            recipe_name="dinov3_vits_256",
+        )
 
 
 def test_exports_selected_comparison_layout_and_cluster_metadata(tmp_path):

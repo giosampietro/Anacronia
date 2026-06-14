@@ -22,6 +22,7 @@ type AnalysisResultSource = {
 };
 
 type AnalysisResultRecipe = {
+  artifact_keys?: unknown;
   recipe_name?: unknown;
 };
 
@@ -66,6 +67,23 @@ export type AnalysisResultDeletionSummary = AnalysisResultDeletionPlan & {
   deletedAt: string;
   deletedDurableArtifactKeys: string[];
   deletedRenderCacheKeys: string[];
+};
+
+export type PinnedLatentMapArtifactOutput = {
+  id: string;
+  key: string;
+};
+
+export type PinnedLatentMapRecipeArtifacts = {
+  baselineAtlasManifestKey?: string;
+  clusterArtifacts: PinnedLatentMapArtifactOutput[];
+  faissIdMapKey?: string;
+  faissIndexKey?: string;
+  imageManifestKey?: string;
+  layoutArtifacts: PinnedLatentMapArtifactOutput[];
+  recipeName: string;
+  thumbnailAtlasManifestPaths: Record<string, string>;
+  vectorIdMapKey?: string;
 };
 
 export class AnalysisResultStoreNotFoundError extends Error {
@@ -204,6 +222,28 @@ export function createLocalAnalysisResultStore({
       return loadStatusFromRunDir({
         manifest: found.manifest,
         runDir: found.runDir,
+      });
+    },
+
+    async loadPinnedLatentMapRecipeArtifacts({
+      analysisResultId,
+      selectedRecipeName,
+    }: {
+      analysisResultId: string;
+      selectedRecipeName?: string | null;
+    }): Promise<PinnedLatentMapRecipeArtifacts | null> {
+      const found = await findAnalysisResultManifest({
+        analysisResultId,
+        runsRoot: resolvedRunsRoot,
+      });
+
+      if (!found) {
+        throw new AnalysisResultStoreNotFoundError(analysisResultId);
+      }
+
+      return getPinnedLatentMapRecipeArtifacts({
+        manifest: found.manifest,
+        selectedRecipeName,
       });
     },
 
@@ -548,6 +588,166 @@ function getManifestArtifacts(
           typeof (artifact as AnalysisResultArtifact).key === "string",
       ),
   );
+}
+
+function getPinnedLatentMapRecipeArtifacts({
+  manifest,
+  selectedRecipeName,
+}: {
+  manifest: AnalysisResultManifest;
+  selectedRecipeName?: string | null;
+}): PinnedLatentMapRecipeArtifacts | null {
+  const recipes = getManifestRecipes(manifest).filter((recipe) =>
+    Boolean(normalizePinnedArtifactKeys(recipe.artifact_keys)),
+  );
+  const recipe =
+    recipes.find(
+      (candidate) =>
+        selectedRecipeName &&
+        String(candidate.recipe_name ?? "") === selectedRecipeName,
+    ) ?? recipes[0];
+
+  if (!recipe) {
+    return null;
+  }
+
+  const recipeName = String(recipe.recipe_name ?? "");
+  const artifactKeys = normalizePinnedArtifactKeys(recipe.artifact_keys);
+
+  if (!artifactKeys || !recipeName) {
+    return null;
+  }
+
+  return {
+    ...(artifactKeys.baselineAtlasManifestKey
+      ? { baselineAtlasManifestKey: artifactKeys.baselineAtlasManifestKey }
+      : {}),
+    clusterArtifacts: artifactKeys.clusterArtifacts,
+    ...(artifactKeys.faissIdMapKey
+      ? { faissIdMapKey: artifactKeys.faissIdMapKey }
+      : {}),
+    ...(artifactKeys.faissIndexKey
+      ? { faissIndexKey: artifactKeys.faissIndexKey }
+      : {}),
+    ...(artifactKeys.imageManifestKey
+      ? { imageManifestKey: artifactKeys.imageManifestKey }
+      : {}),
+    layoutArtifacts: artifactKeys.layoutArtifacts,
+    recipeName,
+    thumbnailAtlasManifestPaths: artifactKeys.thumbnailAtlasManifestPaths,
+    ...(artifactKeys.vectorIdMapKey
+      ? { vectorIdMapKey: artifactKeys.vectorIdMapKey }
+      : {}),
+  };
+}
+
+function getManifestRecipes(
+  manifest: AnalysisResultManifest,
+): AnalysisResultRecipe[] {
+  if (!Array.isArray(manifest.recipes)) {
+    return [];
+  }
+
+  return manifest.recipes.filter(
+    (recipe): recipe is AnalysisResultRecipe =>
+      Boolean(recipe && typeof recipe === "object" && !Array.isArray(recipe)),
+  );
+}
+
+function normalizePinnedArtifactKeys(value: unknown): {
+  baselineAtlasManifestKey?: string;
+  clusterArtifacts: PinnedLatentMapArtifactOutput[];
+  faissIdMapKey?: string;
+  faissIndexKey?: string;
+  imageManifestKey?: string;
+  layoutArtifacts: PinnedLatentMapArtifactOutput[];
+  thumbnailAtlasManifestPaths: Record<string, string>;
+  vectorIdMapKey?: string;
+} | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const imageManifestKey = optionalSafeKey(record.image_manifest);
+  const baselineAtlasManifestKey = optionalSafeKey(record.baseline_atlas_manifest);
+  const faissIdMapKey = optionalSafeKey(record.faiss_id_map);
+  const faissIndexKey = optionalSafeKey(record.faiss_index);
+  const vectorIdMapKey = optionalSafeKey(record.vector_id_map);
+  const thumbnailAtlasManifestPaths = normalizeThumbnailAtlasManifestPaths(
+    record.thumbnail_atlas_manifests,
+  );
+  const layoutArtifacts = normalizePinnedOutputs({
+    idField: "layout_id",
+    value: record.layouts,
+  });
+  const clusterArtifacts = normalizePinnedOutputs({
+    idField: "cluster_id",
+    value: record.clusters,
+  });
+
+  return {
+    ...(baselineAtlasManifestKey ? { baselineAtlasManifestKey } : {}),
+    clusterArtifacts,
+    ...(imageManifestKey ? { imageManifestKey } : {}),
+    ...(faissIdMapKey ? { faissIdMapKey } : {}),
+    ...(faissIndexKey ? { faissIndexKey } : {}),
+    layoutArtifacts,
+    thumbnailAtlasManifestPaths,
+    ...(vectorIdMapKey ? { vectorIdMapKey } : {}),
+  };
+}
+
+function normalizePinnedOutputs({
+  idField,
+  value,
+}: {
+  idField: "cluster_id" | "layout_id";
+  value: unknown;
+}): PinnedLatentMapArtifactOutput[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter((entry): entry is Record<string, unknown> =>
+      Boolean(entry && typeof entry === "object" && !Array.isArray(entry)),
+    )
+    .map((entry) => {
+      const key = optionalSafeKey(entry.key);
+      const id = String(entry[idField] ?? "");
+
+      return key && id ? { id, key } : null;
+    })
+    .filter((entry): entry is PinnedLatentMapArtifactOutput => entry !== null);
+}
+
+function normalizeThumbnailAtlasManifestPaths(
+  value: unknown,
+): Record<string, string> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+
+  const paths: Record<string, string> = {};
+  for (const [tileSize, rawKey] of Object.entries(value)) {
+    const key = optionalSafeKey(rawKey);
+
+    if (/^\d+$/.test(tileSize) && key) {
+      paths[tileSize] = key;
+    }
+  }
+
+  return paths;
+}
+
+function optionalSafeKey(value: unknown): string | undefined {
+  if (typeof value !== "string" || value.length === 0) {
+    return undefined;
+  }
+
+  assertSafeArtifactKey(value);
+  return value;
 }
 
 function normalizeRecipeNames(value: unknown): string[] {

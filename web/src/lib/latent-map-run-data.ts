@@ -67,12 +67,22 @@ type LoadedRecipe = NonNullable<
   recipe_name: string;
 };
 
+export type PinnedLatentMapRunArtifacts = {
+  clusterKeys?: string[];
+  imageManifestKey?: string;
+  layoutKeys?: string[];
+  thumbnailAtlasManifestPaths?: Record<string, string>;
+  vectorIdMapKey?: string;
+};
+
 export async function loadLatentMapRunExportedViewerData({
+  pinnedArtifacts,
   runDir,
   selectedClusterId,
   selectedLayoutId,
   selectedRecipeName,
 }: {
+  pinnedArtifacts?: PinnedLatentMapRunArtifacts | null;
   runDir: string;
   selectedClusterId?: string | null;
   selectedLayoutId?: string | null;
@@ -80,7 +90,7 @@ export async function loadLatentMapRunExportedViewerData({
 }): Promise<ExportedLatentMapViewerData> {
   const resolvedRunDir = path.resolve(runDir);
   const manifestRows = await readJsonLines<ManifestRow>(
-    path.join(resolvedRunDir, "manifest.jsonl"),
+    path.join(resolvedRunDir, pinnedArtifacts?.imageManifestKey ?? "manifest.jsonl"),
   );
   const availableRecipes = await loadAvailableRecipes(resolvedRunDir);
   const selectedRecipe =
@@ -93,15 +103,27 @@ export async function loadLatentMapRunExportedViewerData({
     throw new Error("Latent map run has no embedding recipes.");
   }
 
-  const layouts = await loadRunOutputs<LayoutFile>({
-    dir: path.join(resolvedRunDir, "layouts"),
-    recipeName: selectedRecipe,
-  });
+  const layouts = pinnedArtifacts?.layoutKeys
+    ? await loadRunOutputsByKeys<LayoutFile>({
+        keys: pinnedArtifacts.layoutKeys,
+        recipeName: selectedRecipe,
+        runDir: resolvedRunDir,
+      })
+    : await loadRunOutputs<LayoutFile>({
+        dir: path.join(resolvedRunDir, "layouts"),
+        recipeName: selectedRecipe,
+      });
   const clusters = sortClusterOutputs(
-    await loadRunOutputs<ClusterFile>({
-      dir: path.join(resolvedRunDir, "clusters"),
-      recipeName: selectedRecipe,
-    }),
+    pinnedArtifacts?.clusterKeys
+      ? await loadRunOutputsByKeys<ClusterFile>({
+          keys: pinnedArtifacts.clusterKeys,
+          recipeName: selectedRecipe,
+          runDir: resolvedRunDir,
+        })
+      : await loadRunOutputs<ClusterFile>({
+          dir: path.join(resolvedRunDir, "clusters"),
+          recipeName: selectedRecipe,
+        }),
   );
   const layout = pickOutputById({
     idField: "layout_id",
@@ -121,6 +143,24 @@ export async function loadLatentMapRunExportedViewerData({
     throw new Error(`Latent map run has no cluster result for ${selectedRecipe}.`);
   }
 
+  if (pinnedArtifacts?.vectorIdMapKey) {
+    const vectorImageIds = await readImageIdOrderMap(
+      path.join(resolvedRunDir, pinnedArtifacts.vectorIdMapKey),
+      pinnedArtifacts.vectorIdMapKey,
+    );
+
+    validatePinnedPointOrder({
+      artifactLabel: `layout ${String(layout.value.layout_id ?? "")}`,
+      expectedImageIds: vectorImageIds,
+      points: layout.value.points ?? [],
+    });
+    validatePinnedPointOrder({
+      artifactLabel: `cluster ${String(cluster.value.cluster_id ?? "")}`,
+      expectedImageIds: vectorImageIds,
+      points: cluster.value.points ?? [],
+    });
+  }
+
   const manifestByImageId = new Map(
     manifestRows.map((row) => [String(row.image_id ?? ""), row]),
   );
@@ -130,9 +170,11 @@ export async function loadLatentMapRunExportedViewerData({
       point,
     ]),
   );
-  const thumbnailAtlasManifestPaths = await findThumbnailAtlasManifestPaths(
-    resolvedRunDir,
-  );
+  const thumbnailAtlasManifestPaths =
+    pinnedArtifacts?.thumbnailAtlasManifestPaths &&
+    Object.keys(pinnedArtifacts.thumbnailAtlasManifestPaths).length > 0
+      ? pinnedArtifacts.thumbnailAtlasManifestPaths
+      : await findThumbnailAtlasManifestPaths(resolvedRunDir);
   const thumbnailAtlasManifestPath =
     thumbnailAtlasManifestPaths["64"] ??
     Object.values(thumbnailAtlasManifestPaths)[0];
@@ -363,6 +405,107 @@ async function loadRunOutputs<T extends { recipe_name?: unknown }>({
   return outputs
     .filter((output) => String(output.value.recipe_name ?? "") === recipeName)
     .sort((left, right) => left.fileName.localeCompare(right.fileName));
+}
+
+async function loadRunOutputsByKeys<T extends { recipe_name?: unknown }>({
+  keys,
+  recipeName,
+  runDir,
+}: {
+  keys: string[];
+  recipeName: string;
+  runDir: string;
+}): Promise<LoadedRunOutput<T>[]> {
+  const outputs = await Promise.all(
+    keys.map(async (key) => {
+      const filePath = path.join(runDir, key);
+      let content: string;
+
+      try {
+        content = await readFile(filePath, "utf-8");
+      } catch (error) {
+        if (isMissingFileError(error)) {
+          throw new Error(`Pinned Analysis Result artifact is missing: ${key}`);
+        }
+
+        throw error;
+      }
+
+      const value = JSON.parse(content) as T;
+
+      return {
+        fileName: path.basename(key),
+        path: filePath,
+        value,
+      };
+    }),
+  );
+
+  return outputs.filter(
+    (output) => String(output.value.recipe_name ?? "") === recipeName,
+  );
+}
+
+function isMissingFileError(error: unknown): boolean {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  return "code" in error && error.code === "ENOENT";
+}
+
+async function readImageIdOrderMap(
+  filePath: string,
+  artifactKey: string,
+): Promise<string[]> {
+  let content: string;
+
+  try {
+    content = await readFile(filePath, "utf-8");
+  } catch (error) {
+    if (isMissingFileError(error)) {
+      throw new Error(`Pinned Analysis Result artifact is missing: ${artifactKey}`);
+    }
+
+    throw error;
+  }
+
+  const value = JSON.parse(content) as unknown;
+
+  if (Array.isArray(value)) {
+    return value.map((imageId) => String(imageId));
+  }
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    const ids = Array.isArray(record.ids)
+      ? record.ids
+      : Array.isArray(record.image_ids)
+        ? record.image_ids
+        : [];
+
+    return ids.map((imageId) => String(imageId));
+  }
+
+  return [];
+}
+
+function validatePinnedPointOrder({
+  artifactLabel,
+  expectedImageIds,
+  points,
+}: {
+  artifactLabel: string;
+  expectedImageIds: string[];
+  points: { image_id?: unknown }[];
+}) {
+  const pointImageIds = points.map((point) => String(point.image_id ?? ""));
+
+  if (
+    pointImageIds.length !== expectedImageIds.length ||
+    pointImageIds.some((imageId, index) => imageId !== expectedImageIds[index])
+  ) {
+    throw new Error(`Pinned Analysis Result row order mismatch for ${artifactLabel}.`);
+  }
 }
 
 async function listJsonFiles(dir: string): Promise<string[]> {

@@ -4,6 +4,10 @@ from dataclasses import dataclass
 import json
 from pathlib import Path
 
+from anacronia.analysis_result_pins import (
+    validate_pinned_latent_map_row_order_if_present,
+)
+
 
 @dataclass(frozen=True)
 class ViewerDataExportSummary:
@@ -48,6 +52,12 @@ def export_viewer_data(
         selected_id=cluster_id,
         id_key="cluster_id",
         kind="cluster",
+    )
+    validate_pinned_latent_map_row_order_if_present(
+        cluster=cluster,
+        layout=layout,
+        recipe_name=recipe_name,
+        run_dir=resolved_run_dir,
     )
     neighbor_rows = _load_jsonl(
         resolved_run_dir / "indexes" / f"{recipe_name}_neighbors.jsonl"

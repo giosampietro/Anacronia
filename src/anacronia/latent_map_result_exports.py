@@ -4,6 +4,10 @@ from dataclasses import dataclass
 import json
 from pathlib import Path
 
+from anacronia.analysis_result_pins import (
+    validate_pinned_latent_map_row_order_if_present,
+)
+
 
 @dataclass(frozen=True)
 class LatentMapResultExportSummary:
@@ -41,6 +45,12 @@ def export_latent_map_results(
         directory=resolved_run_dir / "clusters",
         pattern=f"{recipe_name}_*.json",
         kind="cluster",
+    )
+    validate_pinned_latent_map_row_order_if_present(
+        cluster=cluster,
+        layout=layout,
+        recipe_name=recipe_name,
+        run_dir=resolved_run_dir,
     )
     neighbor_rows = _load_required_neighbors(
         run_dir=resolved_run_dir,
