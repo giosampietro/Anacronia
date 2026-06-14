@@ -83,8 +83,13 @@ describe("LatentMapViewer", () => {
     expect(html).not.toContain("Latent Map");
     expect(html).toContain("data-slot=\"sidebar-inset\"");
     expect(html).not.toContain("Display");
-    expect(html).toContain("data-testid=\"latent-map-display-controls\"");
+    expect(html).not.toContain("data-testid=\"latent-map-display-controls\"");
+    expect(html).toContain("data-testid=\"latent-map-canvas-control-strip\"");
     expect(html).toContain("data-testid=\"latent-map-canvas\"");
+    expect(html).toContain(
+      "data-testid=\"latent-map-thumbnail-size-control\"",
+    );
+    expect(html).toContain("data-testid=\"latent-map-cluster-colors-button\"");
     expect(html).toContain("data-testid=\"latent-map-shortcuts-button\"");
     expect(html).toContain("aria-label=\"Show keyboard shortcuts\"");
     expect(html).toContain("aria-expanded=\"false\"");
@@ -135,10 +140,11 @@ describe("LatentMapViewer", () => {
     expect(html).toContain("name=\"latent-map-faiss-neighbor-count\"");
     expect(html).toContain("name=\"latent-map-faiss-relation\"");
     expect(html).toContain("name=\"latent-map-thumbnail-size\"");
-    expect(html).toContain("aria-label=\"Points\"");
-    expect(html).toContain("aria-label=\"Thumbnails\"");
+    expect(html).toContain("aria-label=\"Thumbnail display size\"");
+    expect(html).not.toContain("aria-label=\"Points\"");
+    expect(html).not.toContain("aria-label=\"Thumbnails\"");
     expect(html).toContain("aria-label=\"Cluster colors\"");
-    expect(html).toContain("aria-label=\"Reset view\"");
+    expect(html).not.toContain("aria-label=\"Reset view\"");
     expect(html).not.toContain("data-testid=\"latent-map-shortcuts-help\"");
     expect(html).toContain("value=\"dinov3_vits_256\"");
     expect(html).toContain("value=\"umap_n4_mindist0p05_seed42\"");
@@ -279,8 +285,11 @@ describe("LatentMapViewer", () => {
     expect(html).toContain("data-thumbnail-strategy=\"generated-atlas\"");
     expect(html).toContain("name=\"latent-map-texture-detail\"");
     expect(html).not.toContain("Display");
-    expect(html).toContain("Size");
-    expect(html).toContain("Detail");
+    expect(html).toContain("data-testid=\"latent-map-canvas-control-strip\"");
+    expect(html).toContain(
+      "data-testid=\"latent-map-texture-detail-control\"",
+    );
+    expect(html).toContain("aria-label=\"Thumbnail detail\"");
     expect(html).toContain("96px");
   });
 
