@@ -85,6 +85,10 @@ describe("LatentMapViewer", () => {
     expect(html).not.toContain("Display");
     expect(html).toContain("data-testid=\"latent-map-display-controls\"");
     expect(html).toContain("data-testid=\"latent-map-canvas\"");
+    expect(html).toContain("data-testid=\"latent-map-shortcuts-button\"");
+    expect(html).toContain("aria-label=\"Show keyboard shortcuts\"");
+    expect(html).toContain("aria-expanded=\"false\"");
+    expect(html).toContain("data-shortcuts-help-open=\"false\"");
     expect(html).toContain("data-testid=\"latent-map-fps-counter\"");
     expect(html).toContain("bottom-3 right-3");
     expect(html).toContain("-- fps");
@@ -135,6 +139,7 @@ describe("LatentMapViewer", () => {
     expect(html).toContain("aria-label=\"Thumbnails\"");
     expect(html).toContain("aria-label=\"Cluster colors\"");
     expect(html).toContain("aria-label=\"Reset view\"");
+    expect(html).not.toContain("data-testid=\"latent-map-shortcuts-help\"");
     expect(html).toContain("value=\"dinov3_vits_256\"");
     expect(html).toContain("value=\"umap_n4_mindist0p05_seed42\"");
     expect(html).toContain("value=\"kmeans_k3_seed42\"");

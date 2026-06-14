@@ -9,12 +9,27 @@ import {
   useState,
   type CSSProperties,
 } from "react";
-import { CircleDot, Images, Palette, RotateCcw } from "lucide-react";
+import {
+  CircleDot,
+  Images,
+  Keyboard,
+  Palette,
+  RotateCcw,
+  X,
+} from "lucide-react";
 
 import { ThemeSwitch } from "@/components/theme-switch";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import {
   Sidebar,
   SidebarContent,
@@ -89,6 +104,10 @@ import {
 } from "@/lib/latent-map-view-tween";
 import { getLatentMapNeighborhoodKeyboardAction } from "@/lib/latent-map-neighborhood-mode";
 import {
+  LATENT_MAP_SHORTCUT_HELP_ITEMS,
+  shouldYieldLatentMapShortcutToFocusedTarget,
+} from "@/lib/latent-map-keyboard-shortcuts";
+import {
   getLatentMapNeighborhoodClickAction,
   isLatentMapNeighborRequestCurrent,
 } from "@/lib/latent-map-neighborhood-interaction";
@@ -160,6 +179,49 @@ function getAppliedThemePreference(): LatentMapRuntimeState["visualTheme"] {
   return document.documentElement.classList.contains("dark")
     ? "dark"
     : "light";
+}
+
+function isLatentMapTextEditingShortcutTarget(
+  targetElement: HTMLElement | null,
+) {
+  return Boolean(
+    targetElement?.closest(
+      "input, textarea, [contenteditable='true'], [contenteditable='']",
+    ),
+  );
+}
+
+function isLatentMapOpenCompositeShortcutTarget({
+  key,
+  targetElement,
+}: {
+  key: string;
+  targetElement: HTMLElement | null;
+}) {
+  if (!targetElement) {
+    return false;
+  }
+
+  if (
+    targetElement.closest(
+      "[data-slot='select-content'], [data-slot='dropdown-menu-content'], [data-slot='popover-content'], [role='listbox'], [role='option']",
+    )
+  ) {
+    return true;
+  }
+
+  if (
+    key === "Escape" ||
+    key === "Enter" ||
+    key === " " ||
+    key.startsWith("Arrow")
+  ) {
+    return Boolean(
+      targetElement.closest("[aria-expanded='true'], [data-state='open']"),
+    );
+  }
+
+  return false;
 }
 
 function getAvailableRecipes(data: LatentMapViewerData) {
@@ -460,6 +522,7 @@ export function LatentMapViewer({
   const [loadedThumbnailCount, setLoadedThumbnailCount] = useState(0);
   const [fpsCounterActive, setFpsCounterActive] = useState(false);
   const [uiOverlayHidden, setUiOverlayHidden] = useState(false);
+  const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
   const [neighborhoodModeActive, setNeighborhoodModeActive] = useState(false);
   const [thumbnailSize, setThumbnailSize] =
     useState<LatentMapThumbnailSize>(initialDurableState.thumbnailSize);
@@ -1395,15 +1458,26 @@ export function LatentMapViewer({
       const targetElement =
         target instanceof HTMLElement ? target : null;
 
-      if (
-        targetElement?.closest(
-          "input, textarea, select, button, [contenteditable='true'], [role='combobox'], [role='listbox'], [role='option'], [data-slot='select-content']",
-        )
-      ) {
+      if (shortcutsHelpOpen && event.key === "Escape") {
+        event.preventDefault();
+        setShortcutsHelpOpen(false);
         return;
       }
 
       if (event.altKey || event.ctrlKey || event.metaKey) {
+        return;
+      }
+
+      if (
+        shouldYieldLatentMapShortcutToFocusedTarget({
+          isOpenCompositeTarget: isLatentMapOpenCompositeShortcutTarget({
+            key: event.key,
+            targetElement,
+          }),
+          isTextEditingTarget:
+            isLatentMapTextEditingShortcutTarget(targetElement),
+        })
+      ) {
         return;
       }
 
@@ -1470,6 +1544,7 @@ export function LatentMapViewer({
 
       if (event.key.toLowerCase() === "f") {
         event.preventDefault();
+        setShortcutsHelpOpen(false);
         setUiOverlayHidden((isHidden) => !isHidden);
         return;
       }
@@ -1490,6 +1565,7 @@ export function LatentMapViewer({
     neighborhoodModeActive,
     neighborhoodRuntimePlan.recenterView,
     selectedImageId,
+    shortcutsHelpOpen,
     textureDetailOptions,
   ]);
 
@@ -2490,6 +2566,7 @@ export function LatentMapViewer({
             data-runtime-renderer-triangles={runtimeSnapshot.rendererTriangleCount}
             data-runtime-textures={runtimeSnapshot.liveTextureCount}
             data-selected-image-id={selectedImageId ?? undefined}
+            data-shortcuts-help-open={shortcutsHelpOpen}
             data-source-filter={sourceFilter}
             data-total-point-count={totalStats.pointCount}
             data-ui-overlay-hidden={uiOverlayHidden}
@@ -2737,19 +2814,87 @@ export function LatentMapViewer({
           ) : null}
 
           {!uiOverlayHidden ? (
-            <div className="pointer-events-none absolute bottom-3 right-3 z-20">
-              <div
-                aria-label={`WebGL performance ${fpsIndicatorText}`}
-                className="flex h-7 items-center gap-2 rounded-lg border border-border/50 bg-background/70 px-2.5 font-mono text-[11px] leading-none text-foreground/85 shadow-sm backdrop-blur-sm"
-                data-testid="latent-map-fps-counter"
-              >
-                <span
-                  aria-hidden="true"
-                  className={cn("size-1.5 rounded-full", fpsIndicatorTone)}
-                />
-                <span className="min-w-10 tabular-nums">
-                  {fpsIndicatorText}
-                </span>
+            <div className="pointer-events-none absolute bottom-3 right-3 z-20 flex items-end gap-2">
+              <div className="pointer-events-auto relative flex items-end gap-2">
+                {shortcutsHelpOpen ? (
+                  <Card
+                    aria-label="Latent map shortcuts"
+                    className="absolute bottom-9 right-0 w-72 rounded-2xl border border-border/55 bg-background/85 py-3 shadow-sm backdrop-blur-md"
+                    data-testid="latent-map-shortcuts-help"
+                    id="latent-map-shortcuts-help"
+                    size="sm"
+                  >
+                    <CardHeader className="grid-cols-[1fr_auto] gap-2 px-3">
+                      <CardTitle className="text-sm">Shortcuts</CardTitle>
+                      <CardAction>
+                        <Button
+                          aria-label="Close shortcuts"
+                          onClick={() => setShortcutsHelpOpen(false)}
+                          size="icon-xs"
+                          title="Close shortcuts"
+                          variant="ghost"
+                        >
+                          <X data-icon="inline-start" />
+                        </Button>
+                      </CardAction>
+                    </CardHeader>
+                    <CardContent className="px-3">
+                      <dl className="flex flex-col gap-1.5">
+                        {LATENT_MAP_SHORTCUT_HELP_ITEMS.map((item) => (
+                          <div
+                            className="grid grid-cols-[4.5rem_1fr] items-center gap-2"
+                            key={item.label}
+                          >
+                            <dt>
+                              <KbdGroup>
+                                {item.keys.map((key) => (
+                                  <Kbd key={key}>{key}</Kbd>
+                                ))}
+                              </KbdGroup>
+                            </dt>
+                            <dd className="min-w-0 text-xs leading-snug text-muted-foreground">
+                              <span className="font-medium text-foreground">
+                                {item.label}
+                              </span>
+                              <span aria-hidden="true"> · </span>
+                              {item.description}
+                            </dd>
+                          </div>
+                        ))}
+                      </dl>
+                    </CardContent>
+                  </Card>
+                ) : null}
+
+                <Button
+                  aria-controls="latent-map-shortcuts-help"
+                  aria-expanded={shortcutsHelpOpen}
+                  aria-label="Show keyboard shortcuts"
+                  className="h-7 rounded-lg border-border/50 bg-background/70 text-foreground/85 shadow-sm backdrop-blur-sm"
+                  data-testid="latent-map-shortcuts-button"
+                  onClick={() =>
+                    setShortcutsHelpOpen((isOpen) => !isOpen)
+                  }
+                  size="icon-sm"
+                  title="Shortcuts"
+                  variant="outline"
+                >
+                  <Keyboard data-icon="inline-start" />
+                </Button>
+
+                <div
+                  aria-label={`WebGL performance ${fpsIndicatorText}`}
+                  className="flex h-7 items-center gap-2 rounded-lg border border-border/50 bg-background/70 px-2.5 font-mono text-[11px] leading-none text-foreground/85 shadow-sm backdrop-blur-sm"
+                  data-testid="latent-map-fps-counter"
+                >
+                  <span
+                    aria-hidden="true"
+                    className={cn("size-1.5 rounded-full", fpsIndicatorTone)}
+                  />
+                  <span className="min-w-10 tabular-nums">
+                    {fpsIndicatorText}
+                  </span>
+                </div>
               </div>
             </div>
           ) : null}
