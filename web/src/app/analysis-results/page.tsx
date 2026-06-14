@@ -31,6 +31,11 @@ type AnalysisJobListItem = {
   viewer_hrefs: string[];
 };
 
+type CollectionListItem = {
+  display_name?: string;
+  slug: string;
+};
+
 async function listAnalysisJobs(): Promise<{
   jobs: AnalysisJobListItem[];
   unavailable: boolean;
@@ -54,6 +59,58 @@ async function listAnalysisJobs(): Promise<{
   } catch {
     return { jobs: [], unavailable: true };
   }
+}
+
+async function listCollections(): Promise<{
+  collections: CollectionListItem[];
+  unavailable: boolean;
+}> {
+  try {
+    const response = await fetch(`http://127.0.0.1:${getApiPort()}/search-sets`, {
+      cache: "no-store",
+      method: "GET",
+    });
+    if (!response.ok) {
+      return { collections: [], unavailable: true };
+    }
+    const payload = (await response.json()) as unknown;
+    return {
+      collections: normalizeCollections(payload),
+      unavailable: false,
+    };
+  } catch {
+    return { collections: [], unavailable: true };
+  }
+}
+
+function normalizeCollections(payload: unknown): CollectionListItem[] {
+  if (!Array.isArray(payload)) {
+    return [];
+  }
+
+  return payload
+    .map((item): CollectionListItem | null => {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+      const candidate = item as Partial<CollectionListItem>;
+      if (typeof candidate.slug !== "string" || candidate.slug.length === 0) {
+        return null;
+      }
+      return {
+        display_name:
+          typeof candidate.display_name === "string"
+            ? candidate.display_name
+            : undefined,
+        slug: candidate.slug,
+      };
+    })
+    .filter((item): item is CollectionListItem => item !== null)
+    .sort((left, right) =>
+      (left.display_name ?? left.slug).localeCompare(
+        right.display_name ?? right.slug,
+      ),
+    );
 }
 
 function summarizeRecipes(results: Awaited<ReturnType<typeof listAnalysisResults>>) {
@@ -82,14 +139,16 @@ function summarizeStates(
 }
 
 export default async function AnalysisResultsPage() {
-  const [results, jobList] = await Promise.all([
+  const [results, jobList, collectionList] = await Promise.all([
     listAnalysisResults({
       additionalRunsRoots: getAdditionalAnalysisResultRoots(),
       runsRoot: getLatentMapRunsRoot(),
     }),
     listAnalysisJobs(),
+    listCollections(),
   ]);
   const jobs = jobList.jobs;
+  const collections = collectionList.collections;
   const recipeNames = summarizeRecipes(results);
   const totalIndexedImages = results.reduce(
     (total, result) => total + result.itemCount,
@@ -134,15 +193,35 @@ export default async function AnalysisResultsPage() {
               className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto]"
               method="post"
             >
-              <label className="grid gap-2 text-sm text-neutral-300">
-                Collection slugs
-                <input
-                  className="h-10 rounded-md border border-neutral-700 bg-neutral-950 px-3 text-neutral-100 outline-none transition focus:border-neutral-500"
-                  name="collection_slugs"
-                  placeholder="j-shoot, mood-board"
-                  type="text"
-                />
-              </label>
+              {collections.length > 0 ? (
+                <label className="grid gap-2 text-sm text-neutral-300">
+                  Collection
+                  <select
+                    className="h-10 rounded-md border border-neutral-700 bg-neutral-950 px-3 text-neutral-100 outline-none transition focus:border-neutral-500"
+                    name="collection_slugs"
+                  >
+                    {collections.map((collection) => (
+                      <option key={collection.slug} value={collection.slug}>
+                        {collection.display_name ?? collection.slug}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <label className="grid gap-2 text-sm text-neutral-300">
+                  Collection slugs
+                  <input
+                    className="h-10 rounded-md border border-neutral-700 bg-neutral-950 px-3 text-neutral-100 outline-none transition focus:border-neutral-500"
+                    name="collection_slugs"
+                    placeholder={
+                      collectionList.unavailable
+                        ? "Collection API unavailable"
+                        : "j-shoot, mood-board"
+                    }
+                    type="text"
+                  />
+                </label>
+              )}
               <fieldset className="flex flex-wrap items-end gap-3">
                 <legend className="sr-only">Recipe IDs</legend>
                 {[

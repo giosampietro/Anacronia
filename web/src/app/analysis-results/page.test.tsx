@@ -29,8 +29,23 @@ describe("AnalysisResultsPage", () => {
     process.env.ANACRONIA_LATENT_MAP_RUNS_ROOT = runsRoot;
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => (
-        Response.json({
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith("/search-sets")) {
+          return Response.json([
+            {
+              display_name: "J Shoot",
+              slug: "j-shoot",
+              terms: [],
+            },
+            {
+              display_name: "Mood Board",
+              slug: "mood-board",
+              terms: [],
+            },
+          ]);
+        }
+        return Response.json({
           jobs: [
             {
               analysis_job_id: "analysis-job-20260614T130000Z",
@@ -42,8 +57,8 @@ describe("AnalysisResultsPage", () => {
               ],
             },
           ],
-        })
-      )),
+        });
+      }),
     );
     await mkdir(runDir, { recursive: true });
     await writeFile(path.join(runDir, "manifest.jsonl"), "", "utf-8");
@@ -70,6 +85,11 @@ describe("AnalysisResultsPage", () => {
     expect(html).toContain("Analysis Results");
     expect(html).toContain("Start Analysis Job");
     expect(html).toContain("name=\"collection_slugs\"");
+    expect(html).toContain("<option value=\"j-shoot\">J Shoot</option>");
+    expect(html).toContain(
+      "<option value=\"mood-board\">Mood Board</option>",
+    );
+    expect(html).not.toContain("placeholder=\"j-shoot, mood-board\"");
     expect(html).toContain("name=\"recipe_ids\"");
     expect(html).toContain("value=\"dinov3_vits_384\"");
     expect(html).toContain("action=\"/api/analysis-jobs\"");

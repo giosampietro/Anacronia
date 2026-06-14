@@ -37,7 +37,10 @@ export async function POST(request: Request): Promise<Response> {
 async function requestPayloadFromForm(request: Request) {
   const form = await request.formData();
   return {
-    collection_slugs: splitCommaList(form.get("collection_slugs")),
+    collection_slugs: form
+      .getAll("collection_slugs")
+      .flatMap((value) => splitCommaList(value))
+      .filter((value, index, values) => values.indexOf(value) === index),
     recipe_ids: form
       .getAll("recipe_ids")
       .flatMap((value) => splitCommaList(value))
