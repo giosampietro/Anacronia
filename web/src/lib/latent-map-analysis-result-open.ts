@@ -1,13 +1,8 @@
-import {
-  resolveAnalysisResultRunDir,
-} from "@/lib/analysis-result-artifacts";
+import { createLocalAnalysisResultStore } from "@/lib/analysis-result-store";
 import {
   loadLatentMapRunExportedViewerData,
 } from "@/lib/latent-map-run-data";
-import {
-  loadAnalysisResultStatus,
-  type AnalysisResultStatusSummary,
-} from "@/lib/analysis-result-status";
+import type { AnalysisResultStatusSummary } from "@/lib/analysis-result-status";
 import type { ExportedLatentMapViewerData } from "@/lib/latent-map-viewer-data";
 
 export type LoadedLatentMapAnalysisResultViewerData = {
@@ -29,10 +24,8 @@ export async function loadLatentMapAnalysisResultViewerData({
   selectedLayoutId?: string | null;
   selectedRecipeName?: string | null;
 }): Promise<LoadedLatentMapAnalysisResultViewerData> {
-  const runDir = await resolveAnalysisResultRunDir({
-    analysisResultId,
-    runsRoot,
-  });
+  const store = createLocalAnalysisResultStore({ runsRoot });
+  const runDir = await store.resolveRunDir(analysisResultId);
 
   if (!runDir) {
     throw new Error(`Analysis Result not found: ${analysisResultId}`);
@@ -46,6 +39,6 @@ export async function loadLatentMapAnalysisResultViewerData({
       selectedRecipeName,
     }),
     runDir,
-    status: await loadAnalysisResultStatus({ runDir }),
+    status: await store.loadStatus(analysisResultId),
   };
 }
