@@ -33,6 +33,7 @@ data/**
 
 # Local agent scratch
 .superpowers/
+.hf-cache/
 
 # OS / editor
 .DS_Store
