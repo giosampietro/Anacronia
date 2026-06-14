@@ -175,6 +175,45 @@ def test_exports_duplicate_diagnostics_and_selected_result_provenance(tmp_path):
     )
 
 
+def test_result_export_accepts_production_style_faiss_object_id_map(tmp_path):
+    run = create_result_run(tmp_path)
+    (run.run_dir / "indexes" / "dinov3_vits_256_faiss_id_map.json").write_text(
+        json.dumps(
+            [
+                {"faiss_id": 0, "image_id": "img-a"},
+                {"faiss_id": 1, "image_id": "img-a-copy"},
+                {"faiss_id": 2, "image_id": "img-b"},
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (run.run_dir / "analysis-result.json").write_text(
+        json.dumps(
+            {
+                "analysis_result_id": f"latent-map-{run.run_id}",
+                "recipes": [
+                    {
+                        "recipe_name": "dinov3_vits_256",
+                        "artifact_keys": {
+                            "vector_id_map": "indexes/dinov3_vits_256_faiss_id_map.json",
+                        },
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    summary = export_latent_map_results(
+        run_dir=run.run_dir,
+        recipe_name="dinov3_vits_256",
+    )
+
+    data = json.loads(summary.result_path.read_text(encoding="utf-8"))
+    assert data["layout_id"] == "umap_n15_mindist0p05_seed42"
+    assert data["cluster_id"] == "kmeans_k2_seed42"
+
+
 def test_result_export_detects_pinned_vector_row_order_mismatch(tmp_path):
     run = create_result_run(tmp_path)
     (run.run_dir / "indexes" / "dinov3_vits_256_faiss_id_map.json").write_text(
