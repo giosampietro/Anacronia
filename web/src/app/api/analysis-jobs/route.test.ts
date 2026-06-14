@@ -70,7 +70,9 @@ describe("analysis job API proxy", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const form = new FormData();
-    form.set("collection_slugs", "analysis-board, mood-board");
+    form.append("collection_slugs", "analysis-board");
+    form.append("collection_slugs", "mood-board");
+    form.append("collection_slugs", "analysis-board");
     form.append("recipe_ids", "dinov3_vits_384");
     form.append("recipe_ids", "dinov3_vits_512");
 
