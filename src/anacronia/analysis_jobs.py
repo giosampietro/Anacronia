@@ -3,7 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
+import shutil
 import time
 from typing import Protocol, Sequence
 
@@ -149,7 +151,13 @@ def run_analysis_job(
         result_dir = resolved_data_root / "analysis-results" / analysis_result_id
         result_dir.mkdir(parents=True, exist_ok=True)
         recipe_plan = embedding_reuse_plan.recipe_plans[recipe.recipe_id]
-        artifacts = [_write_image_manifest(result_dir, resolved_scope)]
+        artifacts = _write_latent_map_run_contract(
+            data_root=resolved_data_root,
+            result_dir=result_dir,
+            run_id=analysis_result_id,
+            resolved_scope=resolved_scope,
+            recipe=recipe,
+        )
         recipe_failed = False
 
         for stage_name in ANALYSIS_JOB_STAGE_NAMES:
@@ -313,36 +321,147 @@ def _build_analysis_result_manifest(
     }
 
 
-def _write_image_manifest(
+def _write_latent_map_run_contract(
+    *,
+    data_root: Path,
     result_dir: Path,
+    run_id: str,
     resolved_scope: ResolvedAnalysisScope,
-) -> AnalysisStageArtifact:
+    recipe: AnalysisRecipe,
+) -> list[AnalysisStageArtifact]:
+    for directory in (
+        "clusters",
+        "embeddings",
+        "indexes",
+        "layouts",
+        "previews",
+        "thumbnails",
+        "viewer",
+    ):
+        (result_dir / directory).mkdir(parents=True, exist_ok=True)
+
+    config_path = result_dir / "config.json"
+    config = {
+        "schema_version": 1,
+        "analysis_kind": "latent-map",
+        "run_id": run_id,
+        "source_folder": _source_label(resolved_scope),
+        "preprocessing": {
+            "recipes": [
+                {
+                    "name": recipe.recipe_id,
+                    "family": recipe.model_family,
+                    "model_id": recipe.model_id,
+                    "long_edge": recipe.input_size,
+                }
+            ],
+        },
+    }
+    _write_json(config_path, config)
+    report_path = result_dir / "report.md"
+    report_path.write_text(
+        "\n".join(
+            [
+                f"# Latent Map Run: {run_id}",
+                "",
+                "Status: materialized from Analysis Scope",
+                "",
+                f"Source: {_source_label(resolved_scope)}",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
     manifest_path = result_dir / "manifest.jsonl"
     rows = []
+    derivative_artifacts: list[AnalysisStageArtifact] = []
     for item in _scope_items(resolved_scope):
         image_asset_id = int(item["image_asset_id"])
         display = item.get("display", {})
         if not isinstance(display, dict):
             display = {}
+        derivatives = item.get("derivatives", {})
+        if not isinstance(derivatives, dict):
+            derivatives = {}
+        standard_key = _derivative_artifact_key(
+            derivatives=derivatives,
+            derivative="standard-1024",
+        )
+        thumb_key = _derivative_artifact_key(
+            derivatives=derivatives,
+            derivative="thumb-256",
+        )
+        image_id = f"image-asset-{image_asset_id}"
+        preview_key = f"previews/{image_id}.jpg"
+        thumbnail_key = f"thumbnails/{image_id}.jpg"
+        _link_or_copy_file(
+            source_path=data_root / standard_key,
+            destination_path=result_dir / preview_key,
+        )
+        _link_or_copy_file(
+            source_path=data_root / thumb_key,
+            destination_path=result_dir / thumbnail_key,
+        )
         rows.append(
             {
                 "height": int(display.get("original_height", 0) or 0),
-                "image_id": f"image-asset-{image_asset_id}",
+                "image_id": image_id,
                 "image_asset_id": image_asset_id,
+                "preview_path": preview_key,
+                "relative_path": f"{image_id}.jpg",
+                "source_derivative_key": standard_key,
+                "source_path": preview_key,
+                "thumbnail_path": thumbnail_key,
                 "width": int(display.get("original_width", 0) or 0),
             }
+        )
+        derivative_artifacts.extend(
+            [
+                _artifact_for_file(
+                    key=thumbnail_key,
+                    result_dir=result_dir,
+                    role="generated-thumbnail",
+                    content_type="image/jpeg",
+                    retention_class="render-cache",
+                ),
+                _artifact_for_file(
+                    key=preview_key,
+                    result_dir=result_dir,
+                    role="generated-preview",
+                    content_type="image/jpeg",
+                    retention_class="render-cache",
+                ),
+            ]
         )
     manifest_path.write_text(
         "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows),
         encoding="utf-8",
     )
-    return AnalysisStageArtifact(
-        key="manifest.jsonl",
-        role="image-manifest",
-        content_type="application/x-jsonlines",
-        retention_class="durable",
-        byte_size=manifest_path.stat().st_size,
-    )
+    return [
+        _artifact_for_file(
+            key="config.json",
+            result_dir=result_dir,
+            role="run-config",
+            content_type="application/json",
+            retention_class="durable",
+        ),
+        _artifact_for_file(
+            key="report.md",
+            result_dir=result_dir,
+            role="analysis-report",
+            content_type="text/markdown",
+            retention_class="durable",
+        ),
+        _artifact_for_file(
+            key="manifest.jsonl",
+            result_dir=result_dir,
+            role="image-manifest",
+            content_type="application/x-jsonlines",
+            retention_class="durable",
+        ),
+        *derivative_artifacts,
+    ]
 
 
 def _normalize_stage_artifact(
@@ -497,6 +616,52 @@ def _scope_items(resolved_scope: ResolvedAnalysisScope) -> list[dict[str, object
     if not isinstance(items, list):
         raise ValueError("Resolved Analysis Scope payload has invalid items.")
     return [item for item in items if isinstance(item, dict)]
+
+
+def _derivative_artifact_key(
+    *,
+    derivatives: dict[object, object],
+    derivative: str,
+) -> str:
+    derivative_payload = derivatives.get(derivative, {})
+    if not isinstance(derivative_payload, dict):
+        raise ValueError(f"Analysis Scope item is missing {derivative}.")
+    artifact_key = str(derivative_payload.get("artifact_key", "")).strip()
+    if not artifact_key or _is_unsafe_artifact_key(artifact_key):
+        raise ValueError(f"Analysis Scope item has an invalid {derivative} key.")
+    return artifact_key
+
+
+def _link_or_copy_file(*, source_path: Path, destination_path: Path) -> None:
+    if not source_path.is_file():
+        raise ValueError(f"Analysis Scope derivative not found: {source_path}")
+    destination_path.parent.mkdir(parents=True, exist_ok=True)
+    if destination_path.exists():
+        destination_path.unlink()
+    try:
+        os.link(source_path, destination_path)
+    except OSError:
+        shutil.copy2(source_path, destination_path)
+
+
+def _artifact_for_file(
+    *,
+    key: str,
+    result_dir: Path,
+    role: str,
+    content_type: str,
+    retention_class: str,
+    metadata: dict[str, object] | None = None,
+) -> AnalysisStageArtifact:
+    path = result_dir / key
+    return AnalysisStageArtifact(
+        key=key,
+        role=role,
+        content_type=content_type,
+        retention_class=retention_class,
+        byte_size=path.stat().st_size if path.is_file() else None,
+        metadata=metadata or {},
+    )
 
 
 def _atlas_tile_size(key: str) -> str:

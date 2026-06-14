@@ -11,9 +11,9 @@ from anacronia.analysis_jobs import (
     ANALYSIS_JOB_MANIFEST_NAME,
     AnalysisJobSummary,
     AnalysisStageRunner,
-    UnavailableAnalysisStageRunner,
     run_analysis_job,
 )
+from anacronia.analysis_stage_runner import LatentMapAnalysisStageRunner
 from anacronia.collection_runs import (
     CandidateRun,
     DEFAULT_BATCH_TARGET,
@@ -699,7 +699,7 @@ def create_app(
     resolved_met_record_client = met_record_client or HttpMetCandidateClient()
     resolved_download_image_bytes = download_image_bytes or fetch_bytes_url
     resolved_local_folder_picker = local_folder_picker or choose_local_folder_path
-    resolved_analysis_stage_runner = analysis_stage_runner or UnavailableAnalysisStageRunner()
+    resolved_analysis_stage_runner = analysis_stage_runner or LatentMapAnalysisStageRunner()
     default_met_adapter = MetProviderAdapter(
         candidate_client=resolved_met_candidate_client,
         record_client=resolved_met_record_client,
