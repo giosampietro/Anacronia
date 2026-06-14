@@ -118,6 +118,7 @@ def embed_latent_map_run(
 
     started_at = time.perf_counter()
     vectors = _embed_manifest_rows(
+        run_dir=resolved_run_dir,
         rows=selected_rows,
         recipe=recipe,
         batch_size=batch_size,
@@ -222,6 +223,7 @@ DinoV3Embedder = DinoImageEmbedder
 
 def _embed_manifest_rows(
     *,
+    run_dir: Path,
     rows: list[dict[str, object]],
     recipe: EmbeddingRecipe,
     batch_size: int,
@@ -234,7 +236,10 @@ def _embed_manifest_rows(
     grouped_images: dict[tuple[int, int], list[tuple[int, Image.Image]]] = {}
 
     for index, row in enumerate(rows):
-        source_path = Path(str(row["source_path"]))
+        source_path = _resolve_manifest_path(
+            run_dir=run_dir,
+            path_value=str(row["source_path"]),
+        )
         with Image.open(source_path) as image:
             prepared = prepare_image_for_embedding(image, recipe=recipe)
         group = grouped_images.setdefault(prepared.image.size, [])
@@ -251,6 +256,13 @@ def _embed_manifest_rows(
     if len(vectors) != len(rows):
         raise RuntimeError("Embedding count did not match manifest row count.")
     return np.vstack(vectors).astype(np.float32)
+
+
+def _resolve_manifest_path(*, run_dir: Path, path_value: str) -> Path:
+    path = Path(path_value)
+    if path.is_absolute():
+        return path
+    return run_dir / path
 
 
 def _embed_group(

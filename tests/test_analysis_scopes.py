@@ -70,6 +70,15 @@ def test_saves_one_collection_scope_snapshot_with_active_image_assets(tmp_path):
         item["source_identity"]["source_type"] == "local-folder"
         for item in payload["items"]
     )
+    first_derivatives = payload["items"][0]["derivatives"]
+    assert first_derivatives["standard-1024"]["artifact_key"].endswith(
+        "/primary-standard-1024.jpg"
+    )
+    assert first_derivatives["thumb-256"]["artifact_key"].endswith(
+        "/primary-thumb-256.jpg"
+    )
+    assert not first_derivatives["standard-1024"]["artifact_key"].startswith("/")
+    assert not first_derivatives["thumb-256"]["artifact_key"].startswith("/")
     assert str(tmp_path) not in serialized
 
 
