@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { Metadata } from "next";
 
+import { AppSpaceShell } from "@/components/app-space-shell";
 import { LatentMapViewer } from "@/components/latent-map-viewer";
 import { loadLatentMapAnalysisResultViewerData } from "@/lib/latent-map-analysis-result-open";
 import { latentMapFixture } from "@/lib/latent-map-fixture";
@@ -256,5 +257,13 @@ export default async function LatentMapPage({
     viewerData,
   );
 
-  return <LatentMapViewer data={viewerData} initialState={initialState} />;
+  return (
+    <AppSpaceShell
+      activeSpace="explorer"
+      contentClassName="min-w-0"
+      focusModeAvailable
+    >
+      <LatentMapViewer data={viewerData} initialState={initialState} />
+    </AppSpaceShell>
+  );
 }

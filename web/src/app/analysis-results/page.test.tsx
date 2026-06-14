@@ -40,9 +40,22 @@ describe("AnalysisResultsPage", () => {
       artifacts: [{ key: "manifest.jsonl", role: "image-manifest" }],
     });
 
-    const html = renderToString(await AnalysisResultsPage());
+    const html = renderToString(await AnalysisResultsPage()).replaceAll(
+      "<!-- -->",
+      "",
+    );
 
+    expect(html).toContain("data-app-space-shell=\"true\"");
+    expect(html).toContain("data-active-space=\"analysis\"");
+    expect(html).toContain("aria-label=\"App spaces\"");
     expect(html).toContain("Analysis Results");
+    expect(html).toContain("Analysis Scope");
+    expect(html).toContain("1 result");
+    expect(html).toContain("3184 images indexed");
+    expect(html).toContain("Recipe Choices");
+    expect(html).toContain("dinov3_vits_384");
+    expect(html).toContain("Job Status");
+    expect(html).toContain("ready");
     expect(html).toContain("J Shoot");
     expect(html).toContain("dinov3_vits_384");
     expect(html).toContain("3184 images");

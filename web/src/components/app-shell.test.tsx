@@ -64,6 +64,12 @@ describe("AppShell", () => {
     ));
 
     expect(html).toContain("aria-label=\"Workspace\"");
+    expect(html).toContain("data-app-space-shell=\"true\"");
+    expect(html).toContain("data-active-space=\"library\"");
+    expect(html).toContain("aria-label=\"App spaces\"");
+    expect(html).toContain("Library / Collections");
+    expect(html).toContain("Analysis Studio");
+    expect(html).toContain("Latent Space Explorer");
     expect(html).toContain("id=\"app-shell-top-bar-controls\"");
     expect(html).toContain("sticky top-0 z-40");
     expect(html).toContain("border-b bg-background");

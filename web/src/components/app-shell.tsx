@@ -11,6 +11,7 @@ import {
   Plus,
 } from "lucide-react";
 
+import { AppSpaceShell } from "@/components/app-space-shell";
 import { APP_TOP_BAR_CONTROLS_ID } from "@/components/app-top-bar-portal";
 import { ThemeSwitch } from "@/components/theme-switch";
 import { SidebarCollectionFilter } from "@/components/sidebar-collection-filter";
@@ -383,39 +384,41 @@ export function AppShell({
     "--sidebar-width-mobile": "20rem",
   } as CSSProperties;
   return (
-    <SidebarProvider defaultOpen={defaultSidebarOpen} style={sidebarStyle}>
-      <AppSidebar
-        activeSearchSetSlug={activeSearchSetSlug}
-        appVersionStamp={appVersionStamp}
-        collectAvailable={collectAvailable}
-        dashboardView={dashboardView}
-        filterText={filterText}
-        rows={rows}
-        workspaceMode={workspaceMode}
-      />
-      <SidebarInset className="min-w-0 overflow-x-hidden">
-        <header className="sticky top-0 z-40 flex min-h-12 shrink-0 items-center gap-1 border-b bg-background px-3 py-3">
-          <div
-            aria-label="Workspace"
-            className="flex shrink-0 items-center gap-3"
-          >
-            <SidebarPreviewTrigger
-              activeSearchSetSlug={activeSearchSetSlug}
-              appVersionStamp={appVersionStamp}
-              collectAvailable={collectAvailable}
-              dashboardView={dashboardView}
-              filterText={filterText}
-              rows={rows}
-              workspaceMode={workspaceMode}
+    <AppSpaceShell activeSpace="library" contentClassName="min-w-0">
+      <SidebarProvider defaultOpen={defaultSidebarOpen} style={sidebarStyle}>
+        <AppSidebar
+          activeSearchSetSlug={activeSearchSetSlug}
+          appVersionStamp={appVersionStamp}
+          collectAvailable={collectAvailable}
+          dashboardView={dashboardView}
+          filterText={filterText}
+          rows={rows}
+          workspaceMode={workspaceMode}
+        />
+        <SidebarInset className="min-w-0 overflow-x-hidden">
+          <header className="sticky top-0 z-40 flex min-h-12 shrink-0 items-center gap-1 border-b bg-background px-3 py-3">
+            <div
+              aria-label="Workspace"
+              className="flex shrink-0 items-center gap-3"
+            >
+              <SidebarPreviewTrigger
+                activeSearchSetSlug={activeSearchSetSlug}
+                appVersionStamp={appVersionStamp}
+                collectAvailable={collectAvailable}
+                dashboardView={dashboardView}
+                filterText={filterText}
+                rows={rows}
+                workspaceMode={workspaceMode}
+              />
+            </div>
+            <div
+              className="@container/topbar flex min-w-0 flex-1 items-center"
+              id={APP_TOP_BAR_CONTROLS_ID}
             />
-          </div>
-          <div
-            className="@container/topbar flex min-w-0 flex-1 items-center"
-            id={APP_TOP_BAR_CONTROLS_ID}
-          />
-        </header>
-        {children}
-      </SidebarInset>
-    </SidebarProvider>
+          </header>
+          {children}
+        </SidebarInset>
+      </SidebarProvider>
+    </AppSpaceShell>
   );
 }
