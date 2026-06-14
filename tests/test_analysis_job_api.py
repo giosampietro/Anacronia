@@ -126,8 +126,20 @@ def test_analysis_job_api_starts_job_and_returns_openable_result(tmp_path):
     assert jobs_response.json()["jobs"] == [payload]
 
 
-def test_analysis_job_api_default_runner_fails_truthfully_without_fake_result(tmp_path):
+def test_analysis_job_api_default_runner_fails_truthfully_without_fake_result(
+    tmp_path,
+    monkeypatch,
+):
     storage = create_collection(tmp_path, display_name="Unavailable Runner Board")
+
+    class FastFailProductionRunner:
+        def run_stage(self, request):
+            raise RuntimeError("production runner unavailable in test")
+
+    monkeypatch.setattr(
+        "anacronia.api.LatentMapAnalysisStageRunner",
+        lambda: FastFailProductionRunner(),
+    )
     client = TestClient(
         create_app(database_path=storage.database_path, data_root=storage.data_root)
     )
@@ -145,7 +157,7 @@ def test_analysis_job_api_default_runner_fails_truthfully_without_fake_result(tm
     assert payload["status"] == "failed"
     assert payload["analysis_result_ids"] == []
     assert payload["viewer_hrefs"] == []
-    assert "No production AnalysisStageRunner" in payload["stages"][-1]["error"]
+    assert "production runner unavailable in test" in payload["stages"][-1]["error"]
     assert payload["stages"][-1]["stage_name"] == "embedding_computation"
 
     result_dirs = list((storage.data_root / "analysis-results").glob("*/analysis-result.json"))

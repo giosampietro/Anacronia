@@ -40,6 +40,7 @@ def create_analysis_scope_snapshot(
     resolved_scope = resolve_analysis_scope(
         database_path=database_path,
         collection_slugs=collection_slugs,
+        data_root=data_root,
     )
     return save_analysis_scope_snapshot(
         data_root=data_root,
@@ -52,10 +53,12 @@ def resolve_analysis_scope(
     *,
     database_path: Path,
     collection_slugs: Sequence[str],
+    data_root: Path | None = None,
 ) -> ResolvedAnalysisScope:
     payload = _resolve_collection_scope_payload(
         database_path=database_path,
         collection_slugs=collection_slugs,
+        data_root=data_root or database_path.parent,
     )
     return ResolvedAnalysisScope(
         payload=payload,
@@ -102,7 +105,9 @@ def _resolve_collection_scope_payload(
     *,
     database_path: Path,
     collection_slugs: Sequence[str],
+    data_root: Path,
 ) -> dict[str, object]:
+    resolved_data_root = data_root.expanduser().resolve()
     selected_slugs = _normalize_selected_collection_slugs(collection_slugs)
     with sqlite3.connect(database_path) as connection:
         ensure_curation_schema(connection)
@@ -152,6 +157,20 @@ def _resolve_collection_scope_payload(
                 "display": {
                     "original_width": int(row["original_width"]),
                     "original_height": int(row["original_height"]),
+                },
+                "derivatives": {
+                    "standard-1024": {
+                        "artifact_key": _relative_artifact_key(
+                            path=Path(str(row["standard_path"])),
+                            data_root=resolved_data_root,
+                        ),
+                    },
+                    "thumb-256": {
+                        "artifact_key": _relative_artifact_key(
+                            path=Path(str(row["thumb_path"])),
+                            data_root=resolved_data_root,
+                        ),
+                    },
                 },
                 "contributing_collections": [],
             },
@@ -259,6 +278,8 @@ def _load_scope_membership_rows(
           image_assets.source_image_id,
           image_assets.original_width,
           image_assets.original_height,
+          image_assets.standard_path,
+          image_assets.thumb_path,
           image_assets.imported AS image_imported,
           image_assets.active AS image_active,
           museum_objects.active AS object_active
@@ -302,6 +323,16 @@ def _source_identity_key(
 
 def _source_type_for_provider(provider: str) -> str:
     return "local-folder" if provider == "local-folder" else "online-provider"
+
+
+def _relative_artifact_key(*, path: Path, data_root: Path) -> str:
+    resolved_path = path.expanduser().resolve()
+    try:
+        return resolved_path.relative_to(data_root).as_posix()
+    except ValueError as error:
+        raise ValueError(
+            f"Image derivative path is outside the data root: {resolved_path}"
+        ) from error
 
 
 def _snapshot_content_hash(payload: dict[str, object]) -> str:
