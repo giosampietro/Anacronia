@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { AnalysisJobForm } from "@/app/analysis-results/analysis-job-form";
 import { AppSpaceShell } from "@/components/app-space-shell";
 import { listAnalysisResults } from "@/lib/analysis-results-browser";
 import type { AnalysisResultStatusState } from "@/lib/analysis-result-status";
@@ -27,13 +28,26 @@ type AnalysisJobListItem = {
   analysis_job_id: string;
   analysis_result_ids: string[];
   recipe_ids: string[];
+  stages?: AnalysisJobStage[];
   status: string;
   viewer_hrefs: string[];
+};
+
+type AnalysisJobStage = {
+  error?: string;
+  stage_name?: string;
+  status?: string;
 };
 
 type CollectionListItem = {
   display_name?: string;
   slug: string;
+};
+
+type AnalysisResultsPageProps = {
+  searchParams?:
+    | Promise<Record<string, string | string[] | undefined>>
+    | Record<string, string | string[] | undefined>;
 };
 
 async function listAnalysisJobs(): Promise<{
@@ -138,7 +152,9 @@ function summarizeStates(
     .join(", ");
 }
 
-export default async function AnalysisResultsPage() {
+export default async function AnalysisResultsPage({
+  searchParams,
+}: AnalysisResultsPageProps = {}) {
   const [results, jobList, collectionList] = await Promise.all([
     listAnalysisResults({
       additionalRunsRoots: getAdditionalAnalysisResultRoots(),
@@ -147,8 +163,13 @@ export default async function AnalysisResultsPage() {
     listAnalysisJobs(),
     listCollections(),
   ]);
+  const resolvedSearchParams = await Promise.resolve(searchParams ?? {});
   const jobs = jobList.jobs;
   const collections = collectionList.collections;
+  const submissionNotice = getSubmissionNotice({
+    jobs,
+    searchParams: resolvedSearchParams,
+  });
   const recipeNames = summarizeRecipes(results);
   const totalIndexedImages = results.reduce(
     (total, result) => total + result.itemCount,
@@ -181,6 +202,22 @@ export default async function AnalysisResultsPage() {
             </p>
           </header>
 
+          {submissionNotice ? (
+            <section
+              aria-label="Analysis job feedback"
+              className={`rounded-md border p-4 ${
+                submissionNotice.tone === "error"
+                  ? "border-red-900 bg-red-950/25 text-red-100"
+                  : "border-neutral-800 bg-neutral-900/60 text-neutral-100"
+              }`}
+            >
+              <h2 className="text-sm font-medium">{submissionNotice.title}</h2>
+              <p className="mt-2 text-sm leading-6 text-neutral-300">
+                {submissionNotice.body}
+              </p>
+            </section>
+          ) : null}
+
           <section
             aria-label="Start Analysis Job"
             className="rounded-md border border-neutral-800 bg-neutral-900/60 p-4"
@@ -188,68 +225,10 @@ export default async function AnalysisResultsPage() {
             <h2 className="text-base font-medium text-neutral-100">
               Start Analysis Job
             </h2>
-            <form
-              action="/api/analysis-jobs"
-              className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto]"
-              method="post"
-            >
-              {collections.length > 0 ? (
-                <label className="grid gap-2 text-sm text-neutral-300">
-                  Collection
-                  <select
-                    className="h-10 rounded-md border border-neutral-700 bg-neutral-950 px-3 text-neutral-100 outline-none transition focus:border-neutral-500"
-                    name="collection_slugs"
-                  >
-                    {collections.map((collection) => (
-                      <option key={collection.slug} value={collection.slug}>
-                        {collection.display_name ?? collection.slug}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ) : (
-                <label className="grid gap-2 text-sm text-neutral-300">
-                  Collection slugs
-                  <input
-                    className="h-10 rounded-md border border-neutral-700 bg-neutral-950 px-3 text-neutral-100 outline-none transition focus:border-neutral-500"
-                    name="collection_slugs"
-                    placeholder={
-                      collectionList.unavailable
-                        ? "Collection API unavailable"
-                        : "j-shoot, mood-board"
-                    }
-                    type="text"
-                  />
-                </label>
-              )}
-              <fieldset className="flex flex-wrap items-end gap-3">
-                <legend className="sr-only">Recipe IDs</legend>
-                {[
-                  ["dinov3_vits_256", "256"],
-                  ["dinov3_vits_384", "384"],
-                  ["dinov3_vits_512", "512"],
-                ].map(([recipeId, label]) => (
-                  <label
-                    className="flex h-10 items-center gap-2 rounded-md border border-neutral-700 px-3 text-sm text-neutral-200"
-                    key={recipeId}
-                  >
-                    <input
-                      defaultChecked={recipeId === "dinov3_vits_384"}
-                      name="recipe_ids"
-                      type="checkbox"
-                      value={recipeId}
-                    />
-                    {label}
-                  </label>
-                ))}
-                <button
-                  className="h-10 rounded-md border border-neutral-600 px-4 text-sm font-medium text-neutral-100 transition hover:border-neutral-400 hover:bg-neutral-800"
-                  type="submit"
-                >
-                  Run Analysis
-                </button>
-              </fieldset>
-            </form>
+            <AnalysisJobForm
+              collectionApiUnavailable={collectionList.unavailable}
+              collections={collections}
+            />
           </section>
 
           <section
@@ -326,6 +305,8 @@ export default async function AnalysisResultsPage() {
                           >
                             Open Explorer
                           </Link>
+                        ) : job.status === "failed" ? (
+                          <FailedJobSummary job={job} />
                         ) : (
                           <span className="text-sm text-neutral-500">
                             No completed result
@@ -435,10 +416,121 @@ function summarizeJobStates(jobs: AnalysisJobListItem[]) {
   });
   return [...counts.entries()]
     .sort(([leftState], [rightState]) => leftState.localeCompare(rightState))
-    .map(([state, count]) => formatCount(count, state))
+    .map(([state, count]) => formatStatusCount(count, state))
     .join(", ");
 }
 
 function formatAtlasTileSizes(tileSizes: number[]) {
   return `${tileSizes.join(", ")}px`;
+}
+
+function FailedJobSummary({ job }: { job: AnalysisJobListItem }) {
+  const failure = getJobFailure(job);
+
+  return (
+    <div className="grid max-w-xl gap-1 text-sm">
+      <span className="font-medium text-red-200">
+        Failed{failure?.stageName ? ` at ${failure.stageName}` : ""}
+      </span>
+      {failure?.errorSummary ? (
+        <span className="text-neutral-400">{failure.errorSummary}</span>
+      ) : (
+        <span className="text-neutral-500">No completed result</span>
+      )}
+    </div>
+  );
+}
+
+function getSubmissionNotice({
+  jobs,
+  searchParams,
+}: {
+  jobs: AnalysisJobListItem[];
+  searchParams: Record<string, string | string[] | undefined>;
+}): { body: string; title: string; tone: "error" | "neutral" } | null {
+  const jobId = searchParamValue(searchParams.analysisJobId);
+  const status = searchParamValue(searchParams.analysisJobStatus);
+  const job = jobId ? jobs.find((candidate) => candidate.analysis_job_id === jobId) : null;
+
+  if (!jobId && !status) {
+    return null;
+  }
+
+  if (status === "failed" || job?.status === "failed") {
+    const failure = job ? getJobFailure(job) : null;
+    return {
+      body: [
+        jobId,
+        failure?.stageName ? `failed at ${failure.stageName}` : "failed",
+        failure?.errorSummary ?? "",
+      ]
+        .filter(Boolean)
+        .join(": "),
+      title: "Analysis job failed",
+      tone: "error",
+    };
+  }
+
+  if (status === "ready" || job?.status === "ready") {
+    return {
+      body: jobId ? `${jobId} completed and is ready to open.` : "Analysis completed.",
+      title: "Analysis job ready",
+      tone: "neutral",
+    };
+  }
+
+  return {
+    body: jobId ? `${jobId} status: ${status ?? "submitted"}.` : "Analysis job submitted.",
+    title: "Analysis job submitted",
+    tone: "neutral",
+  };
+}
+
+function getJobFailure(
+  job: AnalysisJobListItem,
+): { errorSummary?: string; stageName?: string } | null {
+  const failedStage = job.stages?.find(
+    (stage) => stage.status === "failed" || Boolean(stage.error),
+  );
+
+  if (!failedStage) {
+    return null;
+  }
+
+  return {
+    errorSummary: summarizeJobError(failedStage.error),
+    stageName: failedStage.stage_name,
+  };
+}
+
+function searchParamValue(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function summarizeJobError(error: string | undefined): string | undefined {
+  if (!error) {
+    return undefined;
+  }
+
+  const normalized = error.replace(/\s+/g, " ").trim();
+  if (
+    normalized.includes("gated repo") ||
+    normalized.includes("Cannot access gated repo") ||
+    normalized.includes("Access to model facebook/dinov3")
+  ) {
+    return (
+      "Hugging Face access failed: DINOv3 is gated for this process. " +
+      "Log in to Hugging Face or restart Anacronia after logging in."
+    );
+  }
+
+  if (normalized.length <= 260) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, 257)}...`;
+}
+
+function formatStatusCount(count: number, status: string) {
+  return `${count} ${status}`;
 }

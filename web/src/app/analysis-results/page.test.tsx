@@ -126,4 +126,62 @@ describe("AnalysisResultsPage", () => {
     );
     expect(html).toContain("Delete");
   });
+
+  it("renders failed analysis job feedback from the submitted job", async () => {
+    const runsRoot = await mkdtemp(path.join(os.tmpdir(), "analysis-results-page-"));
+
+    process.env.ANACRONIA_LATENT_MAP_RUNS_ROOT = runsRoot;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith("/search-sets")) {
+          return Response.json([
+            {
+              display_name: "Bread",
+              slug: "bread",
+              terms: [],
+            },
+          ]);
+        }
+        return Response.json({
+          jobs: [
+            {
+              analysis_job_id: "analysis-job-20260614T203500Z",
+              analysis_result_ids: [],
+              recipe_ids: ["dinov3_vits_384"],
+              status: "failed",
+              viewer_hrefs: [],
+              stages: [
+                {
+                  stage_name: "embedding_computation",
+                  status: "failed",
+                  error:
+                    "Access to model facebook/dinov3-vits16-pretrain-lvd1689m is restricted. Please log in.",
+                },
+              ],
+            },
+          ],
+        });
+      }),
+    );
+
+    const html = renderToString(
+      await AnalysisResultsPage({
+        searchParams: Promise.resolve({
+          analysisJobId: "analysis-job-20260614T203500Z",
+          analysisJobStatus: "failed",
+        }),
+      }),
+    ).replaceAll("<!-- -->", "");
+
+    expect(html).toContain("Analysis job failed");
+    expect(html).toContain("analysis-job-20260614T203500Z");
+    expect(html).toContain("Failed at embedding_computation");
+    expect(html).toContain(
+      "Hugging Face access failed: DINOv3 is gated for this process.",
+    );
+    expect(html).toContain("1 failed");
+    expect(html).not.toContain("No completed result");
+  });
 });
