@@ -60,6 +60,12 @@ def test_initializes_latent_map_run_contract(tmp_path):
             "model_id": "facebook/dinov3-vits16-pretrain-lvd1689m",
             "long_edge": 384,
         },
+        {
+            "name": "dinov3_vits_512",
+            "family": "dinov3",
+            "model_id": "facebook/dinov3-vits16-pretrain-lvd1689m",
+            "long_edge": 512,
+        },
     ]
 
     report = (run.run_dir / "report.md").read_text(encoding="utf-8")

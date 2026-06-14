@@ -11,6 +11,7 @@ import time
 from typing import Optional, TextIO
 import webbrowser
 
+from anacronia.analysis_recipes import DEFAULT_ANALYSIS_RECIPE_ID
 from anacronia.analysis_results import wrap_legacy_latent_map_run_as_analysis_result
 from anacronia.latent_map_embeddings import DINO_EMBEDDING_RECIPES, embed_latent_map_run
 from anacronia.latent_map_atlas import generate_latent_map_thumbnail_atlas
@@ -41,6 +42,7 @@ from anacronia.storage import initialize_storage
 
 DEFAULT_UI_PORT = 18660
 DEFAULT_API_PORT = 18670
+DEFAULT_LATENT_MAP_RECIPE = DEFAULT_ANALYSIS_RECIPE_ID
 
 
 def validate_supported_runtime(
@@ -779,7 +781,7 @@ def main() -> None:
     latent_map_embed_parser.add_argument(
         "--recipe",
         choices=sorted(DINO_EMBEDDING_RECIPES),
-        default="dinov3_vits_256",
+        default=DEFAULT_LATENT_MAP_RECIPE,
     )
     latent_map_embed_parser.add_argument("--batch-size", type=int, default=8)
     latent_map_embed_parser.add_argument("--limit", type=int)
@@ -789,7 +791,7 @@ def main() -> None:
     latent_map_faiss_build_parser.add_argument(
         "--recipe",
         choices=sorted(DINO_EMBEDDING_RECIPES),
-        default="dinov3_vits_256",
+        default=DEFAULT_LATENT_MAP_RECIPE,
     )
     latent_map_faiss_build_parser.add_argument("--top-k", type=int, default=20)
     latent_map_faiss_query_parser = latent_map_subparsers.add_parser("faiss-query")
@@ -797,7 +799,7 @@ def main() -> None:
     latent_map_faiss_query_parser.add_argument(
         "--recipe",
         choices=sorted(DINO_EMBEDDING_RECIPES),
-        default="dinov3_vits_256",
+        default=DEFAULT_LATENT_MAP_RECIPE,
     )
     latent_map_faiss_query_parser.add_argument("--image-id", required=True)
     latent_map_faiss_query_parser.add_argument("--top-k", type=int, default=20)
@@ -812,7 +814,7 @@ def main() -> None:
     latent_map_layout_parser.add_argument(
         "--recipe",
         choices=sorted(DINO_EMBEDDING_RECIPES),
-        default="dinov3_vits_256",
+        default=DEFAULT_LATENT_MAP_RECIPE,
     )
     latent_map_layout_parser.add_argument("--n-neighbors", type=int, default=15)
     latent_map_layout_parser.add_argument("--min-dist", type=float, default=0.05)
@@ -823,7 +825,7 @@ def main() -> None:
     latent_map_hdbscan_parser.add_argument(
         "--recipe",
         choices=sorted(DINO_EMBEDDING_RECIPES),
-        default="dinov3_vits_256",
+        default=DEFAULT_LATENT_MAP_RECIPE,
     )
     latent_map_hdbscan_parser.add_argument(
         "--preset",
@@ -837,7 +839,7 @@ def main() -> None:
     latent_map_graph_communities_parser.add_argument(
         "--recipe",
         choices=sorted(DINO_EMBEDDING_RECIPES),
-        default="dinov3_vits_256",
+        default=DEFAULT_LATENT_MAP_RECIPE,
     )
     latent_map_graph_communities_parser.add_argument(
         "--preset",
@@ -849,7 +851,7 @@ def main() -> None:
     latent_map_hierarchy_parser.add_argument(
         "--recipe",
         choices=sorted(DINO_EMBEDDING_RECIPES),
-        default="dinov3_vits_256",
+        default=DEFAULT_LATENT_MAP_RECIPE,
     )
     latent_map_hierarchy_parser.add_argument(
         "--preset",
@@ -870,7 +872,7 @@ def main() -> None:
     latent_map_viewer_export_parser.add_argument(
         "--recipe",
         choices=sorted(DINO_EMBEDDING_RECIPES),
-        default="dinov3_vits_256",
+        default=DEFAULT_LATENT_MAP_RECIPE,
     )
     latent_map_viewer_export_parser.add_argument(
         "--thumbnail-atlas-manifest",
@@ -891,7 +893,7 @@ def main() -> None:
     latent_map_result_export_parser.add_argument(
         "--recipe",
         choices=sorted(DINO_EMBEDDING_RECIPES),
-        default="dinov3_vits_256",
+        default=DEFAULT_LATENT_MAP_RECIPE,
     )
     latent_map_result_export_parser.add_argument(
         "--selected-image-id",

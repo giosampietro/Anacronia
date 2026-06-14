@@ -28,4 +28,10 @@ DINO_EMBEDDING_RECIPES = {
         model_id=PRIMARY_DINO_MODEL,
         long_edge=384,
     ),
+    "dinov3_vits_512": EmbeddingRecipe(
+        name="dinov3_vits_512",
+        family="dinov3",
+        model_id=PRIMARY_DINO_MODEL,
+        long_edge=512,
+    ),
 }
