@@ -78,14 +78,14 @@ class FakeStageRunner:
                 retention_class="durable",
                 metadata={"layout_id": "umap_default"},
             ),
-            "clustering": AnalysisStageArtifact(
+            "hdbscan": AnalysisStageArtifact(
                 key=f"clusters/{request.recipe.recipe_id}_hdbscan_default.json",
                 role="cluster-result",
                 content_type="application/json",
                 retention_class="durable",
                 metadata={"cluster_id": "hdbscan_default"},
             ),
-            "baseline_atlas": AnalysisStageArtifact(
+            "atlas_generation": AnalysisStageArtifact(
                 key="viewer/atlases/32px/atlas-manifest.json",
                 role="thumbnail-atlas",
                 content_type="application/json",
@@ -132,8 +132,8 @@ def test_analysis_job_writes_scope_plan_default_recipe_and_openable_result(tmp_p
         "embedding_computation",
         "faiss",
         "umap",
-        "clustering",
-        "baseline_atlas",
+        "hdbscan",
+        "atlas_generation",
     ]
     assert stage_runner.calls[0][2] == [
         resolved_scope.payload["items"][1]["image_asset_id"]
@@ -224,7 +224,7 @@ def test_analysis_job_writes_scope_plan_default_recipe_and_openable_result(tmp_p
         "open_href": f"/latent-map?analysisResultId={result_id}"
     }
     assert job_manifest["stages"][0]["stage_name"] == "scope_snapshot"
-    assert job_manifest["stages"][-1]["stage_name"] == "analysis_result"
+    assert job_manifest["stages"][-1]["stage_name"] == "result_registration"
     assert str(tmp_path) not in serialized
 
 

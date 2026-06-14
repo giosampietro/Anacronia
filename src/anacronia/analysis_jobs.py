@@ -15,7 +15,11 @@ from anacronia.analysis_result_contract import (
     analysis_result_explorer_readiness,
     assert_analysis_result_manifest_contract,
 )
-from anacronia.analysis_recipes import AnalysisRecipe, select_analysis_recipes
+from anacronia.analysis_recipes import (
+    CANONICAL_LATENT_MAP_RUNTIME_STAGE_IDS,
+    AnalysisRecipe,
+    select_analysis_recipes,
+)
 from anacronia.analysis_scopes import (
     AnalysisScopeSnapshot,
     ResolvedAnalysisScope,
@@ -30,13 +34,7 @@ from anacronia.image_embedding_results import (
 
 ANALYSIS_JOB_MANIFEST_NAME = "analysis-job.json"
 ANALYSIS_RESULT_MANIFEST_NAME = "analysis-result.json"
-ANALYSIS_JOB_STAGE_NAMES = (
-    "embedding_computation",
-    "faiss",
-    "umap",
-    "clustering",
-    "baseline_atlas",
-)
+ANALYSIS_JOB_STAGE_NAMES = CANONICAL_LATENT_MAP_RUNTIME_STAGE_IDS
 
 
 @dataclass(frozen=True)
@@ -230,7 +228,7 @@ def run_analysis_job(
         analysis_result_ids.append(analysis_result_id)
         stages.append(
             _stage_record(
-                stage_name="analysis_result",
+                stage_name="result_registration",
                 status="ready",
                 output_artifact_count=1,
                 recipe_id=recipe.recipe_id,
