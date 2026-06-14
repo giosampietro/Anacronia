@@ -85,7 +85,15 @@ stop_pid() {
     return 0
   fi
 
-  kill "$pid" >/dev/null 2>&1 || return 0
+  if ! kill -0 "$pid" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if ! kill "$pid" >/dev/null 2>&1; then
+    echo "Could not stop PID $pid."
+    return 1
+  fi
+
   for _ in {1..20}; do
     if kill -0 "$pid" >/dev/null 2>&1; then
       sleep 0.2
@@ -93,7 +101,11 @@ stop_pid() {
       return 0
     fi
   done
-  kill -9 "$pid" >/dev/null 2>&1 || true
+
+  if ! kill -9 "$pid" >/dev/null 2>&1; then
+    echo "Could not force-stop PID $pid."
+    return 1
+  fi
 }
 
 require_file() {
@@ -180,18 +192,9 @@ export NEXT_SWC_PATH="$WORKTREE_RUNTIME_ROOT/temp/next-swc"
 export HF_HOME="$WORKTREE_ROOT/.hf-cache"
 mkdir -p "$HF_HOME"
 
-if page_is_healthy; then
-  echo "Durable latent map is already running and healthy on port $APP_UI_PORT."
-  run_contract_check
-  open_latent_map
-  print_manual_checklist
-  echo "URL: $LATENT_MAP_URL"
-  exit 0
-fi
-
 existing_pid="$(port_pid || true)"
 if [ -n "$existing_pid" ]; then
-  echo "Port $APP_UI_PORT has an unhealthy listener (PID $existing_pid). Restarting only this worktree port."
+  echo "Port $APP_UI_PORT has an existing UI listener (PID $existing_pid). Restarting this worktree UI with the real app data root."
   stop_pid "$existing_pid"
 fi
 

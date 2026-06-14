@@ -17,5 +17,6 @@ def test_latent_map_launchers_do_not_use_runtime_root_as_app_data_root() -> None
         assert 'APP_DATA_ROOT="$WORKTREE_ROOT/data"' in script
         assert 'export ANACRONIA_DATA_ROOT="$APP_DATA_ROOT"' in script
         assert "anacronia.api:create_app" in script
+        assert "already running and healthy" not in script
         assert 'export ANACRONIA_DATA_ROOT="$WORKTREE_DATA_ROOT"' not in script
         assert 'export ANACRONIA_DATA_ROOT="$WORKTREE_RUNTIME_ROOT"' not in script

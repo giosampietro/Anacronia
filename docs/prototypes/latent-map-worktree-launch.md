@@ -10,8 +10,7 @@ Double-click:
 
 This is the fast daily-use launcher. It runs from the worktree that contains the script, so it does not accidentally start a different checkout. It also:
 
-- reuses the server if the exact latent-map URL is already healthy;
-- restarts only the reserved worktree port `18661` if that port has a stale or unhealthy listener;
+- restarts the reserved worktree UI port `18661` so stale UIs cannot keep old build or env state;
 - restarts the reserved worktree API port `18671` so stale APIs cannot point at a temporary empty database;
 - starts the built Next app directly and starts FastAPI with the worktree's real `data/` root;
 - verifies the exact real-data `/latent-map` URL before opening the browser;

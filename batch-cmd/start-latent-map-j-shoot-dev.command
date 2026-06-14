@@ -84,17 +84,26 @@ if [ ! -f "$VIEWER_DATA" ]; then
   exit 1
 fi
 
-if curl --silent --fail --location --max-time 2 "$LATENT_MAP_URL" >/dev/null 2>&1; then
-  echo "Latent map is already running and healthy on port $APP_UI_PORT."
-  open "$LATENT_MAP_URL"
-  exit 0
-fi
-
 existing_pid="$(lsof -nP -tiTCP:"$APP_UI_PORT" -sTCP:LISTEN 2>/dev/null | head -n 1)"
 if [ -n "$existing_pid" ]; then
-  echo "Port $APP_UI_PORT is occupied but the latent-map page is not healthy."
-  echo "Stop PID $existing_pid or run batch-cmd/start-latent-map-j-shoot.command to repair the production launcher."
-  exit 1
+  echo "Port $APP_UI_PORT has an existing UI listener (PID $existing_pid). Restarting this worktree UI with the real app data root."
+  if ! kill "$existing_pid" >/dev/null 2>&1; then
+    echo "Could not stop PID $existing_pid."
+    exit 1
+  fi
+  for _ in {1..20}; do
+    if kill -0 "$existing_pid" >/dev/null 2>&1; then
+      sleep 0.2
+    else
+      break
+    fi
+  done
+  if kill -0 "$existing_pid" >/dev/null 2>&1; then
+    if ! kill -9 "$existing_pid" >/dev/null 2>&1; then
+      echo "Could not force-stop PID $existing_pid."
+      exit 1
+    fi
+  fi
 fi
 
 export HF_HOME="$(pwd)/.hf-cache"
@@ -184,7 +193,10 @@ mkdir -p "$ANACRONIA_DATA_ROOT" "$NEXT_SWC_PATH"
 existing_api_pid="$(lsof -nP -tiTCP:"$APP_API_PORT" -sTCP:LISTEN 2>/dev/null | head -n 1)"
 if [ -n "$existing_api_pid" ]; then
   echo "Port $APP_API_PORT has an existing API listener (PID $existing_api_pid). Restarting this worktree API with the real app data root."
-  kill "$existing_api_pid" >/dev/null 2>&1 || true
+  if ! kill "$existing_api_pid" >/dev/null 2>&1; then
+    echo "Could not stop PID $existing_api_pid."
+    exit 1
+  fi
   for _ in {1..20}; do
     if kill -0 "$existing_api_pid" >/dev/null 2>&1; then
       sleep 0.2
@@ -192,6 +204,12 @@ if [ -n "$existing_api_pid" ]; then
       break
     fi
   done
+  if kill -0 "$existing_api_pid" >/dev/null 2>&1; then
+    if ! kill -9 "$existing_api_pid" >/dev/null 2>&1; then
+      echo "Could not force-stop PID $existing_api_pid."
+      exit 1
+    fi
+  fi
 fi
 
 (
