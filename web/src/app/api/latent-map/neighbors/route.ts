@@ -2,10 +2,12 @@ import { execFile, type ExecFileOptions } from "node:child_process";
 import path from "node:path";
 import type { NextRequest } from "next/server";
 
+import { resolveAnalysisResultRunDir } from "@/lib/analysis-result-artifacts";
+
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const LATENT_MAP_RUNS_ROOT = "/private/tmp/anacronia-latent-map-runs";
+const DEFAULT_LATENT_MAP_RUNS_ROOT = "/private/tmp/anacronia-latent-map-runs";
 const FAISS_QUERY_TIMEOUT_MS = 10_000;
 
 export type NeighborRow = {
@@ -27,6 +29,7 @@ type LiveFaissPayload = {
 };
 
 export async function GET(request: NextRequest) {
+  const analysisResultId = request.nextUrl.searchParams.get("analysisResultId");
   const runName = request.nextUrl.searchParams.get("run");
   const relativePath = request.nextUrl.searchParams.get("path");
   const imageId = request.nextUrl.searchParams.get("image_id");
@@ -36,15 +39,24 @@ export async function GET(request: NextRequest) {
     request.nextUrl.searchParams.get("relation"),
   );
 
-  if (!runName || !imageId) {
+  if ((!runName && !analysisResultId) || !imageId) {
     return new Response("Missing latent-map neighbor configuration.", {
       status: 404,
     });
   }
 
-  const resolvedRunsRoot = path.resolve(LATENT_MAP_RUNS_ROOT);
-  const resolvedRunDir = path.resolve(resolvedRunsRoot, runName);
+  const resolvedRunsRoot = path.resolve(getLatentMapRunsRoot());
+  const resolvedRunDir = analysisResultId
+    ? await resolveAnalysisResultRunDir({
+        analysisResultId,
+        runsRoot: resolvedRunsRoot,
+      })
+    : path.resolve(resolvedRunsRoot, String(runName));
   const allowedRootPrefix = `${resolvedRunsRoot}${path.sep}`;
+
+  if (!resolvedRunDir) {
+    return new Response("FAISS neighbor index not found.", { status: 404 });
+  }
 
   if (!resolvedRunDir.startsWith(allowedRootPrefix)) {
     return new Response("Neighbor path is outside the latent-map run.", {
@@ -62,6 +74,7 @@ export async function GET(request: NextRequest) {
       throw new Error("FAISS recipe is unavailable.");
     }
 
+    const faissStartedAt = Date.now();
     const relationRows = await queryLiveFaissRelations({
       imageId,
       recipeName,
@@ -69,6 +82,7 @@ export async function GET(request: NextRequest) {
       runDir: resolvedRunDir,
       topK,
     });
+    const faissQueryMs = Date.now() - faissStartedAt;
 
     if (relationMode !== "opposite" && relationRows.neighbors.length === 0) {
       return new Response("FAISS neighbors not found for selected image.", {
@@ -77,18 +91,26 @@ export async function GET(request: NextRequest) {
     }
 
     return Response.json({
+      ...(analysisResultId ? { analysis_result_id: analysisResultId } : {}),
       schema_version: 1,
       image_id: imageId,
       neighbors: relationRows.neighbors,
       opposites: relationRows.opposites,
       recipe_name: recipeName,
       relation: relationMode,
-      run_id: runName,
+      run_id: path.basename(resolvedRunDir),
+      timings: {
+        faiss_query_ms: faissQueryMs,
+      },
       top_k: topK,
     });
   } catch {
     return new Response("FAISS neighbor index not found.", { status: 404 });
   }
+}
+
+function getLatentMapRunsRoot(): string {
+  return process.env.ANACRONIA_LATENT_MAP_RUNS_ROOT ?? DEFAULT_LATENT_MAP_RUNS_ROOT;
 }
 
 async function resolveRecipeName({

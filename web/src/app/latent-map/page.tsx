@@ -212,9 +212,13 @@ async function loadLatentMapViewerData(searchParams: LatentMapSearchParams) {
   await hydrateThumbnailAtlas({ rawData, runDir: dataRunDir });
 
   return normalizeExportedLatentMapViewerData({
-    neighborApiPath: `/api/latent-map/neighbors?run=${encodeURIComponent(
-      path.basename(dataRunDir),
-    )}`,
+    neighborApiPath: activeAnalysisResultId
+      ? `/api/latent-map/neighbors?analysisResultId=${encodeURIComponent(
+          activeAnalysisResultId,
+        )}`
+      : `/api/latent-map/neighbors?run=${encodeURIComponent(
+          path.basename(dataRunDir),
+        )}`,
     rawData,
     sourceFolder,
     thumbnailApiPath: activeAnalysisResultId
