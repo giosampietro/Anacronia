@@ -180,7 +180,11 @@ export function serializeLatentMapUrlState(
 ): URLSearchParams {
   const searchParams = new URLSearchParams();
 
-  searchParams.set("run", data.run_id);
+  if (data.analysis_result_id) {
+    searchParams.set("analysisResultId", data.analysis_result_id);
+  } else {
+    searchParams.set("run", data.run_id);
+  }
   searchParams.set("recipe", data.embedding_recipe);
   searchParams.set("layout", data.layout_id);
   searchParams.set("clusterResult", data.cluster_id);

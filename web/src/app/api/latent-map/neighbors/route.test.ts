@@ -1,5 +1,8 @@
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { NextRequest } from "next/server";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { GET } from "@/app/api/latent-map/neighbors/route";
 
@@ -10,8 +13,19 @@ vi.mock("node:child_process", () => ({
 }));
 
 describe("latent map live neighbor API", () => {
+  const previousRunsRoot = process.env.ANACRONIA_LATENT_MAP_RUNS_ROOT;
+
   beforeEach(() => {
+    delete process.env.ANACRONIA_LATENT_MAP_RUNS_ROOT;
     execFileMock.mockReset();
+  });
+
+  afterEach(() => {
+    if (previousRunsRoot === undefined) {
+      delete process.env.ANACRONIA_LATENT_MAP_RUNS_ROOT;
+    } else {
+      process.env.ANACRONIA_LATENT_MAP_RUNS_ROOT = previousRunsRoot;
+    }
   });
 
   it("returns requested relation rows from the live FAISS helper", async () => {
@@ -62,6 +76,50 @@ describe("latent map live neighbor API", () => {
         "--relation",
         "both",
       ]),
+    );
+  });
+
+  it("queries live FAISS by Analysis Result ID and reports timing metadata", async () => {
+    const runsRoot = await mkdtemp(path.join(os.tmpdir(), "neighbor-result-"));
+    const runDir = path.join(runsRoot, "20260609T123000Z-j-shoot");
+
+    process.env.ANACRONIA_LATENT_MAP_RUNS_ROOT = runsRoot;
+    await mkdir(runDir, { recursive: true });
+    await writeFile(
+      path.join(runDir, "analysis-result.json"),
+      JSON.stringify({
+        analysis_result_id: "latent-map-20260609T123000Z-j-shoot",
+        artifacts: [],
+      }),
+      "utf-8",
+    );
+    execFileMock.mockImplementation(
+      (_file, _args, _options, callback: (error: Error | null, stdout: string) => void) => {
+        callback(
+          null,
+          JSON.stringify({
+            neighbors: [{ image_id: "img_b", score: 0.99 }],
+          }),
+        );
+      },
+    );
+
+    const response = await GET(
+      new NextRequest(
+        `http://localhost/api/latent-map/neighbors` +
+          `?analysisResultId=latent-map-20260609T123000Z-j-shoot` +
+          `&recipe=dinov3_test&image_id=img_a&top_k=1&relation=closest`,
+      ),
+    );
+    const payload = await response.json();
+
+    expect(response.ok).toBe(true);
+    expect(payload.analysis_result_id).toBe(
+      "latent-map-20260609T123000Z-j-shoot",
+    );
+    expect(payload.timings.faiss_query_ms).toEqual(expect.any(Number));
+    expect(execFileMock.mock.calls[0][1]).toEqual(
+      expect.arrayContaining(["--run-dir", runDir]),
     );
   });
 });

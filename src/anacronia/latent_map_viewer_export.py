@@ -200,7 +200,7 @@ def _build_viewer_point(
     }
     membership = cluster_point.get("membership")
 
-    if isinstance(membership, int | float):
+    if isinstance(membership, (int, float)):
         point["cluster_membership"] = float(membership)
 
     return point

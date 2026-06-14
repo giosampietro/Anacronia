@@ -688,7 +688,7 @@ function MissingSearchSetWorkspace({
         <CardHeader>
           <CardTitle>Collection not found</CardTitle>
           <CardDescription>
-            The Collection "{searchSetSlug}" was deleted or no longer exists.
+            The Collection &quot;{searchSetSlug}&quot; was deleted or no longer exists.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-2">

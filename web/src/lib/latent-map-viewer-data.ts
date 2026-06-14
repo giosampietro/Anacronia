@@ -67,13 +67,15 @@ type ExportedLatentMapCluster =
 function createResourceUrl({
   apiPath,
   resourcePath,
+  resourceParamName = "path",
 }: {
   apiPath: string;
   resourcePath: string;
+  resourceParamName?: string;
 }): string {
   const separator = apiPath.includes("?") ? "&" : "?";
 
-  return `${apiPath}${separator}path=${encodeURIComponent(resourcePath)}`;
+  return `${apiPath}${separator}${encodeURIComponent(resourceParamName)}=${encodeURIComponent(resourcePath)}`;
 }
 
 function appendResourceQueryParam({
@@ -95,21 +97,25 @@ export function normalizeExportedLatentMapViewerData({
   neighborApiPath = "/api/latent-map/neighbors",
   sourceFolder,
   thumbnailApiPath = "/api/latent-map/thumbnails",
+  thumbnailResourceParamName = "path",
 }: {
   neighborApiPath?: string;
   rawData: ExportedLatentMapViewerData;
   sourceFolder: string;
   thumbnailApiPath?: string;
+  thumbnailResourceParamName?: string;
 }): LatentMapViewerData {
   const points = Array.isArray(rawData.points) ? rawData.points : [];
   const thumbnailAtlas = normalizeThumbnailAtlas({
     rawAtlas: rawData.thumbnail_atlas,
     thumbnailApiPath,
+    thumbnailResourceParamName,
   });
   const thumbnailAtlases = normalizeThumbnailAtlases({
     rawAtlases: rawData.thumbnail_atlases,
     singleAtlas: thumbnailAtlas,
     thumbnailApiPath,
+    thumbnailResourceParamName,
   });
   const clusterResult = normalizeAvailableCluster(rawData.cluster_result);
   const recipeName = String(rawData.recipe_name ?? "");
@@ -161,10 +167,12 @@ export function normalizeExportedLatentMapViewerData({
         thumbnail_path: createResourceUrl({
           apiPath: thumbnailApiPath,
           resourcePath: thumbnailPath,
+          resourceParamName: thumbnailResourceParamName,
         }),
         preview_path: createResourceUrl({
           apiPath: thumbnailApiPath,
           resourcePath: previewPath,
+          resourceParamName: thumbnailResourceParamName,
         }),
         source_path: "",
         relative_path: String(point.relative_path ?? ""),
@@ -195,16 +203,22 @@ function normalizeThumbnailAtlases({
   rawAtlases,
   singleAtlas,
   thumbnailApiPath,
+  thumbnailResourceParamName,
 }: {
   rawAtlases: Partial<LatentMapGeneratedThumbnailAtlas>[] | undefined;
   singleAtlas: LatentMapGeneratedThumbnailAtlas | undefined;
   thumbnailApiPath: string;
+  thumbnailResourceParamName: string;
 }): LatentMapGeneratedThumbnailAtlas[] {
   const atlases = [
     ...(Array.isArray(rawAtlases)
       ? rawAtlases
           .map((rawAtlas) =>
-            normalizeThumbnailAtlas({ rawAtlas, thumbnailApiPath }),
+            normalizeThumbnailAtlas({
+              rawAtlas,
+              thumbnailApiPath,
+              thumbnailResourceParamName,
+            }),
           )
           .filter((atlas): atlas is LatentMapGeneratedThumbnailAtlas =>
             Boolean(atlas),
@@ -339,9 +353,11 @@ function normalizeClusterGroups(groups: unknown[]): LatentMapClusterGroup[] {
 function normalizeThumbnailAtlas({
   rawAtlas,
   thumbnailApiPath,
+  thumbnailResourceParamName,
 }: {
   rawAtlas: Partial<LatentMapGeneratedThumbnailAtlas> | undefined;
   thumbnailApiPath: string;
+  thumbnailResourceParamName: string;
 }): LatentMapGeneratedThumbnailAtlas | undefined {
   if (!rawAtlas) {
     return undefined;
@@ -362,6 +378,7 @@ function normalizeThumbnailAtlas({
           path: createResourceUrl({
             apiPath: thumbnailApiPath,
             resourcePath: String(page.path ?? ""),
+            resourceParamName: thumbnailResourceParamName,
           }),
           width: Number(page.width ?? 0),
         }))

@@ -192,7 +192,7 @@ def _build_selections(
             "image_id": str(point["image_id"]),
             **(
                 {"membership": float(point["membership"])}
-                if isinstance(point.get("membership"), int | float)
+                if isinstance(point.get("membership"), (int, float))
                 else {}
             ),
         }

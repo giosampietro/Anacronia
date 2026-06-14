@@ -1,9 +1,12 @@
+import json
+
 import pytest
 
 from anacronia.cli import (
     acquire_data_root_runtime_lock,
     build_startup_plan,
     run_latent_map_atlas,
+    run_latent_map_analysis_result_wrap,
     run_latent_map_faiss_build,
     run_latent_map_faiss_query,
     run_latent_map_graph_communities_build,
@@ -18,6 +21,7 @@ from anacronia.cli import (
     run_latent_map_viewer_export,
     validate_supported_runtime,
 )
+from anacronia.latent_map_runs import initialize_latent_map_run
 from anacronia.latent_map_scan import scan_latent_map_run
 
 
@@ -157,6 +161,36 @@ def test_latent_map_scan_cli_prints_scan_summary(tmp_path, capsys):
     output = capsys.readouterr().out
     assert '"supported_file_count": 0' in output
     assert '"manifest_image_count": 0' in output
+
+
+def test_latent_map_analysis_result_wrap_cli_prints_summary(tmp_path, capsys):
+    source_folder = tmp_path / "source-images"
+    source_folder.mkdir()
+    run = initialize_latent_map_run(
+        source_folder=source_folder,
+        runs_root=tmp_path / "runs",
+        run_name="J Shoot",
+    )
+    (run.run_dir / "manifest.jsonl").write_text(
+        json.dumps(
+            {
+                "image_id": "img-a",
+                "relative_path": "a.jpg",
+                "thumbnail_path": "thumbnails/img-a.jpg",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    run_latent_map_analysis_result_wrap(run_dir=run.run_dir)
+
+    output = capsys.readouterr().out
+    assert f'"analysis_result_id": "latent-map-{run.run_id}"' in output
+    assert '"item_count": 1' in output
+    assert '"artifact_count":' in output
+    assert '"manifest_path":' in output
+    assert "analysis-result.json" in output
 
 
 def test_latent_map_embed_cli_prints_embedding_summary(tmp_path, capsys):

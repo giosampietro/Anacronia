@@ -23,6 +23,7 @@ export type LatentMapPoint = {
 
 export type LatentMapViewerData = {
   schema_version: 1;
+  analysis_result_id?: string;
   available_clusters?: LatentMapAvailableCluster[];
   available_layouts?: LatentMapAvailableLayout[];
   available_recipes?: LatentMapAvailableRecipe[];
