@@ -76,6 +76,20 @@ function createResourceUrl({
   return `${apiPath}${separator}path=${encodeURIComponent(resourcePath)}`;
 }
 
+function appendResourceQueryParam({
+  apiPath,
+  key,
+  value,
+}: {
+  apiPath: string;
+  key: string;
+  value: string;
+}): string {
+  const separator = apiPath.includes("?") ? "&" : "?";
+
+  return `${apiPath}${separator}${encodeURIComponent(key)}=${encodeURIComponent(value)}`;
+}
+
 export function normalizeExportedLatentMapViewerData({
   rawData,
   neighborApiPath = "/api/latent-map/neighbors",
@@ -98,6 +112,21 @@ export function normalizeExportedLatentMapViewerData({
     thumbnailApiPath,
   });
   const clusterResult = normalizeAvailableCluster(rawData.cluster_result);
+  const recipeName = String(rawData.recipe_name ?? "");
+  const neighborLookupPath =
+    recipeName.length > 0
+      ? appendResourceQueryParam({
+          apiPath: neighborApiPath,
+          key: "recipe",
+          value: recipeName,
+        })
+      : typeof rawData.neighbor_index_path === "string" &&
+          rawData.neighbor_index_path.length > 0
+        ? createResourceUrl({
+            apiPath: neighborApiPath,
+            resourcePath: rawData.neighbor_index_path,
+          })
+        : null;
 
   return {
     schema_version: 1,
@@ -105,20 +134,12 @@ export function normalizeExportedLatentMapViewerData({
     available_clusters: normalizeAvailableClusters(rawData.available_clusters),
     available_layouts: normalizeAvailableLayouts(rawData.available_layouts),
     available_recipes: normalizeAvailableRecipes(rawData.available_recipes),
-    embedding_recipe: String(rawData.recipe_name ?? "unknown_recipe"),
+    embedding_recipe: recipeName || "unknown_recipe",
     layout_id: String(rawData.layout_id ?? "unknown_layout"),
     cluster_id: String(rawData.cluster_id ?? "unknown_cluster"),
     ...(clusterResult ? { cluster_result: clusterResult } : {}),
     source_folder: sourceFolder,
-    ...(typeof rawData.neighbor_index_path === "string" &&
-    rawData.neighbor_index_path.length > 0
-      ? {
-          neighbor_lookup_path: createResourceUrl({
-            apiPath: neighborApiPath,
-            resourcePath: rawData.neighbor_index_path,
-          }),
-        }
-      : {}),
+    ...(neighborLookupPath ? { neighbor_lookup_path: neighborLookupPath } : {}),
     ...(thumbnailAtlas ? { thumbnail_atlas: thumbnailAtlas } : {}),
     ...(thumbnailAtlases.length > 0 ? { thumbnail_atlases: thumbnailAtlases } : {}),
     points: points.map((point): LatentMapPoint => {

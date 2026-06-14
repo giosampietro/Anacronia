@@ -496,6 +496,21 @@ export function LatentMapViewer({
       }),
     [clusterFilter, data, sourceFilter],
   );
+  const liveNeighborLookupEnabled = Boolean(data.neighbor_lookup_path);
+  const relationData = useMemo(() => {
+    if (!liveNeighborLookupEnabled) {
+      return filteredData;
+    }
+
+    return {
+      ...filteredData,
+      points: filteredData.points.map((point) => ({
+        ...point,
+        neighbors: [],
+        opposites: [],
+      })),
+    };
+  }, [filteredData, liveNeighborLookupEnabled]);
   const stats = useMemo(() => createLatentMapStats(filteredData), [filteredData]);
   const totalStats = useMemo(() => createLatentMapStats(data), [data]);
   const renderPoints = useMemo(
@@ -503,7 +518,7 @@ export function LatentMapViewer({
       createLatentMapRenderState({
         clusterColorsEnabled,
         clusterFilter,
-        data: filteredData,
+        data: relationData,
         faissNeighborCount,
         faissRelationMode,
         neighborsByImageId,
@@ -515,9 +530,9 @@ export function LatentMapViewer({
       clusterFilter,
       faissNeighborCount,
       faissRelationMode,
-      filteredData,
       neighborsByImageId,
       oppositesByImageId,
+      relationData,
       selectedImageId,
     ],
   );
@@ -618,10 +633,12 @@ export function LatentMapViewer({
     [filteredData.points, selectedImageId],
   );
   const selectedNeighborRows = selectedPoint
-    ? (neighborsByImageId[selectedPoint.image_id] ?? selectedPoint.neighbors ?? [])
+    ? (neighborsByImageId[selectedPoint.image_id] ??
+      (liveNeighborLookupEnabled ? [] : selectedPoint.neighbors ?? []))
     : [];
   const selectedOppositeRows = selectedPoint
-    ? (oppositesByImageId[selectedPoint.image_id] ?? selectedPoint.opposites ?? [])
+    ? (oppositesByImageId[selectedPoint.image_id] ??
+      (liveNeighborLookupEnabled ? [] : selectedPoint.opposites ?? []))
     : [];
   const selectedVisibleClosestCount = Math.min(
     selectedNeighborRows.length,
@@ -1527,107 +1544,108 @@ export function LatentMapViewer({
     const selectedPoint = data.points.find((point) => point.image_id === imageId);
     const loadedNeighbors = neighborsByImageId[imageId] ?? [];
     const loadedOpposites = oppositesByImageId[imageId] ?? [];
-    const embeddedNeighbors = selectedPoint?.neighbors ?? [];
-    const embeddedOpposites = selectedPoint?.opposites ?? [];
     const needsClosest = faissRelationMode !== "opposite";
     const needsOpposite = faissRelationMode !== "closest";
-    const hasClosest =
-      !needsClosest ||
-      loadedNeighbors.length >= faissNeighborCount ||
-      embeddedNeighbors.length >= faissNeighborCount;
-    const hasOpposite =
-      !needsOpposite ||
-      loadedOpposites.length >= faissNeighborCount ||
-      embeddedOpposites.length >= faissNeighborCount;
 
-    if (hasClosest && hasOpposite) {
-      setLoadingNeighborImageId(null);
-      setNeighborError(null);
-      return;
-    }
+    if (data.neighbor_lookup_path) {
+      const hasClosest =
+        !needsClosest || loadedNeighbors.length >= faissNeighborCount;
+      const hasOpposite =
+        !needsOpposite || loadedOpposites.length >= faissNeighborCount;
 
-    if (!data.neighbor_lookup_path) {
-      setLoadingNeighborImageId(null);
-      if (
-        loadedNeighbors.length > 0 ||
-        embeddedNeighbors.length > 0 ||
-        loadedOpposites.length > 0 ||
-        embeddedOpposites.length > 0
-      ) {
+      if (hasClosest && hasOpposite) {
+        setLoadingNeighborImageId(null);
         setNeighborError(null);
-      } else {
-        setNeighborError("FAISS neighbors are unavailable for this image.");
-      }
-      return;
-    }
-
-    const requestUrl = new URL(data.neighbor_lookup_path, window.location.origin);
-    requestUrl.searchParams.set("image_id", imageId);
-    requestUrl.searchParams.set("top_k", String(faissNeighborCount));
-    requestUrl.searchParams.set(
-      "relation",
-      !hasClosest && !hasOpposite
-        ? "both"
-        : !hasOpposite
-          ? "opposite"
-          : "closest",
-    );
-    setLoadingNeighborImageId(imageId);
-    setNeighborError(null);
-
-    try {
-      const response = await fetch(requestUrl);
-
-      if (!response.ok) {
-        throw new Error(await response.text());
+        return;
       }
 
-      const relationSet = normalizeLatentMapRelationResponse(
-        await response.json(),
-        imageId,
+      const requestUrl = new URL(data.neighbor_lookup_path, window.location.origin);
+      requestUrl.searchParams.set("image_id", imageId);
+      requestUrl.searchParams.set("top_k", String(faissNeighborCount));
+      requestUrl.searchParams.set(
+        "relation",
+        !hasClosest && !hasOpposite
+          ? "both"
+          : !hasOpposite
+            ? "opposite"
+            : "closest",
       );
+      setLoadingNeighborImageId(imageId);
+      setNeighborError(null);
 
-      if (relationSet.neighbors.length > 0) {
-        setNeighborsByImageId((current) => ({
-          ...current,
-          [imageId]: relationSet.neighbors,
-        }));
-      }
-      if (relationSet.opposites.length > 0) {
-        setOppositesByImageId((current) => ({
-          ...current,
-          [imageId]: relationSet.opposites,
-        }));
-      }
-      if (
-        isLatentMapNeighborRequestCurrent({
-          latestRequestId: latestNeighborRequestIdRef.current,
-          requestId,
-        })
-      ) {
-        setNeighborError(null);
-      }
-    } catch {
-      if (
-        isLatentMapNeighborRequestCurrent({
-          latestRequestId: latestNeighborRequestIdRef.current,
-          requestId,
-        })
-      ) {
-        setNeighborError("FAISS neighbors are unavailable for this image.");
-      }
-    } finally {
-      if (
-        isLatentMapNeighborRequestCurrent({
-          latestRequestId: latestNeighborRequestIdRef.current,
-          requestId,
-        })
-      ) {
-        setLoadingNeighborImageId((current) =>
-          current === imageId ? null : current,
+      try {
+        const response = await fetch(requestUrl);
+
+        if (!response.ok) {
+          throw new Error(await response.text());
+        }
+
+        const relationSet = normalizeLatentMapRelationResponse(
+          await response.json(),
+          imageId,
         );
+
+        if (relationSet.neighbors.length > 0) {
+          setNeighborsByImageId((current) => ({
+            ...current,
+            [imageId]: relationSet.neighbors,
+          }));
+        }
+        if (relationSet.opposites.length > 0) {
+          setOppositesByImageId((current) => ({
+            ...current,
+            [imageId]: relationSet.opposites,
+          }));
+        }
+        if (
+          isLatentMapNeighborRequestCurrent({
+            latestRequestId: latestNeighborRequestIdRef.current,
+            requestId,
+          })
+        ) {
+          setNeighborError(null);
+        }
+      } catch {
+        if (
+          isLatentMapNeighborRequestCurrent({
+            latestRequestId: latestNeighborRequestIdRef.current,
+            requestId,
+          })
+        ) {
+          setNeighborError("FAISS neighbors are unavailable for this image.");
+        }
+      } finally {
+        if (
+          isLatentMapNeighborRequestCurrent({
+            latestRequestId: latestNeighborRequestIdRef.current,
+            requestId,
+          })
+        ) {
+          setLoadingNeighborImageId((current) =>
+            current === imageId ? null : current,
+          );
+        }
       }
+      return;
     }
+
+    const embeddedNeighbors = selectedPoint?.neighbors ?? [];
+    const embeddedOpposites = selectedPoint?.opposites ?? [];
+    const hasFallbackClosest =
+      !needsClosest ||
+      loadedNeighbors.length > 0 ||
+      embeddedNeighbors.length > 0;
+    const hasFallbackOpposite =
+      !needsOpposite ||
+      loadedOpposites.length > 0 ||
+      embeddedOpposites.length > 0;
+
+    setLoadingNeighborImageId(null);
+    setNeighborError(
+      hasFallbackClosest && hasFallbackOpposite
+        ? null
+        : "FAISS neighbors are unavailable for this image.",
+    );
   }, [
     data.neighbor_lookup_path,
     data.points,

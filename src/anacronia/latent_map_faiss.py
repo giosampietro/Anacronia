@@ -105,25 +105,14 @@ def query_faiss_neighbors(
     if top_k < 1:
         raise ValueError("top_k must be at least 1")
 
-    resolved_run_dir = run_dir.expanduser().resolve()
-    indexes_dir = resolved_run_dir / "indexes"
-    index_path = indexes_dir / f"{recipe_name}_flat_ip.faiss"
-    id_map_path = indexes_dir / f"{recipe_name}_faiss_id_map.json"
-    if not index_path.is_file():
-        raise ValueError(f"FAISS index not found: {index_path}")
-    if not id_map_path.is_file():
-        raise ValueError(f"FAISS ID map not found: {id_map_path}")
-
-    id_map = json.loads(id_map_path.read_text(encoding="utf-8"))
+    index, id_map = _load_faiss_artifacts(run_dir=run_dir, recipe_name=recipe_name)
     faiss_id = _faiss_id_for_image_id(id_map=id_map, image_id=image_id)
-    vectors = _l2_normalize(
-        _load_vectors(resolved_run_dir=resolved_run_dir, recipe_name=recipe_name)
-    )
-    if faiss_id >= vectors.shape[0]:
-        raise ValueError(f"FAISS ID is outside the embedding matrix: {faiss_id}")
-    index = faiss.read_index(str(index_path))
+    if faiss_id >= index.ntotal:
+        raise ValueError(f"FAISS ID is outside the index: {faiss_id}")
+
+    query_vector = index.reconstruct(faiss_id).reshape(1, index.d).astype(np.float32)
     search_count = min(index.ntotal, top_k + (0 if include_self else 1))
-    scores, ids = index.search(vectors[faiss_id : faiss_id + 1], search_count)
+    scores, ids = index.search(query_vector, search_count)
 
     neighbors: list[FaissNeighbor] = []
     for score, neighbor_id in zip(scores[0], ids[0], strict=True):
@@ -132,19 +121,86 @@ def query_faiss_neighbors(
         neighbor_faiss_id = int(neighbor_id)
         if not include_self and neighbor_faiss_id == faiss_id:
             continue
-        row = id_map[neighbor_faiss_id]
         neighbors.append(
-            FaissNeighbor(
+            _neighbor_from_id_map(
+                id_map=id_map,
                 faiss_id=neighbor_faiss_id,
-                image_id=str(row["image_id"]),
                 score=float(score),
-                source_path=str(row.get("source_path", "")),
-                relative_path=str(row.get("relative_path", "")),
             )
         )
         if len(neighbors) == top_k:
             break
     return neighbors
+
+
+def query_faiss_opposites(
+    *,
+    run_dir: Path,
+    recipe_name: str,
+    image_id: str,
+    top_k: int = 20,
+    include_self: bool = False,
+) -> list[FaissNeighbor]:
+    if top_k < 1:
+        raise ValueError("top_k must be at least 1")
+
+    index, id_map = _load_faiss_artifacts(run_dir=run_dir, recipe_name=recipe_name)
+    faiss_id = _faiss_id_for_image_id(id_map=id_map, image_id=image_id)
+    candidate_count = min(index.ntotal, len(id_map))
+    if faiss_id >= candidate_count:
+        raise ValueError(f"FAISS ID is outside the index: {faiss_id}")
+
+    vectors = index.reconstruct_n(0, candidate_count).astype(np.float32)
+    query_vector = vectors[faiss_id]
+    scores = vectors @ query_vector
+    ordered_ids = np.argsort(scores, kind="stable")
+
+    opposites: list[FaissNeighbor] = []
+    for neighbor_id in ordered_ids:
+        neighbor_faiss_id = int(neighbor_id)
+        if not include_self and neighbor_faiss_id == faiss_id:
+            continue
+        opposites.append(
+            _neighbor_from_id_map(
+                id_map=id_map,
+                faiss_id=neighbor_faiss_id,
+                score=float(scores[neighbor_faiss_id]),
+            )
+        )
+        if len(opposites) == top_k:
+            break
+    return opposites
+
+
+def query_faiss_relations(
+    *,
+    run_dir: Path,
+    recipe_name: str,
+    image_id: str,
+    top_k: int = 20,
+    relation: str = "closest",
+) -> dict[str, list[FaissNeighbor]]:
+    if relation not in {"closest", "opposite", "both"}:
+        raise ValueError(f"Unsupported FAISS relation: {relation}")
+
+    return {
+        "neighbors": []
+        if relation == "opposite"
+        else query_faiss_neighbors(
+            run_dir=run_dir,
+            recipe_name=recipe_name,
+            image_id=image_id,
+            top_k=top_k,
+        ),
+        "opposites": []
+        if relation == "closest"
+        else query_faiss_opposites(
+            run_dir=run_dir,
+            recipe_name=recipe_name,
+            image_id=image_id,
+            top_k=top_k,
+        ),
+    }
 
 
 def _load_vectors(*, resolved_run_dir: Path, recipe_name: str) -> np.ndarray:
@@ -186,6 +242,41 @@ def _faiss_id_for_image_id(*, id_map: list[dict[str, object]], image_id: str) ->
         if row["image_id"] == image_id:
             return int(row["faiss_id"])
     raise ValueError(f"Image ID not found in FAISS map: {image_id}")
+
+
+def _load_faiss_artifacts(
+    *,
+    run_dir: Path,
+    recipe_name: str,
+) -> tuple[object, list[dict[str, object]]]:
+    resolved_run_dir = run_dir.expanduser().resolve()
+    indexes_dir = resolved_run_dir / "indexes"
+    index_path = indexes_dir / f"{recipe_name}_flat_ip.faiss"
+    id_map_path = indexes_dir / f"{recipe_name}_faiss_id_map.json"
+    if not index_path.is_file():
+        raise ValueError(f"FAISS index not found: {index_path}")
+    if not id_map_path.is_file():
+        raise ValueError(f"FAISS ID map not found: {id_map_path}")
+
+    return faiss.read_index(str(index_path)), json.loads(
+        id_map_path.read_text(encoding="utf-8")
+    )
+
+
+def _neighbor_from_id_map(
+    *,
+    id_map: list[dict[str, object]],
+    faiss_id: int,
+    score: float,
+) -> FaissNeighbor:
+    row = id_map[faiss_id]
+    return FaissNeighbor(
+        faiss_id=faiss_id,
+        image_id=str(row["image_id"]),
+        score=score,
+        source_path=str(row.get("source_path", "")),
+        relative_path=str(row.get("relative_path", "")),
+    )
 
 
 def _write_neighbors(

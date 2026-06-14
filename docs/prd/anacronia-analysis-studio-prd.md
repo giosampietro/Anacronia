@@ -180,9 +180,9 @@ Contextual entry points should remain conservative. Collection pages may link to
 - The Explorer should not be trapped inside one Collection route, although Collection pages can open it with a selected result.
 - The Explorer opens one primary Analysis Result at a time for the integrated MVP.
 - The Explorer can later add side-by-side comparison, animated layout tweening, and weighted fusion controls.
-- FAISS relation lookup is a service over the selected Analysis Result and current active scope membership, not the UMAP layout graph.
+- FAISS relation lookup is a live query-time service over the selected Analysis Result's FAISS index and ID map, not a precomputed neighbor JSON cache and not the UMAP layout graph.
 - Default FAISS relation lookup should exclude removed images and cannot include new images absent from the Analysis Result.
-- The backend should move toward query-time FAISS relation lookup deep enough to fill requested neighbors after filtering removed items, instead of relying only on a shallow precomputed top-k cache.
+- The backend should query deep enough to fill requested neighbors after filtering removed items; historical `*_neighbors.jsonl` files are legacy prototype artifacts and should not cap or drive Explorer interactions.
 - The UI should show quiet staleness notices for removed and newly added images.
 - Project Viewer Export is a future-facing contract over a durable Analysis Result, not a separate analysis pipeline.
 - Project Viewer Export should include only viewer-required artifacts: manifest, layout data, cluster data, relation data needed by the UI, atlas pages, thumbnails/previews, minimal item metadata, display dimensions/aspect ratios, and method provenance.

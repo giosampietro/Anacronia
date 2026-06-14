@@ -21,7 +21,11 @@ from anacronia.latent_map_clusters import (
     build_hdbscan_cluster_results,
     build_hierarchy_cluster_results,
 )
-from anacronia.latent_map_faiss import build_faiss_index, query_faiss_neighbors
+from anacronia.latent_map_faiss import (
+    build_faiss_index,
+    query_faiss_neighbors,
+    query_faiss_relations,
+)
 from anacronia.latent_map_layout import build_latent_map_layout
 from anacronia.latent_map_method_comparison import export_method_comparison
 from anacronia.latent_map_result_exports import export_latent_map_results
@@ -384,6 +388,69 @@ def run_latent_map_faiss_query(
     image_id: str,
     top_k: int,
     include_self: bool,
+    relation: str,
+) -> None:
+    relations = query_faiss_relations(
+        run_dir=run_dir,
+        recipe_name=recipe_name,
+        image_id=image_id,
+        top_k=top_k,
+        relation=relation,
+    )
+
+    if include_self:
+        relations = {
+            "neighbors": query_faiss_neighbors(
+                run_dir=run_dir,
+                recipe_name=recipe_name,
+                image_id=image_id,
+                top_k=top_k,
+                include_self=True,
+            ),
+            "opposites": relations["opposites"],
+        }
+
+    print(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "image_id": image_id,
+                "recipe_name": recipe_name,
+                "relation": relation,
+                "top_k": top_k,
+                "neighbors": [
+                    {
+                        "faiss_id": neighbor.faiss_id,
+                        "image_id": neighbor.image_id,
+                        "score": neighbor.score,
+                        "source_path": neighbor.source_path,
+                        "relative_path": neighbor.relative_path,
+                    }
+                    for neighbor in relations["neighbors"]
+                ],
+                "opposites": [
+                    {
+                        "faiss_id": neighbor.faiss_id,
+                        "image_id": neighbor.image_id,
+                        "score": neighbor.score,
+                        "source_path": neighbor.source_path,
+                        "relative_path": neighbor.relative_path,
+                    }
+                    for neighbor in relations["opposites"]
+                ],
+            }
+        ),
+        flush=True,
+    )
+
+
+def run_latent_map_faiss_neighbors_legacy(
+    *,
+    run_dir: Path,
+    recipe_name: str,
+    image_id: str,
+    top_k: int,
+    include_self: bool,
 ) -> None:
     neighbors = query_faiss_neighbors(
         run_dir=run_dir,
@@ -711,6 +778,11 @@ def main() -> None:
     latent_map_faiss_query_parser.add_argument("--image-id", required=True)
     latent_map_faiss_query_parser.add_argument("--top-k", type=int, default=20)
     latent_map_faiss_query_parser.add_argument("--include-self", action="store_true")
+    latent_map_faiss_query_parser.add_argument(
+        "--relation",
+        choices=["closest", "opposite", "both"],
+        default="closest",
+    )
     latent_map_layout_parser = latent_map_subparsers.add_parser("layout")
     latent_map_layout_parser.add_argument("--run-dir", required=True, type=Path)
     latent_map_layout_parser.add_argument(
@@ -868,6 +940,7 @@ def main() -> None:
             image_id=args.image_id,
             top_k=args.top_k,
             include_self=args.include_self,
+            relation=args.relation,
         )
         return
 

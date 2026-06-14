@@ -47,14 +47,26 @@ describe("loadLatentMapRunExportedViewerData", () => {
       ].join("\n"),
       "utf-8",
     );
-    await writeJson(path.join(runDir, "embeddings", "dinov3_vits_256.json"), {
-      model_id: "facebook/dinov3-vits16-pretrain-lvd1689m",
-      recipe_name: "dinov3_vits_256",
-    });
-    await writeJson(path.join(runDir, "embeddings", "dinov3_vits_384.json"), {
-      model_id: "facebook/dinov3-vits16-pretrain-lvd1689m",
-      recipe_name: "dinov3_vits_384",
-    });
+    await writeFile(
+      path.join(runDir, "indexes", "dinov3_vits_256_flat_ip.faiss"),
+      "",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(runDir, "indexes", "dinov3_vits_256_faiss_id_map.json"),
+      "[]\n",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(runDir, "indexes", "dinov3_vits_384_flat_ip.faiss"),
+      "",
+      "utf-8",
+    );
+    await writeFile(
+      path.join(runDir, "indexes", "dinov3_vits_384_faiss_id_map.json"),
+      "[]\n",
+      "utf-8",
+    );
     await writeJson(
       path.join(runDir, "layouts", "dinov3_vits_256_umap_a.json"),
       {
@@ -200,16 +212,6 @@ describe("loadLatentMapRunExportedViewerData", () => {
         unassigned_count: 0,
       },
     );
-    await writeFile(
-      path.join(runDir, "indexes", "dinov3_vits_384_neighbors.jsonl"),
-      `${JSON.stringify({
-        image_id: "img_1",
-        neighbor_image_id: "img_2",
-        neighbor_rank: 1,
-        score: 0.9,
-      })}\n`,
-      "utf-8",
-    );
     await Promise.all(
       [32, 64, 96].map((tileSize) =>
         writeJson(
@@ -261,7 +263,6 @@ describe("loadLatentMapRunExportedViewerData", () => {
         unassigned_count: 0,
       },
       layout_id: "umap_a",
-      neighbor_index_path: "indexes/dinov3_vits_384_neighbors.jsonl",
       recipe_name: "dinov3_vits_384",
       thumbnail_atlas_manifest_path: "viewer/atlases/64px/atlas-manifest.json",
       thumbnail_atlas_manifest_paths: {

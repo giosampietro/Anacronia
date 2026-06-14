@@ -96,13 +96,16 @@ for tile_size in 32 64 96 128; do
 done
 
 for recipe in dinov3_vits_256 dinov3_vits_384; do
-  neighbors_path="$RUN_DIR/indexes/${recipe}_neighbors.jsonl"
-  if [ ! -f "$neighbors_path" ] || ! grep --silent '"neighbor_rank": 50' "$neighbors_path"; then
-    echo "Generating FAISS top-50 neighbors for ${recipe}"
+  index_path="$RUN_DIR/indexes/${recipe}_flat_ip.faiss"
+  id_map_path="$RUN_DIR/indexes/${recipe}_faiss_id_map.json"
+  if [ ! -f "$index_path" ] || [ ! -f "$id_map_path" ]; then
+    echo "Generating FAISS live-query index for ${recipe}"
     .venv/bin/anacronia latent-map faiss-build \
       --run-dir "$RUN_DIR" \
       --recipe "$recipe" \
       --top-k 50
+  else
+    echo "Found FAISS live-query index for ${recipe}"
   fi
 
   hdbscan_missing=0

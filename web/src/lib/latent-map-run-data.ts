@@ -130,10 +130,6 @@ export async function loadLatentMapRunExportedViewerData({
       point,
     ]),
   );
-  const neighborIndexPath = await existingRelativePath(
-    resolvedRunDir,
-    path.join("indexes", `${selectedRecipe}_neighbors.jsonl`),
-  );
   const thumbnailAtlasManifestPaths = await findThumbnailAtlasManifestPaths(
     resolvedRunDir,
   );
@@ -154,7 +150,6 @@ export async function loadLatentMapRunExportedViewerData({
     cluster_id: String(cluster.value.cluster_id ?? ""),
     cluster_result: buildAvailableCluster(cluster.value),
     layout_id: String(layout.value.layout_id ?? ""),
-    ...(neighborIndexPath ? { neighbor_index_path: neighborIndexPath } : {}),
     points: (layout.value.points ?? []).map((point) => {
       const imageId = String(point.image_id ?? "");
       const manifestRow = manifestByImageId.get(imageId);
@@ -256,8 +251,9 @@ async function loadAvailableRecipes(
 ): Promise<LoadedRecipe[]> {
   const embeddingDir = path.join(runDir, "embeddings");
   const fileNames = await listJsonFiles(embeddingDir);
+  const recipesByName = new Map<string, LoadedRecipe>();
   const recipes = await Promise.all(
-    fileNames.map(async (fileName) => {
+    fileNames.map(async (fileName): Promise<LoadedRecipe> => {
       const metadata = JSON.parse(
         await readFile(path.join(embeddingDir, fileName), "utf-8"),
       ) as EmbeddingMetadata;
@@ -280,9 +276,67 @@ async function loadAvailableRecipes(
     }),
   );
 
-  return recipes.sort((left, right) =>
+  recipes.forEach((recipe) => {
+    recipesByName.set(recipe.recipe_name, recipe);
+  });
+
+  for (const recipeName of await inferAvailableRecipeNames(runDir)) {
+    if (!recipesByName.has(recipeName)) {
+      recipesByName.set(recipeName, {
+        family: inferRecipeFamily(recipeName),
+        long_edge: inferLongEdge(recipeName),
+        model_id: "",
+        recipe_name: recipeName,
+      });
+    }
+  }
+
+  return [...recipesByName.values()].sort((left, right) =>
     left.recipe_name.localeCompare(right.recipe_name),
   );
+}
+
+async function inferAvailableRecipeNames(runDir: string): Promise<string[]> {
+  const recipeNames = new Set<string>();
+  const [layoutFiles, clusterFiles, indexFiles] = await Promise.all([
+    listJsonFiles(path.join(runDir, "layouts")),
+    listJsonFiles(path.join(runDir, "clusters")),
+    safeReadDir(path.join(runDir, "indexes")),
+  ]);
+
+  const recipeOutputPaths = [
+    ...layoutFiles.map((fileName) => path.join("layouts", fileName)),
+      ...clusterFiles.map((fileName) => path.join("clusters", fileName)),
+  ];
+
+  await Promise.all(
+    recipeOutputPaths.map(async (relativePath) => {
+      try {
+        const value = JSON.parse(
+          await readFile(path.join(runDir, relativePath), "utf-8"),
+        ) as { recipe_name?: unknown };
+        const recipeName = String(value.recipe_name ?? "");
+
+        if (recipeName) {
+          recipeNames.add(recipeName);
+        }
+      } catch {
+        // Ignore malformed auxiliary outputs while discovering selectable recipes.
+      }
+    }),
+  );
+
+  indexFiles.forEach((fileName) => {
+    const match = /^(.+?)_(?:flat_ip\.faiss|faiss_id_map\.json)$/.exec(
+      fileName,
+    );
+
+    if (match) {
+      recipeNames.add(match[1]);
+    }
+  });
+
+  return [...recipeNames].sort((left, right) => left.localeCompare(right));
 }
 
 async function loadRunOutputs<T extends { recipe_name?: unknown }>({

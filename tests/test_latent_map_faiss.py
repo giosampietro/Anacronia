@@ -3,7 +3,12 @@ from datetime import datetime, timezone
 
 import numpy as np
 
-from anacronia.latent_map_faiss import build_faiss_index, query_faiss_neighbors
+from anacronia.latent_map_faiss import (
+    build_faiss_index,
+    query_faiss_neighbors,
+    query_faiss_opposites,
+    query_faiss_relations,
+)
 from anacronia.latent_map_runs import initialize_latent_map_run
 
 
@@ -105,6 +110,70 @@ def test_query_returns_cosine_neighbors_by_image_id(tmp_path):
     assert [neighbor.image_id for neighbor in neighbors] == ["img-b", "img-c"]
     assert neighbors[0].score > neighbors[1].score
     assert neighbors[0].faiss_id == 1
+
+
+def test_query_uses_faiss_index_without_embedding_matrix(tmp_path):
+    run = create_vector_run(tmp_path)
+    build_faiss_index(
+        run_dir=run.run_dir,
+        recipe_name="dinov3_vits_256",
+        top_k=2,
+    )
+    (run.run_dir / "embeddings" / "dinov3_vits_256.npy").unlink()
+
+    neighbors = query_faiss_neighbors(
+        run_dir=run.run_dir,
+        recipe_name="dinov3_vits_256",
+        image_id="img-a",
+        top_k=2,
+    )
+
+    assert [neighbor.image_id for neighbor in neighbors] == ["img-b", "img-c"]
+
+
+def test_query_returns_opposites_from_faiss_index(tmp_path):
+    run = create_vector_run(tmp_path)
+    build_faiss_index(
+        run_dir=run.run_dir,
+        recipe_name="dinov3_vits_256",
+        top_k=2,
+    )
+
+    opposites = query_faiss_opposites(
+        run_dir=run.run_dir,
+        recipe_name="dinov3_vits_256",
+        image_id="img-a",
+        top_k=2,
+    )
+
+    assert [neighbor.image_id for neighbor in opposites] == ["img-c", "img-b"]
+    assert opposites[0].score < opposites[1].score
+
+
+def test_query_relations_returns_closest_and_opposites(tmp_path):
+    run = create_vector_run(tmp_path)
+    build_faiss_index(
+        run_dir=run.run_dir,
+        recipe_name="dinov3_vits_256",
+        top_k=2,
+    )
+
+    relations = query_faiss_relations(
+        run_dir=run.run_dir,
+        recipe_name="dinov3_vits_256",
+        image_id="img-a",
+        top_k=2,
+        relation="both",
+    )
+
+    assert [neighbor.image_id for neighbor in relations["neighbors"]] == [
+        "img-b",
+        "img-c",
+    ]
+    assert [neighbor.image_id for neighbor in relations["opposites"]] == [
+        "img-c",
+        "img-b",
+    ]
 
 
 def test_query_can_include_self_when_requested(tmp_path):

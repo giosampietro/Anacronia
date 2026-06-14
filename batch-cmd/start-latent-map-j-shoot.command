@@ -128,13 +128,8 @@ for tile_size in 32 64 96 128; do
 done
 
 for recipe in dinov3_vits_256 dinov3_vits_384; do
-  neighbors_path="$RUN_DIR/indexes/${recipe}_neighbors.jsonl"
-  require_file "$neighbors_path" "${recipe} FAISS neighbor cache" || missing=1
-  if [ -f "$neighbors_path" ] && ! grep --silent '"neighbor_rank": 50' "$neighbors_path"; then
-    echo "FAISS cache is not top-50:"
-    echo "$neighbors_path"
-    missing=1
-  fi
+  require_file "$RUN_DIR/indexes/${recipe}_flat_ip.faiss" "${recipe} FAISS index" || missing=1
+  require_file "$RUN_DIR/indexes/${recipe}_faiss_id_map.json" "${recipe} FAISS ID map" || missing=1
 
   for n_neighbors in 2 6 10 15 30 50; do
     require_file "$RUN_DIR/layouts/${recipe}_umap_n${n_neighbors}_mindist0p1_seed42.json" "${recipe} UMAP n=${n_neighbors} min=0.1 layout" || missing=1

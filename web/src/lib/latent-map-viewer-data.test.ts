@@ -140,7 +140,7 @@ describe("normalizeExportedLatentMapViewerData", () => {
       relative_path: "original.jpg",
     });
     expect(data.neighbor_lookup_path).toBe(
-      "/api/latent-map/neighbors?path=viewer%2Fneighbors.json",
+      "/api/latent-map/neighbors?recipe=dinov3_vits_256",
     );
     expect(data.points[0].neighbors).toEqual([]);
     expect(data.points[0].thumbnail_path).not.toContain("original.jpg");
@@ -174,6 +174,7 @@ describe("normalizeExportedLatentMapViewerData", () => {
       sourceFolder: "/source/images",
       neighborApiPath: "/api/latent-map/neighbors?run=run-1",
       rawData: {
+        recipe_name: "dinov3_vits_384",
         neighbor_index_path: "viewer/neighbors.json",
         points: [
           {
@@ -185,7 +186,7 @@ describe("normalizeExportedLatentMapViewerData", () => {
     });
 
     expect(data.neighbor_lookup_path).toBe(
-      "/api/latent-map/neighbors?run=run-1&path=viewer%2Fneighbors.json",
+      "/api/latent-map/neighbors?run=run-1&recipe=dinov3_vits_384",
     );
   });
 
