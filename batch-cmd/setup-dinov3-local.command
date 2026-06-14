@@ -29,6 +29,9 @@ if [ ! -x ".venv/bin/python" ]; then
   exit 1
 fi
 
+export HF_HOME="$(pwd)/.hf-cache"
+mkdir -p "$HF_HOME"
+
 echo "Installing local image-embedding dependencies"
 .venv/bin/python -m pip install --upgrade \
   "torch" \

@@ -135,8 +135,10 @@ def build_startup_plan(
     web_root = resolved_project_root / "web"
     next_bin = web_root / "node_modules" / "next" / "dist" / "bin" / "next"
     next_swc_path = storage.data_root / "temp" / "next-swc"
+    hf_home = resolved_project_root / ".hf-cache"
     service_environment = {
         "ANACRONIA_DATA_ROOT": str(storage.data_root),
+        "HF_HOME": str(hf_home),
     }
 
     services = [
@@ -208,6 +210,8 @@ def run_startup_plan(plan: StartupPlan) -> None:
             env.update(service.environment)
             if "NEXT_SWC_PATH" in env:
                 Path(env["NEXT_SWC_PATH"]).mkdir(parents=True, exist_ok=True)
+            if "HF_HOME" in env:
+                Path(env["HF_HOME"]).mkdir(parents=True, exist_ok=True)
             if service.setup_command:
                 subprocess.run(service.setup_command, cwd=service.cwd, env=env, check=True)
             processes.append(subprocess.Popen(service.command, cwd=service.cwd, env=env))

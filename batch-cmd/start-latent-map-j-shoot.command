@@ -176,6 +176,8 @@ export ANACRONIA_DATA_ROOT="$WORKTREE_DATA_ROOT"
 export ANACRONIA_API_PORT="$APP_API_PORT"
 export ANACRONIA_UI_PORT="$APP_UI_PORT"
 export NEXT_SWC_PATH="$WORKTREE_DATA_ROOT/temp/next-swc"
+export HF_HOME="$WORKTREE_ROOT/.hf-cache"
+mkdir -p "$HF_HOME"
 
 start_epoch="$(date +%s)"
 : > "$LOG_FILE"

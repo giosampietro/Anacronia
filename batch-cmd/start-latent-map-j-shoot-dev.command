@@ -84,6 +84,9 @@ if [ -n "$existing_pid" ]; then
   exit 1
 fi
 
+export HF_HOME="$(pwd)/.hf-cache"
+mkdir -p "$HF_HOME"
+
 for tile_size in 32 64 96 128; do
   manifest_path="$RUN_DIR/viewer/atlases/${tile_size}px/atlas-manifest.json"
   if [ ! -f "$manifest_path" ]; then

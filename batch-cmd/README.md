@@ -4,6 +4,8 @@ These files are for running local Anacronia without typing terminal commands.
 
 On macOS, double-click a `.command` file from Finder. A Terminal window will open, run the steps, and wait before closing so you can read the result.
 
+Hugging Face auth for gated local models is stored under the repo-local `.hf-cache/` folder. The DINO setup, login, app startup, and latent-map helper commands all export `HF_HOME` to that folder so FastAPI analysis jobs and CLI checks read the same token/cache.
+
 - `open-anacronia.command` is the daily-use button: it opens Anacronia in your browser if it is already running, or starts it and opens the browser when ready.
 - `setup-local-environment.command` rebuilds the local Python environment with Python 3.12 and installs Python dependencies.
 - `check-dino-apple-silicon.command` checks local MPS acceleration, DINOv3 Hugging Face access, and a public DINO-family image-embedding benchmark.

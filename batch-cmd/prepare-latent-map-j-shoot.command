@@ -63,6 +63,9 @@ if [ ! -f "$VIEWER_DATA" ]; then
   exit 1
 fi
 
+export HF_HOME="$(pwd)/.hf-cache"
+mkdir -p "$HF_HOME"
+
 mkdir -p "$WORKTREE_DATA_ROOT/temp/next-swc"
 export LOKY_MAX_CPU_COUNT="${LOKY_MAX_CPU_COUNT:-8}"
 export NEXT_SWC_PATH="$WORKTREE_DATA_ROOT/temp/next-swc"

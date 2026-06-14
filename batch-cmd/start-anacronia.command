@@ -31,6 +31,9 @@ if [ ! -x ".venv/bin/anacronia" ]; then
   exit 1
 fi
 
+export HF_HOME="$(pwd)/.hf-cache"
+mkdir -p "$HF_HOME"
+
 .venv/bin/python - <<'PY'
 import platform
 import sys
