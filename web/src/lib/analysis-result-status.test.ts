@@ -76,6 +76,51 @@ describe("summarizeAnalysisResultStatus", () => {
     ]);
   });
 
+  it("uses explicit artifact required status instead of retention class guesses", () => {
+    const status = summarizeAnalysisResultStatus({
+      existingArtifactKeys: new Set([
+        "manifest.jsonl",
+        "layouts/dinov3_vits_384_umap.json",
+        "clusters/dinov3_vits_384_hdbscan.json",
+        "indexes/dinov3_vits_384_flat_ip.faiss",
+      ]),
+      manifest: {
+        artifacts: [
+          { key: "manifest.jsonl", role: "image-manifest", required: true },
+          {
+            key: "layouts/dinov3_vits_384_umap.json",
+            role: "layout",
+            required: true,
+          },
+          {
+            key: "clusters/dinov3_vits_384_hdbscan.json",
+            role: "cluster-result",
+            required: true,
+          },
+          {
+            key: "indexes/dinov3_vits_384_flat_ip.faiss",
+            role: "faiss-index",
+            required: true,
+          },
+          {
+            key: "viewer/atlases/32px/atlas-manifest.json",
+            required: true,
+            retention_class: "render-cache",
+            role: "thumbnail-atlas",
+          },
+        ],
+        status: "ready",
+      },
+    });
+
+    expect(status.state).toBe("incomplete");
+    expect(status.canOpenExplorer).toBe(false);
+    expect(status.missingRequiredViewerArtifactKeys).toEqual([
+      "viewer/atlases/32px/atlas-manifest.json",
+    ]);
+    expect(status.missingOptionalRenderCacheKeys).toEqual([]);
+  });
+
   it("marks relation lookup unavailable when declared FAISS artifacts are missing", () => {
     const status = summarizeAnalysisResultStatus({
       existingArtifactKeys: new Set([

@@ -311,7 +311,6 @@ def serialize_analysis_job_manifest(manifest_path: Path) -> dict[str, object]:
     return {
         "analysis_job_id": manifest["analysis_job_id"],
         "analysis_result_ids": analysis_result_ids,
-        "manifest_path": str(manifest_path),
         "recipe_ids": list(manifest.get("recipe_ids", [])),
         "scope_snapshot_id": scope_snapshot.get("snapshot_id"),
         "sibling_group_id": manifest.get("sibling_group_id"),

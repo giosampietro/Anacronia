@@ -5,6 +5,11 @@ from datetime import datetime, timezone
 import json
 from pathlib import Path
 
+from anacronia.analysis_result_contract import (
+    analysis_result_artifact_required,
+    assert_analysis_result_manifest_contract,
+)
+
 
 ANALYSIS_RESULT_MANIFEST_NAME = "analysis-result.json"
 
@@ -62,6 +67,7 @@ def wrap_legacy_latent_map_run_as_analysis_result(
             "wrapper": "legacy-latent-map-run",
         },
     }
+    assert_analysis_result_manifest_contract(manifest)
 
     manifest_path.write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n",
@@ -100,6 +106,7 @@ def _list_legacy_run_artifacts(run_dir: Path) -> list[dict[str, object]]:
                 "retention_class": _retention_class(key),
             }
         )
+        artifacts[-1]["required"] = analysis_result_artifact_required(artifacts[-1])
     return artifacts
 
 

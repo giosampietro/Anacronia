@@ -9,6 +9,12 @@ import shutil
 import time
 from typing import Protocol, Sequence
 
+from anacronia.analysis_result_contract import (
+    analysis_result_artifact_counts,
+    analysis_result_artifact_required,
+    analysis_result_explorer_readiness,
+    assert_analysis_result_manifest_contract,
+)
 from anacronia.analysis_recipes import AnalysisRecipe, select_analysis_recipes
 from anacronia.analysis_scopes import (
     AnalysisScopeSnapshot,
@@ -277,7 +283,7 @@ def _build_analysis_result_manifest(
     sibling_group_id: str,
 ) -> dict[str, object]:
     artifact_payloads = [_artifact_payload(artifact) for artifact in artifacts]
-    return {
+    manifest = {
         "schema_version": 1,
         "asset_kind": "analysis-result-manifest",
         "analysis_kind": "latent-map",
@@ -292,6 +298,9 @@ def _build_analysis_result_manifest(
             ],
         },
         "item_count": resolved_scope.item_count,
+        "output_counts": {
+            "artifacts": analysis_result_artifact_counts(artifact_payloads),
+        },
         "recipes": [
             {
                 "recipe_name": recipe.recipe_id,
@@ -315,10 +324,25 @@ def _build_analysis_result_manifest(
         "sibling_group_id": sibling_group_id,
         "status": "ready",
         "artifacts": artifact_payloads,
+        "explorer_readiness": analysis_result_explorer_readiness(
+            artifacts=artifact_payloads,
+        ),
+        "staleness": {
+            "added_image_count": 0,
+            "removed_image_count": 0,
+            "state": "current",
+        },
+        "export_safety": {
+            "contains_local_absolute_paths": False,
+            "contains_secrets": False,
+            "contains_temporary_paths": False,
+        },
         "viewer": {
             "open_href": f"/latent-map?analysisResultId={analysis_result_id}",
         },
     }
+    assert_analysis_result_manifest_contract(manifest)
+    return manifest
 
 
 def _write_latent_map_run_contract(
@@ -548,6 +572,7 @@ def _artifact_payload(artifact: AnalysisStageArtifact) -> dict[str, object]:
         "content_type": artifact.content_type,
         "retention_class": artifact.retention_class,
     }
+    payload["required"] = analysis_result_artifact_required(payload)
     if artifact.byte_size is not None:
         payload["byte_size"] = artifact.byte_size
     if artifact.metadata:

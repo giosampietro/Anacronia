@@ -1,6 +1,7 @@
 import json
 from datetime import datetime, timezone
 
+from anacronia.analysis_result_contract import assert_analysis_result_manifest_contract
 from anacronia.analysis_results import wrap_legacy_latent_map_run_as_analysis_result
 from anacronia.latent_map_runs import initialize_latent_map_run
 from anacronia.latent_map_viewer_export import export_viewer_data
@@ -184,6 +185,8 @@ def test_wraps_legacy_run_as_path_clean_analysis_result_manifest(tmp_path):
     assert "clusters/dinov3_vits_256_hdbscan_detail_mcs15_ms5_leaf.json" in artifact_keys
     assert "viewer/atlases/32px/atlas-manifest.json" in artifact_keys
     assert all(artifact["byte_size"] > 0 for artifact in manifest["artifacts"])
+    assert all("required" in artifact for artifact in manifest["artifacts"])
+    assert_analysis_result_manifest_contract(manifest)
     assert str(run.source_folder) not in serialized
     assert "source_path" not in serialized
 
