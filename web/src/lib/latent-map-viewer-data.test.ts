@@ -169,6 +169,52 @@ describe("normalizeExportedLatentMapViewerData", () => {
     );
   });
 
+  it("can address thumbnails by artifact key for Analysis Result opens", () => {
+    const data = normalizeExportedLatentMapViewerData({
+      sourceFolder: "/source/images",
+      thumbnailApiPath:
+        "/api/latent-map/thumbnails?analysisResultId=latent-map-run-1",
+      thumbnailResourceParamName: "artifactKey",
+      rawData: {
+        points: [
+          {
+            image_id: "img_1",
+            thumbnail_path: "thumbnails/img_1.jpg",
+            preview_path: "previews/img_1.jpg",
+          },
+        ],
+        thumbnail_atlas: {
+          asset_kind: "latent-map-thumbnail-atlas",
+          atlas_size: 64,
+          image_count: 1,
+          items: [],
+          page_count: 1,
+          pages: [
+            {
+              height: 64,
+              index: 0,
+              path: "viewer/atlases/64px/page-000.png",
+              width: 64,
+            },
+          ],
+          run_id: "run-1",
+          schema_version: 1,
+          tile_size: 64,
+        },
+      },
+    });
+
+    expect(data.points[0].thumbnail_path).toBe(
+      "/api/latent-map/thumbnails?analysisResultId=latent-map-run-1&artifactKey=thumbnails%2Fimg_1.jpg",
+    );
+    expect(data.points[0].preview_path).toBe(
+      "/api/latent-map/thumbnails?analysisResultId=latent-map-run-1&artifactKey=previews%2Fimg_1.jpg",
+    );
+    expect(data.thumbnail_atlas?.pages[0].path).toBe(
+      "/api/latent-map/thumbnails?analysisResultId=latent-map-run-1&artifactKey=viewer%2Fatlases%2F64px%2Fpage-000.png",
+    );
+  });
+
   it("preserves existing neighbor API query params", () => {
     const data = normalizeExportedLatentMapViewerData({
       sourceFolder: "/source/images",

@@ -68,6 +68,22 @@ export async function resolveAnalysisResultArtifact({
   };
 }
 
+export async function resolveAnalysisResultRunDir({
+  analysisResultId,
+  runsRoot,
+}: {
+  analysisResultId: string;
+  runsRoot: string;
+}): Promise<string | null> {
+  const resolvedRunsRoot = path.resolve(runsRoot);
+  const found = await findAnalysisResultManifest({
+    analysisResultId,
+    runsRoot: resolvedRunsRoot,
+  });
+
+  return found?.runDir ?? null;
+}
+
 export function inferContentType(filePath: string): string {
   const extension = path.extname(filePath).toLowerCase();
 
