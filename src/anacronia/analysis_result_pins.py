@@ -54,14 +54,21 @@ def _pinned_vector_id_map_key(*, recipe_name: str, run_dir: Path) -> str:
 def _load_image_id_order(path: Path) -> list[str]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     if isinstance(payload, list):
-        return [str(image_id) for image_id in payload]
+        return [_image_id_from_id_map_row(row) for row in payload]
     if isinstance(payload, dict):
         ids = payload.get("ids")
         if not isinstance(ids, list):
             ids = payload.get("image_ids")
         if isinstance(ids, list):
-            return [str(image_id) for image_id in ids]
+            return [_image_id_from_id_map_row(row) for row in ids]
     return []
+
+
+def _image_id_from_id_map_row(row: object) -> str:
+    if isinstance(row, dict):
+        return str(row.get("image_id", ""))
+
+    return str(row)
 
 
 def _validate_point_order(

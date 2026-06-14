@@ -473,7 +473,13 @@ async function readImageIdOrderMap(
   const value = JSON.parse(content) as unknown;
 
   if (Array.isArray(value)) {
-    return value.map((imageId) => String(imageId));
+    return value.map((row) => {
+      if (row && typeof row === "object" && "image_id" in row) {
+        return String(row.image_id ?? "");
+      }
+
+      return String(row);
+    });
   }
   if (value && typeof value === "object") {
     const record = value as Record<string, unknown>;

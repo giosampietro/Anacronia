@@ -169,6 +169,42 @@ def test_exports_viewer_data_with_generated_atlas_manifest_path(tmp_path):
     )
 
 
+def test_viewer_export_accepts_production_style_faiss_object_id_map(tmp_path):
+    run = create_viewer_run(tmp_path)
+    (run.run_dir / "indexes" / "dinov3_vits_256_faiss_id_map.json").write_text(
+        json.dumps(
+            [
+                {"faiss_id": 0, "image_id": "img-a"},
+                {"faiss_id": 1, "image_id": "img-b"},
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (run.run_dir / "analysis-result.json").write_text(
+        json.dumps(
+            {
+                "analysis_result_id": f"latent-map-{run.run_id}",
+                "recipes": [
+                    {
+                        "recipe_name": "dinov3_vits_256",
+                        "artifact_keys": {
+                            "vector_id_map": "indexes/dinov3_vits_256_faiss_id_map.json",
+                        },
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    summary = export_viewer_data(
+        run_dir=run.run_dir,
+        recipe_name="dinov3_vits_256",
+    )
+
+    assert summary.point_count == 2
+
+
 def test_viewer_export_detects_pinned_vector_row_order_mismatch(tmp_path):
     run = create_viewer_run(tmp_path)
     (run.run_dir / "indexes" / "dinov3_vits_256_faiss_id_map.json").write_text(

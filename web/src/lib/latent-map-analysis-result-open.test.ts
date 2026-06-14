@@ -424,4 +424,95 @@ describe("loadLatentMapAnalysisResultViewerData", () => {
       "Pinned Analysis Result row order mismatch for layout umap_pinned.",
     );
   });
+
+  it("opens production-style FAISS object id maps when pinned rows match", async () => {
+    const runsRoot = await mkdtemp(path.join(os.tmpdir(), "analysis-result-open-"));
+    const runDir = path.join(runsRoot, "20260609T123000Z-j-shoot");
+    const analysisResultId = "latent-map-20260609T123000Z-j-shoot";
+
+    await mkdir(path.join(runDir, "clusters"), { recursive: true });
+    await mkdir(path.join(runDir, "indexes"), { recursive: true });
+    await mkdir(path.join(runDir, "layouts"), { recursive: true });
+    await writeFile(
+      path.join(runDir, "manifest.jsonl"),
+      [
+        JSON.stringify({
+          image_id: "img_1",
+          thumbnail_path: "thumbnails/img_1.jpg",
+        }),
+        JSON.stringify({
+          image_id: "img_2",
+          thumbnail_path: "thumbnails/img_2.jpg",
+        }),
+      ].join("\n"),
+      "utf-8",
+    );
+    await writeJson(path.join(runDir, "indexes", "dinov3_vits_384_id_map.json"), [
+      { faiss_id: 0, image_id: "img_1" },
+      { faiss_id: 1, image_id: "img_2" },
+    ]);
+    await writeJson(path.join(runDir, "layouts", "dinov3_vits_384_umap.json"), {
+      layout_id: "umap_pinned",
+      method: "umap",
+      points: [
+        { image_id: "img_1", x: 1, y: 1 },
+        { image_id: "img_2", x: 2, y: 2 },
+      ],
+      recipe_name: "dinov3_vits_384",
+    });
+    await writeJson(
+      path.join(runDir, "clusters", "dinov3_vits_384_cluster.json"),
+      {
+        cluster_count: 1,
+        cluster_id: "cluster_pinned",
+        method: "hdbscan",
+        points: [
+          { cluster_id: 0, image_id: "img_1" },
+          { cluster_id: 0, image_id: "img_2" },
+        ],
+        recipe_name: "dinov3_vits_384",
+      },
+    );
+    await writeJson(path.join(runDir, "analysis-result.json"), {
+      analysis_result_id: analysisResultId,
+      artifacts: [
+        { key: "manifest.jsonl", role: "image-manifest" },
+        { key: "indexes/dinov3_vits_384_id_map.json", role: "faiss-index" },
+        { key: "layouts/dinov3_vits_384_umap.json", role: "layout" },
+        { key: "clusters/dinov3_vits_384_cluster.json", role: "cluster-result" },
+      ],
+      recipes: [
+        {
+          recipe_name: "dinov3_vits_384",
+          artifact_keys: {
+            image_manifest: "manifest.jsonl",
+            vector_id_map: "indexes/dinov3_vits_384_id_map.json",
+            layouts: [
+              {
+                key: "layouts/dinov3_vits_384_umap.json",
+                layout_id: "umap_pinned",
+              },
+            ],
+            clusters: [
+              {
+                cluster_id: "cluster_pinned",
+                key: "clusters/dinov3_vits_384_cluster.json",
+              },
+            ],
+          },
+        },
+      ],
+    });
+
+    const result = await loadLatentMapAnalysisResultViewerData({
+      analysisResultId,
+      runsRoot,
+      selectedRecipeName: "dinov3_vits_384",
+    });
+
+    expect(result.rawData.points).toEqual([
+      expect.objectContaining({ image_id: "img_1", x: 1, y: 1 }),
+      expect.objectContaining({ image_id: "img_2", x: 2, y: 2 }),
+    ]);
+  });
 });
