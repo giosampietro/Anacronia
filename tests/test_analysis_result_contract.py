@@ -118,6 +118,22 @@ def test_contract_rejects_unsafe_artifact_keys():
         assert_analysis_result_manifest_contract(manifest)
 
 
+def test_contract_requires_new_result_job_provenance():
+    manifest = valid_manifest()
+    del manifest["analysis_job_id"]
+
+    with pytest.raises(AnalysisResultContractError):
+        assert_analysis_result_manifest_contract(manifest)
+
+
+def test_contract_requires_new_result_artifacts():
+    manifest = valid_manifest()
+    del manifest["artifacts"]
+
+    with pytest.raises(AnalysisResultContractError):
+        assert_analysis_result_manifest_contract(manifest)
+
+
 def test_contract_rejects_local_paths_anywhere_in_manifest():
     manifest = valid_manifest()
     manifest["source"]["source_path"] = "/Users/giorgio/secret/source.jpg"

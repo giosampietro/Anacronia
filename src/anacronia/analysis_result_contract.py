@@ -20,6 +20,7 @@ REQUIRED_MANIFEST_FIELDS = (
 )
 REQUIRED_NEW_RESULT_FIELDS = (
     "analysis_job_id",
+    "artifacts",
     "explorer_readiness",
     "export_safety",
     "output_counts",
@@ -169,7 +170,7 @@ def _is_new_result_manifest(manifest: Mapping[str, Any]) -> bool:
     source = manifest.get("source", {})
     if isinstance(source, Mapping) and source.get("kind") == "legacy-latent-map-run":
         return False
-    return bool(manifest.get("analysis_job_id"))
+    return True
 
 
 def _assert_artifact_contract(artifact: Mapping[str, Any], *, index: int) -> None:
