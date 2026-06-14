@@ -101,17 +101,26 @@ def query_faiss_neighbors(
     image_id: str,
     top_k: int = 20,
     include_self: bool = False,
+    active_image_ids: set[str] | None = None,
 ) -> list[FaissNeighbor]:
     if top_k < 1:
         raise ValueError("top_k must be at least 1")
 
     index, id_map = _load_faiss_artifacts(run_dir=run_dir, recipe_name=recipe_name)
     faiss_id = _faiss_id_for_image_id(id_map=id_map, image_id=image_id)
+    if active_image_ids is not None and image_id not in active_image_ids:
+        raise ValueError(f"Image ID is inactive in the Analysis Result: {image_id}")
     if faiss_id >= index.ntotal:
         raise ValueError(f"FAISS ID is outside the index: {faiss_id}")
 
     query_vector = index.reconstruct(faiss_id).reshape(1, index.d).astype(np.float32)
-    search_count = min(index.ntotal, top_k + (0 if include_self else 1))
+    search_count = _neighbor_search_count(
+        active_image_ids=active_image_ids,
+        id_map=id_map,
+        include_self=include_self,
+        index_total=index.ntotal,
+        top_k=top_k,
+    )
     scores, ids = index.search(query_vector, search_count)
 
     neighbors: list[FaissNeighbor] = []
@@ -121,13 +130,14 @@ def query_faiss_neighbors(
         neighbor_faiss_id = int(neighbor_id)
         if not include_self and neighbor_faiss_id == faiss_id:
             continue
-        neighbors.append(
-            _neighbor_from_id_map(
-                id_map=id_map,
-                faiss_id=neighbor_faiss_id,
-                score=float(score),
-            )
+        neighbor = _neighbor_from_id_map(
+            id_map=id_map,
+            faiss_id=neighbor_faiss_id,
+            score=float(score),
         )
+        if active_image_ids is not None and neighbor.image_id not in active_image_ids:
+            continue
+        neighbors.append(neighbor)
         if len(neighbors) == top_k:
             break
     return neighbors
@@ -140,12 +150,15 @@ def query_faiss_opposites(
     image_id: str,
     top_k: int = 20,
     include_self: bool = False,
+    active_image_ids: set[str] | None = None,
 ) -> list[FaissNeighbor]:
     if top_k < 1:
         raise ValueError("top_k must be at least 1")
 
     index, id_map = _load_faiss_artifacts(run_dir=run_dir, recipe_name=recipe_name)
     faiss_id = _faiss_id_for_image_id(id_map=id_map, image_id=image_id)
+    if active_image_ids is not None and image_id not in active_image_ids:
+        raise ValueError(f"Image ID is inactive in the Analysis Result: {image_id}")
     candidate_count = min(index.ntotal, len(id_map))
     if faiss_id >= candidate_count:
         raise ValueError(f"FAISS ID is outside the index: {faiss_id}")
@@ -160,13 +173,14 @@ def query_faiss_opposites(
         neighbor_faiss_id = int(neighbor_id)
         if not include_self and neighbor_faiss_id == faiss_id:
             continue
-        opposites.append(
-            _neighbor_from_id_map(
-                id_map=id_map,
-                faiss_id=neighbor_faiss_id,
-                score=float(scores[neighbor_faiss_id]),
-            )
+        neighbor = _neighbor_from_id_map(
+            id_map=id_map,
+            faiss_id=neighbor_faiss_id,
+            score=float(scores[neighbor_faiss_id]),
         )
+        if active_image_ids is not None and neighbor.image_id not in active_image_ids:
+            continue
+        opposites.append(neighbor)
         if len(opposites) == top_k:
             break
     return opposites
@@ -179,6 +193,7 @@ def query_faiss_relations(
     image_id: str,
     top_k: int = 20,
     relation: str = "closest",
+    active_image_ids: set[str] | None = None,
 ) -> dict[str, list[FaissNeighbor]]:
     if relation not in {"closest", "opposite", "both"}:
         raise ValueError(f"Unsupported FAISS relation: {relation}")
@@ -191,6 +206,7 @@ def query_faiss_relations(
             recipe_name=recipe_name,
             image_id=image_id,
             top_k=top_k,
+            active_image_ids=active_image_ids,
         ),
         "opposites": []
         if relation == "closest"
@@ -199,8 +215,25 @@ def query_faiss_relations(
             recipe_name=recipe_name,
             image_id=image_id,
             top_k=top_k,
+            active_image_ids=active_image_ids,
         ),
     }
+
+
+def _neighbor_search_count(
+    *,
+    active_image_ids: set[str] | None,
+    id_map: list[dict[str, object]],
+    include_self: bool,
+    index_total: int,
+    top_k: int,
+) -> int:
+    if active_image_ids is None:
+        return min(index_total, top_k + (0 if include_self else 1))
+
+    indexed_image_ids = {str(row["image_id"]) for row in id_map[:index_total]}
+    inactive_count = len(indexed_image_ids - active_image_ids)
+    return min(index_total, top_k + inactive_count + (0 if include_self else 1))
 
 
 def _load_vectors(*, resolved_run_dir: Path, recipe_name: str) -> np.ndarray:

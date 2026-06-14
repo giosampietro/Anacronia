@@ -26,11 +26,13 @@ export type AnalysisResultStatusState =
   | "failed";
 
 export type AnalysisResultStatusSummary = {
+  activeImageIds: string[];
   canOpenExplorer: boolean;
   missingOptionalRenderCacheKeys: string[];
   missingRequiredRelationArtifactKeys: string[];
   missingRequiredViewerArtifactKeys: string[];
   relationAvailable: boolean;
+  runUpdatedAnalysisAvailable: boolean;
   sourceChanges: {
     addedImageIds: string[];
     removedImageIds: string[];
@@ -71,10 +73,15 @@ export function summarizeAnalysisResultStatus({
     artifacts.filter((artifact) => REQUIRED_VIEWER_ROLES.has(artifact.role)),
     existingArtifactKeys,
   );
-  const sourceChanges = summarizeSourceChanges({
+  const sourceChangeSummary = summarizeSourceChanges({
     currentImageIds,
     snapshotImageIds,
   });
+  const sourceChanges = {
+    addedImageIds: sourceChangeSummary.addedImageIds,
+    removedImageIds: sourceChangeSummary.removedImageIds,
+  };
+  const runUpdatedAnalysisAvailable = sourceChanges.addedImageIds.length > 0;
   const relationAvailable =
     relationArtifacts.length > 0 &&
     missingRequiredRelationArtifactKeys.length === 0;
@@ -93,11 +100,13 @@ export function summarizeAnalysisResultStatus({
   });
 
   return {
+    activeImageIds: sourceChangeSummary.activeImageIds,
     canOpenExplorer,
     missingOptionalRenderCacheKeys,
     missingRequiredRelationArtifactKeys,
     missingRequiredViewerArtifactKeys,
     relationAvailable,
+    runUpdatedAnalysisAvailable,
     sourceChanges,
     state,
   };
@@ -206,12 +215,16 @@ function summarizeSourceChanges({
 }) {
   if (!currentImageIds || !snapshotImageIds) {
     return {
+      activeImageIds: [],
       addedImageIds: [],
       removedImageIds: [],
     };
   }
 
   return {
+    activeImageIds: [...snapshotImageIds]
+      .filter((imageId) => currentImageIds.has(imageId))
+      .sort((left, right) => left.localeCompare(right)),
     addedImageIds: [...currentImageIds]
       .filter((imageId) => !snapshotImageIds.has(imageId))
       .sort((left, right) => left.localeCompare(right)),

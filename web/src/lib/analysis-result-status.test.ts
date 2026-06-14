@@ -120,6 +120,8 @@ describe("summarizeAnalysisResultStatus", () => {
 
     expect(status.state).toBe("stale");
     expect(status.canOpenExplorer).toBe(true);
+    expect(status.activeImageIds).toEqual(["img-b"]);
+    expect(status.runUpdatedAnalysisAvailable).toBe(true);
     expect(status.sourceChanges).toEqual({
       addedImageIds: ["img-c"],
       removedImageIds: ["img-a"],
