@@ -3,15 +3,18 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+WORKTREE_ROOT="$(pwd)"
 RUN_ID="20260609T130049Z-mvp1-j-shoot-20260609"
 RUN_DIR="/private/tmp/anacronia-latent-map-runs/$RUN_ID"
 VIEWER_DATA="$RUN_DIR/viewer/map-data.json"
-WORKTREE_DATA_ROOT="/private/tmp/anacronia-latent-map-worktree-data"
+APP_DATA_ROOT="$WORKTREE_ROOT/data"
+WORKTREE_RUNTIME_ROOT="/private/tmp/anacronia-latent-map-worktree-runtime"
 APP_UI_PORT="18661"
 APP_API_PORT="18671"
 APP_ORIGIN="http://localhost:$APP_UI_PORT"
 LATENT_MAP_URL="$APP_ORIGIN/latent-map?run=$RUN_ID&recipe=dinov3_vits_384&layout=umap_n15_mindist0p05_seed42&clusterResult=hierarchy_balanced_k48_average_cosine_l2&mode=thumbnails&thumb=64&detail=auto&neighbors=20&relation=closest&z=0.75"
 WATCHER_PID=""
+API_SERVER_PID=""
 HDBSCAN_CLUSTER_IDS=(
   hdbscan_fine_mcs10_ms5_eom
   hdbscan_detail_mcs15_ms5_leaf
@@ -36,6 +39,9 @@ finish() {
   if [ -n "$WATCHER_PID" ]; then
     kill "$WATCHER_PID" >/dev/null 2>&1 || true
   fi
+  if [ -n "$API_SERVER_PID" ] && kill -0 "$API_SERVER_PID" >/dev/null 2>&1; then
+    kill "$API_SERVER_PID" >/dev/null 2>&1 || true
+  fi
   echo
   if [ "$status" -eq 0 ]; then
     echo "Anacronia latent map dev server stopped."
@@ -52,7 +58,8 @@ finish() {
 trap finish EXIT
 
 echo "Starting Anacronia latent map dev server from this worktree"
-echo "Worktree: $(pwd)"
+echo "Worktree: $WORKTREE_ROOT"
+echo "App data root: $APP_DATA_ROOT"
 echo "Run: $RUN_ID"
 echo "URL: $LATENT_MAP_URL"
 echo
@@ -61,6 +68,12 @@ ulimit -n 8192 >/dev/null 2>&1 || true
 
 if [ ! -x ".venv/bin/anacronia" ]; then
   echo "Missing Anacronia command at .venv/bin/anacronia."
+  echo "Double-click batch-cmd/setup-local-environment.command first."
+  exit 1
+fi
+
+if [ ! -x ".venv/bin/python" ]; then
+  echo "Missing Python virtualenv at .venv/bin/python."
   echo "Double-click batch-cmd/setup-local-environment.command first."
   exit 1
 fi
@@ -162,11 +175,50 @@ done
 
 export ANACRONIA_LATENT_MAP_RUN_DIR="$RUN_DIR"
 export ANACRONIA_LATENT_MAP_VIEWER_DATA="$VIEWER_DATA"
-export ANACRONIA_DATA_ROOT="$WORKTREE_DATA_ROOT"
+export ANACRONIA_DATA_ROOT="$APP_DATA_ROOT"
 export ANACRONIA_API_PORT="$APP_API_PORT"
 export ANACRONIA_UI_PORT="$APP_UI_PORT"
-export NEXT_SWC_PATH="$WORKTREE_DATA_ROOT/temp/next-swc"
+export NEXT_SWC_PATH="$WORKTREE_RUNTIME_ROOT/temp/next-swc"
 mkdir -p "$ANACRONIA_DATA_ROOT" "$NEXT_SWC_PATH"
+
+existing_api_pid="$(lsof -nP -tiTCP:"$APP_API_PORT" -sTCP:LISTEN 2>/dev/null | head -n 1)"
+if [ -n "$existing_api_pid" ]; then
+  echo "Port $APP_API_PORT has an existing API listener (PID $existing_api_pid). Restarting this worktree API with the real app data root."
+  kill "$existing_api_pid" >/dev/null 2>&1 || true
+  for _ in {1..20}; do
+    if kill -0 "$existing_api_pid" >/dev/null 2>&1; then
+      sleep 0.2
+    else
+      break
+    fi
+  done
+fi
+
+(
+  cd "$WORKTREE_ROOT"
+  .venv/bin/python -m uvicorn anacronia.api:create_app \
+    --host 127.0.0.1 \
+    --port "$APP_API_PORT" \
+    --log-level info \
+    --factory
+) &
+API_SERVER_PID="$!"
+
+for _ in {1..15}; do
+  if curl --silent --fail --max-time 2 "http://127.0.0.1:$APP_API_PORT/health" >/dev/null 2>&1; then
+    break
+  fi
+  if ! kill -0 "$API_SERVER_PID" >/dev/null 2>&1; then
+    echo "FastAPI backend exited before it became healthy."
+    exit 1
+  fi
+  sleep 1
+done
+
+if ! curl --silent --fail --max-time 2 "http://127.0.0.1:$APP_API_PORT/health" >/dev/null 2>&1; then
+  echo "Timed out waiting 15 seconds for the FastAPI backend on port $APP_API_PORT."
+  exit 1
+fi
 
 (
   for _ in {1..120}; do

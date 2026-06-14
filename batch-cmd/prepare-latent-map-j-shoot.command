@@ -6,7 +6,7 @@ cd "$(dirname "$0")/.."
 RUN_ID="20260609T130049Z-mvp1-j-shoot-20260609"
 RUN_DIR="/private/tmp/anacronia-latent-map-runs/$RUN_ID"
 VIEWER_DATA="$RUN_DIR/viewer/map-data.json"
-WORKTREE_DATA_ROOT="/private/tmp/anacronia-latent-map-worktree-data"
+WORKTREE_RUNTIME_ROOT="/private/tmp/anacronia-latent-map-worktree-runtime"
 HDBSCAN_CLUSTER_IDS=(
   hdbscan_fine_mcs10_ms5_eom
   hdbscan_detail_mcs15_ms5_leaf
@@ -66,9 +66,9 @@ fi
 export HF_HOME="$(pwd)/.hf-cache"
 mkdir -p "$HF_HOME"
 
-mkdir -p "$WORKTREE_DATA_ROOT/temp/next-swc"
+mkdir -p "$WORKTREE_RUNTIME_ROOT/temp/next-swc"
 export LOKY_MAX_CPU_COUNT="${LOKY_MAX_CPU_COUNT:-8}"
-export NEXT_SWC_PATH="$WORKTREE_DATA_ROOT/temp/next-swc"
+export NEXT_SWC_PATH="$WORKTREE_RUNTIME_ROOT/temp/next-swc"
 
 for tile_size in 32 64 96 128; do
   manifest_path="$RUN_DIR/viewer/atlases/${tile_size}px/atlas-manifest.json"

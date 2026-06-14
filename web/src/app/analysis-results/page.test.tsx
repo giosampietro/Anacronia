@@ -184,4 +184,30 @@ describe("AnalysisResultsPage", () => {
     expect(html).toContain("1 failed");
     expect(html).not.toContain("No completed result");
   });
+
+  it("shows an explicit empty collection state instead of the slug fallback", async () => {
+    const runsRoot = await mkdtemp(path.join(os.tmpdir(), "analysis-results-page-"));
+
+    process.env.ANACRONIA_LATENT_MAP_RUNS_ROOT = runsRoot;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith("/search-sets")) {
+          return Response.json([]);
+        }
+        return Response.json({ jobs: [] });
+      }),
+    );
+
+    const html = renderToString(await AnalysisResultsPage()).replaceAll(
+      "<!-- -->",
+      "",
+    );
+
+    expect(html).toContain("No collections found");
+    expect(html).toContain("Create or import a Collection");
+    expect(html).not.toContain("Collection slugs");
+    expect(html).not.toContain("placeholder=\"j-shoot, mood-board\"");
+  });
 });

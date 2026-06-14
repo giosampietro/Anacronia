@@ -12,7 +12,8 @@ This is the fast daily-use launcher. It runs from the worktree that contains the
 
 - reuses the server if the exact latent-map URL is already healthy;
 - restarts only the reserved worktree port `18661` if that port has a stale or unhealthy listener;
-- starts the built Next app directly instead of the full Python app wrapper;
+- restarts the reserved worktree API port `18671` so stale APIs cannot point at a temporary empty database;
+- starts the built Next app directly and starts FastAPI with the worktree's real `data/` root;
 - verifies the exact real-data `/latent-map` URL before opening the browser;
 - leaves the main app port `18660` alone.
 
@@ -20,7 +21,8 @@ It sets:
 
 - `ANACRONIA_LATENT_MAP_RUN_DIR=/private/tmp/anacronia-latent-map-runs/20260609T130049Z-mvp1-j-shoot-20260609`
 - `ANACRONIA_LATENT_MAP_VIEWER_DATA=/private/tmp/anacronia-latent-map-runs/20260609T130049Z-mvp1-j-shoot-20260609/viewer/map-data.json`
-- `ANACRONIA_DATA_ROOT=/private/tmp/anacronia-latent-map-worktree-data`
+- `ANACRONIA_DATA_ROOT=<worktree>/data`
+- `NEXT_SWC_PATH=/private/tmp/anacronia-latent-map-worktree-runtime/temp/next-swc`
 - UI port `18661`, leaving the main Anacronia app on `18660`
 - API port `18671`
 
@@ -74,7 +76,9 @@ Canvas shortcuts:
 
 ## Avoiding The Wrong Worktree
 
-The main app can keep running on `http://localhost:18660`. This launcher uses a separate temporary data root, UI port `18661`, and API port `18671`. Close only another latent-map worktree Terminal window if `http://localhost:18661` is already serving an app, because that is how the viewer can appear to load the wrong worktree or fallback data.
+The main app can keep running on `http://localhost:18660`. This launcher uses the worktree's real `data/` folder for Anacronia Collections and Analysis Studio, plus a separate temporary runtime folder only for logs, pid files, and Next SWC cache. It owns the reserved worktree API port `18671`; if something is already listening there, the launcher restarts it with the real data root. Do not use the temporary runtime folder as `ANACRONIA_DATA_ROOT`; doing that makes Analysis Studio look like it has no Collections and causes the form to enter its empty-data state.
+
+Close only another latent-map worktree Terminal window if `http://localhost:18661` is already serving an app, because that is how the viewer can appear to load the wrong worktree or fallback data.
 
 For a correct real-data launch, the top of the page should show the latent-map controls and the canvas should render the J Shoot run, not fixture data.
 

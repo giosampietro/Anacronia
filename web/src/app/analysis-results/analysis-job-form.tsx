@@ -17,6 +17,7 @@ export function AnalysisJobForm({
   collections,
 }: AnalysisJobFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const canSubmit = collectionApiUnavailable || collections.length > 0;
 
   return (
     <form
@@ -39,7 +40,7 @@ export function AnalysisJobForm({
             ))}
           </select>
         </label>
-      ) : (
+      ) : collectionApiUnavailable ? (
         <label className="grid gap-2 text-sm text-neutral-300">
           Collection slugs
           <input
@@ -52,6 +53,26 @@ export function AnalysisJobForm({
             }
             type="text"
           />
+        </label>
+      ) : (
+        <label className="grid gap-2 text-sm text-neutral-300">
+          Collection
+          <select
+            aria-describedby="analysis-empty-collections"
+            className="h-10 rounded-md border border-neutral-800 bg-neutral-950 px-3 text-neutral-500 outline-none"
+            disabled
+            name="collection_slugs"
+          >
+            <option>No collections found</option>
+          </select>
+          <span
+            className="text-xs leading-5 text-neutral-500"
+            id="analysis-empty-collections"
+          >
+            Create or import a Collection before running analysis. If you
+            already have Collections, check that Anacronia is using the real
+            app data root.
+          </span>
         </label>
       )}
       <fieldset className="flex flex-wrap items-end gap-3">
@@ -76,7 +97,7 @@ export function AnalysisJobForm({
         ))}
         <button
           className="h-10 rounded-md border border-neutral-600 px-4 text-sm font-medium text-neutral-100 transition hover:border-neutral-400 hover:bg-neutral-800 disabled:cursor-wait disabled:border-neutral-800 disabled:text-neutral-500"
-          disabled={isSubmitting}
+          disabled={isSubmitting || !canSubmit}
           type="submit"
         >
           {isSubmitting ? "Running..." : "Run Analysis"}
