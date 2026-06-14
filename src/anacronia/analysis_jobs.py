@@ -65,6 +65,14 @@ class AnalysisStageRunner(Protocol):
         ...
 
 
+class UnavailableAnalysisStageRunner:
+    def run_stage(self, request: AnalysisStageRequest) -> AnalysisStageResult:
+        raise RuntimeError(
+            "No production AnalysisStageRunner is configured for "
+            f"{request.stage_name}."
+        )
+
+
 @dataclass(frozen=True)
 class AnalysisJobSummary:
     analysis_job_id: str

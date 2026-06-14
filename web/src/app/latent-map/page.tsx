@@ -4,10 +4,13 @@ import type { Metadata } from "next";
 
 import { AppSpaceShell } from "@/components/app-space-shell";
 import { LatentMapViewer } from "@/components/latent-map-viewer";
+import {
+  getAdditionalAnalysisResultRoots,
+  getLatentMapRunsRoot,
+} from "@/lib/analysis-result-roots";
 import { loadLatentMapAnalysisResultViewerData } from "@/lib/latent-map-analysis-result-open";
 import { latentMapFixture } from "@/lib/latent-map-fixture";
 import {
-  LATENT_MAP_RUNS_ROOT,
   loadLatentMapRunExportedViewerData,
 } from "@/lib/latent-map-run-data";
 import { parseLatentMapUrlState } from "@/lib/latent-map-viewer-state";
@@ -96,10 +99,6 @@ async function loadLatentMapSourceFolder(runDir: string): Promise<string> {
   return sourceFolder;
 }
 
-function getLatentMapRunsRoot(): string {
-  return process.env.ANACRONIA_LATENT_MAP_RUNS_ROOT ?? LATENT_MAP_RUNS_ROOT;
-}
-
 async function hydrateThumbnailAtlas({
   rawData,
   runDir,
@@ -169,6 +168,7 @@ export async function loadLatentMapViewerData(
   try {
     if (analysisResultId) {
       const loaded = await loadLatentMapAnalysisResultViewerData({
+        additionalRunsRoots: getAdditionalAnalysisResultRoots(),
         analysisResultId,
         runsRoot,
         selectedClusterId:

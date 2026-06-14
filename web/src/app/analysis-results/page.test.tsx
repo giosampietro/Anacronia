@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { renderToString } from "react-dom/server";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import AnalysisResultsPage from "@/app/analysis-results/page";
 
@@ -19,6 +19,7 @@ describe("AnalysisResultsPage", () => {
     } else {
       process.env.ANACRONIA_LATENT_MAP_RUNS_ROOT = previousRunsRoot;
     }
+    vi.unstubAllGlobals();
   });
 
   it("renders existing Analysis Results with Explorer links", async () => {
@@ -26,6 +27,24 @@ describe("AnalysisResultsPage", () => {
     const runDir = path.join(runsRoot, "20260609T123000Z-j-shoot");
 
     process.env.ANACRONIA_LATENT_MAP_RUNS_ROOT = runsRoot;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => (
+        Response.json({
+          jobs: [
+            {
+              analysis_job_id: "analysis-job-20260614T130000Z",
+              analysis_result_ids: ["latent-map-20260609T123000Z-j-shoot"],
+              recipe_ids: ["dinov3_vits_384"],
+              status: "ready",
+              viewer_hrefs: [
+                "/latent-map?analysisResultId=latent-map-20260609T123000Z-j-shoot",
+              ],
+            },
+          ],
+        })
+      )),
+    );
     await mkdir(runDir, { recursive: true });
     await writeFile(path.join(runDir, "manifest.jsonl"), "", "utf-8");
     await writeJson(path.join(runDir, "analysis-result.json"), {
@@ -49,6 +68,11 @@ describe("AnalysisResultsPage", () => {
     expect(html).toContain("data-active-space=\"analysis\"");
     expect(html).toContain("aria-label=\"App spaces\"");
     expect(html).toContain("Analysis Results");
+    expect(html).toContain("Start Analysis Job");
+    expect(html).toContain("name=\"collection_slugs\"");
+    expect(html).toContain("name=\"recipe_ids\"");
+    expect(html).toContain("value=\"dinov3_vits_384\"");
+    expect(html).toContain("action=\"/api/analysis-jobs\"");
     expect(html).toContain("Analysis Scope");
     expect(html).toContain("1 result");
     expect(html).toContain("3184 images indexed");
@@ -56,6 +80,8 @@ describe("AnalysisResultsPage", () => {
     expect(html).toContain("dinov3_vits_384");
     expect(html).toContain("Job Status");
     expect(html).toContain("ready");
+    expect(html).toContain("analysis-job-20260614T130000Z");
+    expect(html).toContain("Submitted Jobs");
     expect(html).toContain("J Shoot");
     expect(html).toContain("dinov3_vits_384");
     expect(html).toContain("3184 images");

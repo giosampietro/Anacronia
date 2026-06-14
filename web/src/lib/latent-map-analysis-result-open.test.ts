@@ -87,6 +87,76 @@ describe("loadLatentMapAnalysisResultViewerData", () => {
     });
   });
 
+  it("loads durable job results from an additional Analysis Result root", async () => {
+    const legacyRunsRoot = await mkdtemp(
+      path.join(os.tmpdir(), "analysis-result-open-legacy-"),
+    );
+    const jobResultsRoot = await mkdtemp(
+      path.join(os.tmpdir(), "analysis-result-open-job-"),
+    );
+    const analysisResultId = "analysis-result-20260614T130000Z-dinov3_vits_384";
+    const runDir = path.join(jobResultsRoot, analysisResultId);
+
+    await mkdir(path.join(runDir, "clusters"), { recursive: true });
+    await mkdir(path.join(runDir, "layouts"), { recursive: true });
+    await writeFile(
+      path.join(runDir, "manifest.jsonl"),
+      JSON.stringify({
+        height: 600,
+        image_id: "image-asset-1",
+        thumbnail_path: "thumbnails/image-asset-1.jpg",
+        width: 800,
+      }) + "\n",
+      "utf-8",
+    );
+    await writeJson(path.join(runDir, "layouts", "dinov3_vits_384_umap.json"), {
+      layout_id: "umap_a",
+      method: "umap",
+      points: [{ image_id: "image-asset-1", x: 1, y: 2 }],
+      recipe_name: "dinov3_vits_384",
+      run_id: analysisResultId,
+    });
+    await writeJson(
+      path.join(runDir, "clusters", "dinov3_vits_384_hdbscan.json"),
+      {
+        cluster_count: 1,
+        cluster_id: "hdbscan_detail",
+        method: "hdbscan",
+        points: [{ cluster_id: 3, image_id: "image-asset-1" }],
+        recipe_name: "dinov3_vits_384",
+        run_id: analysisResultId,
+      },
+    );
+    await writeJson(path.join(runDir, "analysis-result.json"), {
+      analysis_result_id: analysisResultId,
+      artifacts: [
+        { key: "manifest.jsonl", role: "image-manifest" },
+        { key: "layouts/dinov3_vits_384_umap.json", role: "layout" },
+        {
+          key: "clusters/dinov3_vits_384_hdbscan.json",
+          role: "cluster-result",
+        },
+      ],
+      recipes: [{ recipe_name: "dinov3_vits_384" }],
+      status: "ready",
+    });
+
+    const result = await loadLatentMapAnalysisResultViewerData({
+      additionalRunsRoots: [jobResultsRoot],
+      analysisResultId,
+      runsRoot: legacyRunsRoot,
+      selectedRecipeName: "dinov3_vits_384",
+    });
+
+    expect(result.runDir).toBe(runDir);
+    expect(result.rawData.points?.[0]).toMatchObject({
+      cluster_id: 3,
+      image_id: "image-asset-1",
+      x: 1,
+      y: 2,
+    });
+  });
+
   it("opens manifest-pinned layout and cluster artifacts before directory defaults", async () => {
     const runsRoot = await mkdtemp(path.join(os.tmpdir(), "analysis-result-open-"));
     const runDir = path.join(runsRoot, "20260609T123000Z-j-shoot");

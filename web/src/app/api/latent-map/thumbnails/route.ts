@@ -7,18 +7,16 @@ import {
   resolveAnalysisResultArtifact,
   UnsafeArtifactKeyError,
 } from "@/lib/analysis-result-artifacts";
+import {
+  getAdditionalAnalysisResultRoots,
+  getLatentMapRunsRoot,
+} from "@/lib/analysis-result-roots";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const DEFAULT_LATENT_MAP_RUNS_ROOT = "/private/tmp/anacronia-latent-map-runs";
-
 function getContentType(filePath: string): string {
   return inferContentType(filePath);
-}
-
-function getLatentMapRunsRoot(): string {
-  return process.env.ANACRONIA_LATENT_MAP_RUNS_ROOT ?? DEFAULT_LATENT_MAP_RUNS_ROOT;
 }
 
 export async function GET(request: NextRequest) {
@@ -31,6 +29,7 @@ export async function GET(request: NextRequest) {
   if (analysisResultId && artifactKey) {
     try {
       const artifact = await resolveAnalysisResultArtifact({
+        additionalRunsRoots: getAdditionalAnalysisResultRoots(),
         analysisResultId,
         artifactKey,
         runsRoot,

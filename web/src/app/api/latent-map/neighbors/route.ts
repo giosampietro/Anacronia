@@ -3,11 +3,14 @@ import path from "node:path";
 import type { NextRequest } from "next/server";
 
 import { resolveAnalysisResultRunDir } from "@/lib/analysis-result-artifacts";
+import {
+  getAdditionalAnalysisResultRoots,
+  getLatentMapRunsRoot,
+} from "@/lib/analysis-result-roots";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const DEFAULT_LATENT_MAP_RUNS_ROOT = "/private/tmp/anacronia-latent-map-runs";
 const FAISS_QUERY_TIMEOUT_MS = 10_000;
 
 export type NeighborRow = {
@@ -46,19 +49,23 @@ export async function GET(request: NextRequest) {
   }
 
   const resolvedRunsRoot = path.resolve(getLatentMapRunsRoot());
+  const resolvedAdditionalRunsRoots = getAdditionalAnalysisResultRoots().map((root) =>
+    path.resolve(root),
+  );
+  const allowedRunsRoots = [resolvedRunsRoot, ...resolvedAdditionalRunsRoots];
   const resolvedRunDir = analysisResultId
     ? await resolveAnalysisResultRunDir({
+        additionalRunsRoots: resolvedAdditionalRunsRoots,
         analysisResultId,
         runsRoot: resolvedRunsRoot,
       })
     : path.resolve(resolvedRunsRoot, String(runName));
-  const allowedRootPrefix = `${resolvedRunsRoot}${path.sep}`;
 
   if (!resolvedRunDir) {
     return new Response("FAISS neighbor index not found.", { status: 404 });
   }
 
-  if (!resolvedRunDir.startsWith(allowedRootPrefix)) {
+  if (!isInsideAnyRoot(resolvedRunDir, allowedRunsRoots)) {
     return new Response("Neighbor path is outside the latent-map run.", {
       status: 403,
     });
@@ -109,8 +116,10 @@ export async function GET(request: NextRequest) {
   }
 }
 
-function getLatentMapRunsRoot(): string {
-  return process.env.ANACRONIA_LATENT_MAP_RUNS_ROOT ?? DEFAULT_LATENT_MAP_RUNS_ROOT;
+function isInsideAnyRoot(runDir: string, roots: string[]): boolean {
+  return roots.some(
+    (root) => runDir === root || runDir.startsWith(`${root}${path.sep}`),
+  );
 }
 
 async function resolveRecipeName({

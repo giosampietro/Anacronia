@@ -114,11 +114,17 @@ const PRESERVED_ARTIFACT_ROLES = new Set([
 ]);
 
 export function createLocalAnalysisResultStore({
+  additionalRunsRoots = [],
   runsRoot,
 }: {
+  additionalRunsRoots?: string[];
   runsRoot: string;
 }) {
   const resolvedRunsRoot = path.resolve(runsRoot);
+  const resolvedRunsRoots = uniqueRoots([
+    resolvedRunsRoot,
+    ...additionalRunsRoots.map((root) => path.resolve(root)),
+  ]);
 
   return {
     async deleteResult({
@@ -170,39 +176,11 @@ export function createLocalAnalysisResultStore({
     },
 
     async list(): Promise<LocalAnalysisResultListItem[]> {
-      const entries = await safeReadDir(resolvedRunsRoot);
-      const items = await Promise.all(
-        entries
-          .filter((entry) => entry.isDirectory())
-          .map(async (entry): Promise<LocalAnalysisResultListItem | null> => {
-            const runDir = path.join(resolvedRunsRoot, entry.name);
-            const manifest = await readManifest(runDir);
-
-            if (!manifest || manifest.status === "deleted") {
-              return null;
-            }
-
-            const analysisResultId = String(manifest.analysis_result_id ?? "");
-            if (!analysisResultId) {
-              return null;
-            }
-
-            const source = normalizeSource(manifest.source);
-            const status = await loadStatusFromRunDir({ manifest, runDir });
-
-            return {
-              analysisResultId,
-              canOpenExplorer: status.canOpenExplorer,
-              itemCount: Number(manifest.item_count ?? 0),
-              recipeNames: normalizeRecipeNames(manifest.recipes),
-              runId: String(source.run_id ?? entry.name),
-              sourceFolderName: String(source.source_folder_name ?? ""),
-              state: status.state,
-            };
-          }),
+      const rootItems = await Promise.all(
+        resolvedRunsRoots.map(async (root) => listRootAnalysisResults(root)),
       );
 
-      return items
+      return uniqueAnalysisResults(rootItems.flat())
         .filter((item): item is LocalAnalysisResultListItem => item !== null)
         .sort((left, right) => right.runId.localeCompare(left.runId));
     },
@@ -212,7 +190,7 @@ export function createLocalAnalysisResultStore({
     ): Promise<AnalysisResultStatusSummary> {
       const found = await findAnalysisResultManifest({
         analysisResultId,
-        runsRoot: resolvedRunsRoot,
+        runsRoots: resolvedRunsRoots,
       });
 
       if (!found) {
@@ -234,7 +212,7 @@ export function createLocalAnalysisResultStore({
     }): Promise<PinnedLatentMapRecipeArtifacts | null> {
       const found = await findAnalysisResultManifest({
         analysisResultId,
-        runsRoot: resolvedRunsRoot,
+        runsRoots: resolvedRunsRoots,
       });
 
       if (!found) {
@@ -258,7 +236,7 @@ export function createLocalAnalysisResultStore({
 
       const found = await findAnalysisResultManifest({
         analysisResultId,
-        runsRoot: resolvedRunsRoot,
+        runsRoots: resolvedRunsRoots,
       });
 
       if (!found) {
@@ -288,7 +266,7 @@ export function createLocalAnalysisResultStore({
     async resolveRunDir(analysisResultId: string): Promise<string | null> {
       const found = await findAnalysisResultManifest({
         analysisResultId,
-        runsRoot: resolvedRunsRoot,
+        runsRoots: resolvedRunsRoots,
       });
 
       return found?.runDir ?? null;
@@ -299,7 +277,7 @@ export function createLocalAnalysisResultStore({
     ): Promise<AnalysisResultDeletionPlan> {
       const found = await findAnalysisResultManifest({
         analysisResultId,
-        runsRoot: resolvedRunsRoot,
+        runsRoots: resolvedRunsRoots,
       });
 
       if (!found) {
@@ -488,6 +466,26 @@ function compareKeys(left: string, right: string) {
 
 async function findAnalysisResultManifest({
   analysisResultId,
+  runsRoots,
+}: {
+  analysisResultId: string;
+  runsRoots: string[];
+}): Promise<FoundAnalysisResult | null> {
+  for (const runsRoot of runsRoots) {
+    const found = await findAnalysisResultManifestInRoot({
+      analysisResultId,
+      runsRoot,
+    });
+    if (found) {
+      return found;
+    }
+  }
+
+  return null;
+}
+
+async function findAnalysisResultManifestInRoot({
+  analysisResultId,
   runsRoot,
 }: {
   analysisResultId: string;
@@ -534,6 +532,64 @@ async function findAnalysisResultManifest({
   }
 
   return null;
+}
+
+async function listRootAnalysisResults(
+  runsRoot: string,
+): Promise<(LocalAnalysisResultListItem | null)[]> {
+  const entries = await safeReadDir(runsRoot);
+
+  return Promise.all(
+    entries
+      .filter((entry) => entry.isDirectory())
+      .map(async (entry): Promise<LocalAnalysisResultListItem | null> => {
+        const runDir = path.join(runsRoot, entry.name);
+        const manifest = await readManifest(runDir);
+
+        if (!manifest || manifest.status === "deleted") {
+          return null;
+        }
+
+        const analysisResultId = String(manifest.analysis_result_id ?? "");
+        if (!analysisResultId) {
+          return null;
+        }
+
+        const source = normalizeSource(manifest.source);
+        const status = await loadStatusFromRunDir({ manifest, runDir });
+
+        return {
+          analysisResultId,
+          canOpenExplorer: status.canOpenExplorer,
+          itemCount: Number(manifest.item_count ?? 0),
+          recipeNames: normalizeRecipeNames(manifest.recipes),
+          runId: String(source.run_id ?? entry.name),
+          sourceFolderName: String(source.source_folder_name ?? ""),
+          state: status.state,
+        };
+      }),
+  );
+}
+
+function uniqueAnalysisResults(
+  items: (LocalAnalysisResultListItem | null)[],
+): (LocalAnalysisResultListItem | null)[] {
+  const seen = new Set<string>();
+
+  return items.filter((item) => {
+    if (item === null) {
+      return true;
+    }
+    if (seen.has(item.analysisResultId)) {
+      return false;
+    }
+    seen.add(item.analysisResultId);
+    return true;
+  });
+}
+
+function uniqueRoots(roots: string[]): string[] {
+  return roots.filter((root, index) => root && roots.indexOf(root) === index);
 }
 
 async function readManifestIfMatching({
