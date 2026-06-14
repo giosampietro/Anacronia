@@ -21,7 +21,18 @@ describe("listAnalysisResults", () => {
     await writeJson(path.join(readyRunDir, "analysis-result.json"), {
       analysis_result_id: "latent-map-20260609T123000Z-j-shoot",
       item_count: 2,
-      recipes: [{ recipe_name: "dinov3_vits_384" }],
+      recipes: [
+        {
+          recipe_name: "dinov3_vits_384",
+          artifact_keys: {
+            thumbnail_atlas_manifests: {
+              "32": "viewer/atlases/32px/atlas-manifest.json",
+              "64": "viewer/atlases/64px/atlas-manifest.json",
+              "96": "viewer/atlases/96px/atlas-manifest.json",
+            },
+          },
+        },
+      ],
       source: {
         kind: "legacy-latent-map-run",
         run_id: "20260609T123000Z-j-shoot",
@@ -48,6 +59,7 @@ describe("listAnalysisResults", () => {
     expect(results).toEqual([
       {
         analysisResultId: "latent-map-20260610T123000Z-other",
+        atlasTileSizes: [],
         canOpenExplorer: false,
         explorerHref:
           "/latent-map?analysisResultId=latent-map-20260610T123000Z-other",
@@ -59,6 +71,7 @@ describe("listAnalysisResults", () => {
       },
       {
         analysisResultId: "latent-map-20260609T123000Z-j-shoot",
+        atlasTileSizes: [32, 64, 96],
         canOpenExplorer: true,
         explorerHref:
           "/latent-map?analysisResultId=latent-map-20260609T123000Z-j-shoot",

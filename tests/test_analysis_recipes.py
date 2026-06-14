@@ -52,6 +52,33 @@ def test_recipe_registry_defaults_to_dinov3_384_with_comparison_recipes():
     ]
 
 
+def test_default_dinov3_recipes_declare_explorer_atlas_levels():
+    recipes = list_analysis_recipes()
+
+    assert {
+        recipe.recipe_id: recipe.thumbnail_atlas_tile_sizes for recipe in recipes
+    } == {
+        "dinov3_vits_256": (32, 64, 96),
+        "dinov3_vits_384": (32, 64, 96),
+        "dinov3_vits_512": (32, 64, 96),
+    }
+    assert get_default_analysis_recipe().to_provenance_payload()["viewer"] == {
+        "thumbnail_atlas_tile_sizes": [32, 64, 96],
+    }
+
+
+def test_recipe_can_opt_into_128px_atlas_without_changing_embedding_fingerprint():
+    recipe = get_default_analysis_recipe()
+
+    with_128px = recipe.with_thumbnail_atlas_tile_sizes((32, 64, 96, 128))
+
+    assert with_128px.thumbnail_atlas_tile_sizes == (32, 64, 96, 128)
+    assert with_128px.to_provenance_payload()["viewer"] == {
+        "thumbnail_atlas_tile_sizes": [32, 64, 96, 128],
+    }
+    assert with_128px.embedding_fingerprint() == recipe.embedding_fingerprint()
+
+
 def test_future_siglip2_and_fusion_recipes_use_same_provenance_contract():
     siglip2_recipe = AnalysisRecipe(
         recipe_id="siglip2_so400m_384",

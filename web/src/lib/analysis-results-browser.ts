@@ -3,6 +3,7 @@ import type { AnalysisResultStatusState } from "@/lib/analysis-result-status";
 
 export type AnalysisResultListItem = {
   analysisResultId: string;
+  atlasTileSizes: number[];
   canOpenExplorer: boolean;
   explorerHref: string;
   itemCount: number;

@@ -197,15 +197,24 @@ class LatentMapAnalysisStageRunner:
         from anacronia.latent_map_atlas import generate_latent_map_thumbnail_atlas
         from anacronia.latent_map_viewer_export import export_viewer_data
 
-        atlas = generate_latent_map_thumbnail_atlas(
-            run_dir=request.analysis_result_dir,
-            tile_size=self.atlas_tile_size,
-            atlas_size=self.atlas_size,
+        atlas_tile_sizes = request.recipe.thumbnail_atlas_tile_sizes or (
+            self.atlas_tile_size,
         )
+        atlases = [
+            generate_latent_map_thumbnail_atlas(
+                run_dir=request.analysis_result_dir,
+                tile_size=tile_size,
+                atlas_size=self.atlas_size,
+            )
+            for tile_size in atlas_tile_sizes
+        ]
         viewer = export_viewer_data(
             run_dir=request.analysis_result_dir,
             recipe_name=request.recipe.recipe_id,
-            thumbnail_atlas_manifest_path=atlas.manifest_path,
+            thumbnail_atlas_manifest_path=atlases[0].manifest_path,
+            thumbnail_atlas_manifest_paths=tuple(
+                atlas.manifest_path for atlas in atlases
+            ),
         )
         page_artifacts = [
             _artifact_for_path(
@@ -215,18 +224,23 @@ class LatentMapAnalysisStageRunner:
                 content_type="image/png",
                 retention_class="render-cache",
             )
+            for atlas in atlases
             for path in sorted(atlas.manifest_path.parent.glob("page-*.png"))
+        ]
+        atlas_manifest_artifacts = [
+            _artifact_for_path(
+                key=_relative_key(atlas.manifest_path, request.analysis_result_dir),
+                path=atlas.manifest_path,
+                role="thumbnail-atlas",
+                content_type="application/json",
+                retention_class="render-cache",
+                metadata={"tile_size": atlas.tile_size},
+            )
+            for atlas in atlases
         ]
         return AnalysisStageResult(
             artifacts=[
-                _artifact_for_path(
-                    key=_relative_key(atlas.manifest_path, request.analysis_result_dir),
-                    path=atlas.manifest_path,
-                    role="thumbnail-atlas",
-                    content_type="application/json",
-                    retention_class="render-cache",
-                    metadata={"tile_size": atlas.tile_size},
-                ),
+                *atlas_manifest_artifacts,
                 *page_artifacts,
                 _artifact_for_path(
                     key=_relative_key(viewer.viewer_data_path, request.analysis_result_dir),

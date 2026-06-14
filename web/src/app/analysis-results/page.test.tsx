@@ -65,7 +65,18 @@ describe("AnalysisResultsPage", () => {
     await writeJson(path.join(runDir, "analysis-result.json"), {
       analysis_result_id: "latent-map-20260609T123000Z-j-shoot",
       item_count: 3184,
-      recipes: [{ recipe_name: "dinov3_vits_384" }],
+      recipes: [
+        {
+          recipe_name: "dinov3_vits_384",
+          artifact_keys: {
+            thumbnail_atlas_manifests: {
+              "32": "viewer/atlases/32px/atlas-manifest.json",
+              "64": "viewer/atlases/64px/atlas-manifest.json",
+              "96": "viewer/atlases/96px/atlas-manifest.json",
+            },
+          },
+        },
+      ],
       source: {
         run_id: "20260609T123000Z-j-shoot",
         source_folder_name: "J Shoot",
@@ -104,6 +115,7 @@ describe("AnalysisResultsPage", () => {
     expect(html).toContain("Submitted Jobs");
     expect(html).toContain("J Shoot");
     expect(html).toContain("dinov3_vits_384");
+    expect(html).toContain("Atlas: 32, 64, 96px");
     expect(html).toContain("3184 images");
     expect(html).toContain("ready");
     expect(html).toContain(

@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 from pathlib import Path
+from typing import Sequence
 
 from anacronia.analysis_result_pins import (
     validate_pinned_latent_map_row_order_if_present,
@@ -21,6 +22,7 @@ class ViewerDataExportSummary:
     map_payload_bytes: int
     neighbor_payload_bytes: int
     thumbnail_atlas_manifest_path: Path | None = None
+    thumbnail_atlas_manifest_paths: tuple[Path, ...] = ()
 
 
 def export_viewer_data(
@@ -30,6 +32,7 @@ def export_viewer_data(
     layout_id: str | None = None,
     cluster_id: str | None = None,
     thumbnail_atlas_manifest_path: Path | None = None,
+    thumbnail_atlas_manifest_paths: Sequence[Path] | None = None,
 ) -> ViewerDataExportSummary:
     resolved_run_dir = run_dir.expanduser().resolve()
     run_id = _read_run_id(resolved_run_dir)
@@ -37,6 +40,19 @@ def export_viewer_data(
         run_dir=resolved_run_dir,
         path=thumbnail_atlas_manifest_path,
     )
+    resolved_atlas_manifest_paths = _resolve_optional_run_paths(
+        run_dir=resolved_run_dir,
+        paths=thumbnail_atlas_manifest_paths,
+    )
+    if resolved_atlas_manifest_path is not None:
+        resolved_atlas_manifest_paths = (
+            resolved_atlas_manifest_path,
+            *(
+                path
+                for path in resolved_atlas_manifest_paths
+                if path != resolved_atlas_manifest_path
+            ),
+        )
     manifest_rows = _load_jsonl(resolved_run_dir / "manifest.jsonl")
     manifest_by_id = {str(row["image_id"]): row for row in manifest_rows}
     layout = _load_selected_json(
@@ -123,6 +139,13 @@ def export_viewer_data(
         viewer_data["thumbnail_atlas_manifest_path"] = (
             resolved_atlas_manifest_path.relative_to(resolved_run_dir).as_posix()
         )
+    if resolved_atlas_manifest_paths:
+        viewer_data["thumbnail_atlas_manifest_paths"] = {
+            _atlas_tile_size_from_manifest_path(path): path.relative_to(
+                resolved_run_dir
+            ).as_posix()
+            for path in resolved_atlas_manifest_paths
+        }
     neighbor_data_path.write_text(
         json.dumps(neighbor_data, indent=2) + "\n",
         encoding="utf-8",
@@ -138,6 +161,7 @@ def export_viewer_data(
         recipe_name=recipe_name,
         point_count=len(points),
         thumbnail_atlas_manifest_path=resolved_atlas_manifest_path,
+        thumbnail_atlas_manifest_paths=resolved_atlas_manifest_paths,
         viewer_data_path=viewer_data_path,
         neighbor_data_path=neighbor_data_path,
         map_payload_bytes=map_payload_bytes,
@@ -154,6 +178,7 @@ def export_viewer_data(
         map_payload_bytes=map_payload_bytes,
         neighbor_payload_bytes=neighbor_payload_bytes,
         thumbnail_atlas_manifest_path=resolved_atlas_manifest_path,
+        thumbnail_atlas_manifest_paths=resolved_atlas_manifest_paths,
         viewer_data_path=viewer_data_path,
     )
 
@@ -402,12 +427,36 @@ def _resolve_optional_run_path(
     return resolved_path
 
 
+def _resolve_optional_run_paths(
+    *,
+    run_dir: Path,
+    paths: Sequence[Path] | None,
+) -> tuple[Path, ...]:
+    if paths is None:
+        return ()
+
+    resolved: list[Path] = []
+    for path in paths:
+        resolved_path = _resolve_optional_run_path(run_dir=run_dir, path=path)
+        if resolved_path is not None and resolved_path not in resolved:
+            resolved.append(resolved_path)
+    return tuple(resolved)
+
+
+def _atlas_tile_size_from_manifest_path(path: Path) -> str:
+    tile_dir = path.parent.name
+    if tile_dir.endswith("px") and tile_dir[:-2].isdigit():
+        return tile_dir[:-2]
+    return tile_dir
+
+
 def _append_viewer_report(
     *,
     run_dir: Path,
     recipe_name: str,
     point_count: int,
     thumbnail_atlas_manifest_path: Path | None,
+    thumbnail_atlas_manifest_paths: Sequence[Path],
     viewer_data_path: Path,
     neighbor_data_path: Path,
     map_payload_bytes: int,
@@ -443,6 +492,14 @@ def _append_viewer_report(
                     )
                 ]
                 if thumbnail_atlas_manifest_path is not None
+                else []
+            ),
+            *(
+                [
+                    "- Thumbnail atlas manifests: "
+                    + ", ".join(f"`{path}`" for path in thumbnail_atlas_manifest_paths)
+                ]
+                if thumbnail_atlas_manifest_paths
                 else []
             ),
             "",

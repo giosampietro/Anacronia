@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import hashlib
 import json
 from typing import Sequence
@@ -33,8 +33,20 @@ class AnalysisRecipe:
     vector_kind: str
     normalization: str
     downstream_stages: tuple[str, ...]
+    thumbnail_atlas_tile_sizes: tuple[int, ...] = ()
     package_notes: tuple[str, ...] = ()
     component_recipe_ids: tuple[str, ...] = ()
+
+    def with_thumbnail_atlas_tile_sizes(
+        self,
+        tile_sizes: Sequence[int],
+    ) -> AnalysisRecipe:
+        normalized_tile_sizes = tuple(
+            tile_size for tile_size in tile_sizes if tile_size > 0
+        )
+        if not normalized_tile_sizes:
+            raise ValueError("At least one thumbnail atlas tile size is required.")
+        return replace(self, thumbnail_atlas_tile_sizes=normalized_tile_sizes)
 
     def to_provenance_payload(self) -> dict[str, object]:
         payload: dict[str, object] = {
@@ -67,6 +79,10 @@ class AnalysisRecipe:
             "downstream_stages": list(self.downstream_stages),
             "package_notes": list(self.package_notes),
         }
+        if self.thumbnail_atlas_tile_sizes:
+            payload["viewer"] = {
+                "thumbnail_atlas_tile_sizes": list(self.thumbnail_atlas_tile_sizes),
+            }
         if self.component_recipe_ids:
             payload["component_recipe_ids"] = list(self.component_recipe_ids)
         return payload
@@ -162,6 +178,7 @@ def _dinov3_recipe(*, long_edge: int) -> AnalysisRecipe:
             "hdbscan",
             "baseline-atlas-32px",
         ),
+        thumbnail_atlas_tile_sizes=(32, 64, 96),
         package_notes=(
             "DINOv3 ViT-S/16 frozen visual embedding backbone",
             "Transformers AutoModel class-token embedding",

@@ -363,9 +363,18 @@ export default async function AnalysisResultsPage() {
                         {result.sourceFolderName || result.runId}
                       </td>
                       <td className="px-4 py-4 text-neutral-300">
-                        {result.recipeNames.length > 0
-                          ? result.recipeNames.join(", ")
-                          : "No recipes"}
+                        <div className="grid gap-1">
+                          <span>
+                            {result.recipeNames.length > 0
+                              ? result.recipeNames.join(", ")
+                              : "No recipes"}
+                          </span>
+                          {result.atlasTileSizes.length > 0 ? (
+                            <span className="text-xs text-neutral-500">
+                              Atlas: {formatAtlasTileSizes(result.atlasTileSizes)}
+                            </span>
+                          ) : null}
+                        </div>
                       </td>
                       <td className="px-4 py-4 text-neutral-300">
                         {`${result.itemCount} images`}
@@ -428,4 +437,8 @@ function summarizeJobStates(jobs: AnalysisJobListItem[]) {
     .sort(([leftState], [rightState]) => leftState.localeCompare(rightState))
     .map(([state, count]) => formatCount(count, state))
     .join(", ");
+}
+
+function formatAtlasTileSizes(tileSizes: number[]) {
+  return `${tileSizes.join(", ")}px`;
 }

@@ -40,6 +40,7 @@ type FoundAnalysisResult = {
 
 export type LocalAnalysisResultListItem = {
   analysisResultId: string;
+  atlasTileSizes: number[];
   canOpenExplorer: boolean;
   itemCount: number;
   recipeNames: string[];
@@ -560,6 +561,7 @@ async function listRootAnalysisResults(
 
         return {
           analysisResultId,
+          atlasTileSizes: normalizeAtlasTileSizes(manifest.recipes),
           canOpenExplorer: status.canOpenExplorer,
           itemCount: Number(manifest.item_count ?? 0),
           recipeNames: normalizeRecipeNames(manifest.recipes),
@@ -752,6 +754,25 @@ function normalizePinnedArtifactKeys(value: unknown): {
     thumbnailAtlasManifestPaths,
     ...(vectorIdMapKey ? { vectorIdMapKey } : {}),
   };
+}
+
+function normalizeAtlasTileSizes(recipes: unknown): number[] {
+  const tileSizes = new Set<number>();
+
+  for (const recipe of getManifestRecipes({ recipes })) {
+    const artifactKeys = normalizePinnedArtifactKeys(recipe.artifact_keys);
+    if (!artifactKeys) {
+      continue;
+    }
+    Object.keys(artifactKeys.thumbnailAtlasManifestPaths).forEach((tileSize) => {
+      const numericTileSize = Number.parseInt(tileSize, 10);
+      if (Number.isFinite(numericTileSize)) {
+        tileSizes.add(numericTileSize);
+      }
+    });
+  }
+
+  return [...tileSizes].sort((left, right) => left - right);
 }
 
 function normalizePinnedOutputs({

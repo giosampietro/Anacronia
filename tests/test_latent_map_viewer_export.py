@@ -169,6 +169,40 @@ def test_exports_viewer_data_with_generated_atlas_manifest_path(tmp_path):
     )
 
 
+def test_exports_viewer_data_with_generated_atlas_manifest_paths(tmp_path):
+    run = create_viewer_run(tmp_path)
+    atlas_summaries = [
+        generate_latent_map_thumbnail_atlas(
+            run_dir=run.run_dir,
+            tile_size=tile_size,
+            atlas_size=128,
+        )
+        for tile_size in (32, 64, 96)
+    ]
+
+    summary = export_viewer_data(
+        run_dir=run.run_dir,
+        recipe_name="dinov3_vits_256",
+        thumbnail_atlas_manifest_path=atlas_summaries[0].manifest_path,
+        thumbnail_atlas_manifest_paths=tuple(
+            atlas.manifest_path for atlas in atlas_summaries
+        ),
+    )
+
+    data = json.loads(summary.viewer_data_path.read_text(encoding="utf-8"))
+    assert data["thumbnail_atlas_manifest_path"] == (
+        "viewer/atlases/32px/atlas-manifest.json"
+    )
+    assert data["thumbnail_atlas_manifest_paths"] == {
+        "32": "viewer/atlases/32px/atlas-manifest.json",
+        "64": "viewer/atlases/64px/atlas-manifest.json",
+        "96": "viewer/atlases/96px/atlas-manifest.json",
+    }
+    assert summary.thumbnail_atlas_manifest_paths == tuple(
+        atlas.manifest_path.resolve() for atlas in atlas_summaries
+    )
+
+
 def test_viewer_export_accepts_production_style_faiss_object_id_map(tmp_path):
     run = create_viewer_run(tmp_path)
     (run.run_dir / "indexes" / "dinov3_vits_256_faiss_id_map.json").write_text(
