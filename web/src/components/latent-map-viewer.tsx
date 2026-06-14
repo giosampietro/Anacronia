@@ -81,6 +81,12 @@ import {
   createLatentMapScreenTargetWheelZoomView,
   createLatentMapWheelZoomView,
 } from "@/lib/latent-map-view-controls";
+import {
+  createLatentMapViewTween,
+  shouldAnimateLatentMapView,
+  stepLatentMapViewTween,
+  type LatentMapViewTween,
+} from "@/lib/latent-map-view-tween";
 import { getLatentMapNeighborhoodKeyboardAction } from "@/lib/latent-map-neighborhood-mode";
 import {
   getLatentMapNeighborhoodClickAction,
@@ -121,6 +127,10 @@ type PointerPosition = {
   x: number;
   y: number;
 };
+
+type LatentMapViewStateUpdate =
+  | LatentMapViewState
+  | ((current: LatentMapViewState) => LatentMapViewState);
 
 const DEFAULT_VIEW: LatentMapViewState = {
   offsetX: 0,
@@ -409,6 +419,8 @@ export function LatentMapViewer({
   );
   const neighborhoodRestoreViewRef = useRef<LatentMapViewState | null>(null);
   const pendingNeighborhoodRecenterRef = useRef(false);
+  const viewTweenFrameRef = useRef<number | null>(null);
+  const viewTweenRef = useRef<LatentMapViewTween | null>(null);
   const dragStartRef = useRef<{
     pointer: PointerPosition;
     view: LatentMapViewState;
@@ -468,6 +480,8 @@ export function LatentMapViewer({
   const [view, setView] = useState<LatentMapViewState>(
     initialDurableState.view,
   );
+  const [viewTweenActive, setViewTweenActive] = useState(false);
+  const [viewTweenCount, setViewTweenCount] = useState(0);
   const [thumbnailPlanningView, setThumbnailPlanningView] =
     useState<LatentMapViewState>(initialDurableState.view);
   const [clusterFilter, setClusterFilter] = useState(
@@ -877,6 +891,80 @@ export function LatentMapViewer({
       setFpsCounterActive(false);
     }, FPS_COUNTER_ACTIVE_TIMEOUT_MS);
   }, []);
+  const cancelViewTween = useCallback(() => {
+    if (viewTweenFrameRef.current !== null) {
+      window.cancelAnimationFrame(viewTweenFrameRef.current);
+      viewTweenFrameRef.current = null;
+    }
+
+    viewTweenRef.current = null;
+    setViewTweenActive(false);
+  }, []);
+  const setViewImmediately = useCallback(
+    (nextView: LatentMapViewStateUpdate) => {
+      cancelViewTween();
+      setView((currentView) =>
+        typeof nextView === "function" ? nextView(currentView) : nextView,
+      );
+    },
+    [cancelViewTween],
+  );
+  const animateViewTo = useCallback(
+    (targetView: LatentMapViewState) => {
+      const now = window.performance.now();
+      const activeTween = viewTweenRef.current;
+      const currentView = activeTween
+        ? stepLatentMapViewTween(activeTween, now).view
+        : viewRef.current;
+
+      cancelViewTween();
+
+      if (
+        !shouldAnimateLatentMapView({
+          from: currentView,
+          to: targetView,
+        })
+      ) {
+        setView(targetView);
+        return;
+      }
+
+      const tween = createLatentMapViewTween({
+        from: currentView,
+        now,
+        to: targetView,
+      });
+
+      viewTweenRef.current = tween;
+      setViewTweenActive(true);
+      setViewTweenCount((count) => count + 1);
+      setView(currentView);
+
+      const stepTween = (frameNow: number) => {
+        const activeViewTween = viewTweenRef.current;
+
+        if (activeViewTween !== tween) {
+          return;
+        }
+
+        const result = stepLatentMapViewTween(activeViewTween, frameNow);
+
+        setView(result.view);
+
+        if (result.isAnimating) {
+          viewTweenFrameRef.current = window.requestAnimationFrame(stepTween);
+          return;
+        }
+
+        viewTweenFrameRef.current = null;
+        viewTweenRef.current = null;
+        setViewTweenActive(false);
+      };
+
+      viewTweenFrameRef.current = window.requestAnimationFrame(stepTween);
+    },
+    [cancelViewTween],
+  );
   const exitNeighborhoodMode = useCallback(() => {
     pendingNeighborhoodRecenterRef.current = false;
     hoverPointerRef.current = null;
@@ -893,9 +981,9 @@ export function LatentMapViewer({
       setRenderMode(restoreRenderMode);
     }
     if (restoreView) {
-      setView(restoreView);
+      animateViewTo(restoreView);
     }
-  }, []);
+  }, [animateViewTo]);
   const cancelNeighborhoodModeForManualModeChange = useCallback(() => {
     pendingNeighborhoodRecenterRef.current = false;
     hoverPointerRef.current = null;
@@ -905,10 +993,10 @@ export function LatentMapViewer({
     neighborhoodRestoreRenderModeRef.current = null;
     neighborhoodRestoreViewRef.current = null;
     if (restoreView) {
-      setView(restoreView);
+      setViewImmediately(restoreView);
     }
     setNeighborhoodModeActive(false);
-  }, []);
+  }, [setViewImmediately]);
   const enterNeighborhoodMode = useCallback(() => {
     if (!selectedImageId) {
       return;
@@ -965,11 +1053,12 @@ export function LatentMapViewer({
     const frameId = window.requestAnimationFrame(() => {
       pendingNeighborhoodRecenterRef.current = false;
       markFpsCounterActive();
-      setView(nextView);
+      animateViewTo(nextView);
     });
 
     return () => window.cancelAnimationFrame(frameId);
   }, [
+    animateViewTo,
     loadingNeighborImageId,
     markFpsCounterActive,
     neighborhoodActiveImageCount,
@@ -1161,6 +1250,10 @@ export function LatentMapViewer({
       if (fpsActivityTimeoutRef.current !== null) {
         window.clearTimeout(fpsActivityTimeoutRef.current);
       }
+      if (viewTweenFrameRef.current !== null) {
+        window.cancelAnimationFrame(viewTweenFrameRef.current);
+      }
+      viewTweenRef.current = null;
     },
     [],
   );
@@ -1247,7 +1340,7 @@ export function LatentMapViewer({
             )
           : null;
 
-      setView((current) =>
+      setViewImmediately((current) =>
         neighborhoodLayoutActive && neighborhoodRuntimePlan.recenterView
           ? createLatentMapScreenTargetWheelZoomView({
               bounds: neighborhoodGridBounds,
@@ -1293,6 +1386,7 @@ export function LatentMapViewer({
     neighborhoodRuntimePlan.recenterView,
     runtimeRenderPoints,
     selectedImageId,
+    setViewImmediately,
   ]);
 
   useEffect(() => {
@@ -1338,7 +1432,7 @@ export function LatentMapViewer({
         }
 
         markFpsCounterActive();
-        setView(neighborhoodAction.view);
+        animateViewTo(neighborhoodAction.view);
         return;
       }
 
@@ -1388,6 +1482,7 @@ export function LatentMapViewer({
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [
+    animateViewTo,
     cancelNeighborhoodModeForManualModeChange,
     enterNeighborhoodMode,
     exitNeighborhoodMode,
@@ -1795,7 +1890,7 @@ export function LatentMapViewer({
         ((event.clientY - dragStart.pointer.y) / rect.height) *
         (2 / dragStart.view.zoom);
 
-      setView({
+      setViewImmediately({
         ...dragStart.view,
         offsetX: dragStart.view.offsetX + deltaX,
         offsetY: dragStart.view.offsetY + deltaY,
@@ -2467,6 +2562,8 @@ export function LatentMapViewer({
             data-thumbnail-total-atlas-page-count={
               thumbnailPlan.totalAtlasPageCount
             }
+            data-view-tween-active={viewTweenActive}
+            data-view-tween-count={viewTweenCount}
             data-testid="latent-map-canvas"
             onPointerDown={handlePointerDown}
             onPointerLeave={() => {
@@ -2621,7 +2718,7 @@ export function LatentMapViewer({
                   className="w-full"
                   onClick={() => {
                     markFpsCounterActive();
-                    setView(
+                    setViewImmediately(
                       neighborhoodLayoutActive &&
                         neighborhoodRuntimePlan.recenterView
                         ? neighborhoodRuntimePlan.recenterView
