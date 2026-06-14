@@ -1,9 +1,10 @@
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { renderToString } from "react-dom/server";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { loadLatentMapViewerData } from "@/app/latent-map/page";
+import LatentMapPage, { loadLatentMapViewerData } from "@/app/latent-map/page";
 
 async function writeJson(filePath: string, value: unknown) {
   await writeFile(filePath, `${JSON.stringify(value)}\n`, "utf-8");
@@ -96,5 +97,22 @@ describe("loadLatentMapViewerData", () => {
     expect(data.points[0].thumbnail_path).toBe(
       "/api/latent-map/thumbnails?analysisResultId=latent-map-20260609T123000Z-j-shoot&artifactKey=thumbnails%2Fimg_1.jpg",
     );
+  });
+
+  it("renders the Explorer inside the app rail with Focus Mode available", async () => {
+    delete process.env.ANACRONIA_LATENT_MAP_VIEWER_DATA;
+    delete process.env.ANACRONIA_LATENT_MAP_RUNS_ROOT;
+
+    const html = renderToString(
+      await LatentMapPage({ searchParams: Promise.resolve({}) }),
+    ).replaceAll("<!-- -->", "");
+
+    expect(html).toContain("data-app-space-shell=\"true\"");
+    expect(html).toContain("data-active-space=\"explorer\"");
+    expect(html).toContain("data-focus-mode-available=\"true\"");
+    expect(html).toContain("aria-label=\"App spaces\"");
+    expect(html).toContain("Latent Space Explorer");
+    expect(html).toContain("data-testid=\"latent-map-canvas\"");
+    expect(html).toContain("data-ui-overlay-hidden=\"false\"");
   });
 });

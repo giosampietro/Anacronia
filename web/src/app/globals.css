@@ -176,3 +176,15 @@
     max-width: calc(var(--breakpoint-2xl) + 2rem);
   }
 }
+
+[data-app-space-shell="true"][data-focus-mode-active="false"]
+  [data-slot="sidebar"][data-side="left"]
+  > [data-slot="sidebar-container"] {
+  left: 4rem;
+}
+
+[data-app-space-shell="true"][data-focus-mode-active="false"]
+  [data-slot="sidebar"][data-side="left"][data-collapsible="offcanvas"]
+  > [data-slot="sidebar-container"] {
+  left: calc(4rem - var(--sidebar-width));
+}
