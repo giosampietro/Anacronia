@@ -81,5 +81,9 @@ describe("loadLatentMapAnalysisResultViewerData", () => {
       x: 3,
       y: 4,
     });
+    expect(result.status).toMatchObject({
+      canOpenExplorer: true,
+      state: "ready",
+    });
   });
 });

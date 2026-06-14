@@ -4,11 +4,16 @@ import {
 import {
   loadLatentMapRunExportedViewerData,
 } from "@/lib/latent-map-run-data";
+import {
+  loadAnalysisResultStatus,
+  type AnalysisResultStatusSummary,
+} from "@/lib/analysis-result-status";
 import type { ExportedLatentMapViewerData } from "@/lib/latent-map-viewer-data";
 
 export type LoadedLatentMapAnalysisResultViewerData = {
   rawData: ExportedLatentMapViewerData;
   runDir: string;
+  status: AnalysisResultStatusSummary;
 };
 
 export async function loadLatentMapAnalysisResultViewerData({
@@ -41,5 +46,6 @@ export async function loadLatentMapAnalysisResultViewerData({
       selectedRecipeName,
     }),
     runDir,
+    status: await loadAnalysisResultStatus({ runDir }),
   };
 }
