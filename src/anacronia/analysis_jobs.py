@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import sqlite3
 import time
 from typing import Protocol, Sequence
 
@@ -31,6 +32,8 @@ ANALYSIS_JOB_STAGE_NAMES = (
     "clustering",
     "baseline_atlas",
 )
+class AnalysisJobLockError(RuntimeError):
+    pass
 
 
 @dataclass(frozen=True)
@@ -105,7 +108,6 @@ def run_analysis_job(
     sibling_group_id = f"analysis-sibling-{compact_timestamp}"
     job_dir = resolved_data_root / "analysis-jobs" / analysis_job_id
     job_manifest_path = job_dir / ANALYSIS_JOB_MANIFEST_NAME
-    job_dir.mkdir(parents=True, exist_ok=True)
 
     stages: list[dict[str, object]] = []
     analysis_result_ids: list[str] = []
@@ -115,6 +117,60 @@ def run_analysis_job(
         database_path=database_path,
         collection_slugs=collection_slugs,
     )
+    _start_analysis_job_record(
+        database_path=database_path,
+        analysis_job_id=analysis_job_id,
+        created_at=created_timestamp,
+    )
+
+    try:
+        return _run_locked_analysis_job(
+            analysis_job_id=analysis_job_id,
+            analysis_result_ids=analysis_result_ids,
+            compact_timestamp=compact_timestamp,
+            created=created,
+            created_timestamp=created_timestamp,
+            database_path=database_path,
+            job_dir=job_dir,
+            job_manifest_path=job_manifest_path,
+            recipe_id_values=recipe_id_values,
+            resolved_data_root=resolved_data_root,
+            resolved_scope=resolved_scope,
+            selected_recipes=selected_recipes,
+            sibling_group_id=sibling_group_id,
+            stage_runner=stage_runner,
+            stages=stages,
+            status=status,
+        )
+    except Exception:
+        _finish_analysis_job_record(
+            database_path=database_path,
+            analysis_job_id=analysis_job_id,
+            status="failed",
+        )
+        raise
+
+
+def _run_locked_analysis_job(
+    *,
+    analysis_job_id: str,
+    analysis_result_ids: list[str],
+    compact_timestamp: str,
+    created: datetime,
+    created_timestamp: str,
+    database_path: Path,
+    job_dir: Path,
+    job_manifest_path: Path,
+    recipe_id_values: list[str],
+    resolved_data_root: Path,
+    resolved_scope: ResolvedAnalysisScope,
+    selected_recipes: list[AnalysisRecipe],
+    sibling_group_id: str,
+    stage_runner: AnalysisStageRunner,
+    stages: list[dict[str, object]],
+    status: str,
+) -> AnalysisJobSummary:
+    job_dir.mkdir(parents=True, exist_ok=True)
     scope_snapshot = save_analysis_scope_snapshot(
         data_root=resolved_data_root,
         resolved_scope=resolved_scope,
@@ -253,6 +309,11 @@ def run_analysis_job(
         "status": status,
     }
     _write_json(job_manifest_path, job_manifest)
+    _finish_analysis_job_record(
+        database_path=database_path,
+        analysis_job_id=analysis_job_id,
+        status=status,
+    )
     return AnalysisJobSummary(
         analysis_job_id=analysis_job_id,
         analysis_result_ids=analysis_result_ids,
@@ -261,6 +322,97 @@ def run_analysis_job(
         scope_snapshot_id=scope_snapshot.snapshot_id,
         sibling_group_id=sibling_group_id,
         status=status,
+    )
+
+
+def get_active_analysis_job_id(*, database_path: Path) -> str | None:
+    with sqlite3.connect(database_path) as connection:
+        ensure_analysis_job_record_schema(connection)
+        row = connection.execute(
+            """
+            SELECT analysis_job_id
+            FROM analysis_job_records
+            WHERE status = 'running'
+            ORDER BY created_at DESC
+            LIMIT 1
+            """
+        ).fetchone()
+
+    if row is None:
+        return None
+    return str(row[0])
+
+
+def _start_analysis_job_record(
+    *,
+    database_path: Path,
+    analysis_job_id: str,
+    created_at: str,
+) -> None:
+    with sqlite3.connect(database_path) as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        ensure_analysis_job_record_schema(connection)
+        active_job_id = _get_active_analysis_job_id(connection=connection)
+        if active_job_id is not None:
+            raise AnalysisJobLockError("Another analysis job is already active.")
+        connection.execute(
+            """
+            INSERT INTO analysis_job_records (
+              analysis_job_id,
+              status,
+              created_at,
+              updated_at
+            )
+            VALUES (?, 'running', ?, ?)
+            """,
+            (analysis_job_id, created_at, created_at),
+        )
+
+
+def _finish_analysis_job_record(
+    *,
+    database_path: Path,
+    analysis_job_id: str,
+    status: str,
+) -> None:
+    with sqlite3.connect(database_path) as connection:
+        ensure_analysis_job_record_schema(connection)
+        connection.execute(
+            """
+            UPDATE analysis_job_records
+            SET status = ?, updated_at = ?
+            WHERE analysis_job_id = ?
+            """,
+            (status, _format_timestamp(datetime.now(timezone.utc)), analysis_job_id),
+        )
+
+
+def _get_active_analysis_job_id(*, connection: sqlite3.Connection) -> str | None:
+    row = connection.execute(
+        """
+        SELECT analysis_job_id
+        FROM analysis_job_records
+        WHERE status = 'running'
+        ORDER BY created_at DESC
+        LIMIT 1
+        """
+    ).fetchone()
+    if row is None:
+        return None
+    return str(row[0])
+
+
+def ensure_analysis_job_record_schema(connection: sqlite3.Connection) -> None:
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS analysis_job_records (
+          id INTEGER PRIMARY KEY,
+          analysis_job_id TEXT NOT NULL,
+          status TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        )
+        """
     )
 
 

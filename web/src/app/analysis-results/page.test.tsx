@@ -210,4 +210,71 @@ describe("AnalysisResultsPage", () => {
     expect(html).not.toContain("Collection slugs");
     expect(html).not.toContain("placeholder=\"j-shoot, mood-board\"");
   });
+
+  it("disables new analysis submission while another analysis job is active", async () => {
+    const runsRoot = await mkdtemp(path.join(os.tmpdir(), "analysis-results-page-"));
+
+    process.env.ANACRONIA_LATENT_MAP_RUNS_ROOT = runsRoot;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith("/search-sets")) {
+          return Response.json([
+            {
+              display_name: "Bread",
+              slug: "bread",
+              terms: [],
+            },
+          ]);
+        }
+        return Response.json({
+          active_analysis_job_id: "analysis-job-20260614T220000Z",
+          jobs: [],
+        });
+      }),
+    );
+
+    const html = renderToString(await AnalysisResultsPage()).replaceAll(
+      "<!-- -->",
+      "",
+    );
+
+    expect(html).toContain("Analysis job is already running");
+    expect(html).toContain("analysis-job-20260614T220000Z");
+    expect(html).toContain("disabled=\"\"");
+  });
+
+  it("renders analysis job submission errors returned by the API proxy", async () => {
+    const runsRoot = await mkdtemp(path.join(os.tmpdir(), "analysis-results-page-"));
+
+    process.env.ANACRONIA_LATENT_MAP_RUNS_ROOT = runsRoot;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith("/search-sets")) {
+          return Response.json([
+            {
+              display_name: "Bread",
+              slug: "bread",
+              terms: [],
+            },
+          ]);
+        }
+        return Response.json({ jobs: [] });
+      }),
+    );
+
+    const html = renderToString(
+      await AnalysisResultsPage({
+        searchParams: Promise.resolve({
+          analysisJobError: "Another analysis job is already active.",
+        }),
+      }),
+    ).replaceAll("<!-- -->", "");
+
+    expect(html).toContain("Analysis job unavailable");
+    expect(html).toContain("Another analysis job is already active.");
+  });
 });

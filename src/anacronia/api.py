@@ -9,8 +9,10 @@ from pydantic import BaseModel, Field
 
 from anacronia.analysis_jobs import (
     ANALYSIS_JOB_MANIFEST_NAME,
+    AnalysisJobLockError,
     AnalysisJobSummary,
     AnalysisStageRunner,
+    get_active_analysis_job_id,
     run_analysis_job,
 )
 from anacronia.analysis_stage_runner import LatentMapAnalysisStageRunner
@@ -752,12 +754,17 @@ def create_app(
             raise HTTPException(status_code=404, detail=str(error)) from error
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
+        except AnalysisJobLockError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
 
         return serialize_analysis_job_summary(summary)
 
     @app.get("/analysis-jobs")
     def get_analysis_jobs() -> dict[str, object]:
         return {
+            "active_analysis_job_id": get_active_analysis_job_id(
+                database_path=resolved_database_path
+            ),
             "jobs": [
                 serialize_analysis_job_manifest(manifest_path)
                 for manifest_path in list_analysis_job_manifest_paths(

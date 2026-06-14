@@ -8,16 +8,20 @@ export type AnalysisJobFormCollection = {
 };
 
 type AnalysisJobFormProps = {
+  activeAnalysisJobId?: string | null;
   collectionApiUnavailable: boolean;
   collections: AnalysisJobFormCollection[];
 };
 
 export function AnalysisJobForm({
+  activeAnalysisJobId = null,
   collectionApiUnavailable,
   collections,
 }: AnalysisJobFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const canSubmit = collectionApiUnavailable || collections.length > 0;
+  const analysisJobActive = Boolean(activeAnalysisJobId);
+  const canSubmit =
+    !analysisJobActive && (collectionApiUnavailable || collections.length > 0);
 
   return (
     <form
@@ -102,7 +106,15 @@ export function AnalysisJobForm({
         >
           {isSubmitting ? "Running..." : "Run Analysis"}
         </button>
-        {isSubmitting ? (
+        {analysisJobActive ? (
+          <p aria-live="polite" className="basis-full text-sm text-neutral-400">
+            Analysis job is already running:{" "}
+            <span className="font-mono text-neutral-300">
+              {activeAnalysisJobId}
+            </span>
+            . Wait for it to finish before starting another recipe.
+          </p>
+        ) : isSubmitting ? (
           <p aria-live="polite" className="basis-full text-sm text-neutral-400">
             Running analysis. This can take a while for DINO recipes.
           </p>

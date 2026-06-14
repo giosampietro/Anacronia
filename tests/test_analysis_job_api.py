@@ -1,4 +1,6 @@
+import concurrent.futures
 import json
+import threading
 
 from fastapi.testclient import TestClient
 from PIL import Image
@@ -74,6 +76,20 @@ class FakeStageRunner:
         return AnalysisStageResult(artifacts=[artifact])
 
 
+class BlockingStageRunner(FakeStageRunner):
+    def __init__(self):
+        super().__init__()
+        self.started = threading.Event()
+        self.release = threading.Event()
+
+    def run_stage(self, request):
+        if request.stage_name == "embedding_computation":
+            self.started.set()
+            if not self.release.wait(timeout=5):
+                raise RuntimeError("timed out waiting for blocked analysis stage")
+        return super().run_stage(request)
+
+
 def test_analysis_job_api_starts_job_and_returns_openable_result(tmp_path):
     storage = create_collection(tmp_path)
     stage_runner = FakeStageRunner()
@@ -124,6 +140,52 @@ def test_analysis_job_api_starts_job_and_returns_openable_result(tmp_path):
     jobs_response = client.get("/analysis-jobs")
     assert jobs_response.status_code == 200
     assert jobs_response.json()["jobs"] == [payload]
+
+
+def test_analysis_job_api_rejects_second_job_while_recipe_is_running(tmp_path):
+    storage = create_collection(tmp_path)
+    stage_runner = BlockingStageRunner()
+    app = create_app(
+        database_path=storage.database_path,
+        data_root=storage.data_root,
+        analysis_stage_runner=stage_runner,
+    )
+
+    def post_analysis_job():
+        client = TestClient(app)
+        return client.post(
+            "/analysis-jobs",
+            json={
+                "collection_slugs": ["analysis-board"],
+                "recipe_ids": ["dinov3_vits_384"],
+            },
+        )
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(post_analysis_job)
+        assert stage_runner.started.wait(timeout=2)
+
+        active_response = TestClient(app).get("/analysis-jobs")
+        assert active_response.status_code == 200
+        assert active_response.json()["active_analysis_job_id"].startswith(
+            "analysis-job-"
+        )
+
+        second = executor.submit(post_analysis_job)
+        done, _pending = concurrent.futures.wait([second], timeout=0.5)
+
+        try:
+            assert second in done
+            second_response = second.result()
+            assert second_response.status_code == 409
+            assert (
+                second_response.json()["detail"]
+                == "Another analysis job is already active."
+            )
+        finally:
+            stage_runner.release.set()
+
+        assert first.result(timeout=5).status_code == 201
 
 
 def test_analysis_job_api_default_runner_fails_truthfully_without_fake_result(

@@ -51,6 +51,7 @@ type AnalysisResultsPageProps = {
 };
 
 async function listAnalysisJobs(): Promise<{
+  activeAnalysisJobId: string | null;
   jobs: AnalysisJobListItem[];
   unavailable: boolean;
 }> {
@@ -63,15 +64,22 @@ async function listAnalysisJobs(): Promise<{
       },
     );
     if (!response.ok) {
-      return { jobs: [], unavailable: true };
+      return { activeAnalysisJobId: null, jobs: [], unavailable: true };
     }
-    const payload = (await response.json()) as { jobs?: AnalysisJobListItem[] };
+    const payload = (await response.json()) as {
+      active_analysis_job_id?: unknown;
+      jobs?: AnalysisJobListItem[];
+    };
     return {
+      activeAnalysisJobId:
+        typeof payload.active_analysis_job_id === "string"
+          ? payload.active_analysis_job_id
+          : null,
       jobs: Array.isArray(payload.jobs) ? payload.jobs : [],
       unavailable: false,
     };
   } catch {
-    return { jobs: [], unavailable: true };
+    return { activeAnalysisJobId: null, jobs: [], unavailable: true };
   }
 }
 
@@ -226,6 +234,7 @@ export default async function AnalysisResultsPage({
               Start Analysis Job
             </h2>
             <AnalysisJobForm
+              activeAnalysisJobId={jobList.activeAnalysisJobId}
               collectionApiUnavailable={collectionList.unavailable}
               collections={collections}
             />
@@ -448,9 +457,18 @@ function getSubmissionNotice({
   jobs: AnalysisJobListItem[];
   searchParams: Record<string, string | string[] | undefined>;
 }): { body: string; title: string; tone: "error" | "neutral" } | null {
+  const error = searchParamValue(searchParams.analysisJobError);
   const jobId = searchParamValue(searchParams.analysisJobId);
   const status = searchParamValue(searchParams.analysisJobStatus);
   const job = jobId ? jobs.find((candidate) => candidate.analysis_job_id === jobId) : null;
+
+  if (error) {
+    return {
+      body: error,
+      title: "Analysis job unavailable",
+      tone: "error",
+    };
+  }
 
   if (!jobId && !status) {
     return null;
