@@ -12,6 +12,12 @@ export type AnalysisResultArtifactLike = {
   role?: unknown;
 };
 
+type NormalizedAnalysisResultArtifact = {
+  key: string;
+  retention_class: string;
+  role: string;
+};
+
 export type AnalysisResultStatusState =
   | "deleted"
   | "ready"
@@ -159,7 +165,7 @@ function pickStatusState({
 }
 
 function missingArtifactKeys(
-  artifacts: Required<AnalysisResultArtifactLike>[],
+  artifacts: NormalizedAnalysisResultArtifact[],
   existingArtifactKeys: Set<string> | undefined,
 ): string[] {
   if (!existingArtifactKeys) {
@@ -172,7 +178,7 @@ function missingArtifactKeys(
     .sort((left, right) => left.localeCompare(right));
 }
 
-function normalizeArtifacts(value: unknown): Required<AnalysisResultArtifactLike>[] {
+function normalizeArtifacts(value: unknown): NormalizedAnalysisResultArtifact[] {
   if (!Array.isArray(value)) {
     return [];
   }

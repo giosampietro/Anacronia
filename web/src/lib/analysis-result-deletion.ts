@@ -258,7 +258,7 @@ async function deleteArtifacts({
 
 function isMissingFileError(error: unknown): boolean {
   return (
-    Boolean(error) &&
+    error !== null &&
     typeof error === "object" &&
     "code" in error &&
     (error as { code?: unknown }).code === "ENOENT"

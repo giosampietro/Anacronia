@@ -144,29 +144,25 @@ async function hydrateThumbnailAtlas({
     rawData.thumbnail_atlases[0];
 }
 
-async function loadLatentMapViewerData(searchParams: LatentMapSearchParams) {
+export async function loadLatentMapViewerData(
+  searchParams: LatentMapSearchParams,
+) {
   const viewerDataPath = process.env.ANACRONIA_LATENT_MAP_VIEWER_DATA;
-
-  if (!viewerDataPath) {
-    return latentMapFixture;
-  }
-
-  const resolvedViewerDataPath = path.resolve(viewerDataPath);
-  const fallbackRawData = JSON.parse(
-    await readFile(resolvedViewerDataPath, "utf-8"),
-  ) as ExportedLatentMapViewerData;
-  const fallbackRunDir = path.resolve(
-    path.dirname(path.dirname(resolvedViewerDataPath)),
-  );
   const runsRoot = getLatentMapRunsRoot();
   const analysisResultId = getSearchParam(searchParams, "analysisResultId");
-  const runDir = resolveRunDir({
-    resolvedViewerDataPath,
-    runsRoot,
-    searchParams,
-  });
-  let rawData: ExportedLatentMapViewerData = fallbackRawData;
-  let dataRunDir = fallbackRunDir;
+  const resolvedViewerDataPath = viewerDataPath
+    ? path.resolve(viewerDataPath)
+    : null;
+  const fallbackRawData = resolvedViewerDataPath
+    ? (JSON.parse(
+        await readFile(resolvedViewerDataPath, "utf-8"),
+      ) as ExportedLatentMapViewerData)
+    : null;
+  const fallbackRunDir = resolvedViewerDataPath
+    ? path.resolve(path.dirname(path.dirname(resolvedViewerDataPath)))
+    : null;
+  let rawData: ExportedLatentMapViewerData = fallbackRawData ?? latentMapFixture;
+  let dataRunDir = fallbackRunDir ?? "";
   let activeAnalysisResultId: string | null = null;
 
   try {
@@ -176,16 +172,24 @@ async function loadLatentMapViewerData(searchParams: LatentMapSearchParams) {
         runsRoot,
         selectedClusterId:
           getSearchParam(searchParams, "clusterResult") ??
-          fallbackRawData.cluster_id,
+          fallbackRawData?.cluster_id,
         selectedLayoutId:
-          getSearchParam(searchParams, "layout") ?? fallbackRawData.layout_id,
+          getSearchParam(searchParams, "layout") ?? fallbackRawData?.layout_id,
         selectedRecipeName:
-          getSearchParam(searchParams, "recipe") ?? fallbackRawData.recipe_name,
+          getSearchParam(searchParams, "recipe") ?? fallbackRawData?.recipe_name,
       });
       rawData = loaded.rawData;
       dataRunDir = loaded.runDir;
       activeAnalysisResultId = analysisResultId;
     } else {
+      if (!resolvedViewerDataPath || !fallbackRawData || !fallbackRunDir) {
+        return latentMapFixture;
+      }
+      const runDir = resolveRunDir({
+        resolvedViewerDataPath,
+        runsRoot,
+        searchParams,
+      });
       rawData = await loadLatentMapRunExportedViewerData({
         runDir,
         selectedClusterId:
@@ -198,7 +202,11 @@ async function loadLatentMapViewerData(searchParams: LatentMapSearchParams) {
       });
       dataRunDir = runDir;
     }
-  } catch {
+  } catch (error) {
+    if (!fallbackRawData || !fallbackRunDir) {
+      throw error;
+    }
+
     rawData = fallbackRawData;
     dataRunDir = fallbackRunDir;
     activeAnalysisResultId = null;
@@ -211,7 +219,7 @@ async function loadLatentMapViewerData(searchParams: LatentMapSearchParams) {
 
   await hydrateThumbnailAtlas({ rawData, runDir: dataRunDir });
 
-  return normalizeExportedLatentMapViewerData({
+  const normalizedData = normalizeExportedLatentMapViewerData({
     neighborApiPath: activeAnalysisResultId
       ? `/api/latent-map/neighbors?analysisResultId=${encodeURIComponent(
           activeAnalysisResultId,
@@ -230,6 +238,10 @@ async function loadLatentMapViewerData(searchParams: LatentMapSearchParams) {
         )}`,
     thumbnailResourceParamName: activeAnalysisResultId ? "artifactKey" : "path",
   });
+
+  return activeAnalysisResultId
+    ? { ...normalizedData, analysis_result_id: activeAnalysisResultId }
+    : normalizedData;
 }
 
 export default async function LatentMapPage({

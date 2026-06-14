@@ -11,6 +11,7 @@ import time
 from typing import Optional, TextIO
 import webbrowser
 
+from anacronia.analysis_results import wrap_legacy_latent_map_run_as_analysis_result
 from anacronia.latent_map_embeddings import DINO_EMBEDDING_RECIPES, embed_latent_map_run
 from anacronia.latent_map_atlas import generate_latent_map_thumbnail_atlas
 from anacronia.latent_map_clusters import (
@@ -318,6 +319,21 @@ def run_latent_map_scan(*, run_dir: Path) -> None:
     )
 
 
+def run_latent_map_analysis_result_wrap(*, run_dir: Path) -> None:
+    summary = wrap_legacy_latent_map_run_as_analysis_result(run_dir=run_dir)
+    print(
+        json.dumps(
+            {
+                "analysis_result_id": summary.analysis_result_id,
+                "manifest_path": str(summary.manifest_path),
+                "item_count": summary.item_count,
+                "artifact_count": summary.artifact_count,
+            }
+        ),
+        flush=True,
+    )
+
+
 def run_latent_map_embed(
     *,
     run_dir: Path,
@@ -388,7 +404,7 @@ def run_latent_map_faiss_query(
     image_id: str,
     top_k: int,
     include_self: bool,
-    relation: str,
+    relation: str = "closest",
 ) -> None:
     relations = query_faiss_relations(
         run_dir=run_dir,
@@ -750,6 +766,14 @@ def main() -> None:
     latent_map_init_parser.add_argument("--allow-output-inside-source", action="store_true")
     latent_map_scan_parser = latent_map_subparsers.add_parser("scan")
     latent_map_scan_parser.add_argument("--run-dir", required=True, type=Path)
+    latent_map_analysis_result_wrap_parser = latent_map_subparsers.add_parser(
+        "analysis-result-wrap"
+    )
+    latent_map_analysis_result_wrap_parser.add_argument(
+        "--run-dir",
+        required=True,
+        type=Path,
+    )
     latent_map_embed_parser = latent_map_subparsers.add_parser("embed")
     latent_map_embed_parser.add_argument("--run-dir", required=True, type=Path)
     latent_map_embed_parser.add_argument(
@@ -913,6 +937,13 @@ def main() -> None:
 
     if args.command == "latent-map" and args.latent_map_command == "scan":
         run_latent_map_scan(run_dir=args.run_dir)
+        return
+
+    if (
+        args.command == "latent-map"
+        and args.latent_map_command == "analysis-result-wrap"
+    ):
+        run_latent_map_analysis_result_wrap(run_dir=args.run_dir)
         return
 
     if args.command == "latent-map" and args.latent_map_command == "embed":

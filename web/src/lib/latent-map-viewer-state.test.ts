@@ -133,6 +133,35 @@ describe("latent map viewer state", () => {
     );
   });
 
+  it("serializes Analysis Result URL state without downgrading to legacy run identity", () => {
+    expect(
+      serializeLatentMapUrlState(
+        {
+          clusterFilter: "all",
+          faissNeighborCount: 20,
+          faissRelationMode: "closest",
+          renderMode: "thumbnails",
+          selectedImageId: "img_cobalt",
+          sourceFilter: "all",
+          textureDetail: "auto",
+          thumbnailSize: 64,
+          view: {
+            offsetX: 0,
+            offsetY: 0,
+            zoom: 1,
+          },
+        },
+        {
+          ...latentMapFixture,
+          analysis_result_id: "latent-map-real-run",
+          run_id: "real-run",
+        },
+      ).toString(),
+    ).toBe(
+      "analysisResultId=latent-map-real-run&recipe=dinov3_vits_256&layout=umap_n4_mindist0p05_seed42&clusterResult=kmeans_k3_seed42&mode=thumbnails&thumb=64&detail=auto&neighbors=20&relation=closest&selected=img_cobalt",
+    );
+  });
+
   it("parses manual texture detail only when the run advertises that atlas", () => {
     expect(
       parseLatentMapUrlState(
