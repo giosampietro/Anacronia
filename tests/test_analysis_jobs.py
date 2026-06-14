@@ -8,6 +8,10 @@ from anacronia.analysis_jobs import (
     AnalysisStageResult,
     run_analysis_job,
 )
+from anacronia.analysis_result_contract import (
+    assert_analysis_result_manifest_contract,
+    browser_safe_analysis_result_summary,
+)
 from anacronia.analysis_recipes import get_analysis_recipe
 from anacronia.analysis_scopes import resolve_analysis_scope
 from anacronia.image_embedding_results import record_image_embedding_result
@@ -149,11 +153,41 @@ def test_analysis_job_writes_scope_plan_default_recipe_and_openable_result(tmp_p
     )
     assert job.scope_snapshot_id.startswith("analysis-scope-")
     assert manifest["asset_kind"] == "analysis-result-manifest"
+    assert_analysis_result_manifest_contract(manifest)
+    browser_summary = browser_safe_analysis_result_summary(manifest)
+    assert browser_summary["analysis_result_id"] == result_id
+    assert browser_summary["explorer_readiness"]["ready"] is True
+    assert browser_summary["artifact_counts"] == {
+        "durable": 7,
+        "render-cache": 5,
+        "total": 12,
+    }
+    assert str(storage.data_root) not in json.dumps(browser_summary)
     assert manifest["analysis_result_id"] == result_id
     assert manifest["analysis_job_id"] == job.analysis_job_id
     assert manifest["sibling_group_id"] == job.sibling_group_id
     assert manifest["status"] == "ready"
     assert manifest["item_count"] == 2
+    assert manifest["output_counts"]["artifacts"] == {
+        "durable": 7,
+        "render-cache": 5,
+        "total": 12,
+    }
+    assert manifest["explorer_readiness"] == {
+        "missing_optional_artifact_keys": [],
+        "missing_required_artifact_keys": [],
+        "ready": True,
+    }
+    assert manifest["staleness"] == {
+        "added_image_count": 0,
+        "removed_image_count": 0,
+        "state": "current",
+    }
+    assert manifest["export_safety"] == {
+        "contains_local_absolute_paths": False,
+        "contains_secrets": False,
+        "contains_temporary_paths": False,
+    }
     assert manifest["source"]["kind"] == "analysis-scope-snapshot"
     assert manifest["source"]["source_folder_name"] == "Analysis Board"
     assert manifest["scope_snapshot"]["snapshot_id"] == job.scope_snapshot_id

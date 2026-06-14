@@ -99,6 +99,8 @@ def test_analysis_job_api_starts_job_and_returns_openable_result(tmp_path):
     assert payload["recipe_ids"] == ["dinov3_vits_384"]
     assert len(payload["analysis_result_ids"]) == 1
     assert payload["analysis_job_id"].startswith("analysis-job-")
+    assert "manifest_path" not in payload
+    assert str(storage.data_root) not in json.dumps(payload)
     assert payload["viewer_hrefs"] == [
         f"/latent-map?analysisResultId={payload['analysis_result_ids'][0]}"
     ]

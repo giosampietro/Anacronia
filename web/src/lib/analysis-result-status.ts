@@ -8,12 +8,14 @@ export type AnalysisResultManifestLike = {
 
 export type AnalysisResultArtifactLike = {
   key?: unknown;
+  required?: unknown;
   retention_class?: unknown;
   role?: unknown;
 };
 
 type NormalizedAnalysisResultArtifact = {
   key: string;
+  required: boolean;
   retention_class: string;
   role: string;
 };
@@ -59,7 +61,7 @@ export function summarizeAnalysisResultStatus({
 }): AnalysisResultStatusSummary {
   const artifacts = normalizeArtifacts(manifest.artifacts);
   const missingOptionalRenderCacheKeys = missingArtifactKeys(
-    artifacts.filter((artifact) => artifact.retention_class === "render-cache"),
+    artifacts.filter((artifact) => !artifact.required),
     existingArtifactKeys,
   );
   const relationArtifacts = artifacts.filter(
@@ -70,7 +72,12 @@ export function summarizeAnalysisResultStatus({
     existingArtifactKeys,
   );
   const missingRequiredViewerArtifactKeys = missingArtifactKeys(
-    artifacts.filter((artifact) => REQUIRED_VIEWER_ROLES.has(artifact.role)),
+    artifacts.filter(
+      (artifact) =>
+        artifact.required &&
+        (REQUIRED_VIEWER_ROLES.has(artifact.role) ||
+          artifact.role !== "faiss-index"),
+    ),
     existingArtifactKeys,
   );
   const sourceChangeSummary = summarizeSourceChanges({
@@ -200,6 +207,10 @@ function normalizeArtifacts(value: unknown): NormalizedAnalysisResultArtifact[] 
     )
     .map((artifact) => ({
       key: String(artifact.key ?? ""),
+      required:
+        typeof artifact.required === "boolean"
+          ? artifact.required
+          : String(artifact.retention_class ?? "") !== "render-cache",
       retention_class: String(artifact.retention_class ?? ""),
       role: String(artifact.role ?? ""),
     }))
