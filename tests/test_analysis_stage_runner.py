@@ -71,7 +71,7 @@ def test_latent_map_stage_runner_builds_openable_analysis_result(tmp_path):
         folder_path=folder,
     )
     runner = LatentMapAnalysisStageRunner(
-        atlas_size=64,
+        atlas_size=128,
         embedder=FakeEmbedder(),
         hdbscan_clusterer=FakeHdbscanClusterer(),
         layout_clusterer=FakeClusterer(),
@@ -118,6 +118,13 @@ def test_latent_map_stage_runner_builds_openable_analysis_result(tmp_path):
     assert result_manifest["recipes"][0]["artifact_keys"]["baseline_atlas_manifest"] == (
         "viewer/atlases/32px/atlas-manifest.json"
     )
+    assert result_manifest["recipes"][0]["artifact_keys"][
+        "thumbnail_atlas_manifests"
+    ] == {
+        "32": "viewer/atlases/32px/atlas-manifest.json",
+        "64": "viewer/atlases/64px/atlas-manifest.json",
+        "96": "viewer/atlases/96px/atlas-manifest.json",
+    }
     assert any(
         cluster["cluster_id"] == "hdbscan_detail_mcs15_ms5_leaf"
         for cluster in result_manifest["recipes"][0]["artifact_keys"]["clusters"]
@@ -127,9 +134,17 @@ def test_latent_map_stage_runner_builds_openable_analysis_result(tmp_path):
     assert all((result_dir / row["thumbnail_path"]).is_file() for row in image_manifest_rows)
     assert all((result_dir / row["preview_path"]).is_file() for row in image_manifest_rows)
     assert "viewer/atlases/32px/page-000.png" in artifact_keys
+    assert "viewer/atlases/64px/page-000.png" in artifact_keys
+    assert "viewer/atlases/96px/page-000.png" in artifact_keys
     assert "viewer/map-data.json" in artifact_keys
     assert "viewer/neighbors.json" in artifact_keys
     assert image_manifest_rows[0]["image_id"].startswith("image-asset-")
+    viewer_data = json.loads((result_dir / "viewer" / "map-data.json").read_text())
+    assert viewer_data["thumbnail_atlas_manifest_paths"] == {
+        "32": "viewer/atlases/32px/atlas-manifest.json",
+        "64": "viewer/atlases/64px/atlas-manifest.json",
+        "96": "viewer/atlases/96px/atlas-manifest.json",
+    }
 
 
 def test_latent_map_stage_runner_reports_gated_dinov3_setup_error(tmp_path):
