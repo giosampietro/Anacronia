@@ -53,9 +53,9 @@ class LatentMapAnalysisStageRunner:
             return self._run_faiss(request)
         if request.stage_name == "umap":
             return self._run_umap(request)
-        if request.stage_name == "clustering":
+        if request.stage_name in {"hdbscan", "clustering"}:
             return self._run_clustering(request)
-        if request.stage_name == "baseline_atlas":
+        if request.stage_name in {"atlas_generation", "baseline_atlas"}:
             return self._run_baseline_atlas(request)
         raise ValueError(f"Unsupported Analysis Job stage: {request.stage_name}")
 

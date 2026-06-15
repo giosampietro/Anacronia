@@ -54,14 +54,14 @@ class FakeStageRunner:
                 retention_class="durable",
                 metadata={"layout_id": "umap_default"},
             ),
-            "clustering": AnalysisStageArtifact(
+            "hdbscan": AnalysisStageArtifact(
                 key=f"clusters/{request.recipe.recipe_id}_hdbscan_default.json",
                 role="cluster-result",
                 content_type="application/json",
                 retention_class="durable",
                 metadata={"cluster_id": "hdbscan_default"},
             ),
-            "baseline_atlas": AnalysisStageArtifact(
+            "atlas_generation": AnalysisStageArtifact(
                 key="viewer/atlases/32px/atlas-manifest.json",
                 role="thumbnail-atlas",
                 content_type="application/json",
@@ -72,6 +72,34 @@ class FakeStageRunner:
         artifact_path.parent.mkdir(parents=True, exist_ok=True)
         artifact_path.write_text("{}", encoding="utf-8")
         return AnalysisStageResult(artifacts=[artifact])
+
+
+def test_analysis_recipe_api_returns_browser_safe_catalog(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    client = TestClient(
+        create_app(database_path=storage.database_path, data_root=storage.data_root)
+    )
+
+    response = client.get("/analysis-recipes")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["default_recipe_id"] == "dinov3_vits_384"
+    assert [recipe["recipe_id"] for recipe in payload["recipes"]] == [
+        "dinov3_vits_256",
+        "dinov3_vits_384",
+        "dinov3_vits_512",
+    ]
+    assert payload["recipes"][1]["stage_plan"]["atlas_levels"] == {
+        "default": [32, 64, 96],
+        "optional": [128],
+    }
+    assert payload["recipes"][1]["stage_plan"]["clusters"] == {
+        "noise_label": "Unclustered",
+        "optional": ["kmeans"],
+        "primary": "hdbscan",
+    }
+    assert str(storage.data_root) not in json.dumps(payload)
 
 
 def test_analysis_job_api_starts_job_and_returns_openable_result(tmp_path):
@@ -108,8 +136,8 @@ def test_analysis_job_api_starts_job_and_returns_openable_result(tmp_path):
         "embedding_computation",
         "faiss",
         "umap",
-        "clustering",
-        "baseline_atlas",
+        "hdbscan",
+        "atlas_generation",
     ]
 
     result_manifest = (

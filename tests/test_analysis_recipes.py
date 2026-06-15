@@ -1,5 +1,6 @@
 from anacronia.analysis_recipes import (
     AnalysisRecipe,
+    browser_safe_analysis_recipe_catalog,
     get_default_analysis_recipe,
     list_analysis_recipes,
     select_analysis_recipes,
@@ -45,10 +46,13 @@ def test_recipe_registry_defaults_to_dinov3_384_with_comparison_recipes():
         "vector_kind": "image-class-token",
     }
     assert provenance["downstream_stages"] == [
+        "embedding_computation",
         "faiss",
         "umap",
         "hdbscan",
-        "baseline-atlas-32px",
+        "atlas_generation",
+        "viewer_metadata",
+        "result_registration",
     ]
 
 
@@ -99,3 +103,97 @@ def test_future_siglip2_and_fusion_recipes_use_same_provenance_contract():
         "siglip2_so400m_384",
     ]
     assert siglip2_recipe.embedding_fingerprint() != fusion_recipe.embedding_fingerprint()
+
+
+def test_dinov3_recipe_declares_explorer_ready_stage_plan():
+    recipe = get_default_analysis_recipe()
+
+    assert recipe.stage_plan is not None
+    assert recipe.stage_plan.stage_ids == (
+        "embedding_computation",
+        "faiss",
+        "umap",
+        "hdbscan",
+        "atlas_generation",
+        "viewer_metadata",
+        "result_registration",
+    )
+    assert recipe.stage_plan.runtime_stage_ids == (
+        "embedding_computation",
+        "faiss",
+        "umap",
+        "hdbscan",
+        "atlas_generation",
+    )
+    assert recipe.stage_plan.default_atlas_levels == (32, 64, 96)
+    assert recipe.stage_plan.optional_atlas_levels == (128,)
+    assert recipe.stage_plan.primary_cluster_method == "hdbscan"
+    assert recipe.stage_plan.optional_cluster_methods == ("kmeans",)
+    assert recipe.stage_plan.noise_label == "Unclustered"
+    assert recipe.stage_plan.explorer_required_artifact_roles == (
+        "image-manifest",
+        "embedding",
+        "faiss-index",
+        "faiss-id-map",
+        "layout",
+        "cluster-result",
+        "thumbnail-atlas",
+        "viewer-data",
+        "viewer-neighbors",
+        "analysis-result-manifest",
+    )
+
+    artifacts_by_stage = {
+        stage.stage_id: {
+            artifact.role: artifact.retention_class for artifact in stage.artifacts
+        }
+        for stage in recipe.stage_plan.stages
+    }
+    assert artifacts_by_stage["embedding_computation"]["embedding"] == "durable"
+    assert artifacts_by_stage["faiss"]["faiss-index"] == "durable"
+    assert artifacts_by_stage["umap"]["layout"] == "durable"
+    assert artifacts_by_stage["hdbscan"]["cluster-result"] == "durable"
+    assert artifacts_by_stage["atlas_generation"]["thumbnail-atlas"] == "render-cache"
+    assert artifacts_by_stage["viewer_metadata"]["viewer-data"] == "viewer-cache"
+    assert (
+        artifacts_by_stage["result_registration"]["analysis-result-manifest"]
+        == "durable"
+    )
+
+
+def test_recipe_catalog_exposes_browser_safe_ui_metadata():
+    catalog = browser_safe_analysis_recipe_catalog()
+
+    assert catalog["default_recipe_id"] == "dinov3_vits_384"
+    assert [recipe["recipe_id"] for recipe in catalog["recipes"]] == [
+        "dinov3_vits_256",
+        "dinov3_vits_384",
+        "dinov3_vits_512",
+    ]
+    default_recipe = catalog["recipes"][1]
+    assert default_recipe["is_default"] is True
+    assert default_recipe["label"] == "DINOv3 ViT-S 384px"
+    assert default_recipe["model_family"] == "dinov3"
+    assert default_recipe["stage_plan"]["stage_ids"] == [
+        "embedding_computation",
+        "faiss",
+        "umap",
+        "hdbscan",
+        "atlas_generation",
+        "viewer_metadata",
+        "result_registration",
+    ]
+    assert default_recipe["stage_plan"]["atlas_levels"] == {
+        "default": [32, 64, 96],
+        "optional": [128],
+    }
+    assert default_recipe["stage_plan"]["clusters"] == {
+        "noise_label": "Unclustered",
+        "optional": ["kmeans"],
+        "primary": "hdbscan",
+    }
+
+    serialized = str(catalog)
+    assert "/Users/" not in serialized
+    assert "/private/" not in serialized
+    assert "hf_" not in serialized

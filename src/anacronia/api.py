@@ -13,6 +13,7 @@ from anacronia.analysis_jobs import (
     AnalysisStageRunner,
     run_analysis_job,
 )
+from anacronia.analysis_recipes import browser_safe_analysis_recipe_catalog
 from anacronia.analysis_stage_runner import LatentMapAnalysisStageRunner
 from anacronia.collection_runs import (
     CandidateRun,
@@ -736,6 +737,10 @@ def create_app(
                 "active_collect_job_id": worker_status.active_collect_job_id,
             },
         }
+
+    @app.get("/analysis-recipes")
+    def get_analysis_recipes() -> dict[str, object]:
+        return browser_safe_analysis_recipe_catalog()
 
     @app.post("/analysis-jobs", status_code=201)
     def create_analysis_job(request: AnalysisJobRequest) -> dict[str, object]:
