@@ -1,4 +1,6 @@
 import json
+import time
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 from PIL import Image
@@ -74,6 +76,17 @@ class FakeStageRunner:
         return AnalysisStageResult(artifacts=[artifact])
 
 
+def wait_for_api_job_status(client, analysis_job_id, status, *, timeout=5):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        jobs = client.get("/analysis-jobs").json()["jobs"]
+        for job in jobs:
+            if job["analysis_job_id"] == analysis_job_id and job["status"] == status:
+                return job
+        time.sleep(0.02)
+    raise AssertionError(f"Analysis Job {analysis_job_id} did not reach {status!r}.")
+
+
 def test_analysis_recipe_api_returns_browser_safe_catalog(tmp_path):
     storage = initialize_storage(project_root=tmp_path)
     client = TestClient(
@@ -123,14 +136,21 @@ def test_analysis_job_api_starts_job_and_returns_openable_result(tmp_path):
 
     assert response.status_code == 201
     payload = response.json()
-    assert payload["status"] == "ready"
+    assert payload["status"] == "running"
     assert payload["recipe_ids"] == ["dinov3_vits_384"]
-    assert len(payload["analysis_result_ids"]) == 1
+    assert payload["analysis_result_ids"] == []
     assert payload["analysis_job_id"].startswith("analysis-job-")
     assert "manifest_path" not in payload
     assert str(storage.data_root) not in json.dumps(payload)
-    assert payload["viewer_hrefs"] == [
-        f"/latent-map?analysisResultId={payload['analysis_result_ids'][0]}"
+
+    ready_payload = wait_for_api_job_status(
+        client,
+        payload["analysis_job_id"],
+        "ready",
+    )
+    assert len(ready_payload["analysis_result_ids"]) == 1
+    assert ready_payload["viewer_hrefs"] == [
+        f"/latent-map?analysisResultId={ready_payload['analysis_result_ids'][0]}"
     ]
     assert [call[0] for call in stage_runner.calls] == [
         "embedding_computation",
@@ -143,17 +163,17 @@ def test_analysis_job_api_starts_job_and_returns_openable_result(tmp_path):
     result_manifest = (
         storage.data_root
         / "analysis-results"
-        / payload["analysis_result_ids"][0]
+        / ready_payload["analysis_result_ids"][0]
         / "analysis-result.json"
     )
     assert result_manifest.is_file()
     assert json.loads(result_manifest.read_text())["viewer"] == {
-        "open_href": payload["viewer_hrefs"][0]
+        "open_href": ready_payload["viewer_hrefs"][0]
     }
 
     jobs_response = client.get("/analysis-jobs")
     assert jobs_response.status_code == 200
-    assert jobs_response.json()["jobs"] == [payload]
+    assert jobs_response.json()["jobs"] == [ready_payload]
 
 
 def test_analysis_job_api_default_runner_fails_truthfully_without_fake_result(
@@ -184,11 +204,16 @@ def test_analysis_job_api_default_runner_fails_truthfully_without_fake_result(
 
     assert response.status_code == 201
     payload = response.json()
-    assert payload["status"] == "failed"
+    assert payload["status"] == "running"
     assert payload["analysis_result_ids"] == []
     assert payload["viewer_hrefs"] == []
-    assert "production runner unavailable in test" in payload["stages"][-1]["error"]
-    assert payload["stages"][-1]["stage_name"] == "embedding_computation"
+    failed_payload = wait_for_api_job_status(
+        client,
+        payload["analysis_job_id"],
+        "failed",
+    )
+    assert "production runner unavailable in test" in failed_payload["stages"][-1]["error"]
+    assert failed_payload["stages"][-1]["stage_name"] == "embedding_computation"
 
     result_dirs = list((storage.data_root / "analysis-results").glob("*/analysis-result.json"))
     assert result_dirs == []
@@ -219,3 +244,73 @@ def test_analysis_job_api_validates_collection_and_recipe(tmp_path):
     assert missing_collection.json()["detail"] == "Collection not found: missing-board"
     assert unknown_recipe.status_code == 422
     assert unknown_recipe.json()["detail"] == "Unknown Analysis Recipe: dinov3_vits_999"
+
+
+def test_analysis_job_api_blocks_start_while_provider_search_is_active(
+    tmp_path,
+    monkeypatch,
+):
+    storage = create_collection(tmp_path)
+    monkeypatch.setattr(
+        "anacronia.api.get_worker_status",
+        lambda *, database_path: SimpleNamespace(
+            service="worker",
+            status="running",
+            active_collect_job_id=42,
+        ),
+    )
+    client = TestClient(
+        create_app(database_path=storage.database_path, data_root=storage.data_root)
+    )
+
+    response = client.post(
+        "/analysis-jobs",
+        json={
+            "collection_slugs": ["analysis-board"],
+            "recipe_ids": ["dinov3_vits_384"],
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Another search is already active."
+
+
+def test_provider_search_start_blocks_while_analysis_job_is_active(tmp_path):
+    storage = create_collection(tmp_path)
+    manifest_path = (
+        storage.data_root
+        / "analysis-jobs"
+        / "analysis-job-20260615T100000Z"
+        / "analysis-job.json"
+    )
+    manifest_path.parent.mkdir(parents=True)
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "asset_kind": "analysis-job",
+                "analysis_job_id": "analysis-job-20260615T100000Z",
+                "analysis_result_ids": [],
+                "created_at": "2026-06-15T10:00:00Z",
+                "recipe_ids": ["dinov3_vits_384"],
+                "sibling_group_id": "analysis-sibling-20260615T100000Z",
+                "stages": [],
+                "status": "running",
+            }
+        ),
+        encoding="utf-8",
+    )
+    client = TestClient(
+        create_app(database_path=storage.database_path, data_root=storage.data_root)
+    )
+
+    response = client.post(
+        "/search-sets",
+        json={
+            "display_name": "Snake Studies",
+            "terms_text": "snake",
+            "provider": "met",
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Another Analysis Job is already active."

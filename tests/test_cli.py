@@ -80,6 +80,11 @@ def test_startup_plan_includes_backend_worker_and_ui_services(tmp_path):
     assert plan.services[1].command[-1:] == ["anacronia.worker"]
     assert plan.services[2].setup_command[-1] == "build"
     assert "start" in plan.services[2].command
+    assert [service.environment["HF_HOME"] for service in plan.services] == [
+        str(tmp_path / ".hf-cache"),
+        str(tmp_path / ".hf-cache"),
+        str(tmp_path / ".hf-cache"),
+    ]
     assert plan.services[2].environment["ANACRONIA_API_PORT"] == "18670"
     assert plan.services[2].environment["ANACRONIA_UI_PORT"] == "18660"
     assert plan.services[2].environment["NEXT_SWC_PATH"].endswith("data/temp/next-swc")
@@ -105,6 +110,11 @@ def test_startup_plan_initializes_configured_storage_and_shares_data_root(tmp_pa
         str(data_root),
         str(data_root),
         str(data_root),
+    ]
+    assert [service.environment["HF_HOME"] for service in plan.services] == [
+        str(tmp_path / "project" / ".hf-cache"),
+        str(tmp_path / "project" / ".hf-cache"),
+        str(tmp_path / "project" / ".hf-cache"),
     ]
     assert plan.services[2].environment["NEXT_SWC_PATH"] == str(data_root / "temp" / "next-swc")
 

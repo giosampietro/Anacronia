@@ -32,7 +32,6 @@ class _Clusterer(Protocol):
 @dataclass
 class LatentMapAnalysisStageRunner:
     atlas_size: int = 2048
-    atlas_tile_size: int = 32
     batch_size: int = 8
     device: str = "auto"
     embedder: _ImageEmbedder | None = None
@@ -62,13 +61,19 @@ class LatentMapAnalysisStageRunner:
     def _run_embedding(self, request: AnalysisStageRequest) -> AnalysisStageResult:
         from anacronia.latent_map_embeddings import embed_latent_map_run
 
-        summary = embed_latent_map_run(
-            run_dir=request.analysis_result_dir,
-            recipe_name=request.recipe.recipe_id,
-            batch_size=self.batch_size,
-            device=self.device,
-            embedder=self.embedder,
-        )
+        try:
+            summary = embed_latent_map_run(
+                run_dir=request.analysis_result_dir,
+                recipe_name=request.recipe.recipe_id,
+                batch_size=self.batch_size,
+                device=self.device,
+                embedder=self.embedder,
+            )
+        except Exception as error:
+            friendly_error = _friendly_embedding_error(error)
+            if friendly_error is not None:
+                raise RuntimeError(friendly_error) from error
+            raise
         return AnalysisStageResult(
             artifacts=[
                 _artifact_for_path(
@@ -197,15 +202,26 @@ class LatentMapAnalysisStageRunner:
         from anacronia.latent_map_atlas import generate_latent_map_thumbnail_atlas
         from anacronia.latent_map_viewer_export import export_viewer_data
 
-        atlas = generate_latent_map_thumbnail_atlas(
-            run_dir=request.analysis_result_dir,
-            tile_size=self.atlas_tile_size,
-            atlas_size=self.atlas_size,
+        atlas_levels = _atlas_levels_for_recipe(request.recipe)
+        atlases = [
+            generate_latent_map_thumbnail_atlas(
+                run_dir=request.analysis_result_dir,
+                tile_size=tile_size,
+                atlas_size=max(self.atlas_size, tile_size),
+            )
+            for tile_size in atlas_levels
+        ]
+        atlas_manifest_paths = {
+            atlas.tile_size: atlas.manifest_path for atlas in atlases
+        }
+        baseline_atlas = atlas_manifest_paths.get(32) or next(
+            iter(atlas_manifest_paths.values())
         )
         viewer = export_viewer_data(
             run_dir=request.analysis_result_dir,
             recipe_name=request.recipe.recipe_id,
-            thumbnail_atlas_manifest_path=atlas.manifest_path,
+            thumbnail_atlas_manifest_path=baseline_atlas,
+            thumbnail_atlas_manifest_paths=atlas_manifest_paths,
         )
         page_artifacts = [
             _artifact_for_path(
@@ -215,18 +231,25 @@ class LatentMapAnalysisStageRunner:
                 content_type="image/png",
                 retention_class="render-cache",
             )
+            for atlas in atlases
             for path in sorted(atlas.manifest_path.parent.glob("page-*.png"))
         ]
         return AnalysisStageResult(
             artifacts=[
-                _artifact_for_path(
-                    key=_relative_key(atlas.manifest_path, request.analysis_result_dir),
-                    path=atlas.manifest_path,
-                    role="thumbnail-atlas",
-                    content_type="application/json",
-                    retention_class="render-cache",
-                    metadata={"tile_size": atlas.tile_size},
-                ),
+                *[
+                    _artifact_for_path(
+                        key=_relative_key(
+                            atlas.manifest_path,
+                            request.analysis_result_dir,
+                        ),
+                        path=atlas.manifest_path,
+                        role="thumbnail-atlas",
+                        content_type="application/json",
+                        retention_class="render-cache",
+                        metadata={"tile_size": atlas.tile_size},
+                    )
+                    for atlas in atlases
+                ],
                 *page_artifacts,
                 _artifact_for_path(
                     key=_relative_key(viewer.viewer_data_path, request.analysis_result_dir),
@@ -263,6 +286,33 @@ def _artifact_for_path(
         byte_size=path.stat().st_size if path.is_file() else None,
         metadata=metadata or {},
     )
+
+
+def _friendly_embedding_error(error: Exception) -> str | None:
+    message = str(error)
+    lower_message = message.lower()
+    if (
+        "gated repo" in lower_message
+        or "access to model" in lower_message
+        or "401 client error" in lower_message
+        or "please log in" in lower_message
+    ):
+        return (
+            "Hugging Face access failed: DINOv3 is gated for this process. "
+            "Run batch-cmd/login-huggingface.command, confirm model access, "
+            "then restart Anacronia so the backend reads .hf-cache/token."
+        )
+    return None
+
+
+def _atlas_levels_for_recipe(recipe) -> tuple[int, ...]:
+    if recipe.stage_plan is None:
+        return (32,)
+    return tuple(
+        int(level)
+        for level in recipe.stage_plan.default_atlas_levels
+        if int(level) > 0
+    ) or (32,)
 
 
 def _relative_key(path: Path, root: Path) -> str:

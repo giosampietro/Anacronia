@@ -4,6 +4,12 @@ import path from "node:path";
 import { renderToString } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({
+    refresh: vi.fn(),
+  }),
+}));
+
 import AnalysisResultsPage from "@/app/analysis-results/page";
 
 async function writeJson(filePath: string, value: unknown) {
@@ -48,6 +54,20 @@ describe("AnalysisResultsPage", () => {
         return Response.json({
           jobs: [
             {
+              analysis_job_id: "analysis-job-20260614T130010Z",
+              analysis_result_ids: [],
+              recipe_ids: ["dinov3_vits_512"],
+              stages: [
+                {
+                  recipe_id: "dinov3_vits_512",
+                  stage_name: "embedding_computation",
+                  status: "running",
+                },
+              ],
+              status: "running",
+              viewer_hrefs: [],
+            },
+            {
               analysis_job_id: "analysis-job-20260614T130000Z",
               analysis_result_ids: ["latent-map-20260609T123000Z-j-shoot"],
               recipe_ids: ["dinov3_vits_384"],
@@ -55,6 +75,35 @@ describe("AnalysisResultsPage", () => {
               viewer_hrefs: [
                 "/latent-map?analysisResultId=latent-map-20260609T123000Z-j-shoot",
               ],
+            },
+            {
+              analysis_job_id: "analysis-job-20260614T125900Z",
+              analysis_result_ids: [],
+              recipe_ids: ["dinov3_vits_384"],
+              stages: [
+                {
+                  error: "DINOv3 access failed",
+                  recipe_id: "dinov3_vits_384",
+                  stage_name: "embedding_computation",
+                  status: "failed",
+                },
+              ],
+              status: "failed",
+              viewer_hrefs: [],
+            },
+            {
+              analysis_job_id: "analysis-job-20260614T125800Z",
+              analysis_result_ids: [],
+              recipe_ids: ["dinov3_vits_384"],
+              stages: [
+                {
+                  recipe_id: "dinov3_vits_384",
+                  stage_name: "embedding_computation",
+                  status: "failed",
+                },
+              ],
+              status: "failed",
+              viewer_hrefs: [],
             },
           ],
         });
@@ -100,6 +149,15 @@ describe("AnalysisResultsPage", () => {
     expect(html).toContain("dinov3_vits_384");
     expect(html).toContain("Job Status");
     expect(html).toContain("ready");
+    expect(html).toContain("Analysis running");
+    expect(html).toContain("1 running");
+    expect(html).toContain("2 failed");
+    expect(html).toContain("embedding computation");
+    expect(html).toContain("Failed at embedding computation");
+    expect(html).toContain("analysis-job-20260614T130010Z");
+    expect(html).toContain("Refreshing automatically");
+    expect(html).not.toContain("readys");
+    expect(html).not.toContain("faileds");
     expect(html).toContain("analysis-job-20260614T130000Z");
     expect(html).toContain("Submitted Jobs");
     expect(html).toContain("J Shoot");

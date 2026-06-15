@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 from pathlib import Path
+from typing import Mapping
 
 from anacronia.analysis_result_pins import (
     validate_pinned_latent_map_row_order_if_present,
@@ -21,6 +22,7 @@ class ViewerDataExportSummary:
     map_payload_bytes: int
     neighbor_payload_bytes: int
     thumbnail_atlas_manifest_path: Path | None = None
+    thumbnail_atlas_manifest_paths: dict[str, Path] | None = None
 
 
 def export_viewer_data(
@@ -30,6 +32,7 @@ def export_viewer_data(
     layout_id: str | None = None,
     cluster_id: str | None = None,
     thumbnail_atlas_manifest_path: Path | None = None,
+    thumbnail_atlas_manifest_paths: Mapping[int | str, Path] | None = None,
 ) -> ViewerDataExportSummary:
     resolved_run_dir = run_dir.expanduser().resolve()
     run_id = _read_run_id(resolved_run_dir)
@@ -37,6 +40,14 @@ def export_viewer_data(
         run_dir=resolved_run_dir,
         path=thumbnail_atlas_manifest_path,
     )
+    resolved_atlas_manifest_paths = _resolve_atlas_manifest_paths(
+        run_dir=resolved_run_dir,
+        thumbnail_atlas_manifest_paths=thumbnail_atlas_manifest_paths,
+    )
+    if resolved_atlas_manifest_path is None:
+        resolved_atlas_manifest_path = _default_atlas_manifest_path(
+            resolved_atlas_manifest_paths
+        )
     manifest_rows = _load_jsonl(resolved_run_dir / "manifest.jsonl")
     manifest_by_id = {str(row["image_id"]): row for row in manifest_rows}
     layout = _load_selected_json(
@@ -123,6 +134,14 @@ def export_viewer_data(
         viewer_data["thumbnail_atlas_manifest_path"] = (
             resolved_atlas_manifest_path.relative_to(resolved_run_dir).as_posix()
         )
+    if resolved_atlas_manifest_paths:
+        viewer_data["thumbnail_atlas_manifest_paths"] = {
+            tile_size: path.relative_to(resolved_run_dir).as_posix()
+            for tile_size, path in sorted(
+                resolved_atlas_manifest_paths.items(),
+                key=lambda item: int(item[0]),
+            )
+        }
     neighbor_data_path.write_text(
         json.dumps(neighbor_data, indent=2) + "\n",
         encoding="utf-8",
@@ -154,6 +173,7 @@ def export_viewer_data(
         map_payload_bytes=map_payload_bytes,
         neighbor_payload_bytes=neighbor_payload_bytes,
         thumbnail_atlas_manifest_path=resolved_atlas_manifest_path,
+        thumbnail_atlas_manifest_paths=resolved_atlas_manifest_paths or None,
         viewer_data_path=viewer_data_path,
     )
 
@@ -183,6 +203,32 @@ def _group_neighbors(
     for neighbors in grouped.values():
         neighbors.sort(key=lambda neighbor: int(neighbor["rank"]))
     return grouped
+
+
+def _resolve_atlas_manifest_paths(
+    *,
+    run_dir: Path,
+    thumbnail_atlas_manifest_paths: Mapping[int | str, Path] | None,
+) -> dict[str, Path]:
+    resolved_paths: dict[str, Path] = {}
+    for tile_size, manifest_path in (thumbnail_atlas_manifest_paths or {}).items():
+        resolved_path = _resolve_optional_run_path(
+            run_dir=run_dir,
+            path=manifest_path,
+        )
+        if resolved_path is not None:
+            resolved_paths[str(tile_size)] = resolved_path
+    return resolved_paths
+
+
+def _default_atlas_manifest_path(
+    thumbnail_atlas_manifest_paths: Mapping[str, Path],
+) -> Path | None:
+    if "32" in thumbnail_atlas_manifest_paths:
+        return thumbnail_atlas_manifest_paths["32"]
+    if thumbnail_atlas_manifest_paths:
+        return next(iter(thumbnail_atlas_manifest_paths.values()))
+    return None
 
 
 def _build_viewer_point(

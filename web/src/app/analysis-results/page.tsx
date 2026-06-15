@@ -1,6 +1,8 @@
 import Link from "next/link";
 
+import { AnalysisJobAutoRefresh } from "@/components/analysis-job-auto-refresh";
 import { AppSpaceShell } from "@/components/app-space-shell";
+import { shouldAutoRefreshAnalysisJobs } from "@/lib/analysis-job-refresh";
 import { listAnalysisResults } from "@/lib/analysis-results-browser";
 import type { AnalysisResultStatusState } from "@/lib/analysis-result-status";
 import {
@@ -27,14 +29,34 @@ type AnalysisJobListItem = {
   analysis_job_id: string;
   analysis_result_ids: string[];
   recipe_ids: string[];
+  stages?: AnalysisJobStageListItem[];
   status: string;
   viewer_hrefs: string[];
+};
+
+type AnalysisJobStageListItem = {
+  error?: string;
+  recipe_id?: string;
+  stage_name?: string;
+  status?: string;
 };
 
 type CollectionListItem = {
   display_name?: string;
   slug: string;
 };
+
+const ANALYSIS_JOB_STAGE_ORDER = [
+  "scope_snapshot",
+  "embedding_planning",
+  "embedding_computation",
+  "faiss",
+  "umap",
+  "hdbscan",
+  "atlas_generation",
+  "viewer_metadata",
+  "result_registration",
+];
 
 async function listAnalysisJobs(): Promise<{
   jobs: AnalysisJobListItem[];
@@ -138,6 +160,78 @@ function summarizeStates(
     .join(", ");
 }
 
+function isActiveAnalysisJob(job: AnalysisJobListItem) {
+  return shouldAutoRefreshAnalysisJobs([job.status]);
+}
+
+function formatAnalysisJobStatusCount(count: number, status: string) {
+  const labels: Record<string, [string, string]> = {
+    failed: ["failed", "failed"],
+    partial_failed: ["partial failure", "partial failures"],
+    queued: ["queued", "queued"],
+    ready: ["ready", "ready"],
+    running: ["running", "running"],
+  };
+  const [singular, plural] = labels[status] ?? [status, status];
+  return formatCount(count, singular, plural);
+}
+
+function formatStageName(stageName: string | undefined) {
+  return stageName !== undefined && stageName.length > 0
+    ? stageName.replaceAll("_", " ")
+    : "analysis job";
+}
+
+function getLatestStage(job: AnalysisJobListItem) {
+  const stages = job.stages ?? [];
+  return stages.length > 0 ? stages[stages.length - 1] : undefined;
+}
+
+function getActiveStageName(job: AnalysisJobListItem) {
+  const explicitRunningStage = (job.stages ?? []).find(
+    (stage) => stage.status === "running",
+  );
+  if (explicitRunningStage?.stage_name !== undefined) {
+    return formatStageName(explicitRunningStage.stage_name);
+  }
+
+  const latestStageName = getLatestStage(job)?.stage_name;
+  if (latestStageName === undefined) {
+    return job.status === "queued" ? "queued" : "analysis job";
+  }
+
+  const latestStageIndex = ANALYSIS_JOB_STAGE_ORDER.indexOf(latestStageName);
+  if (
+    job.status === "running" &&
+    latestStageIndex >= 0 &&
+    latestStageIndex < ANALYSIS_JOB_STAGE_ORDER.length - 1
+  ) {
+    return formatStageName(ANALYSIS_JOB_STAGE_ORDER[latestStageIndex + 1]);
+  }
+
+  return formatStageName(latestStageName);
+}
+
+function getFailedStageName(job: AnalysisJobListItem) {
+  const failedStage = [...(job.stages ?? [])]
+    .reverse()
+    .find((stage) => stage.status === "failed");
+  return formatStageName(failedStage?.stage_name ?? getLatestStage(job)?.stage_name);
+}
+
+function getJobResultStatus(job: AnalysisJobListItem) {
+  if (isActiveAnalysisJob(job)) {
+    return `Running: ${getActiveStageName(job)}`;
+  }
+  if (job.status === "failed") {
+    return `Failed at ${getFailedStageName(job)}`;
+  }
+  if (job.status === "partial_failed") {
+    return `Partially failed at ${getFailedStageName(job)}`;
+  }
+  return "No completed result";
+}
+
 export default async function AnalysisResultsPage() {
   const [results, jobList, collectionList] = await Promise.all([
     listAnalysisResults({
@@ -148,6 +242,8 @@ export default async function AnalysisResultsPage() {
     listCollections(),
   ]);
   const jobs = jobList.jobs;
+  const activeJobs = jobs.filter(isActiveAnalysisJob);
+  const activeJob = activeJobs[0];
   const collections = collectionList.collections;
   const recipeNames = summarizeRecipes(results);
   const totalIndexedImages = results.reduce(
@@ -167,6 +263,7 @@ export default async function AnalysisResultsPage() {
       className="bg-neutral-950 text-neutral-100"
     >
       <main className="min-h-screen px-6 py-8">
+        <AnalysisJobAutoRefresh enabled={activeJobs.length > 0} />
         <section className="mx-auto flex w-full max-w-6xl flex-col gap-6">
           <header className="flex flex-col gap-2">
             <p className="text-sm font-medium uppercase tracking-[0.18em] text-neutral-500">
@@ -252,6 +349,31 @@ export default async function AnalysisResultsPage() {
             </form>
           </section>
 
+          {activeJob !== undefined ? (
+            <section
+              aria-label="Running Analysis Job"
+              className="rounded-md border border-sky-800/70 bg-sky-950/30 p-4"
+            >
+              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <h2 className="text-sm font-medium text-sky-100">
+                    Analysis running
+                  </h2>
+                  <p className="mt-1 text-sm leading-6 text-sky-200/80">
+                    {formatAnalysisJobStatusCount(activeJobs.length, "running")}
+                    {" · "}
+                    {`Current stage: ${getActiveStageName(activeJob)}`}
+                    {" · "}
+                    {activeJob.analysis_job_id}
+                  </p>
+                </div>
+                <p className="text-xs font-medium uppercase tracking-[0.16em] text-sky-200/70">
+                  Refreshing automatically
+                </p>
+              </div>
+            </section>
+          ) : null}
+
           <section
             aria-label="Analysis Studio status"
             className="grid gap-3 md:grid-cols-3"
@@ -328,7 +450,7 @@ export default async function AnalysisResultsPage() {
                           </Link>
                         ) : (
                           <span className="text-sm text-neutral-500">
-                            No completed result
+                            {getJobResultStatus(job)}
                           </span>
                         )}
                       </td>
@@ -426,6 +548,6 @@ function summarizeJobStates(jobs: AnalysisJobListItem[]) {
   });
   return [...counts.entries()]
     .sort(([leftState], [rightState]) => leftState.localeCompare(rightState))
-    .map(([state, count]) => formatCount(count, state))
+    .map(([state, count]) => formatAnalysisJobStatusCount(count, state))
     .join(", ");
 }
