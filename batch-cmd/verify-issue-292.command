@@ -45,5 +45,6 @@ echo "2/2 Web Analysis Studio tests"
   cd web
   npm_config_cache=/private/tmp/npm-cache npm test -- \
     src/app/api/analysis-jobs/route.test.ts \
-    src/app/analysis-results/page.test.tsx
+    src/app/analysis-results/page.test.tsx \
+    src/lib/analysis-job-refresh.test.ts
 )
