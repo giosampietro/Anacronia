@@ -161,6 +161,7 @@ def test_analysis_job_writes_scope_plan_default_recipe_and_openable_result(tmp_p
         "durable": 7,
         "render-cache": 5,
         "total": 12,
+        "viewer-cache": 0,
     }
     assert str(storage.data_root) not in json.dumps(browser_summary)
     assert manifest["analysis_result_id"] == result_id
@@ -172,6 +173,7 @@ def test_analysis_job_writes_scope_plan_default_recipe_and_openable_result(tmp_p
         "durable": 7,
         "render-cache": 5,
         "total": 12,
+        "viewer-cache": 0,
     }
     assert manifest["explorer_readiness"] == {
         "missing_optional_artifact_keys": [],

@@ -263,8 +263,12 @@ def _append_atlas_report(
             f"- Images: {image_count}",
             f"- Atlas pages: {page_count}",
             f"- Atlas disk bytes: {total_page_bytes}",
-            f"- Manifest: `{manifest_path}`",
+            f"- Manifest: `{_relative_key(manifest_path, run_dir)}`",
             "",
         ]
     )
     report_path.write_text(existing_report.rstrip() + addition, encoding="utf-8")
+
+
+def _relative_key(path: Path, root: Path) -> str:
+    return path.resolve().relative_to(root.resolve()).as_posix()

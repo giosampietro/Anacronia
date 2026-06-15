@@ -70,7 +70,8 @@ def test_initializes_latent_map_run_contract(tmp_path):
 
     report = (run.run_dir / "report.md").read_text(encoding="utf-8")
     assert "# Latent Map Run: 20260609T123000Z-j-shoot" in report
-    assert str(source_folder.resolve()) in report
+    assert "Source folder: `source-images`" in report
+    assert str(source_folder.resolve()) not in report
 
 
 def test_refuses_to_write_run_inside_source_folder(tmp_path):

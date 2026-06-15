@@ -149,7 +149,11 @@ def test_dinov3_recipe_declares_explorer_ready_stage_plan():
         }
         for stage in recipe.stage_plan.stages
     }
-    assert artifacts_by_stage["embedding_computation"]["embedding"] == "durable"
+    assert artifacts_by_stage["embedding_computation"] == {
+        "embedding": "durable",
+        "embedding-vector-id-map": "durable",
+        "embedding-materialization-metadata": "durable",
+    }
     assert artifacts_by_stage["faiss"]["faiss-index"] == "durable"
     assert artifacts_by_stage["umap"]["layout"] == "durable"
     assert artifacts_by_stage["hdbscan"]["cluster-result"] == "durable"

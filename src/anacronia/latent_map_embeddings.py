@@ -148,11 +148,11 @@ def embed_latent_map_run(
         "device": resolved_embedder.device,
         "batch_size": batch_size,
         "limit": limit,
-        "manifest_path": str(manifest_path),
+        "manifest_path": _relative_key(manifest_path, resolved_run_dir),
         "manifest_image_count": len(rows),
         "vector_count": int(vectors.shape[0]),
         "vector_dim": int(vectors.shape[1]) if vectors.ndim == 2 else 0,
-        "embedding_path": str(embedding_path),
+        "embedding_path": _relative_key(embedding_path, resolved_run_dir),
         "elapsed_seconds": elapsed_seconds,
     }
     metadata_path.write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
@@ -323,7 +323,7 @@ def _append_embedding_report(
             f"- Vectors: {vector_count}",
             f"- Dimensions: {vector_dim}",
             f"- Elapsed seconds: {elapsed_seconds:.3f}",
-            f"- File: `{embedding_path}`",
+            f"- File: `{_relative_key(embedding_path, run_dir)}`",
             "",
         ]
     )
@@ -332,6 +332,13 @@ def _append_embedding_report(
 
 def _ceil_multiple(value: int, multiple: int) -> int:
     return ((value + multiple - 1) // multiple) * multiple
+
+
+def _relative_key(path: Path, root: Path) -> str:
+    try:
+        return path.relative_to(root).as_posix()
+    except ValueError:
+        return path.name
 
 
 def _resolve_torch_device(*, torch, requested_device: str) -> str:

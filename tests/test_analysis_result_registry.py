@@ -185,6 +185,48 @@ def test_registry_reports_missing_artifacts_separately_from_failed_state(tmp_pat
     }
 
 
+def test_registry_treats_missing_viewer_cache_artifacts_as_not_explorer_ready(
+    tmp_path,
+):
+    manifest = valid_manifest()
+    manifest["artifacts"].extend(
+        [
+            {
+                "byte_size": 2,
+                "content_type": "application/json",
+                "key": "viewer/map-data.json",
+                "required": True,
+                "retention_class": "viewer-cache",
+                "role": "viewer-data",
+            },
+            {
+                "byte_size": 2,
+                "content_type": "application/json",
+                "key": "viewer/neighbors.json",
+                "required": True,
+                "retention_class": "viewer-cache",
+                "role": "viewer-neighbors",
+            },
+        ]
+    )
+    result_dir = tmp_path / "analysis-results" / manifest["analysis_result_id"]
+    for artifact in manifest["artifacts"]:
+        if artifact["retention_class"] == "viewer-cache":
+            continue
+        path = result_dir / artifact["key"]
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"x" * artifact["byte_size"])
+    registry = LocalAnalysisResultRegistry(tmp_path)
+
+    summary = registry.register(manifest)
+
+    assert summary.artifact_health["missing_required_artifact_keys"] == [
+        "viewer/map-data.json",
+        "viewer/neighbors.json",
+    ]
+    assert summary.explorer_readiness["ready"] is False
+
+
 def test_registry_rejects_unsafe_analysis_result_ids_before_writing(tmp_path):
     manifest = valid_manifest()
     manifest["analysis_result_id"] = "../escape"

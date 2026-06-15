@@ -353,6 +353,12 @@ def run_analysis_job(
                 for artifact in stage_result.artifacts
             ]
             artifacts.extend(normalized_artifacts)
+            if stage_name == "embedding_computation":
+                recipe_plan = plan_image_embedding_reuse(
+                    data_root=resolved_data_root,
+                    resolved_scope=resolved_scope,
+                    recipes=[recipe],
+                ).recipe_plans[recipe.recipe_id]
             stages.append(
                 _stage_record(
                     stage_name=stage_name,
@@ -776,6 +782,10 @@ def _recipe_artifact_keys(artifacts: list[AnalysisStageArtifact]) -> dict[str, o
             artifact_keys["image_manifest"] = artifact.key
         elif artifact.role == "embedding":
             artifact_keys["embedding_vectors"] = artifact.key
+        elif artifact.role == "embedding-vector-id-map":
+            artifact_keys["embedding_vector_id_map"] = artifact.key
+        elif artifact.role == "embedding-materialization-metadata":
+            artifact_keys["embedding_materialization_metadata"] = artifact.key
         elif artifact.role == "faiss-index":
             artifact_keys["faiss_index"] = artifact.key
         elif artifact.role == "faiss-id-map":

@@ -61,6 +61,8 @@ def test_scans_supported_formats_and_writes_manifest_thumbnails(tmp_path):
     assert "- Supported files: 2" in report
     assert "- Manifest images: 2" in report
     assert "- Skipped files: 1" in report
+    assert "Source folder: `source-images`" in report
+    assert str(source_folder.resolve()) not in report
 
 
 def test_scan_writes_1024_long_edge_hover_previews(tmp_path):

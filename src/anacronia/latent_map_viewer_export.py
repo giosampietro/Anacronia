@@ -476,8 +476,8 @@ def _append_viewer_report(
             "",
             f"- Recipe: `{recipe_name}`",
             f"- Points: {point_count}",
-            f"- File: `{viewer_data_path}`",
-            f"- Neighbor index: `{neighbor_data_path}`",
+            f"- File: `{_relative_key(viewer_data_path, run_dir)}`",
+            f"- Neighbor index: `{_relative_key(neighbor_data_path, run_dir)}`",
             f"- Initial map payload: {map_payload_bytes:,} bytes",
             f"- Neighbor payload: {neighbor_payload_bytes:,} bytes",
             *estimated_payload_rows,
@@ -485,7 +485,7 @@ def _append_viewer_report(
                 [
                     (
                         "- Thumbnail atlas manifest: "
-                        f"`{thumbnail_atlas_manifest_path}`"
+                        f"`{_relative_key(thumbnail_atlas_manifest_path, run_dir)}`"
                     )
                 ]
                 if thumbnail_atlas_manifest_path is not None
@@ -495,3 +495,7 @@ def _append_viewer_report(
         ]
     )
     report_path.write_text(existing_report.rstrip() + addition, encoding="utf-8")
+
+
+def _relative_key(path: Path, root: Path) -> str:
+    return path.resolve().relative_to(root.resolve()).as_posix()

@@ -265,9 +265,13 @@ def _append_layout_report(
             f"- Clusters: `{cluster_id}`",
             f"- Points: {point_count}",
             f"- Cluster count: {cluster_count}",
-            f"- Layout file: `{layout_path}`",
-            f"- Cluster file: `{cluster_path}`",
+            f"- Layout file: `{_relative_key(layout_path, run_dir)}`",
+            f"- Cluster file: `{_relative_key(cluster_path, run_dir)}`",
             "",
         ]
     )
     report_path.write_text(existing_report.rstrip() + addition, encoding="utf-8")
+
+
+def _relative_key(path: Path, root: Path) -> str:
+    return path.resolve().relative_to(root.resolve()).as_posix()

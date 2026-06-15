@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
+import numpy as np
+
 from anacronia.analysis_jobs import (
     AnalysisStageArtifact,
     AnalysisStageRequest,
@@ -59,39 +61,138 @@ class LatentMapAnalysisStageRunner:
         raise ValueError(f"Unsupported Analysis Job stage: {request.stage_name}")
 
     def _run_embedding(self, request: AnalysisStageRequest) -> AnalysisStageResult:
-        from anacronia.latent_map_embeddings import embed_latent_map_run
+        from anacronia.image_embedding_materializer import (
+            materialize_recipe_embedding_matrix,
+        )
 
         try:
-            summary = embed_latent_map_run(
-                run_dir=request.analysis_result_dir,
-                recipe_name=request.recipe.recipe_id,
-                batch_size=self.batch_size,
-                device=self.device,
-                embedder=self.embedder,
+            if request.embedding_plan.missing_items:
+                self._record_missing_image_embedding_results(request)
+            summary = materialize_recipe_embedding_matrix(
+                data_root=request.data_root,
+                result_dir=request.analysis_result_dir,
+                resolved_scope=request.resolved_scope,
+                recipe=request.recipe,
+            )
+            return AnalysisStageResult(
+                artifacts=[
+                    _artifact_for_path(
+                        key=artifact.key,
+                        path=request.analysis_result_dir / artifact.key,
+                        role=artifact.role,
+                        content_type=artifact.content_type,
+                        retention_class=artifact.retention_class,
+                        metadata=artifact.metadata,
+                    )
+                    for artifact in summary.artifacts
+                ]
             )
         except Exception as error:
             friendly_error = _friendly_embedding_error(error)
             if friendly_error is not None:
                 raise RuntimeError(friendly_error) from error
             raise
-        return AnalysisStageResult(
-            artifacts=[
-                _artifact_for_path(
-                    key=_relative_key(summary.embedding_path, request.analysis_result_dir),
-                    path=summary.embedding_path,
-                    role="embedding",
-                    content_type="application/octet-stream",
-                    retention_class="durable",
-                ),
-                _artifact_for_path(
-                    key=_relative_key(summary.metadata_path, request.analysis_result_dir),
-                    path=summary.metadata_path,
-                    role="embedding-metadata",
-                    content_type="application/json",
-                    retention_class="durable",
-                ),
-            ]
+
+    def _record_missing_image_embedding_results(
+        self,
+        request: AnalysisStageRequest,
+    ) -> None:
+        from PIL import Image
+
+        from anacronia.image_embedding_results import record_image_embedding_result
+        from anacronia.latent_map_embedding_recipes import DINO_EMBEDDING_RECIPES
+        from anacronia.latent_map_embeddings import (
+            DinoImageEmbedder,
+            prepare_image_for_embedding,
         )
+
+        try:
+            embedding_recipe = DINO_EMBEDDING_RECIPES[request.recipe.recipe_id]
+        except KeyError as error:
+            raise ValueError(
+                f"Unsupported embedding recipe: {request.recipe.recipe_id}"
+            ) from error
+
+        embedder = self.embedder or DinoImageEmbedder(
+            model_id=embedding_recipe.model_id,
+            device=self.device,
+        )
+        scope_items_by_id = {
+            int(item["image_asset_id"]): item
+            for item in _scope_items(request.resolved_scope)
+        }
+        missing_items = [
+            scope_items_by_id[int(item["image_asset_id"])]
+            for item in request.embedding_plan.missing_items
+        ]
+
+        batch_size = max(1, int(self.batch_size))
+        prepared_groups: dict[
+            tuple[int, int],
+            list[tuple[dict[str, object], object]],
+        ] = {}
+        for item in missing_items:
+            derivative_key = _input_derivative_key(
+                item=item,
+                derivative=request.recipe.input_derivative,
+            )
+            image_path = request.data_root / derivative_key
+            with Image.open(image_path) as image:
+                prepared_image = prepare_image_for_embedding(
+                    image,
+                    recipe=embedding_recipe,
+                ).image
+
+            group = prepared_groups.setdefault(prepared_image.size, [])
+            group.append((item, prepared_image))
+            if len(group) >= batch_size:
+                self._record_prepared_embedding_batch(
+                    embedder=embedder,
+                    items_and_images=group,
+                    request=request,
+                    record_image_embedding_result=record_image_embedding_result,
+                )
+                group.clear()
+
+        for group in prepared_groups.values():
+            if group:
+                self._record_prepared_embedding_batch(
+                    embedder=embedder,
+                    items_and_images=group,
+                    request=request,
+                    record_image_embedding_result=record_image_embedding_result,
+                )
+
+    def _record_prepared_embedding_batch(
+        self,
+        *,
+        embedder: _ImageEmbedder,
+        items_and_images: list[tuple[dict[str, object], object]],
+        request: AnalysisStageRequest,
+        record_image_embedding_result,
+    ) -> None:
+        items = [item for item, _image in items_and_images]
+        prepared_images = [image for _item, image in items_and_images]
+        vectors = _l2_normalize(embedder.embed_batch(prepared_images))
+
+        for item, vector in zip(items, vectors, strict=True):
+            image_asset_id = int(item["image_asset_id"])
+            artifact_key = _image_embedding_artifact_key(
+                image_asset_id=image_asset_id,
+                recipe_id=request.recipe.recipe_id,
+                recipe_fingerprint=request.recipe.embedding_fingerprint(),
+            )
+            artifact_path = request.data_root / artifact_key
+            artifact_path.parent.mkdir(parents=True, exist_ok=True)
+            np.save(artifact_path, vector.astype(np.float32))
+            record_image_embedding_result(
+                data_root=request.data_root,
+                image_asset_id=image_asset_id,
+                source_identity=dict(item.get("source_identity", {})),
+                recipe=request.recipe,
+                artifact_key=artifact_key,
+                vector_dimension=int(vector.shape[0]),
+            )
 
     def _run_faiss(self, request: AnalysisStageRequest) -> AnalysisStageResult:
         from anacronia.latent_map_faiss import build_faiss_index
@@ -256,14 +357,14 @@ class LatentMapAnalysisStageRunner:
                     path=viewer.viewer_data_path,
                     role="viewer-data",
                     content_type="application/json",
-                    retention_class="render-cache",
+                    retention_class="viewer-cache",
                 ),
                 _artifact_for_path(
                     key=_relative_key(viewer.neighbor_data_path, request.analysis_result_dir),
                     path=viewer.neighbor_data_path,
                     role="viewer-neighbors",
                     content_type="application/json",
-                    retention_class="render-cache",
+                    retention_class="viewer-cache",
                 ),
             ]
         )
@@ -286,6 +387,45 @@ def _artifact_for_path(
         byte_size=path.stat().st_size if path.is_file() else None,
         metadata=metadata or {},
     )
+
+
+def _scope_items(resolved_scope) -> list[dict[str, object]]:
+    items = resolved_scope.payload.get("items", [])
+    if not isinstance(items, list):
+        raise ValueError("Resolved Analysis Scope payload has invalid items.")
+    return [item for item in items if isinstance(item, dict)]
+
+
+def _input_derivative_key(*, item: dict[str, object], derivative: str) -> str:
+    derivatives = item.get("derivatives", {})
+    if not isinstance(derivatives, dict):
+        raise ValueError("Analysis Scope item has invalid derivatives.")
+    derivative_payload = derivatives.get(derivative, {})
+    if not isinstance(derivative_payload, dict):
+        raise ValueError(f"Analysis Scope item is missing {derivative}.")
+    artifact_key = str(derivative_payload.get("artifact_key", "")).strip()
+    if not artifact_key or Path(artifact_key).is_absolute() or ".." in Path(artifact_key).parts:
+        raise ValueError(f"Analysis Scope item has an invalid {derivative} key.")
+    return artifact_key
+
+
+def _image_embedding_artifact_key(
+    *,
+    image_asset_id: int,
+    recipe_id: str,
+    recipe_fingerprint: str,
+) -> str:
+    return (
+        f"image-embeddings/{recipe_id}/"
+        f"image-asset-{image_asset_id}-{recipe_fingerprint[:12]}.npy"
+    )
+
+
+def _l2_normalize(vectors: np.ndarray) -> np.ndarray:
+    array = np.asarray(vectors, dtype=np.float32)
+    norms = np.linalg.norm(array, axis=1, keepdims=True)
+    norms[norms == 0] = 1.0
+    return array / norms
 
 
 def _friendly_embedding_error(error: Exception) -> str | None:

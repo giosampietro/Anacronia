@@ -4,6 +4,7 @@ import type { NextRequest } from "next/server";
 
 import {
   inferContentType,
+  isBrowserSafeLatentMapImageArtifact,
   resolveAnalysisResultArtifact,
   UnsafeArtifactKeyError,
 } from "@/lib/analysis-result-artifacts";
@@ -38,6 +39,14 @@ export async function GET(request: NextRequest) {
       if (!artifact) {
         return new Response("Analysis Result artifact not found.", { status: 404 });
       }
+      if (
+        !isBrowserSafeLatentMapImageArtifact({
+          artifactKey,
+          contentType: artifact.contentType,
+        })
+      ) {
+        return new Response("Analysis Result artifact not found.", { status: 404 });
+      }
 
       const bytes = await readFile(/*turbopackIgnore: true*/ artifact.filePath);
 
@@ -45,6 +54,7 @@ export async function GET(request: NextRequest) {
         headers: {
           "Cache-Control": "public, max-age=3600",
           "Content-Type": artifact.contentType,
+          "X-Content-Type-Options": "nosniff",
         },
       });
     } catch (error) {
@@ -92,6 +102,7 @@ export async function GET(request: NextRequest) {
       headers: {
         "Cache-Control": "public, max-age=3600",
         "Content-Type": getContentType(thumbnailPath),
+        "X-Content-Type-Options": "nosniff",
       },
     });
   } catch {

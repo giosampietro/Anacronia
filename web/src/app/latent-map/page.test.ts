@@ -28,11 +28,14 @@ describe("loadLatentMapViewerData", () => {
     }
   });
 
-  it("loads an Analysis Result by ID without requiring legacy viewer data env", async () => {
+  it("loads an Analysis Result by ID without reading stale legacy viewer data env", async () => {
     const runsRoot = await mkdtemp(path.join(os.tmpdir(), "latent-page-analysis-"));
     const runDir = path.join(runsRoot, "20260609T123000Z-j-shoot");
 
-    delete process.env.ANACRONIA_LATENT_MAP_VIEWER_DATA;
+    process.env.ANACRONIA_LATENT_MAP_VIEWER_DATA = path.join(
+      runsRoot,
+      "missing-legacy-viewer-data.json",
+    );
     process.env.ANACRONIA_LATENT_MAP_RUNS_ROOT = runsRoot;
     await mkdir(path.join(runDir, "clusters"), { recursive: true });
     await mkdir(path.join(runDir, "embeddings"), { recursive: true });
@@ -69,6 +72,12 @@ describe("loadLatentMapViewerData", () => {
           key: "viewer/atlases/64px/atlas-manifest.json",
           retention_class: "render-cache",
           role: "thumbnail-atlas",
+        },
+        {
+          content_type: "image/png",
+          key: "viewer/atlases/64px/page-000.png",
+          retention_class: "render-cache",
+          role: "thumbnail-atlas-page",
         },
         {
           content_type: "image/jpeg",
@@ -152,8 +161,15 @@ describe("loadLatentMapViewerData", () => {
         atlas_size: 512,
         image_count: 1,
         items: [],
-        page_count: 0,
-        pages: [],
+        page_count: 1,
+        pages: [
+          {
+            height: 512,
+            index: 0,
+            path: "viewer/atlases/64px/page-000.png",
+            width: 512,
+          },
+        ],
         run_id: "20260609T123000Z-j-shoot",
         schema_version: 1,
         tile_size: 64,
@@ -195,6 +211,9 @@ describe("loadLatentMapViewerData", () => {
     expect(data.thumbnail_atlases?.map((atlas) => atlas.tile_size)).toEqual([
       64,
     ]);
+    expect(data.thumbnail_atlases?.[0]?.pages[0]?.path).toBe(
+      "/api/latent-map/thumbnails?analysisResultId=latent-map-20260609T123000Z-j-shoot&artifactKey=viewer%2Fatlases%2F64px%2Fpage-000.png",
+    );
   });
 
   it("does not fall back to legacy viewer data when an Analysis Result ID is missing", async () => {

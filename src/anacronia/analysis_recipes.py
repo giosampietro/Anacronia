@@ -334,7 +334,13 @@ def _latent_map_stage_plan(*, recipe_id: str) -> AnalysisRecipeStagePlan:
                         required=True,
                     ),
                     AnalysisStageArtifactDeclaration(
-                        role="embedding-metadata",
+                        role="embedding-vector-id-map",
+                        content_type="application/json",
+                        retention_class="durable",
+                        required=True,
+                    ),
+                    AnalysisStageArtifactDeclaration(
+                        role="embedding-materialization-metadata",
                         content_type="application/json",
                         retention_class="durable",
                         required=True,
