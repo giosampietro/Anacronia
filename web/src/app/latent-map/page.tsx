@@ -199,6 +199,7 @@ export async function loadLatentMapViewerData(
   let rawData: ExportedLatentMapViewerData = fallbackRawData ?? latentMapFixture;
   let dataRunDir = fallbackRunDir ?? "";
   let activeAnalysisResultId: string | null = null;
+  let activeAnalysisResultSourceFolder: string | null = null;
 
   try {
     if (analysisResultId) {
@@ -217,6 +218,7 @@ export async function loadLatentMapViewerData(
       rawData = loaded.rawData;
       dataRunDir = loaded.runDir;
       activeAnalysisResultId = analysisResultId;
+      activeAnalysisResultSourceFolder = loaded.sourceFolder;
     } else {
       if (!resolvedViewerDataPath || !fallbackRawData || !fallbackRunDir) {
         return latentMapFixture;
@@ -252,12 +254,13 @@ export async function loadLatentMapViewerData(
     activeAnalysisResultId = null;
   }
 
-  const loadedSourceFolder = await loadLatentMapSourceFolder(dataRunDir);
-  const sourceFolder = activeAnalysisResultId
-    ? path.basename(loadedSourceFolder)
-    : loadedSourceFolder;
+  const loadedSourceFolder =
+    activeAnalysisResultSourceFolder ?? (await loadLatentMapSourceFolder(dataRunDir));
+  const sourceFolder = loadedSourceFolder;
 
-  await hydrateThumbnailAtlas({ rawData, runDir: dataRunDir });
+  if (!activeAnalysisResultId) {
+    await hydrateThumbnailAtlas({ rawData, runDir: dataRunDir });
+  }
 
   const normalizedData = normalizeExportedLatentMapViewerData({
     neighborApiPath: activeAnalysisResultId

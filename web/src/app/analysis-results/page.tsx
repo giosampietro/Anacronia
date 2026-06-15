@@ -5,10 +5,6 @@ import { AppSpaceShell } from "@/components/app-space-shell";
 import { shouldAutoRefreshAnalysisJobs } from "@/lib/analysis-job-refresh";
 import { listAnalysisResults } from "@/lib/analysis-results-browser";
 import type { AnalysisResultStatusState } from "@/lib/analysis-result-status";
-import {
-  getAdditionalAnalysisResultRoots,
-  getLatentMapRunsRoot,
-} from "@/lib/analysis-result-roots";
 
 export const dynamic = "force-dynamic";
 
@@ -234,10 +230,7 @@ function getJobResultStatus(job: AnalysisJobListItem) {
 
 export default async function AnalysisResultsPage() {
   const [results, jobList, collectionList] = await Promise.all([
-    listAnalysisResults({
-      additionalRunsRoots: getAdditionalAnalysisResultRoots(),
-      runsRoot: getLatentMapRunsRoot(),
-    }),
+    listAnalysisResults(),
     listAnalysisJobs(),
     listCollections(),
   ]);
