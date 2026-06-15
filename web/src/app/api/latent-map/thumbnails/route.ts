@@ -5,16 +5,12 @@ import type { NextRequest } from "next/server";
 import {
   inferContentType,
   isBrowserSafeLatentMapImageArtifact,
-  resolveAnalysisResultArtifact,
-  UnsafeArtifactKeyError,
 } from "@/lib/analysis-result-artifacts";
-import {
-  getAdditionalAnalysisResultRoots,
-  getLatentMapRunsRoot,
-} from "@/lib/analysis-result-roots";
+import { getLatentMapRunsRoot } from "@/lib/analysis-result-roots";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+const DEFAULT_API_PORT = 18670;
 
 function getContentType(filePath: string): string {
   return inferContentType(filePath);
@@ -32,44 +28,37 @@ export async function GET(request: NextRequest) {
       return new Response("Analysis Result artifact not found.", { status: 404 });
     }
 
-    try {
-      const artifact = await resolveAnalysisResultArtifact({
-        additionalRunsRoots: getAdditionalAnalysisResultRoots(),
+    const artifactResponse = await fetch(
+      `${apiBaseUrl()}/analysis-results/${encodeURIComponent(
         analysisResultId,
-        artifactKey,
-        runsRoot,
-      });
-
-      if (!artifact) {
-        return new Response("Analysis Result artifact not found.", { status: 404 });
-      }
-      if (
-        !isBrowserSafeLatentMapImageArtifact({
-          artifactKey,
-          contentType: artifact.contentType,
-        })
-      ) {
-        return new Response("Analysis Result artifact not found.", { status: 404 });
-      }
-
-      const bytes = await readFile(/*turbopackIgnore: true*/ artifact.filePath);
-
-      return new Response(new Uint8Array(bytes), {
-        headers: {
-          "Cache-Control": "public, max-age=3600",
-          "Content-Type": artifact.contentType,
-          "X-Content-Type-Options": "nosniff",
-        },
-      });
-    } catch (error) {
-      if (error instanceof UnsafeArtifactKeyError) {
-        return new Response("Artifact key is outside the Analysis Result.", {
-          status: 403,
-        });
-      }
-
+      )}/artifacts/${encodeArtifactKeyPath(artifactKey)}`,
+      {
+        cache: "no-store",
+        method: "GET",
+      },
+    );
+    if (!artifactResponse.ok) {
       return new Response("Analysis Result artifact not found.", { status: 404 });
     }
+    const contentType =
+      artifactResponse.headers.get("content-type") ?? "application/octet-stream";
+    if (
+      !isBrowserSafeLatentMapImageArtifact({
+        artifactKey,
+        contentType,
+      })
+    ) {
+      return new Response("Thumbnail not found.", { status: 404 });
+    }
+
+    return new Response(artifactResponse.body, {
+      headers: {
+        "Cache-Control": "public, max-age=3600",
+        "Content-Type": contentType,
+        "X-Content-Type-Options": "nosniff",
+      },
+      status: 200,
+    });
   }
 
   if (!runName || !relativePath) {
@@ -122,4 +111,17 @@ export async function GET(request: NextRequest) {
   } catch {
     return new Response("Thumbnail not found.", { status: 404 });
   }
+}
+
+function apiBaseUrl(): string {
+  return `http://127.0.0.1:${getApiPort()}`;
+}
+
+function getApiPort(): number {
+  const value = Number.parseInt(process.env.ANACRONIA_API_PORT ?? "", 10);
+  return Number.isFinite(value) ? value : DEFAULT_API_PORT;
+}
+
+function encodeArtifactKeyPath(artifactKey: string): string {
+  return artifactKey.split("/").map(encodeURIComponent).join("/");
 }

@@ -1,122 +1,81 @@
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { listAnalysisResults } from "@/lib/analysis-results-browser";
 
-async function writeJson(filePath: string, value: unknown) {
-  await writeFile(filePath, `${JSON.stringify(value)}\n`, "utf-8");
-}
-
 describe("listAnalysisResults", () => {
-  it("lists durable Analysis Results with status and Explorer hrefs", async () => {
-    const runsRoot = await mkdtemp(path.join(os.tmpdir(), "analysis-results-"));
-    const readyRunDir = path.join(runsRoot, "20260609T123000Z-j-shoot");
-    const staleRunDir = path.join(runsRoot, "20260610T123000Z-other");
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
 
-    await mkdir(readyRunDir, { recursive: true });
-    await mkdir(staleRunDir, { recursive: true });
-    await writeFile(path.join(readyRunDir, "manifest.jsonl"), "", "utf-8");
-    await writeJson(path.join(readyRunDir, "analysis-result.json"), {
-      analysis_result_id: "latent-map-20260609T123000Z-j-shoot",
-      item_count: 2,
-      recipes: [{ recipe_name: "dinov3_vits_384" }],
-      source: {
-        kind: "legacy-latent-map-run",
-        run_id: "20260609T123000Z-j-shoot",
-        source_folder_name: "source-images",
-      },
-      status: "ready",
-      artifacts: [{ key: "manifest.jsonl", role: "image-manifest" }],
-    });
-    await writeJson(path.join(staleRunDir, "analysis-result.json"), {
-      analysis_result_id: "latent-map-20260610T123000Z-other",
-      item_count: 0,
-      recipes: [],
-      source: {
-        kind: "legacy-latent-map-run",
-        run_id: "20260610T123000Z-other",
-        source_folder_name: "other-source",
-      },
-      status: "failed",
-      artifacts: [],
-    });
+  it("lists durable Analysis Results from the backend Registry read model", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        expect(String(input)).toBe("http://127.0.0.1:18670/analysis-results");
+        return Response.json({
+          results: [
+            {
+              analysis_result_id: "analysis-result-20260614T130000Z-dinov3_vits_384",
+              explorer_href:
+                "/latent-map?analysisResultId=analysis-result-20260614T130000Z-dinov3_vits_384",
+              explorer_readiness: { ready: true },
+              item_count: 2,
+              recipe_ids: ["dinov3_vits_384"],
+              recipe_names: ["DINOv3 ViT-S 384"],
+              result_state: { state: "ready" },
+              scope_label: "Analysis Board",
+              status: "ready",
+              storage_totals: { durable: 10, "render-cache": 2, total: 12 },
+            },
+            {
+              analysis_result_id: "analysis-result-20260614T140000Z-dinov3_vits_512",
+              explorer_readiness: {
+                missing_required_artifact_keys: ["viewer/map-data.json"],
+                ready: false,
+              },
+              item_count: 0,
+              recipe_ids: ["dinov3_vits_512"],
+              result_state: { state: "ready" },
+              scope_label: "Incomplete Board",
+              status: "ready",
+            },
+          ],
+        });
+      }),
+    );
 
-    const results = await listAnalysisResults({ runsRoot });
-
-    expect(results).toEqual([
+    await expect(listAnalysisResults()).resolves.toEqual([
       {
-        analysisResultId: "latent-map-20260610T123000Z-other",
-        canOpenExplorer: false,
-        explorerHref:
-          "/latent-map?analysisResultId=latent-map-20260610T123000Z-other",
-        itemCount: 0,
-        recipeNames: [],
-        runId: "20260610T123000Z-other",
-        sourceFolderName: "other-source",
-        state: "failed",
-      },
-      {
-        analysisResultId: "latent-map-20260609T123000Z-j-shoot",
+        analysisResultId: "analysis-result-20260614T130000Z-dinov3_vits_384",
         canOpenExplorer: true,
         explorerHref:
-          "/latent-map?analysisResultId=latent-map-20260609T123000Z-j-shoot",
+          "/latent-map?analysisResultId=analysis-result-20260614T130000Z-dinov3_vits_384",
         itemCount: 2,
-        recipeNames: ["dinov3_vits_384"],
-        runId: "20260609T123000Z-j-shoot",
-        sourceFolderName: "source-images",
+        recipeNames: ["DINOv3 ViT-S 384"],
+        runId: "analysis-result-20260614T130000Z-dinov3_vits_384",
+        sourceFolderName: "Analysis Board",
         state: "ready",
+      },
+      {
+        analysisResultId: "analysis-result-20260614T140000Z-dinov3_vits_512",
+        canOpenExplorer: false,
+        explorerHref:
+          "/latent-map?analysisResultId=analysis-result-20260614T140000Z-dinov3_vits_512",
+        itemCount: 0,
+        recipeNames: ["dinov3_vits_512"],
+        runId: "analysis-result-20260614T140000Z-dinov3_vits_512",
+        sourceFolderName: "Incomplete Board",
+        state: "incomplete",
       },
     ]);
   });
 
-  it("lists legacy runs and durable job results from separate roots", async () => {
-    const runsRoot = await mkdtemp(path.join(os.tmpdir(), "analysis-results-"));
-    const jobResultsRoot = await mkdtemp(
-      path.join(os.tmpdir(), "analysis-job-results-"),
-    );
-    const legacyRunDir = path.join(runsRoot, "20260609T123000Z-j-shoot");
-    const jobResultDir = path.join(
-      jobResultsRoot,
-      "analysis-result-20260614T130000Z-dinov3_vits_384",
+  it("returns an empty list when the Registry API is unavailable", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("unavailable", { status: 503 })),
     );
 
-    await mkdir(legacyRunDir, { recursive: true });
-    await mkdir(jobResultDir, { recursive: true });
-    await writeFile(path.join(legacyRunDir, "manifest.jsonl"), "", "utf-8");
-    await writeFile(path.join(jobResultDir, "manifest.jsonl"), "", "utf-8");
-    await writeJson(path.join(legacyRunDir, "analysis-result.json"), {
-      analysis_result_id: "latent-map-20260609T123000Z-j-shoot",
-      item_count: 2,
-      recipes: [{ recipe_name: "dinov3_vits_384" }],
-      source: {
-        run_id: "20260609T123000Z-j-shoot",
-        source_folder_name: "J Shoot",
-      },
-      status: "ready",
-      artifacts: [{ key: "manifest.jsonl", role: "image-manifest" }],
-    });
-    await writeJson(path.join(jobResultDir, "analysis-result.json"), {
-      analysis_result_id: "analysis-result-20260614T130000Z-dinov3_vits_384",
-      item_count: 1,
-      recipes: [{ recipe_name: "dinov3_vits_384" }],
-      source: {
-        run_id: "analysis-result-20260614T130000Z-dinov3_vits_384",
-        source_folder_name: "Analysis Board",
-      },
-      status: "ready",
-      artifacts: [{ key: "manifest.jsonl", role: "image-manifest" }],
-    });
-
-    const results = await listAnalysisResults({
-      additionalRunsRoots: [jobResultsRoot],
-      runsRoot,
-    });
-
-    expect(results.map((result) => result.analysisResultId).sort()).toEqual([
-      "analysis-result-20260614T130000Z-dinov3_vits_384",
-      "latent-map-20260609T123000Z-j-shoot",
-    ]);
+    await expect(listAnalysisResults()).resolves.toEqual([]);
   });
 });

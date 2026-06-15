@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from anacronia.analysis_jobs import AnalysisStageArtifact, AnalysisStageResult
+from anacronia.analysis_result_registry import LocalAnalysisResultRegistry
 from anacronia.api import create_app
 from anacronia.local_folder_import import create_local_folder_collection
 from anacronia.storage import initialize_storage
@@ -29,6 +30,98 @@ def create_collection(tmp_path, *, display_name="Analysis Board"):
         folder_path=folder,
     )
     return storage
+
+
+def analysis_result_manifest(analysis_result_id="analysis-result-20260614T130000Z-dinov3_vits_384"):
+    return {
+        "analysis_kind": "latent-map",
+        "analysis_job_id": "analysis-job-20260614T130000Z",
+        "analysis_result_id": analysis_result_id,
+        "asset_kind": "analysis-result-manifest",
+        "created_at": "2026-06-14T13:00:00Z",
+        "explorer_readiness": {
+            "missing_optional_artifact_keys": [],
+            "missing_required_artifact_keys": [],
+            "ready": True,
+        },
+        "export_safety": {
+            "contains_local_absolute_paths": False,
+            "contains_secrets": False,
+            "contains_temporary_paths": False,
+        },
+        "item_count": 2,
+        "output_counts": {
+            "artifacts": {"durable": 3, "render-cache": 1, "total": 4}
+        },
+        "recipes": [
+            {
+                "recipe_name": "dinov3_vits_384",
+                "recipe": {"model_id": "facebook/dinov3-vits16-pretrain-lvd1689m"},
+            }
+        ],
+        "schema_version": 1,
+        "scope_snapshot": {
+            "item_count": 2,
+            "snapshot_id": "analysis-scope-20260614T130000Z",
+            "snapshot_key": "analysis-scopes/analysis-scope-20260614T130000Z.json",
+        },
+        "sibling_group_id": "analysis-sibling-20260614T130000Z",
+        "source": {
+            "kind": "analysis-scope-snapshot",
+            "source_folder_name": "Bread",
+        },
+        "status": "ready",
+        "staleness": {
+            "added_image_count": 0,
+            "removed_image_count": 0,
+            "state": "current",
+        },
+        "viewer": {
+            "open_href": f"/latent-map?analysisResultId={analysis_result_id}"
+        },
+        "artifacts": [
+            {
+                "byte_size": 3,
+                "content_type": "application/x-jsonlines",
+                "key": "manifest.jsonl",
+                "required": True,
+                "retention_class": "durable",
+                "role": "image-manifest",
+            },
+            {
+                "byte_size": 2,
+                "content_type": "application/json",
+                "key": "layouts/dinov3_vits_384_umap.json",
+                "required": True,
+                "retention_class": "durable",
+                "role": "layout",
+            },
+            {
+                "byte_size": 5,
+                "content_type": "application/octet-stream",
+                "key": "indexes/dinov3_vits_384_flat_ip.faiss",
+                "required": True,
+                "retention_class": "durable",
+                "role": "faiss-index",
+            },
+            {
+                "byte_size": 2,
+                "content_type": "application/json",
+                "key": "viewer/atlases/32px/atlas-manifest.json",
+                "required": False,
+                "retention_class": "render-cache",
+                "role": "thumbnail-atlas",
+            },
+        ],
+    }
+
+
+def write_manifest_artifacts(data_root, manifest):
+    result_dir = data_root / "analysis-results" / manifest["analysis_result_id"]
+    for artifact in manifest["artifacts"]:
+        path = result_dir / artifact["key"]
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"x" * artifact["byte_size"])
 
 
 class FakeStageRunner:
@@ -114,6 +207,338 @@ def test_analysis_recipe_api_returns_browser_safe_catalog(tmp_path):
         "primary": "hdbscan",
     }
     assert str(storage.data_root) not in json.dumps(payload)
+
+
+def test_analysis_result_api_lists_registry_summaries_without_local_paths(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    manifest = analysis_result_manifest()
+    write_manifest_artifacts(storage.data_root, manifest)
+    LocalAnalysisResultRegistry(storage.data_root).register(manifest)
+    client = TestClient(
+        create_app(database_path=storage.database_path, data_root=storage.data_root)
+    )
+
+    response = client.get("/analysis-results")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert str(storage.data_root) not in json.dumps(payload)
+    assert payload["results"] == [
+        {
+            "analysis_job_id": "analysis-job-20260614T130000Z",
+            "analysis_result_id": manifest["analysis_result_id"],
+            "artifact_health": {
+                "missing_optional_artifact_keys": [],
+                "missing_optional_render_cache_artifact_keys": [],
+                "missing_required_artifact_keys": [],
+                "ready": True,
+            },
+            "explorer_href": (
+                "/latent-map?analysisResultId="
+                "analysis-result-20260614T130000Z-dinov3_vits_384"
+            ),
+            "explorer_readiness": {
+                "missing_optional_artifact_keys": [],
+                "missing_optional_render_cache_artifact_keys": [],
+                "missing_required_artifact_keys": [],
+                "ready": True,
+            },
+            "export_readiness": {
+                "export_safety": manifest["export_safety"],
+                "ready": False,
+                "state": "not_validated",
+            },
+            "item_count": 2,
+            "recipe_ids": ["dinov3_vits_384"],
+            "recipe_names": ["dinov3_vits_384"],
+            "result_state": {"complete": True, "state": "ready"},
+            "scope_label": "Bread",
+            "scope_snapshot_id": "analysis-scope-20260614T130000Z",
+            "sibling_group_id": "analysis-sibling-20260614T130000Z",
+            "status": "ready",
+            "staleness": manifest["staleness"],
+            "storage_totals": {
+                "durable": 10,
+                "render-cache": 2,
+                "total": 12,
+                "viewer-cache": 0,
+            },
+        }
+    ]
+    assert payload["sibling_groups"] == [
+        {
+            "analysis_job_id": "analysis-job-20260614T130000Z",
+            "analysis_result_ids": [manifest["analysis_result_id"]],
+            "recipe_ids": ["dinov3_vits_384"],
+            "recipe_names": ["dinov3_vits_384"],
+            "scope_snapshot_id": "analysis-scope-20260614T130000Z",
+            "sibling_group_id": "analysis-sibling-20260614T130000Z",
+            "status_counts": {"ready": 1},
+        }
+    ]
+
+
+def test_analysis_result_api_lists_historical_partial_result_manifests(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    manifest = analysis_result_manifest("analysis-result-historical-dinov3_vits_384")
+    for field in ("explorer_readiness", "export_safety", "output_counts", "staleness"):
+        manifest.pop(field)
+    write_manifest_artifacts(storage.data_root, manifest)
+    result_dir = storage.data_root / "analysis-results" / manifest["analysis_result_id"]
+    result_dir.mkdir(parents=True, exist_ok=True)
+    (result_dir / "analysis-result.json").write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    client = TestClient(
+        create_app(database_path=storage.database_path, data_root=storage.data_root)
+    )
+
+    response = client.get("/analysis-results")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert str(storage.data_root) not in json.dumps(payload)
+    assert payload["results"][0]["analysis_result_id"] == manifest["analysis_result_id"]
+    assert payload["results"][0]["explorer_readiness"]["ready"] is True
+    assert payload["results"][0]["staleness"] == {
+        "added_image_count": 0,
+        "removed_image_count": 0,
+        "state": "current",
+    }
+
+
+def test_analysis_result_api_returns_registry_detail_with_browser_safe_artifacts(
+    tmp_path,
+):
+    storage = initialize_storage(project_root=tmp_path)
+    manifest = analysis_result_manifest()
+    write_manifest_artifacts(storage.data_root, manifest)
+    LocalAnalysisResultRegistry(storage.data_root).register(manifest)
+    client = TestClient(
+        create_app(database_path=storage.database_path, data_root=storage.data_root)
+    )
+
+    response = client.get(f"/analysis-results/{manifest['analysis_result_id']}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert str(storage.data_root) not in json.dumps(payload)
+    assert payload["result"]["analysis_result_id"] == manifest["analysis_result_id"]
+    assert payload["result"]["scope_label"] == "Bread"
+    assert payload["result"]["explorer_readiness"]["ready"] is True
+    assert payload["result"]["recipes"] == [
+        {
+            "recipe_name": "dinov3_vits_384",
+            "recipe": {"model_id": "facebook/dinov3-vits16-pretrain-lvd1689m"},
+        }
+    ]
+    assert payload["result"]["artifacts"] == [
+        {
+            "byte_size": 3,
+            "content_type": "application/x-jsonlines",
+            "key": "manifest.jsonl",
+            "required": True,
+            "retention_class": "durable",
+            "role": "image-manifest",
+        },
+        {
+            "byte_size": 2,
+            "content_type": "application/json",
+            "key": "layouts/dinov3_vits_384_umap.json",
+            "required": True,
+            "retention_class": "durable",
+            "role": "layout",
+        },
+        {
+            "byte_size": 5,
+            "content_type": "application/octet-stream",
+            "key": "indexes/dinov3_vits_384_flat_ip.faiss",
+            "required": True,
+            "retention_class": "durable",
+            "role": "faiss-index",
+        },
+        {
+            "byte_size": 2,
+            "content_type": "application/json",
+            "key": "viewer/atlases/32px/atlas-manifest.json",
+            "required": False,
+            "retention_class": "render-cache",
+            "role": "thumbnail-atlas",
+        },
+    ]
+    assert payload["result"]["status"] == "ready"
+
+    missing = client.get("/analysis-results/missing-result")
+    assert missing.status_code == 404
+    assert missing.json()["detail"] == "Analysis Result not found."
+
+
+def test_analysis_result_api_status_reports_required_and_render_cache_gaps(
+    tmp_path,
+):
+    storage = initialize_storage(project_root=tmp_path)
+    manifest = analysis_result_manifest()
+    manifest["artifacts"].append(
+        {
+            "byte_size": 7,
+            "content_type": "application/json",
+            "key": "viewer/map-data.json",
+            "required": True,
+            "retention_class": "viewer-cache",
+            "role": "viewer-map-data",
+        }
+    )
+    result_dir = storage.data_root / "analysis-results" / manifest["analysis_result_id"]
+    for artifact_key in [
+        "manifest.jsonl",
+        "indexes/dinov3_vits_384_flat_ip.faiss",
+    ]:
+        artifact = next(
+            artifact
+            for artifact in manifest["artifacts"]
+            if artifact["key"] == artifact_key
+        )
+        path = result_dir / artifact_key
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"x" * artifact["byte_size"])
+    LocalAnalysisResultRegistry(storage.data_root).register(manifest)
+    client = TestClient(
+        create_app(database_path=storage.database_path, data_root=storage.data_root)
+    )
+
+    response = client.get(f"/analysis-results/{manifest['analysis_result_id']}/status")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert str(storage.data_root) not in json.dumps(payload)
+    assert payload == {
+        "analysis_result_id": manifest["analysis_result_id"],
+        "artifact_health": {
+            "missing_optional_artifact_keys": [
+                "viewer/atlases/32px/atlas-manifest.json",
+            ],
+            "missing_optional_render_cache_artifact_keys": [
+                "viewer/atlases/32px/atlas-manifest.json",
+            ],
+            "missing_required_artifact_keys": [
+                "layouts/dinov3_vits_384_umap.json",
+                "viewer/map-data.json",
+            ],
+            "ready": False,
+        },
+        "explorer_readiness": {
+            "missing_optional_artifact_keys": [
+                "viewer/atlases/32px/atlas-manifest.json",
+            ],
+            "missing_optional_render_cache_artifact_keys": [
+                "viewer/atlases/32px/atlas-manifest.json",
+            ],
+            "missing_required_artifact_keys": [
+                "layouts/dinov3_vits_384_umap.json",
+                "viewer/map-data.json",
+            ],
+            "ready": False,
+        },
+        "result_state": {"complete": True, "state": "ready"},
+        "status": "ready",
+        "storage_totals": {
+            "durable": 8,
+            "render-cache": 0,
+            "total": 8,
+            "viewer-cache": 0,
+        },
+        "staleness": manifest["staleness"],
+    }
+
+    missing = client.get("/analysis-results/missing-result/status")
+    assert missing.status_code == 404
+    assert missing.json()["detail"] == "Analysis Result not found."
+
+
+def test_analysis_result_api_serves_only_declared_browser_safe_artifacts(
+    tmp_path,
+):
+    storage = initialize_storage(project_root=tmp_path)
+    manifest = analysis_result_manifest()
+    result_dir = storage.data_root / "analysis-results" / manifest["analysis_result_id"]
+    layout_path = result_dir / "layouts/dinov3_vits_384_umap.json"
+    layout_path.parent.mkdir(parents=True, exist_ok=True)
+    layout_path.write_text('{"layout": true}', encoding="utf-8")
+    faiss_path = result_dir / "indexes/dinov3_vits_384_flat_ip.faiss"
+    faiss_path.parent.mkdir(parents=True, exist_ok=True)
+    faiss_path.write_bytes(b"faiss")
+    manifest_path = result_dir / "manifest.jsonl"
+    manifest_path.write_text('{"image_id":"image-asset-1"}\n', encoding="utf-8")
+    atlas_manifest_path = result_dir / "viewer/atlases/32px/atlas-manifest.json"
+    atlas_manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    atlas_manifest_path.write_text('{"pages":[]}', encoding="utf-8")
+    manifest["artifacts"].append(
+        {
+            "byte_size": 11,
+            "content_type": "image/svg+xml",
+            "key": "viewer/unsafe.svg",
+            "required": False,
+            "retention_class": "render-cache",
+            "role": "thumbnail-atlas-page",
+        }
+    )
+    manifest["output_counts"]["artifacts"] = {
+        "durable": 3,
+        "render-cache": 2,
+        "total": 5,
+    }
+    unsafe_image_path = result_dir / "viewer/unsafe.svg"
+    unsafe_image_path.parent.mkdir(parents=True, exist_ok=True)
+    unsafe_image_path.write_text("<svg></svg>", encoding="utf-8")
+    LocalAnalysisResultRegistry(storage.data_root).register(manifest)
+    client = TestClient(
+        create_app(database_path=storage.database_path, data_root=storage.data_root)
+    )
+
+    response = client.get(
+        "/analysis-results/"
+        f"{manifest['analysis_result_id']}/artifacts/"
+        "layouts/dinov3_vits_384_umap.json"
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/json")
+    assert response.json() == {"layout": True}
+
+    unknown = client.get(
+        "/analysis-results/"
+        f"{manifest['analysis_result_id']}/artifacts/"
+        "layouts/not-declared.json"
+    )
+    assert unknown.status_code == 404
+    assert unknown.json()["detail"] == "Analysis Result artifact not found."
+
+    unsafe = client.get(
+        "/analysis-results/"
+        f"{manifest['analysis_result_id']}/artifacts/"
+        "%2E%2E/manifest.jsonl"
+    )
+    assert unsafe.status_code == 404
+    assert unsafe.json()["detail"] == "Analysis Result artifact not found."
+
+    binary = client.get(
+        "/analysis-results/"
+        f"{manifest['analysis_result_id']}/artifacts/"
+        "indexes/dinov3_vits_384_flat_ip.faiss"
+    )
+    assert binary.status_code == 403
+    assert binary.json()["detail"] == "Analysis Result artifact is not browser-safe."
+
+    unsafe_image = client.get(
+        "/analysis-results/"
+        f"{manifest['analysis_result_id']}/artifacts/"
+        "viewer/unsafe.svg"
+    )
+    assert unsafe_image.status_code == 403
+    assert unsafe_image.json()["detail"] == (
+        "Analysis Result artifact is not browser-safe."
+    )
 
 
 def test_analysis_job_api_starts_job_and_returns_openable_result(tmp_path):

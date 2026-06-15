@@ -16,8 +16,11 @@ from anacronia.analysis_jobs import (
     recover_stale_analysis_jobs,
     submit_analysis_job,
 )
+from anacronia.analysis_result_registry import LocalAnalysisResultRegistry
+from anacronia.analysis_result_contract import browser_safe_analysis_result_summary
 from anacronia.analysis_recipes import browser_safe_analysis_recipe_catalog
 from anacronia.analysis_stage_runner import LatentMapAnalysisStageRunner
+from anacronia.artifact_store import ArtifactStoreError, validate_artifact_key
 from anacronia.collection_runs import (
     CandidateRun,
     DEFAULT_BATCH_TARGET,
@@ -121,6 +124,13 @@ from anacronia.worker import (
 DEFAULT_CANDIDATE_LIMIT = 1000
 MAX_GRID_PAGE_LIMIT = 500
 IMAGE_DERIVATIVE_CACHE_CONTROL = "public, max-age=31536000, immutable"
+BROWSER_SAFE_ANALYSIS_ARTIFACT_CONTENT_TYPES = {
+    "application/json",
+    "application/x-jsonlines",
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+}
 
 GridPageLimit = Annotated[int | None, Query(ge=1, le=MAX_GRID_PAGE_LIMIT)]
 GridPageOffset = Annotated[int, Query(ge=0)]
@@ -301,6 +311,80 @@ def serialize_local_folder_import_summary(
 
 def serialize_analysis_job_summary(summary: AnalysisJobSummary) -> dict[str, object]:
     return serialize_analysis_job_manifest(summary.manifest_path)
+
+
+def serialize_analysis_result_summary(summary) -> dict[str, object]:
+    payload = summary.to_public_dict()
+    payload["explorer_href"] = (
+        f"/latent-map?analysisResultId={summary.analysis_result_id}"
+    )
+    return payload
+
+
+def serialize_analysis_result_detail(
+    registry: LocalAnalysisResultRegistry,
+    analysis_result_id: str,
+) -> dict[str, object]:
+    summary = registry.summarize(analysis_result_id)
+    manifest = registry.load(analysis_result_id)
+    browser_summary = browser_safe_analysis_result_summary(manifest)
+    return {
+        "result": {
+            **serialize_analysis_result_summary(summary),
+            "artifacts": browser_summary["artifacts"],
+            "recipes": list(manifest.get("recipes", [])),
+        }
+    }
+
+
+def serialize_analysis_result_status(summary) -> dict[str, object]:
+    return {
+        "analysis_result_id": summary.analysis_result_id,
+        "artifact_health": summary.artifact_health,
+        "explorer_readiness": summary.explorer_readiness,
+        "result_state": summary.result_state,
+        "status": summary.status,
+        "staleness": summary.staleness,
+        "storage_totals": summary.storage_totals,
+    }
+
+
+def resolve_browser_safe_analysis_result_artifact(
+    registry: LocalAnalysisResultRegistry,
+    analysis_result_id: str,
+    artifact_key: str,
+) -> tuple[Path, str]:
+    normalized_key = validate_artifact_key(artifact_key)
+    manifest = registry.load(analysis_result_id)
+    artifact = next(
+        (
+            artifact
+            for artifact in manifest.get("artifacts", [])
+            if isinstance(artifact, dict) and artifact.get("key") == normalized_key
+        ),
+        None,
+    )
+    if artifact is None:
+        raise FileNotFoundError("Analysis Result artifact is not declared.")
+
+    content_type = str(artifact.get("content_type", "")).strip().lower()
+    if not is_browser_safe_analysis_result_artifact_content_type(content_type):
+        raise PermissionError("Analysis Result artifact is not browser-safe.")
+
+    resolved_analysis_result_id = str(manifest["analysis_result_id"])
+    artifact_path = (
+        registry.data_root
+        / "analysis-results"
+        / resolved_analysis_result_id
+        / normalized_key
+    )
+    if not artifact_path.is_file():
+        raise FileNotFoundError("Analysis Result artifact file is missing.")
+    return artifact_path, content_type
+
+
+def is_browser_safe_analysis_result_artifact_content_type(content_type: str) -> bool:
+    return content_type in BROWSER_SAFE_ANALYSIS_ARTIFACT_CONTENT_TYPES
 
 
 def serialize_analysis_job_manifest(manifest_path: Path) -> dict[str, object]:
@@ -790,6 +874,69 @@ def create_app(
                 )
             ]
         }
+
+    @app.get("/analysis-results")
+    def get_analysis_results() -> dict[str, object]:
+        registry = LocalAnalysisResultRegistry(resolved_data_root)
+        return {
+            "results": [
+                serialize_analysis_result_summary(summary)
+                for summary in registry.list()
+                if summary.status != "deleted"
+            ],
+            "sibling_groups": [
+                sibling_group.to_public_dict()
+                for sibling_group in registry.list_sibling_groups()
+            ],
+        }
+
+    @app.get("/analysis-results/{analysis_result_id}")
+    def get_analysis_result(analysis_result_id: str) -> dict[str, object]:
+        registry = LocalAnalysisResultRegistry(resolved_data_root)
+        try:
+            return serialize_analysis_result_detail(registry, analysis_result_id)
+        except FileNotFoundError as error:
+            raise HTTPException(
+                status_code=404,
+                detail="Analysis Result not found.",
+            ) from error
+
+    @app.get("/analysis-results/{analysis_result_id}/status")
+    def get_analysis_result_status(analysis_result_id: str) -> dict[str, object]:
+        registry = LocalAnalysisResultRegistry(resolved_data_root)
+        try:
+            return serialize_analysis_result_status(
+                registry.summarize(analysis_result_id)
+            )
+        except FileNotFoundError as error:
+            raise HTTPException(
+                status_code=404,
+                detail="Analysis Result not found.",
+            ) from error
+
+    @app.get("/analysis-results/{analysis_result_id}/artifacts/{artifact_key:path}")
+    def get_analysis_result_artifact(
+        analysis_result_id: str,
+        artifact_key: str,
+    ) -> FileResponse:
+        registry = LocalAnalysisResultRegistry(resolved_data_root)
+        try:
+            artifact_path, content_type = resolve_browser_safe_analysis_result_artifact(
+                registry,
+                analysis_result_id,
+                artifact_key,
+            )
+        except PermissionError as error:
+            raise HTTPException(
+                status_code=403,
+                detail="Analysis Result artifact is not browser-safe.",
+            ) from error
+        except (ArtifactStoreError, FileNotFoundError) as error:
+            raise HTTPException(
+                status_code=404,
+                detail="Analysis Result artifact not found.",
+            ) from error
+        return FileResponse(artifact_path, media_type=content_type)
 
     @app.post("/search-sets")
     def create_search_set(request: SearchSetRequest) -> dict[str, object]:

@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 from anacronia.analysis_result_contract import (
+    analysis_result_artifact_counts,
     analysis_result_explorer_readiness,
     assert_analysis_result_manifest_contract,
 )
@@ -23,6 +24,7 @@ class AnalysisResultSummary:
     sibling_group_id: str
     scope_snapshot_id: str
     scope_label: str
+    recipe_ids: list[str]
     recipe_names: list[str]
     item_count: int
     status: str
@@ -41,6 +43,7 @@ class AnalysisResultSummary:
             "explorer_readiness": self.explorer_readiness,
             "export_readiness": self.export_readiness,
             "item_count": self.item_count,
+            "recipe_ids": self.recipe_ids,
             "recipe_names": self.recipe_names,
             "result_state": self.result_state,
             "scope_label": self.scope_label,
@@ -58,6 +61,7 @@ class AnalysisResultSiblingGroup:
     analysis_job_id: str
     scope_snapshot_id: str
     analysis_result_ids: list[str]
+    recipe_ids: list[str]
     recipe_names: list[str]
     status_counts: dict[str, int]
 
@@ -65,6 +69,7 @@ class AnalysisResultSiblingGroup:
         return {
             "analysis_job_id": self.analysis_job_id,
             "analysis_result_ids": self.analysis_result_ids,
+            "recipe_ids": self.recipe_ids,
             "recipe_names": self.recipe_names,
             "scope_snapshot_id": self.scope_snapshot_id,
             "sibling_group_id": self.sibling_group_id,
@@ -106,7 +111,9 @@ class LocalAnalysisResultRegistry:
         return self.summarize(analysis_result_id)
 
     def load(self, analysis_result_id: str) -> dict[str, object]:
-        manifest = _load_json(self._manifest_path(analysis_result_id))
+        manifest = _with_historical_manifest_defaults(
+            _load_json(self._manifest_path(analysis_result_id))
+        )
         assert_analysis_result_manifest_contract(manifest)
         return manifest
 
@@ -179,6 +186,7 @@ class LocalAnalysisResultRegistry:
                 "state": "not_validated",
             },
             item_count=int(manifest.get("item_count", 0) or 0),
+            recipe_ids=_recipe_ids(manifest),
             recipe_names=_recipe_names(manifest),
             result_state={
                 "complete": status == "ready",
@@ -216,6 +224,46 @@ def _manifest_artifacts(manifest: dict[str, object]) -> list[dict[str, object]]:
     ]
 
 
+def _with_historical_manifest_defaults(
+    manifest: dict[str, object],
+) -> dict[str, object]:
+    normalized = dict(manifest)
+    analysis_result_id = str(normalized.get("analysis_result_id", ""))
+    artifacts = _manifest_artifacts(normalized)
+    normalized.setdefault("analysis_job_id", "")
+    normalized.setdefault(
+        "explorer_readiness",
+        analysis_result_explorer_readiness(artifacts=artifacts),
+    )
+    normalized.setdefault(
+        "export_safety",
+        {
+            "contains_local_absolute_paths": False,
+            "contains_secrets": False,
+            "contains_temporary_paths": False,
+        },
+    )
+    normalized.setdefault(
+        "output_counts",
+        {"artifacts": analysis_result_artifact_counts(artifacts)},
+    )
+    normalized.setdefault("scope_snapshot", {})
+    normalized.setdefault("sibling_group_id", analysis_result_id)
+    normalized.setdefault(
+        "staleness",
+        {
+            "added_image_count": 0,
+            "removed_image_count": 0,
+            "state": "current",
+        },
+    )
+    normalized.setdefault(
+        "viewer",
+        {"open_href": f"/latent-map?analysisResultId={analysis_result_id}"},
+    )
+    return normalized
+
+
 def _mapping(value: object) -> dict[str, object]:
     if isinstance(value, dict):
         return dict(value)
@@ -231,6 +279,20 @@ def _recipe_names(manifest: dict[str, object]) -> list[str]:
         for recipe in recipes
         if isinstance(recipe, dict) and recipe.get("recipe_name")
     ]
+
+
+def _recipe_ids(manifest: dict[str, object]) -> list[str]:
+    recipes = manifest.get("recipes", [])
+    if not isinstance(recipes, list):
+        return []
+    recipe_ids: list[str] = []
+    for recipe in recipes:
+        if not isinstance(recipe, dict):
+            continue
+        recipe_id = str(recipe.get("recipe_id") or recipe.get("recipe_name") or "")
+        if recipe_id and recipe_id not in recipe_ids:
+            recipe_ids.append(recipe_id)
+    return recipe_ids
 
 
 def _scope_label(manifest: dict[str, object]) -> str:
@@ -267,9 +329,13 @@ def _sibling_group(
 ) -> AnalysisResultSiblingGroup:
     ordered = sorted(summaries, key=lambda summary: summary.analysis_result_id)
     status_counts: dict[str, int] = {}
+    recipe_ids: list[str] = []
     recipe_names: list[str] = []
     for summary in ordered:
         status_counts[summary.status] = status_counts.get(summary.status, 0) + 1
+        for recipe_id in summary.recipe_ids:
+            if recipe_id not in recipe_ids:
+                recipe_ids.append(recipe_id)
         for recipe_name in summary.recipe_names:
             if recipe_name not in recipe_names:
                 recipe_names.append(recipe_name)
@@ -280,6 +346,7 @@ def _sibling_group(
         analysis_job_id=first.analysis_job_id,
         scope_snapshot_id=first.scope_snapshot_id,
         analysis_result_ids=[summary.analysis_result_id for summary in ordered],
+        recipe_ids=recipe_ids,
         recipe_names=recipe_names,
         status_counts=dict(sorted(status_counts.items())),
     )

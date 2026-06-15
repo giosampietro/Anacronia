@@ -2,13 +2,9 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { NextRequest } from "next/server";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { GET } from "@/app/api/latent-map/thumbnails/route";
-
-async function writeJson(filePath: string, value: unknown) {
-  await writeFile(filePath, `${JSON.stringify(value)}\n`, "utf-8");
-}
 
 describe("latent map thumbnail API", () => {
   const previousRunsRoot = process.env.ANACRONIA_LATENT_MAP_RUNS_ROOT;
@@ -23,207 +19,87 @@ describe("latent map thumbnail API", () => {
     } else {
       process.env.ANACRONIA_LATENT_MAP_RUNS_ROOT = previousRunsRoot;
     }
+    vi.unstubAllGlobals();
   });
 
-  it("serves a manifest-listed artifact by Analysis Result ID and artifact key", async () => {
-    const runsRoot = path.join(
-      tmpdir(),
-      `anacronia-artifact-route-${Date.now()}`,
-    );
-    const runDir = path.join(runsRoot, "20260609T123000Z-j-shoot");
+  it("proxies Analysis Result artifacts through the backend Registry artifact API", async () => {
     const artifactKey = "viewer/atlases/64px/page-000.png";
     const artifactBytes = new Uint8Array([1, 2, 3, 4]);
-
-    process.env.ANACRONIA_LATENT_MAP_RUNS_ROOT = runsRoot;
-    await mkdir(path.dirname(path.join(runDir, artifactKey)), { recursive: true });
-    await writeFile(path.join(runDir, artifactKey), artifactBytes);
-    await writeJson(path.join(runDir, "analysis-result.json"), {
-      analysis_result_id: "latent-map-20260609T123000Z-j-shoot",
-      artifacts: [
-        {
-          content_type: "image/png",
-          key: artifactKey,
-        },
-      ],
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      expect(String(input)).toBe(
+        "http://127.0.0.1:18670/analysis-results/" +
+          "analysis-result-20260614T130000Z-dinov3_vits_384/artifacts/" +
+          "viewer/atlases/64px/page-000.png",
+      );
+      return new Response(artifactBytes, {
+        headers: { "content-type": "image/png" },
+      });
     });
+    vi.stubGlobal("fetch", fetchMock);
 
     const response = await GET(
       new NextRequest(
         `http://localhost/api/latent-map/thumbnails` +
-          `?analysisResultId=latent-map-20260609T123000Z-j-shoot` +
+          `?analysisResultId=analysis-result-20260614T130000Z-dinov3_vits_384` +
           `&artifactKey=${encodeURIComponent(artifactKey)}`,
       ),
     );
 
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(response.ok).toBe(true);
     expect(response.headers.get("Content-Type")).toBe("image/png");
     expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
     expect(new Uint8Array(await response.arrayBuffer())).toEqual(artifactBytes);
   });
 
-  it("serves generated thumbnail and preview raster artifacts", async () => {
+  it("does not fall through to legacy path access when Analysis Result ID is present", async () => {
     const runsRoot = path.join(
       tmpdir(),
       `anacronia-artifact-route-${Date.now()}`,
     );
-    const runDir = path.join(runsRoot, "20260609T123000Z-j-shoot");
-    const thumbnailKey = "thumbnails/img-a.jpg";
-    const previewKey = "previews/img-a.webp";
+    const runName = "legacy-run";
+    const relativePath = "thumbnails/img-a.jpg";
 
     process.env.ANACRONIA_LATENT_MAP_RUNS_ROOT = runsRoot;
-    await mkdir(path.dirname(path.join(runDir, thumbnailKey)), { recursive: true });
-    await mkdir(path.dirname(path.join(runDir, previewKey)), { recursive: true });
-    await writeFile(path.join(runDir, thumbnailKey), new Uint8Array([10, 11]));
-    await writeFile(path.join(runDir, previewKey), new Uint8Array([12, 13]));
-    await writeJson(path.join(runDir, "analysis-result.json"), {
-      analysis_result_id: "latent-map-20260609T123000Z-j-shoot",
-      artifacts: [
-        {
-          content_type: "image/jpeg",
-          key: thumbnailKey,
-        },
-        {
-          content_type: "image/webp",
-          key: previewKey,
-        },
-      ],
-    });
-
-    for (const [artifactKey, contentType] of [
-      [thumbnailKey, "image/jpeg"],
-      [previewKey, "image/webp"],
-    ]) {
-      const response = await GET(
-        new NextRequest(
-          `http://localhost/api/latent-map/thumbnails` +
-            `?analysisResultId=latent-map-20260609T123000Z-j-shoot` +
-            `&artifactKey=${encodeURIComponent(artifactKey)}`,
-        ),
-      );
-
-      expect(response.ok).toBe(true);
-      expect(response.headers.get("Content-Type")).toBe(contentType);
-      expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
-    }
-  });
-
-  it("rejects Analysis Result artifact keys that are not in the manifest", async () => {
-    const runsRoot = path.join(
-      tmpdir(),
-      `anacronia-artifact-route-${Date.now()}`,
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("missing", { status: 404 })),
     );
-    const runDir = path.join(runsRoot, "20260609T123000Z-j-shoot");
-
-    process.env.ANACRONIA_LATENT_MAP_RUNS_ROOT = runsRoot;
-    await mkdir(path.join(runDir, "viewer"), { recursive: true });
-    await writeFile(path.join(runDir, "viewer", "secret.png"), "nope");
-    await writeJson(path.join(runDir, "analysis-result.json"), {
-      analysis_result_id: "latent-map-20260609T123000Z-j-shoot",
-      artifacts: [],
+    await mkdir(path.dirname(path.join(runsRoot, runName, relativePath)), {
+      recursive: true,
     });
+    await writeFile(path.join(runsRoot, runName, relativePath), new Uint8Array([5]));
 
     const response = await GET(
       new NextRequest(
         `http://localhost/api/latent-map/thumbnails` +
-          `?analysisResultId=latent-map-20260609T123000Z-j-shoot` +
-          `&artifactKey=${encodeURIComponent("viewer/secret.png")}`,
+          `?analysisResultId=analysis-result-missing` +
+          `&run=${runName}&path=${encodeURIComponent(relativePath)}`,
       ),
     );
 
     expect(response.status).toBe(404);
   });
 
-  it("rejects traversal-shaped Analysis Result artifact keys before filesystem access", async () => {
-    const runsRoot = path.join(
-      tmpdir(),
-      `anacronia-artifact-route-${Date.now()}`,
-    );
-    const runDir = path.join(runsRoot, "20260609T123000Z-j-shoot");
-
-    process.env.ANACRONIA_LATENT_MAP_RUNS_ROOT = runsRoot;
-    await mkdir(runDir, { recursive: true });
-    await writeJson(path.join(runDir, "analysis-result.json"), {
-      analysis_result_id: "latent-map-20260609T123000Z-j-shoot",
-      artifacts: [
-        {
-          content_type: "image/png",
-          key: "viewer/atlases/64px/page-000.png",
-        },
-      ],
+  it("rejects non-image Analysis Result artifacts even when the backend can serve them", async () => {
+    const fetchMock = vi.fn(async () => {
+      return new Response('{"layout":true}', {
+        headers: { "content-type": "application/json" },
+      });
     });
+    vi.stubGlobal("fetch", fetchMock);
 
     const response = await GET(
       new NextRequest(
         `http://localhost/api/latent-map/thumbnails` +
-          `?analysisResultId=latent-map-20260609T123000Z-j-shoot` +
-          `&artifactKey=${encodeURIComponent("../secret.png")}`,
+          `?analysisResultId=analysis-result-20260614T130000Z-dinov3_vits_384` +
+          `&artifactKey=${encodeURIComponent("layouts/dinov3_vits_384_umap.json")}`,
       ),
     );
 
-    expect(response.status).toBe(403);
-  });
-
-  it("does not serve non-browser-safe Analysis Result artifacts", async () => {
-    const runsRoot = path.join(
-      tmpdir(),
-      `anacronia-artifact-route-${Date.now()}`,
-    );
-    const runDir = path.join(runsRoot, "20260609T123000Z-j-shoot");
-
-    process.env.ANACRONIA_LATENT_MAP_RUNS_ROOT = runsRoot;
-    await mkdir(path.join(runDir, "embeddings"), { recursive: true });
-    await mkdir(path.join(runDir, "viewer"), { recursive: true });
-    await mkdir(path.join(runDir, "previews"), { recursive: true });
-    await writeFile(path.join(runDir, "report.md"), "# report\n/private/tmp/x\n");
-    await writeFile(path.join(runDir, "embeddings", "dinov3_vits_384.npy"), "vector");
-    await writeFile(path.join(runDir, "viewer", "unsafe.png"), "png");
-    await writeFile(path.join(runDir, "previews", "unsafe.svg"), "<svg></svg>");
-    await writeJson(path.join(runDir, "analysis-result.json"), {
-      analysis_result_id: "latent-map-20260609T123000Z-j-shoot",
-      artifacts: [
-        {
-          content_type: "text/markdown",
-          key: "report.md",
-          retention_class: "durable",
-          role: "analysis-report",
-        },
-        {
-          content_type: "application/octet-stream",
-          key: "embeddings/dinov3_vits_384.npy",
-          retention_class: "durable",
-          role: "embedding",
-        },
-        {
-          content_type: "image/png",
-          key: "viewer/unsafe.png",
-          retention_class: "viewer-cache",
-          role: "debug-image",
-        },
-        {
-          content_type: "image/svg+xml",
-          key: "previews/unsafe.svg",
-          retention_class: "viewer-cache",
-          role: "thumbnail",
-        },
-      ],
-    });
-
-    for (const artifactKey of [
-      "report.md",
-      "embeddings/dinov3_vits_384.npy",
-      "viewer/unsafe.png",
-      "previews/unsafe.svg",
-    ]) {
-      const response = await GET(
-        new NextRequest(
-          `http://localhost/api/latent-map/thumbnails` +
-            `?analysisResultId=latent-map-20260609T123000Z-j-shoot` +
-            `&artifactKey=${encodeURIComponent(artifactKey)}`,
-        ),
-      );
-
-      expect(response.status).toBe(404);
-    }
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(response.status).toBe(404);
+    expect(await response.text()).toBe("Thumbnail not found.");
   });
 
   it("keeps legacy run and path access during migration", async () => {
@@ -252,31 +128,6 @@ describe("latent map thumbnail API", () => {
     expect(response.headers.get("Content-Type")).toBe("image/jpeg");
     expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
     expect(new Uint8Array(await response.arrayBuffer())).toEqual(imageBytes);
-  });
-
-  it("does not fall through to legacy path access when Analysis Result ID is present", async () => {
-    const runsRoot = path.join(
-      tmpdir(),
-      `anacronia-artifact-route-${Date.now()}`,
-    );
-    const runName = "legacy-run";
-    const relativePath = "thumbnails/img-a.jpg";
-
-    process.env.ANACRONIA_LATENT_MAP_RUNS_ROOT = runsRoot;
-    await mkdir(path.dirname(path.join(runsRoot, runName, relativePath)), {
-      recursive: true,
-    });
-    await writeFile(path.join(runsRoot, runName, relativePath), new Uint8Array([5]));
-
-    const response = await GET(
-      new NextRequest(
-        `http://localhost/api/latent-map/thumbnails` +
-          `?analysisResultId=latent-map-20260609T123000Z-j-shoot` +
-          `&run=${runName}&path=${encodeURIComponent(relativePath)}`,
-      ),
-    );
-
-    expect(response.status).toBe(404);
   });
 
   it("rejects non-browser-safe legacy run paths during migration", async () => {

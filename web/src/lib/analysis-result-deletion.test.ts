@@ -3,7 +3,6 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { listAnalysisResults } from "@/lib/analysis-results-browser";
 import {
   UnsafeAnalysisResultDeletionError,
   deleteAnalysisResult,
@@ -179,7 +178,6 @@ describe("Analysis Result deletion", () => {
       "embeddings/dinov3_vits_384.npy",
       "source/original.jpg",
     ]);
-    expect(await listAnalysisResults({ runsRoot })).toEqual([]);
   });
 
   it("rejects unsafe artifact keys before deleting anything", async () => {

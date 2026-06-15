@@ -67,6 +67,28 @@ type LoadedRecipe = NonNullable<
   recipe_name: string;
 };
 
+type AnalysisResultArtifactSummary = {
+  key?: unknown;
+  role?: unknown;
+};
+
+type AnalysisResultRecipeRecord = {
+  artifact_keys?: unknown;
+  recipe?: unknown;
+  recipe_name?: unknown;
+};
+
+type LoadedAnalysisResultRecipe = LoadedRecipe & {
+  clusterKeys: string[];
+  imageManifestKey: string | null;
+  layoutKeys: string[];
+  thumbnailAtlasManifestPaths: Record<string, string>;
+  vectorIdMapKey: string | null;
+};
+type LoadedThumbnailAtlas = NonNullable<
+  ExportedLatentMapViewerData["thumbnail_atlases"]
+>[number];
+
 export type PinnedLatentMapRunArtifacts = {
   clusterKeys?: string[];
   imageManifestKey?: string;
@@ -74,6 +96,173 @@ export type PinnedLatentMapRunArtifacts = {
   thumbnailAtlasManifestPaths?: Record<string, string>;
   vectorIdMapKey?: string;
 };
+
+export async function loadLatentMapAnalysisResultExportedViewerData({
+  analysisResult,
+  readArtifactText,
+  selectedClusterId,
+  selectedLayoutId,
+  selectedRecipeName,
+}: {
+  analysisResult: {
+    analysis_result_id?: unknown;
+    artifacts?: unknown;
+    recipes?: unknown;
+    scope_label?: unknown;
+  };
+  readArtifactText: (artifactKey: string) => Promise<string>;
+  selectedClusterId?: string | null;
+  selectedLayoutId?: string | null;
+  selectedRecipeName?: string | null;
+}): Promise<ExportedLatentMapViewerData> {
+  const artifacts = normalizeAnalysisResultArtifacts(analysisResult.artifacts);
+  const availableRecipes = normalizeAnalysisResultRecipes(analysisResult.recipes);
+  const selectedRecipe =
+    pickExisting(
+      availableRecipes.map((recipe) => recipe.recipe_name),
+      selectedRecipeName,
+    ) ?? availableRecipes[0]?.recipe_name;
+
+  if (!selectedRecipe) {
+    throw new Error("Analysis Result has no embedding recipes.");
+  }
+
+  const selectedRecipeRecord = availableRecipes.find(
+    (recipe) => recipe.recipe_name === selectedRecipe,
+  );
+  const imageManifestKey =
+    selectedRecipeRecord?.imageManifestKey ??
+    firstArtifactKeyByRole(artifacts, "image-manifest");
+  const layoutKeys =
+    selectedRecipeRecord?.layoutKeys.length > 0
+      ? selectedRecipeRecord.layoutKeys
+      : artifactKeysByRole(artifacts, "layout");
+  const clusterKeys =
+    selectedRecipeRecord?.clusterKeys.length > 0
+      ? selectedRecipeRecord.clusterKeys
+      : artifactKeysByRole(artifacts, "cluster-result");
+
+  if (!imageManifestKey) {
+    throw new Error("Analysis Result has no image manifest artifact.");
+  }
+
+  const manifestRows = parseJsonLines<ManifestRow>(
+    await readArtifactText(imageManifestKey),
+  );
+  const layouts = await loadRunOutputsByArtifactKeys<LayoutFile>({
+    keys: layoutKeys,
+    readArtifactText,
+    recipeName: selectedRecipe,
+  });
+  const clusters = sortClusterOutputs(
+    await loadRunOutputsByArtifactKeys<ClusterFile>({
+      keys: clusterKeys,
+      readArtifactText,
+      recipeName: selectedRecipe,
+    }),
+  );
+  const layout = pickOutputById({
+    idField: "layout_id",
+    outputs: layouts,
+    selectedId: selectedLayoutId,
+  });
+  const cluster = pickOutputById({
+    idField: "cluster_id",
+    outputs: clusters,
+    selectedId: selectedClusterId,
+  });
+
+  if (!layout) {
+    throw new Error(`Analysis Result has no layout for ${selectedRecipe}.`);
+  }
+  if (!cluster) {
+    throw new Error(`Analysis Result has no cluster result for ${selectedRecipe}.`);
+  }
+
+  if (selectedRecipeRecord?.vectorIdMapKey) {
+    const vectorImageIds = parseImageIdOrderMap(
+      await readArtifactText(selectedRecipeRecord.vectorIdMapKey),
+    );
+
+    validatePinnedPointOrder({
+      artifactLabel: `layout ${String(layout.value.layout_id ?? "")}`,
+      expectedImageIds: vectorImageIds,
+      points: layout.value.points ?? [],
+    });
+    validatePinnedPointOrder({
+      artifactLabel: `cluster ${String(cluster.value.cluster_id ?? "")}`,
+      expectedImageIds: vectorImageIds,
+      points: cluster.value.points ?? [],
+    });
+  }
+
+  const manifestByImageId = new Map(
+    manifestRows.map((row) => [String(row.image_id ?? ""), row]),
+  );
+  const clusterByImageId = new Map(
+    (cluster.value.points ?? []).map((point) => [
+      String(point.image_id ?? ""),
+      point,
+    ]),
+  );
+  const thumbnailAtlasManifestPaths =
+    selectedRecipeRecord?.thumbnailAtlasManifestPaths ?? {};
+  const thumbnailAtlases = await loadThumbnailAtlasesFromArtifacts({
+    manifestPaths: thumbnailAtlasManifestPaths,
+    readArtifactText,
+  });
+  const thumbnailAtlas =
+    thumbnailAtlases.find((atlas) => atlas.tile_size === 64) ??
+    thumbnailAtlases[0];
+
+  return {
+    available_clusters: clusters.map((output) =>
+      buildAvailableCluster(output.value),
+    ),
+    available_layouts: layouts.map((output) => ({
+      layout_id: String(output.value.layout_id ?? ""),
+      method: String(output.value.method ?? ""),
+      params: objectOrEmpty(output.value.params),
+    })),
+    available_recipes: availableRecipes,
+    cluster_id: String(cluster.value.cluster_id ?? ""),
+    cluster_result: buildAvailableCluster(cluster.value),
+    layout_id: String(layout.value.layout_id ?? ""),
+    points: (layout.value.points ?? []).map((point) => {
+      const imageId = String(point.image_id ?? "");
+      const manifestRow = manifestByImageId.get(imageId);
+      const clusterPoint = clusterByImageId.get(imageId);
+
+      return {
+        cluster_id: Number(clusterPoint?.cluster_id ?? 0),
+        ...(typeof clusterPoint?.group_key === "string" &&
+        clusterPoint.group_key.length > 0
+          ? { cluster_group_key: clusterPoint.group_key }
+          : {}),
+        ...(typeof clusterPoint?.membership === "number"
+          ? { cluster_membership: clusterPoint.membership }
+          : {}),
+        height: Number(manifestRow?.height ?? 1),
+        image_id: imageId,
+        preview_path: String(
+          manifestRow?.preview_path ?? manifestRow?.thumbnail_path ?? "",
+        ),
+        relative_path: String(manifestRow?.relative_path ?? ""),
+        thumbnail_path: String(manifestRow?.thumbnail_path ?? ""),
+        width: Number(manifestRow?.width ?? 1),
+        x: Number(point.x ?? 0),
+        y: Number(point.y ?? 0),
+      };
+    }),
+    recipe_name: selectedRecipe,
+    run_id: String(analysisResult.analysis_result_id ?? "analysis-result"),
+    ...(thumbnailAtlas ? { thumbnail_atlas: thumbnailAtlas } : {}),
+    ...(thumbnailAtlases.length > 0 ? { thumbnail_atlases: thumbnailAtlases } : {}),
+    ...(Object.keys(thumbnailAtlasManifestPaths).length > 0
+      ? { thumbnail_atlas_manifest_paths: thumbnailAtlasManifestPaths }
+      : {}),
+  };
+}
 
 export async function loadLatentMapRunExportedViewerData({
   pinnedArtifacts,
@@ -281,11 +470,183 @@ function normalizeClusterGroups(groups: unknown[]) {
 async function readJsonLines<T>(filePath: string): Promise<T[]> {
   const content = await readFile(filePath, "utf-8");
 
+  return parseJsonLines<T>(content);
+}
+
+function parseJsonLines<T>(content: string): T[] {
   return content
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean)
     .map((line) => JSON.parse(line) as T);
+}
+
+function normalizeAnalysisResultArtifacts(
+  value: unknown,
+): AnalysisResultArtifactSummary[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter(
+    (artifact): artifact is AnalysisResultArtifactSummary =>
+      Boolean(artifact && typeof artifact === "object" && !Array.isArray(artifact)),
+  );
+}
+
+function normalizeAnalysisResultRecipes(
+  value: unknown,
+): LoadedAnalysisResultRecipe[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter((recipe): recipe is AnalysisResultRecipeRecord =>
+      Boolean(recipe && typeof recipe === "object" && !Array.isArray(recipe)),
+    )
+    .map((recipe) => {
+      const recipeName = String(recipe.recipe_name ?? "");
+      const recipeMetadata = objectOrEmpty(recipe.recipe);
+      const artifactKeys = objectOrEmpty(recipe.artifact_keys);
+
+      return {
+        clusterKeys: artifactKeyRecordsToKeys(artifactKeys.clusters),
+        family: String(
+          recipeMetadata.model_family ??
+            recipeMetadata.family ??
+            inferRecipeFamily(recipeName),
+        ),
+        imageManifestKey: nonEmptyString(artifactKeys.image_manifest),
+        layoutKeys: artifactKeyRecordsToKeys(artifactKeys.layouts),
+        long_edge:
+          typeof recipeMetadata.input_size === "number"
+            ? recipeMetadata.input_size
+            : typeof recipeMetadata.long_edge === "number"
+              ? recipeMetadata.long_edge
+              : inferLongEdge(recipeName),
+        model_id: String(recipeMetadata.model_id ?? ""),
+        recipe_name: recipeName,
+        thumbnailAtlasManifestPaths: stringRecord(
+          artifactKeys.thumbnail_atlas_manifests,
+        ),
+        vectorIdMapKey: nonEmptyString(artifactKeys.vector_id_map),
+      };
+    })
+    .filter((recipe) => recipe.recipe_name.length > 0)
+    .sort((left, right) => left.recipe_name.localeCompare(right.recipe_name));
+}
+
+function artifactKeyRecordsToKeys(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((item) =>
+      item && typeof item === "object" && !Array.isArray(item)
+        ? nonEmptyString((item as { key?: unknown }).key)
+        : null,
+    )
+    .filter((key): key is string => key !== null);
+}
+
+function artifactKeysByRole(
+  artifacts: AnalysisResultArtifactSummary[],
+  role: string,
+): string[] {
+  return artifacts
+    .filter((artifact) => artifact.role === role)
+    .map((artifact) => nonEmptyString(artifact.key))
+    .filter((key): key is string => key !== null);
+}
+
+function firstArtifactKeyByRole(
+  artifacts: AnalysisResultArtifactSummary[],
+  role: string,
+): string | null {
+  return artifactKeysByRole(artifacts, role)[0] ?? null;
+}
+
+async function loadRunOutputsByArtifactKeys<T extends { recipe_name?: unknown }>({
+  keys,
+  readArtifactText,
+  recipeName,
+}: {
+  keys: string[];
+  readArtifactText: (artifactKey: string) => Promise<string>;
+  recipeName: string;
+}): Promise<LoadedRunOutput<T>[]> {
+  const outputs = await Promise.all(
+    keys.map(async (key) => ({
+      fileName: path.basename(key),
+      path: key,
+      value: JSON.parse(await readArtifactText(key)) as T,
+    })),
+  );
+
+  return outputs.filter(
+    (output) => String(output.value.recipe_name ?? "") === recipeName,
+  );
+}
+
+function parseImageIdOrderMap(content: string): string[] {
+  const value = JSON.parse(content) as unknown;
+
+  if (Array.isArray(value)) {
+    return value.map((row) => {
+      if (row && typeof row === "object" && "image_id" in row) {
+        return String(row.image_id ?? "");
+      }
+
+      return String(row);
+    });
+  }
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    const ids = Array.isArray(record.ids)
+      ? record.ids
+      : Array.isArray(record.image_ids)
+        ? record.image_ids
+        : [];
+
+    return ids.map((imageId) => String(imageId));
+  }
+
+  return [];
+}
+
+async function loadThumbnailAtlasesFromArtifacts({
+  manifestPaths,
+  readArtifactText,
+}: {
+  manifestPaths: Record<string, string>;
+  readArtifactText: (artifactKey: string) => Promise<string>;
+}): Promise<LoadedThumbnailAtlas[]> {
+  const atlases = await Promise.all(
+    Object.values(manifestPaths).map(async (artifactKey) => {
+      try {
+        return JSON.parse(await readArtifactText(artifactKey)) as LoadedThumbnailAtlas;
+      } catch {
+        return null;
+      }
+    }),
+  );
+
+  return atlases.filter((atlas): atlas is LoadedThumbnailAtlas => atlas !== null);
+}
+
+function stringRecord(value: unknown): Record<string, string> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(value)
+      .map(([key, entry]) => [key, nonEmptyString(entry)] as const)
+      .filter((entry): entry is readonly [string, string] => entry[1] !== null),
+  );
+}
+
+function nonEmptyString(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
 }
 
 async function loadAvailableRecipes(
