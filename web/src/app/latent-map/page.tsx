@@ -24,6 +24,9 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 type LatentMapSearchParams = Record<string, string | string[] | undefined>;
+type ExportedThumbnailAtlas = NonNullable<
+  ExportedLatentMapViewerData["thumbnail_atlases"]
+>[number];
 
 function getSearchParam(
   searchParams: LatentMapSearchParams,
@@ -125,23 +128,54 @@ async function hydrateThumbnailAtlas({
     return;
   }
 
-  rawData.thumbnail_atlases = await Promise.all(
-    manifestPaths.map(async (manifestPath) => {
-      const atlasManifestPath = path.resolve(runDir, manifestPath);
+  const atlases = (
+    await Promise.all(
+      manifestPaths.map(
+        async (manifestPath): Promise<ExportedThumbnailAtlas | null> => {
+          const atlasManifestPath = path.resolve(runDir, manifestPath);
 
-      if (
-        atlasManifestPath === runDir ||
-        !atlasManifestPath.startsWith(`${runDir}${path.sep}`)
-      ) {
-        throw new Error("Latent map atlas manifest is outside the run directory.");
-      }
+          if (
+            atlasManifestPath === runDir ||
+            !atlasManifestPath.startsWith(`${runDir}${path.sep}`)
+          ) {
+            throw new Error(
+              "Latent map atlas manifest is outside the run directory.",
+            );
+          }
 
-      return JSON.parse(await readFile(atlasManifestPath, "utf-8"));
-    }),
-  );
+          try {
+            return JSON.parse(
+              await readFile(atlasManifestPath, "utf-8"),
+            ) as ExportedThumbnailAtlas;
+          } catch (error) {
+            if (isMissingFileError(error)) {
+              return null;
+            }
+
+            throw error;
+          }
+        }
+      ),
+    )
+  ).filter((atlas): atlas is ExportedThumbnailAtlas => atlas !== null);
+
+  if (atlases.length === 0) {
+    return;
+  }
+
+  rawData.thumbnail_atlases = atlases;
   rawData.thumbnail_atlas =
     rawData.thumbnail_atlases.find((atlas) => atlas.tile_size === 64) ??
     rawData.thumbnail_atlases[0];
+}
+
+function isMissingFileError(error: unknown): boolean {
+  return Boolean(
+    error &&
+      typeof error === "object" &&
+      "code" in error &&
+      error.code === "ENOENT",
+  );
 }
 
 export async function loadLatentMapViewerData(
@@ -204,6 +238,10 @@ export async function loadLatentMapViewerData(
       dataRunDir = runDir;
     }
   } catch (error) {
+    if (analysisResultId) {
+      throw error;
+    }
+
     if (!fallbackRawData || !fallbackRunDir) {
       throw error;
     }
@@ -251,6 +289,45 @@ export default async function LatentMapPage({
   searchParams?: Promise<LatentMapSearchParams>;
 }) {
   const resolvedSearchParams = searchParams ? await searchParams : {};
+  const analysisResultId = getSearchParam(
+    resolvedSearchParams,
+    "analysisResultId",
+  );
+
+  if (!analysisResultId && !process.env.ANACRONIA_LATENT_MAP_VIEWER_DATA) {
+    return (
+      <AppSpaceShell
+        activeSpace="explorer"
+        contentClassName="min-w-0"
+        focusModeAvailable
+      >
+        <section
+          className="flex min-h-svh items-center justify-center bg-background px-6"
+          data-testid="latent-map-empty-state"
+          data-ui-overlay-hidden="false"
+        >
+          <div className="max-w-md text-center">
+            <p className="mb-3 text-xs font-medium uppercase text-muted-foreground">
+              Latent Space Explorer
+            </p>
+            <h1 className="text-3xl font-semibold tracking-tight text-foreground">
+              Select an Analysis Result
+            </h1>
+            <p className="mt-3 text-sm leading-6 text-muted-foreground">
+              Open a completed result from Analysis Studio.
+            </p>
+            <a
+              className="mt-6 inline-flex h-10 items-center justify-center rounded-lg border border-border px-4 text-sm font-medium text-foreground transition hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
+              href="/analysis-results"
+            >
+              Open Analysis Studio
+            </a>
+          </div>
+        </section>
+      </AppSpaceShell>
+    );
+  }
+
   const viewerData = await loadLatentMapViewerData(resolvedSearchParams);
   const initialState = parseLatentMapUrlState(
     toUrlSearchParams(resolvedSearchParams),

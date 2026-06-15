@@ -1,12 +1,13 @@
 import { execFile, type ExecFileOptions } from "node:child_process";
+import { access } from "node:fs/promises";
 import path from "node:path";
 import type { NextRequest } from "next/server";
 
-import { resolveAnalysisResultRunDir } from "@/lib/analysis-result-artifacts";
 import {
   getAdditionalAnalysisResultRoots,
   getLatentMapRunsRoot,
 } from "@/lib/analysis-result-roots";
+import { createLocalAnalysisResultStore } from "@/lib/analysis-result-store";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -53,12 +54,16 @@ export async function GET(request: NextRequest) {
     path.resolve(root),
   );
   const allowedRunsRoots = [resolvedRunsRoot, ...resolvedAdditionalRunsRoots];
-  const resolvedRunDir = analysisResultId
-    ? await resolveAnalysisResultRunDir({
+  const resolvedAnalysisResultFaiss = analysisResultId
+    ? await resolveAnalysisResultFaissQuery({
         additionalRunsRoots: resolvedAdditionalRunsRoots,
         analysisResultId,
+        requestedRecipeName,
         runsRoot: resolvedRunsRoot,
       })
+    : null;
+  const resolvedRunDir = analysisResultId
+    ? resolvedAnalysisResultFaiss?.runDir
     : path.resolve(resolvedRunsRoot, String(runName));
 
   if (!resolvedRunDir) {
@@ -72,10 +77,12 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const recipeName = await resolveRecipeName({
-      relativePath,
-      requestedRecipeName,
-    });
+    const recipeName =
+      resolvedAnalysisResultFaiss?.recipeName ??
+      (await resolveRecipeName({
+        relativePath,
+        requestedRecipeName,
+      }));
 
     if (!recipeName) {
       throw new Error("FAISS recipe is unavailable.");
@@ -114,6 +121,72 @@ export async function GET(request: NextRequest) {
   } catch {
     return new Response("FAISS neighbor index not found.", { status: 404 });
   }
+}
+
+async function resolveAnalysisResultFaissQuery({
+  additionalRunsRoots,
+  analysisResultId,
+  requestedRecipeName,
+  runsRoot,
+}: {
+  additionalRunsRoots: string[];
+  analysisResultId: string;
+  requestedRecipeName: string | null;
+  runsRoot: string;
+}): Promise<{ recipeName: string; runDir: string } | null> {
+  const selectedRecipeName = parseRecipeName(requestedRecipeName) || null;
+  const store = createLocalAnalysisResultStore({ additionalRunsRoots, runsRoot });
+  let runDir: string | null;
+  let pinnedArtifacts:
+    | Awaited<ReturnType<typeof store.loadPinnedLatentMapRecipeArtifacts>>
+    | null;
+
+  try {
+    [runDir, pinnedArtifacts] = await Promise.all([
+      store.resolveRunDir(analysisResultId),
+      store.loadPinnedLatentMapRecipeArtifacts({
+        analysisResultId,
+        selectedRecipeName,
+      }),
+    ]);
+  } catch {
+    return null;
+  }
+
+  if (
+    !runDir ||
+    !pinnedArtifacts ||
+    !pinnedArtifacts.faissIndexKey ||
+    !pinnedArtifacts.faissIdMapKey
+  ) {
+    return null;
+  }
+
+  const [indexArtifact, idMapArtifact] = await Promise.all([
+    store.resolveArtifact({
+      analysisResultId,
+      artifactKey: pinnedArtifacts.faissIndexKey,
+    }),
+    store.resolveArtifact({
+      analysisResultId,
+      artifactKey: pinnedArtifacts.faissIdMapKey,
+    }),
+  ]);
+
+  if (!indexArtifact || !idMapArtifact) {
+    return null;
+  }
+
+  try {
+    await Promise.all([
+      access(indexArtifact.filePath),
+      access(idMapArtifact.filePath),
+    ]);
+  } catch {
+    return null;
+  }
+
+  return { recipeName: pinnedArtifacts.recipeName, runDir };
 }
 
 function isInsideAnyRoot(runDir: string, roots: string[]): boolean {

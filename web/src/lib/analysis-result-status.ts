@@ -42,11 +42,7 @@ export type AnalysisResultStatusSummary = {
   state: AnalysisResultStatusState;
 };
 
-const REQUIRED_VIEWER_ROLES = new Set([
-  "cluster-result",
-  "image-manifest",
-  "layout",
-]);
+const REQUIRED_RELATION_ROLES = new Set(["faiss-id-map", "faiss-index"]);
 
 export function summarizeAnalysisResultStatus({
   currentImageIds,
@@ -64,8 +60,11 @@ export function summarizeAnalysisResultStatus({
     artifacts.filter((artifact) => !artifact.required),
     existingArtifactKeys,
   );
-  const relationArtifacts = artifacts.filter(
-    (artifact) => artifact.role === "faiss-index",
+  const relationArtifacts = artifacts.filter((artifact) =>
+    REQUIRED_RELATION_ROLES.has(artifact.role),
+  );
+  const declaredRelationRoles = new Set(
+    relationArtifacts.map((artifact) => artifact.role),
   );
   const missingRequiredRelationArtifactKeys = missingArtifactKeys(
     relationArtifacts,
@@ -75,8 +74,7 @@ export function summarizeAnalysisResultStatus({
     artifacts.filter(
       (artifact) =>
         artifact.required &&
-        (REQUIRED_VIEWER_ROLES.has(artifact.role) ||
-          artifact.role !== "faiss-index"),
+        !REQUIRED_RELATION_ROLES.has(artifact.role),
     ),
     existingArtifactKeys,
   );
@@ -90,8 +88,9 @@ export function summarizeAnalysisResultStatus({
   };
   const runUpdatedAnalysisAvailable = sourceChanges.addedImageIds.length > 0;
   const relationAvailable =
-    relationArtifacts.length > 0 &&
-    missingRequiredRelationArtifactKeys.length === 0;
+    [...REQUIRED_RELATION_ROLES].every((role) =>
+      declaredRelationRoles.has(role),
+    ) && missingRequiredRelationArtifactKeys.length === 0;
   const canOpenExplorer =
     manifest.status !== "deleted" &&
     manifest.status !== "failed" &&
