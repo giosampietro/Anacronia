@@ -51,7 +51,34 @@ describe("AnalysisResultsPage", () => {
             },
           ]);
         }
-        return Response.json({
+        if (url.endsWith("/analysis-recipes")) {
+          return Response.json({
+            default_recipe_id: "dinov3_vits_384",
+            recipes: [
+              {
+                input_size: 256,
+                is_default: false,
+                label: "DINOv3 ViT-S 256px",
+                recipe_id: "dinov3_vits_256",
+              },
+              {
+                input_size: 384,
+                is_default: true,
+                label: "DINOv3 ViT-S 384px",
+                recipe_id: "dinov3_vits_384",
+              },
+              {
+                input_size: 512,
+                is_default: false,
+                label: "DINOv3 ViT-S 512px",
+                recipe_id: "dinov3_vits_512",
+              },
+            ],
+            schema_version: 1,
+          });
+        }
+        if (url.endsWith("/analysis-jobs")) {
+          return Response.json({
           jobs: [
             {
               analysis_job_id: "analysis-job-20260614T130010Z",
@@ -107,6 +134,8 @@ describe("AnalysisResultsPage", () => {
             },
           ],
         });
+        }
+        throw new Error(`Unexpected fetch: ${url}`);
       }),
     );
     await mkdir(runDir, { recursive: true });
@@ -123,10 +152,13 @@ describe("AnalysisResultsPage", () => {
       artifacts: [{ key: "manifest.jsonl", role: "image-manifest" }],
     });
 
-    const html = renderToString(await AnalysisResultsPage()).replaceAll(
-      "<!-- -->",
-      "",
-    );
+    const html = renderToString(
+      await AnalysisResultsPage({
+        searchParams: Promise.resolve({
+          analysisResultId: "latent-map-20260609T123000Z-j-shoot",
+        }),
+      }),
+    ).replaceAll("<!-- -->", "");
 
     expect(html).toContain("data-app-space-shell=\"true\"");
     expect(html).toContain("data-active-space=\"analysis\"");
@@ -143,6 +175,7 @@ describe("AnalysisResultsPage", () => {
     expect(html).toContain("value=\"dinov3_vits_384\"");
     expect(html).toContain("action=\"/api/analysis-jobs\"");
     expect(html).toContain("Analysis Scope");
+    expect(html).toContain("Selected Analysis Result");
     expect(html).toContain("1 result");
     expect(html).toContain("3184 images indexed");
     expect(html).toContain("Recipe Choices");
@@ -161,7 +194,7 @@ describe("AnalysisResultsPage", () => {
     expect(html).toContain("analysis-job-20260614T130000Z");
     expect(html).toContain("Submitted Jobs");
     expect(html).toContain("J Shoot");
-    expect(html).toContain("dinov3_vits_384");
+    expect(html).toContain("DINOv3 ViT-S 384px");
     expect(html).toContain("3184 images");
     expect(html).toContain("ready");
     expect(html).toContain(

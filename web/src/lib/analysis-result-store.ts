@@ -1,4 +1,11 @@
-import { access, readdir, readFile, unlink, writeFile } from "node:fs/promises";
+import {
+  access,
+  readdir,
+  readFile,
+  stat,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
 
 import {
@@ -46,6 +53,28 @@ export type LocalAnalysisResultListItem = {
   runId: string;
   sourceFolderName: string;
   state: AnalysisResultStatusState;
+};
+
+export type LocalAnalysisResultStudioListItem = LocalAnalysisResultListItem & {
+  analysisJobId: string;
+  artifactHealth: {
+    missingOptionalArtifactKeys: string[];
+    missingOptionalRenderCacheKeys: string[];
+    missingRequiredArtifactKeys: string[];
+  };
+  artifactKeys: string[];
+  scopeLabel: string;
+  staleness: {
+    addedImageCount: number;
+    removedImageCount: number;
+    state: string;
+  };
+  storageTotals: {
+    durableBytes: number;
+    renderCacheBytes: number;
+    totalBytes: number;
+    viewerCacheBytes: number;
+  };
 };
 
 export type ResolvedAnalysisResultArtifact = {
@@ -182,6 +211,20 @@ export function createLocalAnalysisResultStore({
 
       return uniqueAnalysisResults(rootItems.flat())
         .filter((item): item is LocalAnalysisResultListItem => item !== null)
+        .sort((left, right) => right.runId.localeCompare(left.runId));
+    },
+
+    async listStudio(): Promise<LocalAnalysisResultStudioListItem[]> {
+      const rootItems = await Promise.all(
+        resolvedRunsRoots.map(async (root) =>
+          listRootAnalysisResultStudioSummaries(root),
+        ),
+      );
+
+      return uniqueAnalysisResults(rootItems.flat())
+        .filter(
+          (item): item is LocalAnalysisResultStudioListItem => item !== null,
+        )
         .sort((left, right) => right.runId.localeCompare(left.runId));
     },
 
@@ -567,6 +610,69 @@ async function listRootAnalysisResults(
           sourceFolderName: String(source.source_folder_name ?? ""),
           state: status.state,
         };
+    }),
+  );
+}
+
+async function listRootAnalysisResultStudioSummaries(
+  runsRoot: string,
+): Promise<(LocalAnalysisResultStudioListItem | null)[]> {
+  const entries = await safeReadDir(runsRoot);
+
+  return Promise.all(
+    entries
+      .filter((entry) => entry.isDirectory())
+      .map(async (entry): Promise<LocalAnalysisResultStudioListItem | null> => {
+        const runDir = path.join(runsRoot, entry.name);
+        const manifest = await readManifest(runDir);
+
+        if (!manifest || manifest.status === "deleted") {
+          return null;
+        }
+
+        const analysisResultId = String(manifest.analysis_result_id ?? "");
+        if (!analysisResultId) {
+          return null;
+        }
+
+        const source = normalizeSource(manifest.source);
+        const status = await loadStatusFromRunDir({ manifest, runDir });
+        const artifacts = getManifestArtifacts(manifest);
+
+        return {
+          analysisJobId: String(
+            (manifest as { analysis_job_id?: unknown }).analysis_job_id ?? "",
+          ),
+          analysisResultId,
+          artifactHealth: {
+            missingOptionalArtifactKeys:
+              status.missingOptionalRenderCacheKeys,
+            missingOptionalRenderCacheKeys:
+              status.missingOptionalRenderCacheKeys,
+            missingRequiredArtifactKeys: [
+              ...status.missingRequiredViewerArtifactKeys,
+              ...status.missingRequiredRelationArtifactKeys,
+            ].sort(compareKeys),
+          },
+          artifactKeys: artifacts
+            .map((artifact) => String(artifact.key ?? ""))
+            .filter(Boolean)
+            .sort(compareKeys),
+          canOpenExplorer: status.canOpenExplorer,
+          itemCount: Number(manifest.item_count ?? 0),
+          recipeNames: normalizeRecipeNames(manifest.recipes),
+          runId: String(source.run_id ?? entry.name),
+          scopeLabel: String(source.source_folder_name ?? ""),
+          sourceFolderName: String(source.source_folder_name ?? ""),
+          state: status.state,
+          staleness: normalizeStaleness(
+            (manifest as { staleness?: unknown }).staleness,
+          ),
+          storageTotals: await summarizeArtifactStorage({
+            artifacts,
+            runDir,
+          }),
+        };
       }),
   );
 }
@@ -586,6 +692,71 @@ function uniqueAnalysisResults(
     seen.add(item.analysisResultId);
     return true;
   });
+}
+
+async function summarizeArtifactStorage({
+  artifacts,
+  runDir,
+}: {
+  artifacts: AnalysisResultArtifact[];
+  runDir: string;
+}): Promise<LocalAnalysisResultStudioListItem["storageTotals"]> {
+  const totals = {
+    durableBytes: 0,
+    renderCacheBytes: 0,
+    totalBytes: 0,
+    viewerCacheBytes: 0,
+  };
+
+  await Promise.all(
+    artifacts.map(async (artifact) => {
+      if (typeof artifact.key !== "string") {
+        return;
+      }
+
+      let byteSize = 0;
+      try {
+        byteSize = (
+          await stat(
+            resolveArtifactPath({
+              artifactKey: artifact.key,
+              runDir,
+            }),
+          )
+        ).size;
+      } catch {
+        return;
+      }
+
+      totals.totalBytes += byteSize;
+      if (artifact.retention_class === "render-cache") {
+        totals.renderCacheBytes += byteSize;
+      } else if (artifact.retention_class === "viewer-cache") {
+        totals.viewerCacheBytes += byteSize;
+      } else {
+        totals.durableBytes += byteSize;
+      }
+    }),
+  );
+
+  return totals;
+}
+
+function normalizeStaleness(value: unknown): LocalAnalysisResultStudioListItem["staleness"] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {
+      addedImageCount: 0,
+      removedImageCount: 0,
+      state: "unknown",
+    };
+  }
+
+  const staleness = value as Record<string, unknown>;
+  return {
+    addedImageCount: Number(staleness.added_image_count ?? 0),
+    removedImageCount: Number(staleness.removed_image_count ?? 0),
+    state: String(staleness.state ?? "unknown"),
+  };
 }
 
 function uniqueRoots(roots: string[]): string[] {
