@@ -673,9 +673,78 @@ function getPinnedLatentMapRecipeArtifacts({
   if (!artifactKeys || !recipeName) {
     return null;
   }
+  const declaredArtifactKeys = new Set(
+    getManifestArtifacts(manifest).map((artifact) => String(artifact.key ?? "")),
+  );
+  const pinnedArtifactKeys = validateAndFilterPinnedArtifactKeys({
+    artifactKeys,
+    declaredArtifactKeys,
+  });
 
   return {
-    ...(artifactKeys.baselineAtlasManifestKey
+    ...(pinnedArtifactKeys.baselineAtlasManifestKey
+      ? { baselineAtlasManifestKey: pinnedArtifactKeys.baselineAtlasManifestKey }
+      : {}),
+    clusterArtifacts: pinnedArtifactKeys.clusterArtifacts,
+    ...(pinnedArtifactKeys.faissIdMapKey
+      ? { faissIdMapKey: pinnedArtifactKeys.faissIdMapKey }
+      : {}),
+    ...(pinnedArtifactKeys.faissIndexKey
+      ? { faissIndexKey: pinnedArtifactKeys.faissIndexKey }
+      : {}),
+    ...(pinnedArtifactKeys.imageManifestKey
+      ? { imageManifestKey: pinnedArtifactKeys.imageManifestKey }
+      : {}),
+    layoutArtifacts: pinnedArtifactKeys.layoutArtifacts,
+    recipeName,
+    thumbnailAtlasManifestPaths: pinnedArtifactKeys.thumbnailAtlasManifestPaths,
+    ...(pinnedArtifactKeys.vectorIdMapKey
+      ? { vectorIdMapKey: pinnedArtifactKeys.vectorIdMapKey }
+      : {}),
+  };
+}
+
+function validateAndFilterPinnedArtifactKeys({
+  artifactKeys,
+  declaredArtifactKeys,
+}: {
+  artifactKeys: NonNullable<ReturnType<typeof normalizePinnedArtifactKeys>>;
+  declaredArtifactKeys: Set<string>;
+}): NonNullable<ReturnType<typeof normalizePinnedArtifactKeys>> {
+  requireDeclaredArtifactKey({
+    artifactKey: artifactKeys.imageManifestKey,
+    declaredArtifactKeys,
+  });
+  requireDeclaredArtifactKey({
+    artifactKey: artifactKeys.faissIdMapKey,
+    declaredArtifactKeys,
+  });
+  requireDeclaredArtifactKey({
+    artifactKey: artifactKeys.faissIndexKey,
+    declaredArtifactKeys,
+  });
+  requireDeclaredArtifactKey({
+    artifactKey: artifactKeys.vectorIdMapKey,
+    declaredArtifactKeys,
+  });
+  artifactKeys.clusterArtifacts.forEach((artifact) => {
+    requireDeclaredArtifactKey({
+      artifactKey: artifact.key,
+      declaredArtifactKeys,
+    });
+  });
+  artifactKeys.layoutArtifacts.forEach((artifact) => {
+    requireDeclaredArtifactKey({
+      artifactKey: artifact.key,
+      declaredArtifactKeys,
+    });
+  });
+
+  return {
+    ...(isDeclaredArtifactKey(
+      artifactKeys.baselineAtlasManifestKey,
+      declaredArtifactKeys,
+    )
       ? { baselineAtlasManifestKey: artifactKeys.baselineAtlasManifestKey }
       : {}),
     clusterArtifacts: artifactKeys.clusterArtifacts,
@@ -689,12 +758,34 @@ function getPinnedLatentMapRecipeArtifacts({
       ? { imageManifestKey: artifactKeys.imageManifestKey }
       : {}),
     layoutArtifacts: artifactKeys.layoutArtifacts,
-    recipeName,
-    thumbnailAtlasManifestPaths: artifactKeys.thumbnailAtlasManifestPaths,
+    thumbnailAtlasManifestPaths: Object.fromEntries(
+      Object.entries(artifactKeys.thumbnailAtlasManifestPaths).filter(([, key]) =>
+        declaredArtifactKeys.has(key),
+      ),
+    ),
     ...(artifactKeys.vectorIdMapKey
       ? { vectorIdMapKey: artifactKeys.vectorIdMapKey }
       : {}),
   };
+}
+
+function requireDeclaredArtifactKey({
+  artifactKey,
+  declaredArtifactKeys,
+}: {
+  artifactKey: string | undefined;
+  declaredArtifactKeys: Set<string>;
+}) {
+  if (artifactKey !== undefined && !declaredArtifactKeys.has(artifactKey)) {
+    throw new Error(`Pinned Analysis Result artifact is not declared: ${artifactKey}`);
+  }
+}
+
+function isDeclaredArtifactKey(
+  artifactKey: string | undefined,
+  declaredArtifactKeys: Set<string>,
+) {
+  return artifactKey !== undefined && declaredArtifactKeys.has(artifactKey);
 }
 
 function getManifestRecipes(

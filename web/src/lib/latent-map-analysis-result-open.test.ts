@@ -298,6 +298,7 @@ describe("loadLatentMapAnalysisResultViewerData", () => {
       analysis_result_id: analysisResultId,
       artifacts: [
         { key: "manifest.jsonl", role: "image-manifest" },
+        { key: "layouts/dinov3_vits_384_missing.json", role: "layout" },
         {
           key: "clusters/dinov3_vits_384_cluster_pinned.json",
           role: "cluster-result",
@@ -333,6 +334,76 @@ describe("loadLatentMapAnalysisResultViewerData", () => {
       }),
     ).rejects.toThrow(
       "Pinned Analysis Result artifact is missing: layouts/dinov3_vits_384_missing.json",
+    );
+  });
+
+  it("rejects a required recipe artifact that is not declared by the Analysis Result manifest", async () => {
+    const runsRoot = await mkdtemp(path.join(os.tmpdir(), "analysis-result-open-"));
+    const runDir = path.join(runsRoot, "20260609T123000Z-j-shoot");
+    const analysisResultId = "latent-map-20260609T123000Z-j-shoot";
+
+    await mkdir(path.join(runDir, "clusters"), { recursive: true });
+    await mkdir(path.join(runDir, "layouts"), { recursive: true });
+    await writeFile(
+      path.join(runDir, "manifest.jsonl"),
+      JSON.stringify({
+        image_id: "img_1",
+        thumbnail_path: "thumbnails/img_1.jpg",
+      }) + "\n",
+      "utf-8",
+    );
+    await writeJson(path.join(runDir, "layouts", "dinov3_vits_384_umap.json"), {
+      layout_id: "umap_pinned",
+      method: "umap",
+      points: [{ image_id: "img_1", x: 3, y: 4 }],
+      recipe_name: "dinov3_vits_384",
+    });
+    await writeJson(
+      path.join(runDir, "clusters", "dinov3_vits_384_cluster.json"),
+      {
+        cluster_count: 1,
+        cluster_id: "cluster_pinned",
+        method: "hdbscan",
+        points: [{ cluster_id: 7, image_id: "img_1" }],
+        recipe_name: "dinov3_vits_384",
+      },
+    );
+    await writeJson(path.join(runDir, "analysis-result.json"), {
+      analysis_result_id: analysisResultId,
+      artifacts: [
+        { key: "manifest.jsonl", role: "image-manifest" },
+        { key: "clusters/dinov3_vits_384_cluster.json", role: "cluster-result" },
+      ],
+      recipes: [
+        {
+          recipe_name: "dinov3_vits_384",
+          artifact_keys: {
+            image_manifest: "manifest.jsonl",
+            layouts: [
+              {
+                key: "layouts/dinov3_vits_384_umap.json",
+                layout_id: "umap_pinned",
+              },
+            ],
+            clusters: [
+              {
+                cluster_id: "cluster_pinned",
+                key: "clusters/dinov3_vits_384_cluster.json",
+              },
+            ],
+          },
+        },
+      ],
+    });
+
+    await expect(
+      loadLatentMapAnalysisResultViewerData({
+        analysisResultId,
+        runsRoot,
+        selectedRecipeName: "dinov3_vits_384",
+      }),
+    ).rejects.toThrow(
+      "Pinned Analysis Result artifact is not declared: layouts/dinov3_vits_384_umap.json",
     );
   });
 

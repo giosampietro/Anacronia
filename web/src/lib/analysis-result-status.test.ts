@@ -16,6 +16,7 @@ describe("summarizeAnalysisResultStatus", () => {
         "layouts/dinov3_vits_384_umap.json",
         "clusters/dinov3_vits_384_hdbscan.json",
         "indexes/dinov3_vits_384_flat_ip.faiss",
+        "indexes/dinov3_vits_384_faiss_id_map.json",
       ]),
       manifest: {
         artifacts: [
@@ -28,6 +29,10 @@ describe("summarizeAnalysisResultStatus", () => {
           {
             key: "indexes/dinov3_vits_384_flat_ip.faiss",
             role: "faiss-index",
+          },
+          {
+            key: "indexes/dinov3_vits_384_faiss_id_map.json",
+            role: "faiss-id-map",
           },
         ],
         status: "ready",
@@ -150,6 +155,73 @@ describe("summarizeAnalysisResultStatus", () => {
     expect(status.relationAvailable).toBe(false);
     expect(status.missingRequiredRelationArtifactKeys).toEqual([
       "indexes/dinov3_vits_384_flat_ip.faiss",
+    ]);
+  });
+
+  it("marks relation lookup unavailable when a FAISS ID map is not declared", () => {
+    const status = summarizeAnalysisResultStatus({
+      existingArtifactKeys: new Set([
+        "manifest.jsonl",
+        "layouts/dinov3_vits_384_umap.json",
+        "clusters/dinov3_vits_384_hdbscan.json",
+        "indexes/dinov3_vits_384_flat_ip.faiss",
+      ]),
+      manifest: {
+        artifacts: [
+          { key: "manifest.jsonl", role: "image-manifest" },
+          { key: "layouts/dinov3_vits_384_umap.json", role: "layout" },
+          {
+            key: "clusters/dinov3_vits_384_hdbscan.json",
+            role: "cluster-result",
+          },
+          {
+            key: "indexes/dinov3_vits_384_flat_ip.faiss",
+            role: "faiss-index",
+          },
+        ],
+        status: "ready",
+      },
+    });
+
+    expect(status.state).toBe("ready");
+    expect(status.canOpenExplorer).toBe(true);
+    expect(status.relationAvailable).toBe(false);
+  });
+
+  it("marks relation lookup unavailable when a declared FAISS ID map is missing", () => {
+    const status = summarizeAnalysisResultStatus({
+      existingArtifactKeys: new Set([
+        "manifest.jsonl",
+        "layouts/dinov3_vits_384_umap.json",
+        "clusters/dinov3_vits_384_hdbscan.json",
+        "indexes/dinov3_vits_384_flat_ip.faiss",
+      ]),
+      manifest: {
+        artifacts: [
+          { key: "manifest.jsonl", role: "image-manifest" },
+          { key: "layouts/dinov3_vits_384_umap.json", role: "layout" },
+          {
+            key: "clusters/dinov3_vits_384_hdbscan.json",
+            role: "cluster-result",
+          },
+          {
+            key: "indexes/dinov3_vits_384_flat_ip.faiss",
+            role: "faiss-index",
+          },
+          {
+            key: "indexes/dinov3_vits_384_faiss_id_map.json",
+            role: "faiss-id-map",
+          },
+        ],
+        status: "ready",
+      },
+    });
+
+    expect(status.state).toBe("incomplete");
+    expect(status.canOpenExplorer).toBe(true);
+    expect(status.relationAvailable).toBe(false);
+    expect(status.missingRequiredRelationArtifactKeys).toEqual([
+      "indexes/dinov3_vits_384_faiss_id_map.json",
     ]);
   });
 

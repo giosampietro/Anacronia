@@ -84,12 +84,35 @@ describe("latent map live neighbor API", () => {
     const runDir = path.join(runsRoot, "20260609T123000Z-j-shoot");
 
     process.env.ANACRONIA_LATENT_MAP_RUNS_ROOT = runsRoot;
-    await mkdir(runDir, { recursive: true });
+    await mkdir(path.join(runDir, "indexes"), { recursive: true });
+    await writeFile(path.join(runDir, "indexes", "dinov3_test_flat_ip.faiss"), "");
+    await writeFile(
+      path.join(runDir, "indexes", "dinov3_test_faiss_id_map.json"),
+      "[]",
+    );
     await writeFile(
       path.join(runDir, "analysis-result.json"),
       JSON.stringify({
         analysis_result_id: "latent-map-20260609T123000Z-j-shoot",
-        artifacts: [],
+        artifacts: [
+          {
+            key: "indexes/dinov3_test_flat_ip.faiss",
+            role: "faiss-index",
+          },
+          {
+            key: "indexes/dinov3_test_faiss_id_map.json",
+            role: "faiss-id-map",
+          },
+        ],
+        recipes: [
+          {
+            artifact_keys: {
+              faiss_id_map: "indexes/dinov3_test_faiss_id_map.json",
+              faiss_index: "indexes/dinov3_test_flat_ip.faiss",
+            },
+            recipe_name: "dinov3_test",
+          },
+        ],
       }),
       "utf-8",
     );
@@ -121,5 +144,47 @@ describe("latent map live neighbor API", () => {
     expect(execFileMock.mock.calls[0][1]).toEqual(
       expect.arrayContaining(["--run-dir", runDir]),
     );
+  });
+
+  it("does not query FAISS for an Analysis Result without declared FAISS artifacts", async () => {
+    const runsRoot = await mkdtemp(path.join(os.tmpdir(), "neighbor-result-"));
+    const runDir = path.join(runsRoot, "20260609T123000Z-j-shoot");
+
+    process.env.ANACRONIA_LATENT_MAP_RUNS_ROOT = runsRoot;
+    await mkdir(path.join(runDir, "indexes"), { recursive: true });
+    await writeFile(path.join(runDir, "indexes", "dinov3_test_flat_ip.faiss"), "");
+    await writeFile(
+      path.join(runDir, "indexes", "dinov3_test_faiss_id_map.json"),
+      "[]",
+    );
+    await writeFile(
+      path.join(runDir, "analysis-result.json"),
+      JSON.stringify({
+        analysis_result_id: "latent-map-20260609T123000Z-j-shoot",
+        artifacts: [],
+        recipes: [
+          {
+            artifact_keys: {
+              faiss_id_map: "indexes/dinov3_test_faiss_id_map.json",
+              faiss_index: "indexes/dinov3_test_flat_ip.faiss",
+            },
+            recipe_name: "dinov3_test",
+          },
+        ],
+      }),
+      "utf-8",
+    );
+
+    const response = await GET(
+      new NextRequest(
+        `http://localhost/api/latent-map/neighbors` +
+          `?analysisResultId=latent-map-20260609T123000Z-j-shoot` +
+          `&recipe=dinov3_test&image_id=img_a&top_k=1&relation=closest`,
+      ),
+    );
+
+    expect(response.status).toBe(404);
+    expect(await response.text()).toBe("FAISS neighbor index not found.");
+    expect(execFileMock).not.toHaveBeenCalled();
   });
 });
