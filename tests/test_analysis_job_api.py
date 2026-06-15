@@ -1,5 +1,6 @@
 import json
 import time
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
@@ -277,6 +278,7 @@ def test_analysis_job_api_blocks_start_while_provider_search_is_active(
 
 def test_provider_search_start_blocks_while_analysis_job_is_active(tmp_path):
     storage = create_collection(tmp_path)
+    created_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
     manifest_path = (
         storage.data_root
         / "analysis-jobs"
@@ -287,10 +289,10 @@ def test_provider_search_start_blocks_while_analysis_job_is_active(tmp_path):
     manifest_path.write_text(
         json.dumps(
             {
-                "asset_kind": "analysis-job",
-                "analysis_job_id": "analysis-job-20260615T100000Z",
-                "analysis_result_ids": [],
-                "created_at": "2026-06-15T10:00:00Z",
+                    "asset_kind": "analysis-job",
+                    "analysis_job_id": "analysis-job-20260615T100000Z",
+                    "analysis_result_ids": [],
+                    "created_at": created_at.replace("+00:00", "Z"),
                 "recipe_ids": ["dinov3_vits_384"],
                 "sibling_group_id": "analysis-sibling-20260615T100000Z",
                 "stages": [],

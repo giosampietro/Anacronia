@@ -138,7 +138,7 @@ def _build_report_stub(*, run_id: str, source_folder: Path) -> str:
             "",
             "Status: initialized",
             "",
-            f"Source folder: `{source_folder}`",
+            f"Source folder: `{source_folder.name}`",
             "",
             "## Counts",
             "",

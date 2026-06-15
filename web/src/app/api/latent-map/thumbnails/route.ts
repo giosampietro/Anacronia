@@ -4,6 +4,7 @@ import type { NextRequest } from "next/server";
 
 import {
   inferContentType,
+  isBrowserSafeLatentMapImageArtifact,
   resolveAnalysisResultArtifact,
   UnsafeArtifactKeyError,
 } from "@/lib/analysis-result-artifacts";
@@ -26,7 +27,11 @@ export async function GET(request: NextRequest) {
   const relativePath = request.nextUrl.searchParams.get("path");
   const runsRoot = getLatentMapRunsRoot();
 
-  if (analysisResultId && artifactKey) {
+  if (analysisResultId) {
+    if (!artifactKey) {
+      return new Response("Analysis Result artifact not found.", { status: 404 });
+    }
+
     try {
       const artifact = await resolveAnalysisResultArtifact({
         additionalRunsRoots: getAdditionalAnalysisResultRoots(),
@@ -38,6 +43,14 @@ export async function GET(request: NextRequest) {
       if (!artifact) {
         return new Response("Analysis Result artifact not found.", { status: 404 });
       }
+      if (
+        !isBrowserSafeLatentMapImageArtifact({
+          artifactKey,
+          contentType: artifact.contentType,
+        })
+      ) {
+        return new Response("Analysis Result artifact not found.", { status: 404 });
+      }
 
       const bytes = await readFile(/*turbopackIgnore: true*/ artifact.filePath);
 
@@ -45,6 +58,7 @@ export async function GET(request: NextRequest) {
         headers: {
           "Cache-Control": "public, max-age=3600",
           "Content-Type": artifact.contentType,
+          "X-Content-Type-Options": "nosniff",
         },
       });
     } catch (error) {
@@ -85,13 +99,24 @@ export async function GET(request: NextRequest) {
     });
   }
 
+  const contentType = getContentType(thumbnailPath);
+  if (
+    !isBrowserSafeLatentMapImageArtifact({
+      artifactKey: relativePath,
+      contentType,
+    })
+  ) {
+    return new Response("Thumbnail not found.", { status: 404 });
+  }
+
   try {
     const bytes = await readFile(/*turbopackIgnore: true*/ thumbnailPath);
 
     return new Response(new Uint8Array(bytes), {
       headers: {
         "Cache-Control": "public, max-age=3600",
-        "Content-Type": getContentType(thumbnailPath),
+        "Content-Type": contentType,
+        "X-Content-Type-Options": "nosniff",
       },
     });
   } catch {

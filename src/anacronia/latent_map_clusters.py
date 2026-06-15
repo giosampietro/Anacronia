@@ -848,8 +848,12 @@ def _append_cluster_report(
             f"- Cluster result: `{cluster_id}`",
             f"- Groups: {cluster_count}",
             f"- Unassigned images: {unassigned_count}",
-            f"- Cluster file: `{cluster_path}`",
+            f"- Cluster file: `{_relative_key(cluster_path, run_dir)}`",
             "",
         ]
     )
     report_path.write_text(existing_report.rstrip() + addition, encoding="utf-8")
+
+
+def _relative_key(path: Path, root: Path) -> str:
+    return path.resolve().relative_to(root.resolve()).as_posix()

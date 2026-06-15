@@ -60,3 +60,38 @@ export async function resolveAnalysisResultRunDir({
 export function inferContentType(filePath: string): string {
   return inferStoreContentType(filePath);
 }
+
+export function isBrowserSafeLatentMapImageArtifact({
+  artifactKey,
+  contentType,
+}: {
+  artifactKey: string;
+  contentType: string;
+}): boolean {
+  const normalizedContentType = contentType.split(";")[0]?.trim().toLowerCase();
+  const normalizedArtifactKey = artifactKey.toLowerCase();
+
+  if (!normalizedContentType) {
+    return false;
+  }
+
+  if (/^viewer\/atlases\/\d+px\/page-\d+\.png$/.test(normalizedArtifactKey)) {
+    return normalizedContentType === "image/png";
+  }
+
+  const rasterMatch = /^(thumbnails|previews)\/.+\.(jpe?g|png|webp)$/.exec(
+    normalizedArtifactKey,
+  );
+  if (!rasterMatch) {
+    return false;
+  }
+
+  const extension = rasterMatch[2];
+  if (extension === "jpg" || extension === "jpeg") {
+    return normalizedContentType === "image/jpeg";
+  }
+  if (extension === "png") {
+    return normalizedContentType === "image/png";
+  }
+  return normalizedContentType === "image/webp";
+}

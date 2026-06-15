@@ -108,11 +108,18 @@ def browser_safe_analysis_result_summary(
 def analysis_result_artifact_counts(
     artifacts: Sequence[Mapping[str, Any]],
 ) -> dict[str, int]:
-    counts = {"durable": 0, "render-cache": 0, "total": len(artifacts)}
+    counts = {
+        "durable": 0,
+        "render-cache": 0,
+        "total": len(artifacts),
+        "viewer-cache": 0,
+    }
     for artifact in artifacts:
         retention_class = str(artifact.get("retention_class", ""))
         if retention_class == "render-cache":
             counts["render-cache"] += 1
+        elif retention_class == "viewer-cache":
+            counts["viewer-cache"] += 1
         else:
             counts["durable"] += 1
     return counts

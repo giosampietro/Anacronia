@@ -57,7 +57,54 @@ describe("latent map thumbnail API", () => {
 
     expect(response.ok).toBe(true);
     expect(response.headers.get("Content-Type")).toBe("image/png");
+    expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
     expect(new Uint8Array(await response.arrayBuffer())).toEqual(artifactBytes);
+  });
+
+  it("serves generated thumbnail and preview raster artifacts", async () => {
+    const runsRoot = path.join(
+      tmpdir(),
+      `anacronia-artifact-route-${Date.now()}`,
+    );
+    const runDir = path.join(runsRoot, "20260609T123000Z-j-shoot");
+    const thumbnailKey = "thumbnails/img-a.jpg";
+    const previewKey = "previews/img-a.webp";
+
+    process.env.ANACRONIA_LATENT_MAP_RUNS_ROOT = runsRoot;
+    await mkdir(path.dirname(path.join(runDir, thumbnailKey)), { recursive: true });
+    await mkdir(path.dirname(path.join(runDir, previewKey)), { recursive: true });
+    await writeFile(path.join(runDir, thumbnailKey), new Uint8Array([10, 11]));
+    await writeFile(path.join(runDir, previewKey), new Uint8Array([12, 13]));
+    await writeJson(path.join(runDir, "analysis-result.json"), {
+      analysis_result_id: "latent-map-20260609T123000Z-j-shoot",
+      artifacts: [
+        {
+          content_type: "image/jpeg",
+          key: thumbnailKey,
+        },
+        {
+          content_type: "image/webp",
+          key: previewKey,
+        },
+      ],
+    });
+
+    for (const [artifactKey, contentType] of [
+      [thumbnailKey, "image/jpeg"],
+      [previewKey, "image/webp"],
+    ]) {
+      const response = await GET(
+        new NextRequest(
+          `http://localhost/api/latent-map/thumbnails` +
+            `?analysisResultId=latent-map-20260609T123000Z-j-shoot` +
+            `&artifactKey=${encodeURIComponent(artifactKey)}`,
+        ),
+      );
+
+      expect(response.ok).toBe(true);
+      expect(response.headers.get("Content-Type")).toBe(contentType);
+      expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
+    }
   });
 
   it("rejects Analysis Result artifact keys that are not in the manifest", async () => {
@@ -116,6 +163,69 @@ describe("latent map thumbnail API", () => {
     expect(response.status).toBe(403);
   });
 
+  it("does not serve non-browser-safe Analysis Result artifacts", async () => {
+    const runsRoot = path.join(
+      tmpdir(),
+      `anacronia-artifact-route-${Date.now()}`,
+    );
+    const runDir = path.join(runsRoot, "20260609T123000Z-j-shoot");
+
+    process.env.ANACRONIA_LATENT_MAP_RUNS_ROOT = runsRoot;
+    await mkdir(path.join(runDir, "embeddings"), { recursive: true });
+    await mkdir(path.join(runDir, "viewer"), { recursive: true });
+    await mkdir(path.join(runDir, "previews"), { recursive: true });
+    await writeFile(path.join(runDir, "report.md"), "# report\n/private/tmp/x\n");
+    await writeFile(path.join(runDir, "embeddings", "dinov3_vits_384.npy"), "vector");
+    await writeFile(path.join(runDir, "viewer", "unsafe.png"), "png");
+    await writeFile(path.join(runDir, "previews", "unsafe.svg"), "<svg></svg>");
+    await writeJson(path.join(runDir, "analysis-result.json"), {
+      analysis_result_id: "latent-map-20260609T123000Z-j-shoot",
+      artifacts: [
+        {
+          content_type: "text/markdown",
+          key: "report.md",
+          retention_class: "durable",
+          role: "analysis-report",
+        },
+        {
+          content_type: "application/octet-stream",
+          key: "embeddings/dinov3_vits_384.npy",
+          retention_class: "durable",
+          role: "embedding",
+        },
+        {
+          content_type: "image/png",
+          key: "viewer/unsafe.png",
+          retention_class: "viewer-cache",
+          role: "debug-image",
+        },
+        {
+          content_type: "image/svg+xml",
+          key: "previews/unsafe.svg",
+          retention_class: "viewer-cache",
+          role: "thumbnail",
+        },
+      ],
+    });
+
+    for (const artifactKey of [
+      "report.md",
+      "embeddings/dinov3_vits_384.npy",
+      "viewer/unsafe.png",
+      "previews/unsafe.svg",
+    ]) {
+      const response = await GET(
+        new NextRequest(
+          `http://localhost/api/latent-map/thumbnails` +
+            `?analysisResultId=latent-map-20260609T123000Z-j-shoot` +
+            `&artifactKey=${encodeURIComponent(artifactKey)}`,
+        ),
+      );
+
+      expect(response.status).toBe(404);
+    }
+  });
+
   it("keeps legacy run and path access during migration", async () => {
     const runsRoot = path.join(
       tmpdir(),
@@ -140,6 +250,56 @@ describe("latent map thumbnail API", () => {
 
     expect(response.ok).toBe(true);
     expect(response.headers.get("Content-Type")).toBe("image/jpeg");
+    expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
     expect(new Uint8Array(await response.arrayBuffer())).toEqual(imageBytes);
+  });
+
+  it("does not fall through to legacy path access when Analysis Result ID is present", async () => {
+    const runsRoot = path.join(
+      tmpdir(),
+      `anacronia-artifact-route-${Date.now()}`,
+    );
+    const runName = "legacy-run";
+    const relativePath = "thumbnails/img-a.jpg";
+
+    process.env.ANACRONIA_LATENT_MAP_RUNS_ROOT = runsRoot;
+    await mkdir(path.dirname(path.join(runsRoot, runName, relativePath)), {
+      recursive: true,
+    });
+    await writeFile(path.join(runsRoot, runName, relativePath), new Uint8Array([5]));
+
+    const response = await GET(
+      new NextRequest(
+        `http://localhost/api/latent-map/thumbnails` +
+          `?analysisResultId=latent-map-20260609T123000Z-j-shoot` +
+          `&run=${runName}&path=${encodeURIComponent(relativePath)}`,
+      ),
+    );
+
+    expect(response.status).toBe(404);
+  });
+
+  it("rejects non-browser-safe legacy run paths during migration", async () => {
+    const runsRoot = path.join(
+      tmpdir(),
+      `anacronia-artifact-route-${Date.now()}`,
+    );
+    const runName = "legacy-run";
+
+    process.env.ANACRONIA_LATENT_MAP_RUNS_ROOT = runsRoot;
+    await mkdir(path.join(runsRoot, runName, "viewer"), { recursive: true });
+    await writeFile(path.join(runsRoot, runName, "report.md"), "# report\n/private\n");
+    await writeFile(path.join(runsRoot, runName, "viewer", "unsafe.png"), "png");
+
+    for (const relativePath of ["report.md", "viewer/unsafe.png"]) {
+      const response = await GET(
+        new NextRequest(
+          `http://localhost/api/latent-map/thumbnails` +
+            `?run=${runName}&path=${encodeURIComponent(relativePath)}`,
+        ),
+      );
+
+      expect(response.status).toBe(404);
+    }
   });
 });

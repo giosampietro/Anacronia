@@ -139,7 +139,10 @@ def find_reusable_image_embedding_result(
         return None
     if str(payload.get("recipe_id", "")) != recipe.recipe_id:
         return None
-    if not str(payload.get("artifact_key", "")).strip():
+    artifact_key = str(payload.get("artifact_key", "")).strip()
+    if not artifact_key or _is_unsafe_artifact_key(artifact_key):
+        return None
+    if not (data_root.expanduser().resolve() / artifact_key).is_file():
         return None
     if (
         recipe.embedding_dimension is not None

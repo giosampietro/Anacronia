@@ -394,8 +394,12 @@ def _append_faiss_report(
             "- Index: `IndexFlatIP`",
             f"- Vectors: {vector_count}",
             f"- Dimensions: {vector_dim}",
-            f"- File: `{index_path}`",
+            f"- File: `{_relative_key(index_path, run_dir)}`",
             "",
         ]
     )
     report_path.write_text(existing_report.rstrip() + addition, encoding="utf-8")
+
+
+def _relative_key(path: Path, root: Path) -> str:
+    return path.resolve().relative_to(root.resolve()).as_posix()

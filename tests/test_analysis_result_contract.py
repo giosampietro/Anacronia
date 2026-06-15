@@ -99,6 +99,7 @@ def test_contract_accepts_manifest_and_projects_browser_safe_summary():
         "durable": 3,
         "render-cache": 1,
         "total": 4,
+        "viewer-cache": 0,
     }
     assert summary["artifacts"][0] == {
         "byte_size": 10,
@@ -107,6 +108,29 @@ def test_contract_accepts_manifest_and_projects_browser_safe_summary():
         "required": True,
         "retention_class": "durable",
         "role": "image-manifest",
+    }
+
+
+def test_contract_counts_viewer_cache_separately_from_durable():
+    manifest = valid_manifest()
+    manifest["artifacts"].append(
+        {
+            "byte_size": 10,
+            "content_type": "application/json",
+            "key": "viewer/map-data.json",
+            "required": True,
+            "retention_class": "viewer-cache",
+            "role": "viewer-data",
+        }
+    )
+
+    summary = browser_safe_analysis_result_summary(manifest)
+
+    assert summary["artifact_counts"] == {
+        "durable": 3,
+        "render-cache": 1,
+        "total": 5,
+        "viewer-cache": 1,
     }
 
 

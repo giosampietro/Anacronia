@@ -185,7 +185,7 @@ def _write_scan_report(
         "",
         "Status: scanned",
         "",
-        f"Source folder: `{source_folder}`",
+        f"Source folder: `{source_folder.name}`",
         "",
         "## Counts",
         "",

@@ -55,6 +55,7 @@ class AnalysisStageArtifact:
     retention_class: str
     byte_size: int | None = None
     metadata: dict[str, object] = field(default_factory=dict)
+    required: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -353,6 +354,12 @@ def run_analysis_job(
                 for artifact in stage_result.artifacts
             ]
             artifacts.extend(normalized_artifacts)
+            if stage_name == "embedding_computation":
+                recipe_plan = plan_image_embedding_reuse(
+                    data_root=resolved_data_root,
+                    resolved_scope=resolved_scope,
+                    recipes=[recipe],
+                ).recipe_plans[recipe.recipe_id]
             stages.append(
                 _stage_record(
                     stage_name=stage_name,
@@ -762,6 +769,7 @@ def _normalize_stage_artifact(
         retention_class=artifact.retention_class,
         byte_size=byte_size,
         metadata=dict(artifact.metadata),
+        required=artifact.required,
     )
 
 
@@ -776,6 +784,10 @@ def _recipe_artifact_keys(artifacts: list[AnalysisStageArtifact]) -> dict[str, o
             artifact_keys["image_manifest"] = artifact.key
         elif artifact.role == "embedding":
             artifact_keys["embedding_vectors"] = artifact.key
+        elif artifact.role == "embedding-vector-id-map":
+            artifact_keys["embedding_vector_id_map"] = artifact.key
+        elif artifact.role == "embedding-materialization-metadata":
+            artifact_keys["embedding_materialization_metadata"] = artifact.key
         elif artifact.role == "faiss-index":
             artifact_keys["faiss_index"] = artifact.key
         elif artifact.role == "faiss-id-map":
@@ -827,7 +839,11 @@ def _artifact_payload(artifact: AnalysisStageArtifact) -> dict[str, object]:
         "content_type": artifact.content_type,
         "retention_class": artifact.retention_class,
     }
-    payload["required"] = analysis_result_artifact_required(payload)
+    payload["required"] = (
+        artifact.required
+        if artifact.required is not None
+        else analysis_result_artifact_required(payload)
+    )
     if artifact.byte_size is not None:
         payload["byte_size"] = artifact.byte_size
     if artifact.metadata:

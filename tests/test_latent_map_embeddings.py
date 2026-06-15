@@ -82,6 +82,12 @@ def test_embedding_run_writes_normalized_vectors_and_metadata(tmp_path):
     assert metadata["model_id"] == "fake-embedder"
     assert metadata["device"] == "fake"
     assert metadata["manifest_image_count"] == 2
+    assert metadata["manifest_path"] == "manifest.jsonl"
+    assert metadata["embedding_path"] == "embeddings/dinov3_vits_256.npy"
+    assert str(tmp_path) not in summary.metadata_path.read_text(encoding="utf-8")
+    assert str(tmp_path) not in (run.run_dir / "report.md").read_text(
+        encoding="utf-8"
+    )
 
 
 def test_embedding_run_can_limit_manifest_rows_for_smoke_checks(tmp_path):

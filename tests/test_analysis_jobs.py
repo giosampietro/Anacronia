@@ -106,12 +106,16 @@ def test_analysis_job_writes_scope_plan_default_recipe_and_openable_result(tmp_p
     )
     reusable_item = resolved_scope.payload["items"][0]
     recipe = get_analysis_recipe("dinov3_vits_384")
+    reusable_artifact_key = "image-embeddings/dinov3_vits_384/reusable.npy"
+    reusable_artifact_path = storage.data_root / reusable_artifact_key
+    reusable_artifact_path.parent.mkdir(parents=True, exist_ok=True)
+    reusable_artifact_path.write_bytes(b"vector")
     reusable_embedding = record_image_embedding_result(
         data_root=storage.data_root,
         image_asset_id=reusable_item["image_asset_id"],
         source_identity=reusable_item["source_identity"],
         recipe=recipe,
-        artifact_key="image-embeddings/dinov3_vits_384/reusable.npy",
+        artifact_key=reusable_artifact_key,
         vector_dimension=384,
         created_at=datetime(2026, 6, 14, 12, 0, tzinfo=timezone.utc),
     )
@@ -161,6 +165,7 @@ def test_analysis_job_writes_scope_plan_default_recipe_and_openable_result(tmp_p
         "durable": 7,
         "render-cache": 5,
         "total": 12,
+        "viewer-cache": 0,
     }
     assert str(storage.data_root) not in json.dumps(browser_summary)
     assert manifest["analysis_result_id"] == result_id
@@ -172,6 +177,7 @@ def test_analysis_job_writes_scope_plan_default_recipe_and_openable_result(tmp_p
         "durable": 7,
         "render-cache": 5,
         "total": 12,
+        "viewer-cache": 0,
     }
     assert manifest["explorer_readiness"] == {
         "missing_optional_artifact_keys": [],

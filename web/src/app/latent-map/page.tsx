@@ -184,7 +184,8 @@ export async function loadLatentMapViewerData(
   const viewerDataPath = process.env.ANACRONIA_LATENT_MAP_VIEWER_DATA;
   const runsRoot = getLatentMapRunsRoot();
   const analysisResultId = getSearchParam(searchParams, "analysisResultId");
-  const resolvedViewerDataPath = viewerDataPath
+  const shouldLoadLegacyViewerData = !analysisResultId;
+  const resolvedViewerDataPath = shouldLoadLegacyViewerData && viewerDataPath
     ? path.resolve(viewerDataPath)
     : null;
   const fallbackRawData = resolvedViewerDataPath
