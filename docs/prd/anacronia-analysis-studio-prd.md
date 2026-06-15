@@ -224,6 +224,7 @@ Starting an Analysis Job should redirect back into the selected-job state for th
 - A single Analysis Job can select multiple recipes.
 - Each selected recipe produces a separate Analysis Result under the same job group.
 - Future SigLIP2, OpenCLIP/SigLIP variants, and fusion embeddings should enter the same recipe/result model.
+- Future SigLIP2 implementation should follow the local model assessment in [research-notes/siglip2-local-model-assessment.md](../../research-notes/siglip2-local-model-assessment.md): device/backend, batch size, dtype, model unloading, and memory fallback are Analysis Job runtime diagnostics, not recipe identity. Text retrieval remains a separate future issue from image-only SigLIP2 embeddings.
 - For each selected recipe, FAISS, UMAP, and HDBSCAN run automatically.
 - KMeans remains optional and secondary for legacy/historical comparison.
 - HDBSCAN is the primary cluster model.
