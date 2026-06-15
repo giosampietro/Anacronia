@@ -32,9 +32,12 @@ fi
 
 echo "1/2 Python runtime/API tests"
 .venv/bin/python -m pytest -q \
+  tests/test_cli.py::test_startup_plan_includes_backend_worker_and_ui_services \
+  tests/test_cli.py::test_startup_plan_initializes_configured_storage_and_shares_data_root \
   tests/test_analysis_job_runtime.py \
   tests/test_analysis_job_api.py \
-  tests/test_analysis_jobs.py
+  tests/test_analysis_jobs.py \
+  tests/test_analysis_stage_runner.py
 
 echo
 echo "2/2 Web Analysis Studio tests"

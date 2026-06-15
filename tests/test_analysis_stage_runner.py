@@ -29,6 +29,18 @@ class FakeEmbedder:
         )
 
 
+class GatedRepoEmbedder:
+    model_id = "facebook/dinov3-vits16-pretrain-lvd1689m"
+    device = "cpu"
+
+    def embed_batch(self, images):
+        raise RuntimeError(
+            "You are trying to access a gated repo. 401 Client Error. "
+            "Access to model facebook/dinov3-vits16-pretrain-lvd1689m is restricted. "
+            "Please log in."
+        )
+
+
 class FakeReducer:
     def fit_transform(self, vectors):
         return vectors[:, :2]
@@ -118,3 +130,33 @@ def test_latent_map_stage_runner_builds_openable_analysis_result(tmp_path):
     assert "viewer/map-data.json" in artifact_keys
     assert "viewer/neighbors.json" in artifact_keys
     assert image_manifest_rows[0]["image_id"].startswith("image-asset-")
+
+
+def test_latent_map_stage_runner_reports_gated_dinov3_setup_error(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    folder = tmp_path / "incoming"
+    write_image(folder / "a.jpg", color=(10, 20, 30))
+    create_local_folder_collection(
+        database_path=storage.database_path,
+        data_root=storage.data_root,
+        display_name="Gated Board",
+        folder_path=folder,
+    )
+    runner = LatentMapAnalysisStageRunner(embedder=GatedRepoEmbedder())
+
+    job = run_analysis_job(
+        database_path=storage.database_path,
+        data_root=storage.data_root,
+        collection_slugs=["gated-board"],
+        recipe_ids=["dinov3_vits_384"],
+        stage_runner=runner,
+        created_at=datetime(2026, 6, 15, 6, 15, tzinfo=timezone.utc),
+    )
+
+    job_manifest = json.loads(job.manifest_path.read_text())
+    error = job_manifest["stages"][-1]["error"]
+
+    assert job.status == "failed"
+    assert "Hugging Face access failed: DINOv3 is gated for this process." in error
+    assert "batch-cmd/login-huggingface.command" in error
+    assert "401 Client Error" not in error

@@ -135,8 +135,11 @@ def build_startup_plan(
     web_root = resolved_project_root / "web"
     next_bin = web_root / "node_modules" / "next" / "dist" / "bin" / "next"
     next_swc_path = storage.data_root / "temp" / "next-swc"
+    hf_home = resolved_project_root / ".hf-cache"
+    hf_home.mkdir(parents=True, exist_ok=True)
     service_environment = {
         "ANACRONIA_DATA_ROOT": str(storage.data_root),
+        "HF_HOME": str(hf_home),
     }
 
     services = [

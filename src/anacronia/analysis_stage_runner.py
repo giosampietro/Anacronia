@@ -62,13 +62,19 @@ class LatentMapAnalysisStageRunner:
     def _run_embedding(self, request: AnalysisStageRequest) -> AnalysisStageResult:
         from anacronia.latent_map_embeddings import embed_latent_map_run
 
-        summary = embed_latent_map_run(
-            run_dir=request.analysis_result_dir,
-            recipe_name=request.recipe.recipe_id,
-            batch_size=self.batch_size,
-            device=self.device,
-            embedder=self.embedder,
-        )
+        try:
+            summary = embed_latent_map_run(
+                run_dir=request.analysis_result_dir,
+                recipe_name=request.recipe.recipe_id,
+                batch_size=self.batch_size,
+                device=self.device,
+                embedder=self.embedder,
+            )
+        except Exception as error:
+            friendly_error = _friendly_embedding_error(error)
+            if friendly_error is not None:
+                raise RuntimeError(friendly_error) from error
+            raise
         return AnalysisStageResult(
             artifacts=[
                 _artifact_for_path(
@@ -263,6 +269,23 @@ def _artifact_for_path(
         byte_size=path.stat().st_size if path.is_file() else None,
         metadata=metadata or {},
     )
+
+
+def _friendly_embedding_error(error: Exception) -> str | None:
+    message = str(error)
+    lower_message = message.lower()
+    if (
+        "gated repo" in lower_message
+        or "access to model" in lower_message
+        or "401 client error" in lower_message
+        or "please log in" in lower_message
+    ):
+        return (
+            "Hugging Face access failed: DINOv3 is gated for this process. "
+            "Run batch-cmd/login-huggingface.command, confirm model access, "
+            "then restart Anacronia so the backend reads .hf-cache/token."
+        )
+    return None
 
 
 def _relative_key(path: Path, root: Path) -> str:
