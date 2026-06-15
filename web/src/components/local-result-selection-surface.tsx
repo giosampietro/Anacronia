@@ -355,6 +355,7 @@ function ObjectTileMarkers({
     <>
       <FavoriteTileButton
         isFavorite={isFavorite}
+        key="favorite"
         label={favoriteLabel}
         onToggle={onToggleFavorite}
       />
@@ -362,6 +363,7 @@ function ObjectTileMarkers({
         <span
           aria-label={`${imageCount} images`}
           className={IMAGE_GRID_CAROUSEL_INDICATOR_CLASS_NAME}
+          key="image-count"
         >
           <Images data-icon="inline-start" />
           {imageCount}
@@ -1071,6 +1073,7 @@ export function LocalResultSelectionSurface({
       {visibleIds.length > 0 ? viewMode === "objects" ? (
         <VirtualizedImageGrid
           className={cn(IMAGE_GRID_CLASS_NAME, "content-start items-start")}
+          getItemKey={(collectionObject) => objectSelectionId(collectionObject)}
           items={objects}
           renderItem={(collectionObject) => {
             const collectionObjectProviderLabel = objectProviderDisplayLabel(
@@ -1184,6 +1187,7 @@ export function LocalResultSelectionSurface({
                   closeHref={closeObjectHref}
                   href={href}
                   id={tileId}
+                  key="detail-link"
                   preview={{
                     alt: objectAlt,
                     collectionLabel: objectCollectionLabel(collectionObject),
@@ -1201,6 +1205,7 @@ export function LocalResultSelectionSurface({
                   favoriteLabel={favoriteLabel}
                   imageCount={collectionObject.image_count}
                   isFavorite={collectionObject.is_favorite}
+                  key="tile-markers"
                   onToggleFavorite={() => toggleObjectFavorite(collectionObject)}
                 />
               </div>
@@ -1210,6 +1215,7 @@ export function LocalResultSelectionSurface({
       ) : (
         <VirtualizedImageGrid
           className={cn(IMAGE_GRID_CLASS_NAME, "content-start items-start")}
+          getItemKey={(imageAsset) => imageSelectionId(imageAsset)}
           items={imageAssets}
           renderItem={(imageAsset) => {
             const imageAssetProviderLabel = objectProviderDisplayLabel(
@@ -1325,6 +1331,7 @@ export function LocalResultSelectionSurface({
                   closeHref={closeImageHref}
                   href={href}
                   id={tileId}
+                  key="detail-link"
                   preview={{
                     alt: imageAssetAlt,
                     collectionLabel: imageTopBadgeLabel?.(imageAsset),
@@ -1340,6 +1347,7 @@ export function LocalResultSelectionSurface({
                 </ObjectDetailPendingLink>
                 <FavoriteTileButton
                   isFavorite={imageAsset.is_favorite}
+                  key="favorite"
                   label={favoriteLabel}
                   onToggle={() => toggleImageFavorite(imageAsset)}
                 />

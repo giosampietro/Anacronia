@@ -1,7 +1,15 @@
 "use client";
 
-import type { CSSProperties, ReactNode } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties, Key, ReactNode } from "react";
+import {
+  Fragment,
+  cloneElement,
+  isValidElement,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 export const IMAGE_GRID_INITIAL_RENDER_LIMIT = 112;
 
@@ -18,6 +26,7 @@ type VirtualGridRange = {
 
 type VirtualizedImageGridProps<T> = {
   className: string;
+  getItemKey: (item: T, index: number) => Key;
   items: T[];
   renderItem: (item: T, index: number) => ReactNode;
 };
@@ -123,8 +132,17 @@ function spacerStyle(height: number): CSSProperties {
   };
 }
 
+function keyedItemNode(node: ReactNode, key: Key): ReactNode {
+  if (isValidElement(node)) {
+    return cloneElement(node, { key });
+  }
+
+  return <Fragment key={key}>{node}</Fragment>;
+}
+
 export function VirtualizedImageGrid<T>({
   className,
+  getItemKey,
   items,
   renderItem,
 }: VirtualizedImageGridProps<T>) {
@@ -189,27 +207,43 @@ export function VirtualizedImageGrid<T>({
     };
   }, [isWindowed, items.length]);
 
+  const gridChildren: ReactNode[] = [];
+  if (isWindowed && range.topSpacerHeight > 0) {
+    gridChildren.push(
+      <div
+        aria-hidden="true"
+        data-virtualized-grid-spacer="top"
+        key="top-spacer"
+        style={spacerStyle(range.topSpacerHeight)}
+      />,
+    );
+  }
+
+  renderedItems.forEach((item, index) => {
+    const itemIndex = startIndex + index;
+    gridChildren.push(
+      keyedItemNode(renderItem(item, itemIndex), getItemKey(item, itemIndex)),
+    );
+  });
+
+  if (isWindowed && range.bottomSpacerHeight > 0) {
+    gridChildren.push(
+      <div
+        aria-hidden="true"
+        data-virtualized-grid-spacer="bottom"
+        key="bottom-spacer"
+        style={spacerStyle(range.bottomSpacerHeight)}
+      />,
+    );
+  }
+
   return (
     <div
       className={className}
       data-virtualized-grid={isWindowed ? "true" : undefined}
       ref={gridRef}
     >
-      {isWindowed && range.topSpacerHeight > 0 ? (
-        <div
-          aria-hidden="true"
-          data-virtualized-grid-spacer="top"
-          style={spacerStyle(range.topSpacerHeight)}
-        />
-      ) : null}
-      {renderedItems.map((item, index) => renderItem(item, startIndex + index))}
-      {isWindowed && range.bottomSpacerHeight > 0 ? (
-        <div
-          aria-hidden="true"
-          data-virtualized-grid-spacer="bottom"
-          style={spacerStyle(range.bottomSpacerHeight)}
-        />
-      ) : null}
+      {gridChildren}
     </div>
   );
 }
