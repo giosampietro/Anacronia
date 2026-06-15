@@ -9,9 +9,12 @@ from pydantic import BaseModel, Field
 
 from anacronia.analysis_jobs import (
     ANALYSIS_JOB_MANIFEST_NAME,
+    AnalysisJobBusyError,
     AnalysisJobSummary,
     AnalysisStageRunner,
-    run_analysis_job,
+    get_active_analysis_job_manifest_path,
+    recover_stale_analysis_jobs,
+    submit_analysis_job,
 )
 from anacronia.analysis_recipes import browser_safe_analysis_recipe_catalog
 from anacronia.analysis_stage_runner import LatentMapAnalysisStageRunner
@@ -725,6 +728,21 @@ def create_app(
             )
         return adapter
 
+    def ensure_no_active_provider_search() -> None:
+        if (
+            get_worker_status(database_path=resolved_database_path).active_collect_job_id
+            is not None
+        ):
+            raise HTTPException(status_code=409, detail="Another search is already active.")
+
+    def ensure_no_active_analysis_job() -> None:
+        recover_stale_analysis_jobs(data_root=resolved_data_root)
+        if get_active_analysis_job_manifest_path(resolved_data_root) is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="Another Analysis Job is already active.",
+            )
+
     @app.get("/health")
     def health() -> dict[str, object]:
         worker_status = get_worker_status(database_path=resolved_database_path)
@@ -744,14 +762,17 @@ def create_app(
 
     @app.post("/analysis-jobs", status_code=201)
     def create_analysis_job(request: AnalysisJobRequest) -> dict[str, object]:
+        ensure_no_active_provider_search()
         try:
-            summary = run_analysis_job(
+            summary = submit_analysis_job(
                 database_path=resolved_database_path,
                 data_root=resolved_data_root,
                 collection_slugs=request.collection_slugs,
                 recipe_ids=request.recipe_ids,
                 stage_runner=resolved_analysis_stage_runner,
             )
+        except AnalysisJobBusyError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
         except LookupError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
         except ValueError as error:
@@ -772,8 +793,8 @@ def create_app(
 
     @app.post("/search-sets")
     def create_search_set(request: SearchSetRequest) -> dict[str, object]:
-        if get_worker_status(database_path=resolved_database_path).active_collect_job_id is not None:
-            raise HTTPException(status_code=409, detail="Another search is already active.")
+        ensure_no_active_analysis_job()
+        ensure_no_active_provider_search()
         provider_key = request.provider.strip() if request.provider is not None else ""
         if not provider_key:
             raise HTTPException(status_code=422, detail="Provider is required.")
@@ -810,8 +831,8 @@ def create_app(
     def create_local_folder_import_collection(
         request: LocalFolderCollectionRequest,
     ) -> dict[str, object]:
-        if get_worker_status(database_path=resolved_database_path).active_collect_job_id is not None:
-            raise HTTPException(status_code=409, detail="Another search is already active.")
+        ensure_no_active_analysis_job()
+        ensure_no_active_provider_search()
 
         slug = slugify_search_set_name(request.display_name)
         if slug:
@@ -854,8 +875,8 @@ def create_app(
         slug: str,
         request: LocalFolderImportRequest,
     ) -> dict[str, object]:
-        if get_worker_status(database_path=resolved_database_path).active_collect_job_id is not None:
-            raise HTTPException(status_code=409, detail="Another search is already active.")
+        ensure_no_active_analysis_job()
+        ensure_no_active_provider_search()
         try:
             summary = import_local_image_folder(
                 database_path=resolved_database_path,
@@ -1398,8 +1419,8 @@ def create_app(
         request: StartMetCollectRequest,
     ) -> dict[str, object]:
         adapter = get_online_provider_adapter(provider)
-        if get_worker_status(database_path=resolved_database_path).active_collect_job_id is not None:
-            raise HTTPException(status_code=409, detail="Another search is already active.")
+        ensure_no_active_analysis_job()
+        ensure_no_active_provider_search()
         existing_collect_job = get_active_collect_job_for_search_set_provider(
             database_path=resolved_database_path,
             search_set_slug=slug,

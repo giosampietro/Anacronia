@@ -244,7 +244,18 @@ def test_analysis_job_runs_multiple_recipes_as_sibling_results(tmp_path):
     assert job.status == "ready"
     assert job.recipe_ids == ["dinov3_vits_256", "dinov3_vits_384"]
     assert len(job.analysis_result_ids) == 2
-    assert len(stage_runner.calls) == 10
+    assert [call[:2] for call in stage_runner.calls] == [
+        ("embedding_computation", "dinov3_vits_256"),
+        ("faiss", "dinov3_vits_256"),
+        ("umap", "dinov3_vits_256"),
+        ("hdbscan", "dinov3_vits_256"),
+        ("atlas_generation", "dinov3_vits_256"),
+        ("embedding_computation", "dinov3_vits_384"),
+        ("faiss", "dinov3_vits_384"),
+        ("umap", "dinov3_vits_384"),
+        ("hdbscan", "dinov3_vits_384"),
+        ("atlas_generation", "dinov3_vits_384"),
+    ]
 
     manifests = [
         json.loads(
@@ -314,3 +325,28 @@ def test_analysis_job_records_failed_stage_without_deleting_completed_sibling(tm
         "stage_name": "umap",
         "status": "failed",
     }.items() <= job_manifest["stages"][-1].items()
+
+
+def test_analysis_job_reports_partial_failure_when_later_sibling_completes(tmp_path):
+    storage = create_collection(tmp_path, display_name="First Failure Board")
+    stage_runner = FakeStageRunner(
+        fail_stage="umap",
+        fail_recipe_id="dinov3_vits_256",
+    )
+
+    job = run_analysis_job(
+        database_path=storage.database_path,
+        data_root=storage.data_root,
+        collection_slugs=["first-failure-board"],
+        recipe_ids=["dinov3_vits_256", "dinov3_vits_384"],
+        stage_runner=stage_runner,
+        created_at=datetime(2026, 6, 14, 13, 45, tzinfo=timezone.utc),
+    )
+
+    job_manifest = json.loads(job.manifest_path.read_text())
+
+    assert job.status == "partial_failed"
+    assert job.analysis_result_ids == [
+        "analysis-result-20260614T134500Z-dinov3_vits_384"
+    ]
+    assert job_manifest["status"] == "partial_failed"

@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import threading
 import time
 from typing import Protocol, Sequence
 
@@ -35,6 +36,15 @@ from anacronia.image_embedding_results import (
 ANALYSIS_JOB_MANIFEST_NAME = "analysis-job.json"
 ANALYSIS_RESULT_MANIFEST_NAME = "analysis-result.json"
 ANALYSIS_JOB_STAGE_NAMES = CANONICAL_LATENT_MAP_RUNTIME_STAGE_IDS
+ANALYSIS_JOB_ACTIVE_STATUSES = frozenset({"running", "stopping"})
+DEFAULT_ANALYSIS_JOB_STALE_AFTER_SECONDS = 6 * 60 * 60
+ANALYSIS_JOB_SUBMISSION_LOCK = threading.Lock()
+
+
+class AnalysisJobBusyError(RuntimeError):
+    def __init__(self, active_analysis_job_id: str):
+        super().__init__("Another Analysis Job is already active.")
+        self.active_analysis_job_id = active_analysis_job_id
 
 
 @dataclass(frozen=True)
@@ -90,7 +100,7 @@ class AnalysisJobSummary:
     status: str
 
 
-def run_analysis_job(
+def submit_analysis_job(
     *,
     database_path: Path,
     data_root: Path,
@@ -98,8 +108,44 @@ def run_analysis_job(
     stage_runner: AnalysisStageRunner,
     recipe_ids: Sequence[str] | None = None,
     created_at: datetime | None = None,
+    stale_after_seconds: int = DEFAULT_ANALYSIS_JOB_STALE_AFTER_SECONDS,
+) -> AnalysisJobSummary:
+    with ANALYSIS_JOB_SUBMISSION_LOCK:
+        return _submit_analysis_job_unlocked(
+            database_path=database_path,
+            data_root=data_root,
+            collection_slugs=collection_slugs,
+            stage_runner=stage_runner,
+            recipe_ids=recipe_ids,
+            created_at=created_at,
+            stale_after_seconds=stale_after_seconds,
+        )
+
+
+def _submit_analysis_job_unlocked(
+    *,
+    database_path: Path,
+    data_root: Path,
+    collection_slugs: Sequence[str],
+    stage_runner: AnalysisStageRunner,
+    recipe_ids: Sequence[str] | None = None,
+    created_at: datetime | None = None,
+    stale_after_seconds: int = DEFAULT_ANALYSIS_JOB_STALE_AFTER_SECONDS,
 ) -> AnalysisJobSummary:
     created = created_at or datetime.now(timezone.utc)
+    recover_stale_analysis_jobs(
+        data_root=data_root,
+        now=created,
+        stale_after_seconds=stale_after_seconds,
+    )
+    active_manifest = get_active_analysis_job_manifest_path(data_root)
+    if active_manifest is not None:
+        active_manifest_payload = _read_json(active_manifest)
+        active_analysis_job_id = str(
+            active_manifest_payload.get("analysis_job_id", active_manifest.parent.name)
+        )
+        raise AnalysisJobBusyError(active_analysis_job_id)
+
     created_timestamp = _format_timestamp(created)
     compact_timestamp = _compact_timestamp(created_timestamp)
     resolved_data_root = data_root.expanduser().resolve()
@@ -111,9 +157,112 @@ def run_analysis_job(
     job_manifest_path = job_dir / ANALYSIS_JOB_MANIFEST_NAME
     job_dir.mkdir(parents=True, exist_ok=True)
 
+    resolved_scope = resolve_analysis_scope(
+        database_path=database_path,
+        collection_slugs=collection_slugs,
+    )
+    scope_snapshot = save_analysis_scope_snapshot(
+        data_root=resolved_data_root,
+        resolved_scope=resolved_scope,
+        created_at=created,
+    )
+    _write_json(
+        job_manifest_path,
+        _analysis_job_manifest(
+            analysis_job_id=analysis_job_id,
+            analysis_result_ids=[],
+            created_at=created_timestamp,
+            recipe_ids=recipe_id_values,
+            scope_snapshot=scope_snapshot,
+            sibling_group_id=sibling_group_id,
+            stages=[],
+            status="running",
+            data_root=resolved_data_root,
+        ),
+    )
+
+    worker = threading.Thread(
+        target=_execute_submitted_analysis_job,
+        kwargs={
+            "database_path": database_path,
+            "data_root": resolved_data_root,
+            "collection_slugs": list(collection_slugs),
+            "stage_runner": stage_runner,
+            "recipe_ids": recipe_id_values,
+            "created_at": created,
+            "job_manifest_path": job_manifest_path,
+        },
+        daemon=True,
+        name=f"anacronia-{analysis_job_id}",
+    )
+    worker.start()
+    return AnalysisJobSummary(
+        analysis_job_id=analysis_job_id,
+        analysis_result_ids=[],
+        manifest_path=job_manifest_path,
+        recipe_ids=recipe_id_values,
+        scope_snapshot_id=scope_snapshot.snapshot_id,
+        sibling_group_id=sibling_group_id,
+        status="running",
+    )
+
+
+def run_analysis_job(
+    *,
+    database_path: Path,
+    data_root: Path,
+    collection_slugs: Sequence[str],
+    stage_runner: AnalysisStageRunner,
+    recipe_ids: Sequence[str] | None = None,
+    created_at: datetime | None = None,
+    skip_active_job_check: bool = False,
+) -> AnalysisJobSummary:
+    created = created_at or datetime.now(timezone.utc)
+    created_timestamp = _format_timestamp(created)
+    compact_timestamp = _compact_timestamp(created_timestamp)
+    resolved_data_root = data_root.expanduser().resolve()
+    if not skip_active_job_check:
+        recover_stale_analysis_jobs(data_root=resolved_data_root, now=created)
+        active_manifest = get_active_analysis_job_manifest_path(resolved_data_root)
+        if active_manifest is not None:
+            active_manifest_payload = _read_json(active_manifest)
+            active_analysis_job_id = str(
+                active_manifest_payload.get(
+                    "analysis_job_id",
+                    active_manifest.parent.name,
+                )
+            )
+            raise AnalysisJobBusyError(active_analysis_job_id)
+
+    selected_recipes = select_analysis_recipes(recipe_ids)
+    recipe_id_values = [recipe.recipe_id for recipe in selected_recipes]
+    analysis_job_id = f"analysis-job-{compact_timestamp}"
+    sibling_group_id = f"analysis-sibling-{compact_timestamp}"
+    job_dir = resolved_data_root / "analysis-jobs" / analysis_job_id
+    job_manifest_path = job_dir / ANALYSIS_JOB_MANIFEST_NAME
+    job_dir.mkdir(parents=True, exist_ok=True)
+
     stages: list[dict[str, object]] = []
     analysis_result_ids: list[str] = []
+    failed_recipe_count = 0
     status = "ready"
+    scope_snapshot: AnalysisScopeSnapshot | None = None
+
+    def persist_job_manifest(*, status_value: str) -> None:
+        _write_json(
+            job_manifest_path,
+            _analysis_job_manifest(
+                analysis_job_id=analysis_job_id,
+                analysis_result_ids=analysis_result_ids,
+                created_at=created_timestamp,
+                recipe_ids=recipe_id_values,
+                scope_snapshot=scope_snapshot,
+                sibling_group_id=sibling_group_id,
+                stages=stages,
+                status=status_value,
+                data_root=resolved_data_root,
+            ),
+        )
 
     resolved_scope = resolve_analysis_scope(
         database_path=database_path,
@@ -132,6 +281,7 @@ def run_analysis_job(
             started_at=created_timestamp,
         )
     )
+    persist_job_manifest(status_value="running")
 
     embedding_reuse_plan = plan_image_embedding_reuse(
         data_root=resolved_data_root,
@@ -149,6 +299,7 @@ def run_analysis_job(
             started_at=created_timestamp,
         )
     )
+    persist_job_manifest(status_value="running")
 
     for recipe in selected_recipes:
         analysis_result_id = f"analysis-result-{compact_timestamp}-{recipe.recipe_id}"
@@ -182,6 +333,7 @@ def run_analysis_job(
                     )
                 )
             except Exception as error:
+                failed_recipe_count += 1
                 status = "failed" if not analysis_result_ids else "partial_failed"
                 recipe_failed = True
                 stages.append(
@@ -193,6 +345,7 @@ def run_analysis_job(
                         recipe_id=recipe.recipe_id,
                     )
                 )
+                persist_job_manifest(status_value=status)
                 break
 
             normalized_artifacts = [
@@ -209,6 +362,7 @@ def run_analysis_job(
                     recipe_id=recipe.recipe_id,
                 )
             )
+            persist_job_manifest(status_value="running")
 
         if recipe_failed:
             continue
@@ -235,37 +389,140 @@ def run_analysis_job(
                 started_at=created_timestamp,
             )
         )
+        persist_job_manifest(status_value="running")
 
-    job_manifest = {
-        "schema_version": 1,
-        "asset_kind": "analysis-job",
-        "analysis_job_id": analysis_job_id,
-        "analysis_result_ids": analysis_result_ids,
-        "created_at": created_timestamp,
-        "recipe_ids": recipe_id_values,
-        "scope_snapshot": {
-            "snapshot_id": scope_snapshot.snapshot_id,
-            "snapshot_key": _relative_key(
-                scope_snapshot.snapshot_path,
-                resolved_data_root,
-            ),
-            "item_count": scope_snapshot.item_count,
-            "counts": scope_snapshot.counts,
-        },
-        "sibling_group_id": sibling_group_id,
-        "stages": stages,
-        "status": status,
-    }
-    _write_json(job_manifest_path, job_manifest)
+    if failed_recipe_count > 0:
+        status = "partial_failed" if analysis_result_ids else "failed"
+    persist_job_manifest(status_value=status)
     return AnalysisJobSummary(
         analysis_job_id=analysis_job_id,
         analysis_result_ids=analysis_result_ids,
         manifest_path=job_manifest_path,
         recipe_ids=recipe_id_values,
-        scope_snapshot_id=scope_snapshot.snapshot_id,
+        scope_snapshot_id=scope_snapshot.snapshot_id if scope_snapshot else "",
         sibling_group_id=sibling_group_id,
         status=status,
     )
+
+
+def _execute_submitted_analysis_job(
+    *,
+    database_path: Path,
+    data_root: Path,
+    collection_slugs: Sequence[str],
+    stage_runner: AnalysisStageRunner,
+    recipe_ids: Sequence[str],
+    created_at: datetime,
+    job_manifest_path: Path,
+) -> None:
+    try:
+        run_analysis_job(
+            database_path=database_path,
+            data_root=data_root,
+            collection_slugs=collection_slugs,
+            recipe_ids=recipe_ids,
+            stage_runner=stage_runner,
+            created_at=created_at,
+            skip_active_job_check=True,
+        )
+    except Exception as error:
+        _mark_analysis_job_failed(
+            manifest_path=job_manifest_path,
+            error=f"Analysis Job failed before runtime stages: {error}",
+        )
+
+
+def get_active_analysis_job_manifest_path(data_root: Path) -> Path | None:
+    for manifest_path in _list_analysis_job_manifest_paths(data_root):
+        try:
+            manifest = _read_json(manifest_path)
+        except (OSError, json.JSONDecodeError):
+            continue
+        if str(manifest.get("status")) in ANALYSIS_JOB_ACTIVE_STATUSES:
+            return manifest_path
+    return None
+
+
+def recover_stale_analysis_jobs(
+    *,
+    data_root: Path,
+    now: datetime | None = None,
+    stale_after_seconds: int = DEFAULT_ANALYSIS_JOB_STALE_AFTER_SECONDS,
+) -> list[Path]:
+    current = now or datetime.now(timezone.utc)
+    recovered: list[Path] = []
+    for manifest_path in _list_analysis_job_manifest_paths(data_root):
+        try:
+            manifest = _read_json(manifest_path)
+        except (OSError, json.JSONDecodeError):
+            continue
+        if str(manifest.get("status")) not in ANALYSIS_JOB_ACTIVE_STATUSES:
+            continue
+        created_at = _parse_datetime(str(manifest.get("created_at", "")))
+        if created_at is None:
+            continue
+        if (current - created_at).total_seconds() <= stale_after_seconds:
+            continue
+        _mark_analysis_job_failed(
+            manifest_path=manifest_path,
+            error="Analysis Job was marked failed after stale running state.",
+        )
+        recovered.append(manifest_path)
+    return recovered
+
+
+def _analysis_job_manifest(
+    *,
+    analysis_job_id: str,
+    analysis_result_ids: Sequence[str],
+    created_at: str,
+    recipe_ids: Sequence[str],
+    scope_snapshot: AnalysisScopeSnapshot | None,
+    sibling_group_id: str,
+    stages: Sequence[dict[str, object]],
+    status: str,
+    data_root: Path,
+) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "schema_version": 1,
+        "asset_kind": "analysis-job",
+        "analysis_job_id": analysis_job_id,
+        "analysis_result_ids": list(analysis_result_ids),
+        "created_at": created_at,
+        "recipe_ids": list(recipe_ids),
+        "sibling_group_id": sibling_group_id,
+        "stages": list(stages),
+        "status": status,
+    }
+    if scope_snapshot is not None:
+        payload["scope_snapshot"] = {
+            "snapshot_id": scope_snapshot.snapshot_id,
+            "snapshot_key": _relative_key(
+                scope_snapshot.snapshot_path,
+                data_root,
+            ),
+            "item_count": scope_snapshot.item_count,
+            "counts": scope_snapshot.counts,
+        }
+    return payload
+
+
+def _mark_analysis_job_failed(*, manifest_path: Path, error: str) -> None:
+    try:
+        manifest = _read_json(manifest_path)
+    except (OSError, json.JSONDecodeError):
+        return
+    stages = list(manifest.get("stages", []))
+    stages.append(
+        _stage_record(
+            stage_name="job_runtime",
+            status="failed",
+            error=error,
+        )
+    )
+    manifest["stages"] = stages
+    manifest["status"] = "failed"
+    _write_json(manifest_path, manifest)
 
 
 def _build_analysis_result_manifest(
@@ -715,6 +972,37 @@ def _write_json(path: Path, payload: dict[str, object]) -> None:
         json.dumps(payload, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+
+
+def _read_json(path: Path) -> dict[str, object]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError(f"Expected JSON object in {path}.")
+    return payload
+
+
+def _list_analysis_job_manifest_paths(data_root: Path) -> list[Path]:
+    jobs_root = data_root.expanduser().resolve() / "analysis-jobs"
+    if not jobs_root.is_dir():
+        return []
+    return sorted(
+        jobs_root.glob(f"*/{ANALYSIS_JOB_MANIFEST_NAME}"),
+        key=lambda path: path.parent.name,
+        reverse=True,
+    )
+
+
+def _parse_datetime(value: str) -> datetime | None:
+    if not value:
+        return None
+    normalized = value.replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 
 def _format_timestamp(value: datetime) -> str:
