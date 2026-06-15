@@ -144,6 +144,9 @@ def test_latent_map_stage_runner_builds_openable_analysis_result(tmp_path):
     artifacts_by_role = {
         str(artifact["role"]): artifact for artifact in result_manifest["artifacts"]
     }
+    artifacts_by_key = {
+        str(artifact["key"]): artifact for artifact in result_manifest["artifacts"]
+    }
 
     assert job.status == "ready"
     assert [stage["status"] for stage in json.loads(job.manifest_path.read_text())["stages"]] == [
@@ -191,6 +194,11 @@ def test_latent_map_stage_runner_builds_openable_analysis_result(tmp_path):
     assert "viewer/atlases/96px/page-000.png" in artifact_keys
     assert "viewer/map-data.json" in artifact_keys
     assert "viewer/neighbors.json" in artifact_keys
+    assert artifacts_by_role["faiss-neighbors"]["required"] is False
+    assert artifacts_by_key["viewer/atlases/32px/atlas-manifest.json"][
+        "required"
+    ] is True
+    assert artifacts_by_key["viewer/atlases/32px/page-000.png"]["required"] is False
     assert artifacts_by_role["viewer-data"]["retention_class"] == "viewer-cache"
     assert artifacts_by_role["viewer-data"]["required"] is True
     assert artifacts_by_role["viewer-neighbors"]["retention_class"] == "viewer-cache"

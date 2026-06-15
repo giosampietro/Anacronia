@@ -46,13 +46,17 @@ def test_records_reusable_image_embedding_result_by_image_and_recipe(tmp_path):
     recipe = get_analysis_recipe("dinov3_vits_384")
     other_recipe = get_analysis_recipe("dinov3_vits_256")
     item = resolved_scope.payload["items"][0]
+    artifact_key = "image-embeddings/dinov3_vits_384/image-1.npy"
+    artifact_path = storage.data_root / artifact_key
+    artifact_path.parent.mkdir(parents=True, exist_ok=True)
+    artifact_path.write_bytes(b"vector")
 
     result = record_image_embedding_result(
         data_root=storage.data_root,
         image_asset_id=item["image_asset_id"],
         source_identity=item["source_identity"],
         recipe=recipe,
-        artifact_key="image-embeddings/dinov3_vits_384/image-1.npy",
+        artifact_key=artifact_key,
         vector_dimension=384,
         created_at=datetime(2026, 6, 14, 12, 0, tzinfo=timezone.utc),
     )
@@ -87,12 +91,16 @@ def test_plans_reusable_and_missing_embeddings_from_resolved_scope(tmp_path):
     )
     reusable_item = resolved_scope.payload["items"][0]
     missing_item = resolved_scope.payload["items"][1]
+    reusable_artifact_key = "image-embeddings/dinov3_vits_384/reusable.npy"
+    reusable_path = storage.data_root / reusable_artifact_key
+    reusable_path.parent.mkdir(parents=True, exist_ok=True)
+    reusable_path.write_bytes(b"vector")
     record_image_embedding_result(
         data_root=storage.data_root,
         image_asset_id=reusable_item["image_asset_id"],
         source_identity=reusable_item["source_identity"],
         recipe=recipe_384,
-        artifact_key="image-embeddings/dinov3_vits_384/reusable.npy",
+        artifact_key=reusable_artifact_key,
         vector_dimension=384,
         created_at=datetime(2026, 6, 14, 12, 5, tzinfo=timezone.utc),
     )
@@ -114,6 +122,40 @@ def test_plans_reusable_and_missing_embeddings_from_resolved_scope(tmp_path):
         item["image_asset_id"] for item in resolved_scope.payload["items"]
     ]
     assert plan.total_missing_embeddings == 3
+
+
+def test_stale_embedding_manifest_is_planned_as_missing(tmp_path):
+    storage, resolved_scope = create_resolved_scope(tmp_path)
+    recipe = get_analysis_recipe("dinov3_vits_384")
+    item = resolved_scope.payload["items"][0]
+    record_image_embedding_result(
+        data_root=storage.data_root,
+        image_asset_id=item["image_asset_id"],
+        source_identity=item["source_identity"],
+        recipe=recipe,
+        artifact_key="image-embeddings/dinov3_vits_384/missing.npy",
+        vector_dimension=384,
+        created_at=datetime(2026, 6, 14, 12, 7, tzinfo=timezone.utc),
+    )
+
+    assert (
+        find_reusable_image_embedding_result(
+            data_root=storage.data_root,
+            image_asset_id=item["image_asset_id"],
+            recipe=recipe,
+        )
+        is None
+    )
+
+    plan = plan_image_embedding_reuse(
+        data_root=storage.data_root,
+        resolved_scope=resolved_scope,
+        recipes=[recipe],
+    )
+
+    assert item["image_asset_id"] in plan.recipe_plans[
+        "dinov3_vits_384"
+    ].missing_image_asset_ids
 
 
 def test_embedding_reuse_key_includes_model_and_preprocessing_provenance(tmp_path):

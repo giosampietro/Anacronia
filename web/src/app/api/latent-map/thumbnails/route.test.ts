@@ -253,4 +253,53 @@ describe("latent map thumbnail API", () => {
     expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
     expect(new Uint8Array(await response.arrayBuffer())).toEqual(imageBytes);
   });
+
+  it("does not fall through to legacy path access when Analysis Result ID is present", async () => {
+    const runsRoot = path.join(
+      tmpdir(),
+      `anacronia-artifact-route-${Date.now()}`,
+    );
+    const runName = "legacy-run";
+    const relativePath = "thumbnails/img-a.jpg";
+
+    process.env.ANACRONIA_LATENT_MAP_RUNS_ROOT = runsRoot;
+    await mkdir(path.dirname(path.join(runsRoot, runName, relativePath)), {
+      recursive: true,
+    });
+    await writeFile(path.join(runsRoot, runName, relativePath), new Uint8Array([5]));
+
+    const response = await GET(
+      new NextRequest(
+        `http://localhost/api/latent-map/thumbnails` +
+          `?analysisResultId=latent-map-20260609T123000Z-j-shoot` +
+          `&run=${runName}&path=${encodeURIComponent(relativePath)}`,
+      ),
+    );
+
+    expect(response.status).toBe(404);
+  });
+
+  it("rejects non-browser-safe legacy run paths during migration", async () => {
+    const runsRoot = path.join(
+      tmpdir(),
+      `anacronia-artifact-route-${Date.now()}`,
+    );
+    const runName = "legacy-run";
+
+    process.env.ANACRONIA_LATENT_MAP_RUNS_ROOT = runsRoot;
+    await mkdir(path.join(runsRoot, runName, "viewer"), { recursive: true });
+    await writeFile(path.join(runsRoot, runName, "report.md"), "# report\n/private\n");
+    await writeFile(path.join(runsRoot, runName, "viewer", "unsafe.png"), "png");
+
+    for (const relativePath of ["report.md", "viewer/unsafe.png"]) {
+      const response = await GET(
+        new NextRequest(
+          `http://localhost/api/latent-map/thumbnails` +
+            `?run=${runName}&path=${encodeURIComponent(relativePath)}`,
+        ),
+      );
+
+      expect(response.status).toBe(404);
+    }
+  });
 });

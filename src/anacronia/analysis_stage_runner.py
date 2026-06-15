@@ -83,6 +83,7 @@ class LatentMapAnalysisStageRunner:
                         content_type=artifact.content_type,
                         retention_class=artifact.retention_class,
                         metadata=artifact.metadata,
+                        required=True,
                     )
                     for artifact in summary.artifacts
                 ]
@@ -210,6 +211,7 @@ class LatentMapAnalysisStageRunner:
                     role="faiss-index",
                     content_type="application/octet-stream",
                     retention_class="durable",
+                    required=True,
                 ),
                 _artifact_for_path(
                     key=_relative_key(summary.id_map_path, request.analysis_result_dir),
@@ -217,6 +219,7 @@ class LatentMapAnalysisStageRunner:
                     role="faiss-id-map",
                     content_type="application/json",
                     retention_class="durable",
+                    required=True,
                 ),
                 _artifact_for_path(
                     key=_relative_key(summary.neighbors_path, request.analysis_result_dir),
@@ -224,6 +227,7 @@ class LatentMapAnalysisStageRunner:
                     role="faiss-neighbors",
                     content_type="application/x-jsonlines",
                     retention_class="durable",
+                    required=False,
                 ),
             ]
         )
@@ -250,6 +254,7 @@ class LatentMapAnalysisStageRunner:
                     content_type="application/json",
                     retention_class="durable",
                     metadata={"layout_id": summary.layout_id},
+                    required=True,
                 ),
                 _artifact_for_path(
                     key=_relative_key(summary.cluster_path, request.analysis_result_dir),
@@ -258,6 +263,7 @@ class LatentMapAnalysisStageRunner:
                     content_type="application/json",
                     retention_class="durable",
                     metadata={"cluster_id": summary.cluster_id},
+                    required=False,
                 ),
             ]
         )
@@ -294,6 +300,7 @@ class LatentMapAnalysisStageRunner:
                     content_type="application/json",
                     retention_class="durable",
                     metadata={"cluster_id": summary.cluster_id},
+                    required=True,
                 )
                 for summary in summaries
             ]
@@ -331,6 +338,7 @@ class LatentMapAnalysisStageRunner:
                 role="thumbnail-atlas-page",
                 content_type="image/png",
                 retention_class="render-cache",
+                required=False,
             )
             for atlas in atlases
             for path in sorted(atlas.manifest_path.parent.glob("page-*.png"))
@@ -348,6 +356,7 @@ class LatentMapAnalysisStageRunner:
                         content_type="application/json",
                         retention_class="render-cache",
                         metadata={"tile_size": atlas.tile_size},
+                        required=True,
                     )
                     for atlas in atlases
                 ],
@@ -358,6 +367,7 @@ class LatentMapAnalysisStageRunner:
                     role="viewer-data",
                     content_type="application/json",
                     retention_class="viewer-cache",
+                    required=True,
                 ),
                 _artifact_for_path(
                     key=_relative_key(viewer.neighbor_data_path, request.analysis_result_dir),
@@ -365,6 +375,7 @@ class LatentMapAnalysisStageRunner:
                     role="viewer-neighbors",
                     content_type="application/json",
                     retention_class="viewer-cache",
+                    required=True,
                 ),
             ]
         )
@@ -378,6 +389,7 @@ def _artifact_for_path(
     content_type: str,
     retention_class: str,
     metadata: dict[str, object] | None = None,
+    required: bool | None = None,
 ) -> AnalysisStageArtifact:
     return AnalysisStageArtifact(
         key=key,
@@ -386,6 +398,7 @@ def _artifact_for_path(
         retention_class=retention_class,
         byte_size=path.stat().st_size if path.is_file() else None,
         metadata=metadata or {},
+        required=required,
     )
 
 
