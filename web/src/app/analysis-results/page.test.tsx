@@ -9,72 +9,110 @@ vi.mock("next/navigation", () => ({
 
 import AnalysisResultsPage from "@/app/analysis-results/page";
 
-describe("AnalysisResultsPage", () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
+function normalizeServerHtml(html: string): string {
+  return html.replaceAll("<!-- -->", "");
+}
 
-  it("renders existing Analysis Results with Explorer links", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (input: RequestInfo | URL) => {
-        const url = String(input);
-        if (url.endsWith("/analysis-results")) {
-          return Response.json({
-            results: [
-              {
-                analysis_result_id: "analysis-result-20260614T130000Z-dinov3_vits_384",
-                explorer_href:
-                  "/latent-map?analysisResultId=analysis-result-20260614T130000Z-dinov3_vits_384",
-                explorer_readiness: { ready: true },
-                item_count: 3184,
-                recipe_ids: ["dinov3_vits_384"],
-                recipe_names: ["dinov3_vits_384"],
-                result_state: { state: "ready" },
-                scope_label: "J Shoot",
-                status: "ready",
-              },
-            ],
-          });
-        }
-        if (url.endsWith("/search-sets")) {
-          return Response.json([
+function stubAnalysisStudioFetch() {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url.endsWith("/analyses")) {
+        return Response.json({
+          analyses: [
             {
-              display_name: "J Shoot",
-              slug: "j-shoot",
-              terms: [],
+              analysis_id: "analysis-20260614T130000Z",
+              analysis_job_ids: ["analysis-job-20260614T130000Z"],
+              recipe_ids: ["dinov3_vits_384"],
+              source_collections: [{ label: "Bread", slug: "bread" }],
+              status: "pending",
+              title: "Bread visual study",
+              variants: [],
             },
             {
-              display_name: "Mood Board",
-              slug: "mood-board",
-              terms: [],
+              analysis_id: "analysis-20260614T140000Z",
+              analysis_job_ids: ["analysis-job-20260614T140000Z"],
+              recipe_ids: ["dinov3_vits_512"],
+              source_collections: [
+                { label: "Bread", slug: "bread" },
+                { label: "Hands/Mani", slug: "hands-mani" },
+              ],
+              status: "running",
+              title: "DINO comparison",
+              variants: [],
             },
-          ]);
-        }
-        if (url.endsWith("/analysis-recipes")) {
-          return Response.json({
-            default_recipe_id: "dinov3_vits_384",
-            recipes: [
-              {
-                input_size: 384,
-                is_default: true,
-                label: "DINOv3 ViT-S 384px",
-                recipe_id: "dinov3_vits_384",
-              },
-              {
-                input_size: 512,
-                is_default: false,
-                label: "DINOv3 ViT-S 512px",
-                recipe_id: "dinov3_vits_512",
-              },
-            ],
-            schema_version: 1,
-          });
-        }
+          ],
+        });
+      }
+
+      if (url.endsWith("/analysis-results")) {
+        return Response.json({
+          results: [
+            {
+              analysis_job_id: "analysis-job-20260614T130000Z",
+              analysis_result_id:
+                "analysis-result-20260614T130000Z-dinov3_vits_384",
+              explorer_href:
+                "/latent-map?analysisResultId=analysis-result-20260614T130000Z-dinov3_vits_384",
+              explorer_readiness: { ready: true },
+              item_count: 40,
+              recipe_ids: ["dinov3_vits_384"],
+              recipe_names: ["dinov3_vits_384"],
+              result_state: { state: "ready" },
+              scope_label: "Bread",
+              status: "ready",
+            },
+          ],
+        });
+      }
+
+      if (url.endsWith("/search-sets")) {
+        return Response.json([
+          { display_name: "Bread", slug: "bread", terms: [] },
+          { display_name: "Hands/Mani", slug: "hands-mani", terms: [] },
+        ]);
+      }
+
+      if (url.endsWith("/analysis-recipes")) {
+        return Response.json({
+          default_recipe_id: "dinov3_vits_384",
+          recipes: [
+            {
+              input_size: 384,
+              is_default: true,
+              label: "DINOv3 ViT-S 384px",
+              recipe_id: "dinov3_vits_384",
+            },
+            {
+              input_size: 512,
+              is_default: false,
+              label: "DINOv3 ViT-S 512px",
+              recipe_id: "dinov3_vits_512",
+            },
+          ],
+          schema_version: 1,
+        });
+      }
+
+      if (url.endsWith("/analysis-jobs")) {
         return Response.json({
           jobs: [
             {
-              analysis_job_id: "analysis-job-20260614T130010Z",
+              analysis_job_id: "analysis-job-20260614T130000Z",
+              analysis_result_ids: [
+                "analysis-result-20260614T130000Z-dinov3_vits_384",
+              ],
+              recipe_ids: ["dinov3_vits_384"],
+              stages: [],
+              status: "ready",
+              viewer_hrefs: [
+                "/latent-map?analysisResultId=analysis-result-20260614T130000Z-dinov3_vits_384",
+              ],
+            },
+            {
+              analysis_job_id: "analysis-job-20260614T140000Z",
               analysis_result_ids: [],
               recipe_ids: ["dinov3_vits_512"],
               stages: [
@@ -87,101 +125,82 @@ describe("AnalysisResultsPage", () => {
               status: "running",
               viewer_hrefs: [],
             },
-            {
-              analysis_job_id: "analysis-job-20260614T130000Z",
-              analysis_result_ids: ["latent-map-20260609T123000Z-j-shoot"],
-              recipe_ids: ["dinov3_vits_384"],
-              status: "ready",
-              viewer_hrefs: [
-                "/latent-map?analysisResultId=latent-map-20260609T123000Z-j-shoot",
-              ],
-            },
-            {
-              analysis_job_id: "analysis-job-20260614T125900Z",
-              analysis_result_ids: [],
-              recipe_ids: ["dinov3_vits_384"],
-              stages: [
-                {
-                  error: "DINOv3 access failed",
-                  recipe_id: "dinov3_vits_384",
-                  stage_name: "embedding_computation",
-                  status: "failed",
-                },
-              ],
-              status: "failed",
-              viewer_hrefs: [],
-            },
-            {
-              analysis_job_id: "analysis-job-20260614T125800Z",
-              analysis_result_ids: [],
-              recipe_ids: ["dinov3_vits_384"],
-              stages: [
-                {
-                  recipe_id: "dinov3_vits_384",
-                  stage_name: "embedding_computation",
-                  status: "failed",
-                },
-              ],
-              status: "failed",
-              viewer_hrefs: [],
-            },
           ],
         });
-      }),
-    );
+      }
 
-    const html = renderToString(
-      await AnalysisResultsPage({
-        searchParams: Promise.resolve({
-          analysisResultId:
-            "analysis-result-20260614T130000Z-dinov3_vits_384",
+      throw new Error(`Unexpected fetch: ${url}`);
+    }),
+  );
+}
+
+describe("AnalysisResultsPage", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("renders the Analysis Studio workspace shell around persistent Analyses", async () => {
+    stubAnalysisStudioFetch();
+
+    const html = normalizeServerHtml(
+      renderToString(
+        await AnalysisResultsPage({
+          searchParams: Promise.resolve({
+            analysisId: "analysis-20260614T130000Z",
+          }),
         }),
-      }),
-    ).replaceAll("<!-- -->", "");
+      ),
+    );
 
     expect(html).toContain("data-app-space-shell=\"true\"");
     expect(html).toContain("data-active-space=\"analysis\"");
     expect(html).toContain("aria-label=\"App spaces\"");
-    expect(html).toContain("Analysis Results");
-    expect(html).toContain("Start Analysis Job");
-    expect(html).toContain("name=\"collection_slugs\"");
-    expect(html).toContain("<option value=\"j-shoot\">J Shoot</option>");
+    expect(html).toContain("aria-label=\"Workspace\"");
+    expect(html).toContain("Analysis Studio");
+    expect(html).toContain(">New Analysis<");
+    expect(html).toContain(">Analyses<");
+    expect(html).toContain("aria-label=\"Filter Analyses\"");
+    expect(html).toContain("placeholder=\"Filter by title or collection\"");
     expect(html).toContain(
-      "<option value=\"mood-board\">Mood Board</option>",
+      "href=\"/analysis-results?analysisId=analysis-20260614T130000Z\"",
     );
-    expect(html).not.toContain("placeholder=\"j-shoot, mood-board\"");
-    expect(html).toContain("name=\"recipe_ids\"");
-    expect(html).toContain("value=\"dinov3_vits_384\"");
-    expect(html).toContain("action=\"/api/analysis-jobs\"");
-    expect(html).toContain("Analysis Scope");
-    expect(html).toContain("1 result");
-    expect(html).toContain("3184 images indexed");
-    expect(html).toContain("Recipe Choices");
-    expect(html).toContain("DINOv3 ViT-S 384px");
-    expect(html).toContain("Job Status");
-    expect(html).toContain("ready");
-    expect(html).toContain("Analysis running");
-    expect(html).toContain("1 running");
-    expect(html).toContain("2 failed");
-    expect(html).toContain("embedding computation");
-    expect(html).toContain("Failed at embedding computation");
-    expect(html).toContain("analysis-job-20260614T130010Z");
-    expect(html).toContain("Refreshing automatically");
-    expect(html).not.toContain("readys");
-    expect(html).not.toContain("faileds");
+    expect(html).toContain("Bread visual study");
+    expect(html).toContain("DINO comparison");
+    expect(html).toContain("DINO comparison in progress");
+    expect(html).toContain("40 images analyzed");
+    expect(html).toContain("Selected Analysis overview");
+    expect(html).toContain("Source Collections");
+    expect(html).toContain("Job activity");
     expect(html).toContain("analysis-job-20260614T130000Z");
-    expect(html).toContain("Submitted Jobs");
-    expect(html).toContain("Selected Analysis Result");
-    expect(html).toContain("J Shoot");
-    expect(html).toContain("Required artifacts ready");
-    expect(html).toContain("3184 images");
+    expect(html).toContain("Variants");
+    expect(html).toContain("DINOv3 ViT-S 384px");
+    expect(html).toContain("40 images");
+    expect(html).toContain("Open Explorer");
+    expect(html).toContain(
+      "href=\"/latent-map?analysisResultId=analysis-result-20260614T130000Z-dinov3_vits_384\"",
+    );
     expect(html).toContain("ready");
-    expect(html).toContain(
-      "/latent-map?analysisResultId=analysis-result-20260614T130000Z-dinov3_vits_384",
+    expect(html).not.toContain(">Analysis Results<");
+    expect(html).not.toContain(">Jobs<");
+    expect(html).not.toContain("Start Analysis Job");
+    expect(html).not.toContain("Submitted Jobs");
+  });
+
+  it("renders missing selected Analysis explicitly instead of selecting the first Analysis", async () => {
+    stubAnalysisStudioFetch();
+
+    const html = normalizeServerHtml(
+      renderToString(
+        await AnalysisResultsPage({
+          searchParams: Promise.resolve({
+            analysisId: "analysis-missing",
+          }),
+        }),
+      ),
     );
-    expect(html).toContain(
-      "/api/analysis-results/analysis-result-20260614T130000Z-dinov3_vits_384",
-    );
-    expect(html).toContain("Delete");
+
+    expect(html).toContain("Analysis not found");
+    expect(html).toContain("analysis-missing");
+    expect(html).not.toContain("Selected Analysis overview");
   });
 });

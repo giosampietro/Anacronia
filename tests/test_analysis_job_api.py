@@ -125,14 +125,20 @@ def write_manifest_artifacts(data_root, manifest):
         path.write_bytes(b"x" * artifact["byte_size"])
 
 
-def write_analysis_job_manifest(data_root, analysis_job_id, *, status):
+def write_analysis_job_manifest(
+    data_root,
+    analysis_job_id,
+    *,
+    status,
+    analysis_result_ids=None,
+):
     job_dir = data_root / "analysis-jobs" / analysis_job_id
     job_dir.mkdir(parents=True, exist_ok=True)
     (job_dir / "analysis-job.json").write_text(
         json.dumps(
             {
                 "analysis_job_id": analysis_job_id,
-                "analysis_result_ids": [],
+                "analysis_result_ids": list(analysis_result_ids or []),
                 "recipe_ids": ["dinov3_vits_384"],
                 "scope_snapshot": {
                     "snapshot_id": f"scope-{analysis_job_id}",
@@ -394,6 +400,53 @@ def test_analysis_api_exposes_variant_result_links_without_local_paths(tmp_path)
     LocalAnalysisStore(storage.data_root).attach_analysis_result(
         analysis_id=created["analysis_id"],
         analysis_result_id=manifest["analysis_result_id"],
+    )
+
+    response = client.get(f"/analyses/{created['analysis_id']}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert str(storage.data_root) not in json.dumps(payload)
+    analysis = payload["analysis"]
+    assert analysis["analysis_job_ids"] == [manifest["analysis_job_id"]]
+    assert analysis["status"] == "ready"
+    assert analysis["variants"] == [
+        {
+            "analysis_result_id": manifest["analysis_result_id"],
+            "explorer_href": (
+                "/latent-map?analysisResultId="
+                "analysis-result-20260614T130000Z-dinov3_vits_384"
+            ),
+            "status": "ready",
+        }
+    ]
+
+
+def test_analysis_api_derives_variants_from_attached_job_results(tmp_path):
+    storage = create_collection(tmp_path, display_name="Bread")
+    manifest = analysis_result_manifest()
+    write_manifest_artifacts(storage.data_root, manifest)
+    LocalAnalysisResultRegistry(storage.data_root).register(manifest)
+    write_analysis_job_manifest(
+        storage.data_root,
+        manifest["analysis_job_id"],
+        status="ready",
+        analysis_result_ids=[manifest["analysis_result_id"]],
+    )
+    client = TestClient(
+        create_app(database_path=storage.database_path, data_root=storage.data_root)
+    )
+    created = client.post(
+        "/analyses",
+        json={
+            "collection_slugs": ["bread"],
+            "recipe_ids": ["dinov3_vits_384"],
+            "title": "Bread visual study",
+        },
+    ).json()["analysis"]
+    LocalAnalysisStore(storage.data_root).attach_analysis_job(
+        analysis_id=created["analysis_id"],
+        analysis_job_id=manifest["analysis_job_id"],
     )
 
     response = client.get(f"/analyses/{created['analysis_id']}")

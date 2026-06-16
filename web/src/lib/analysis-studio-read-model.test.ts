@@ -64,17 +64,9 @@ describe("Analysis Studio read model", () => {
               analysis_job_ids: ["analysis-job-20260614T130000Z"],
               recipe_ids: ["dinov3_vits_384"],
               source_collections: [{ label: "Bread", slug: "bread" }],
-              status: "ready",
+              status: "pending",
               title: "Bread visual study",
-              variants: [
-                {
-                  analysis_result_id:
-                    "analysis-result-20260614T130000Z-dinov3_vits_384",
-                  explorer_href:
-                    "/latent-map?analysisResultId=analysis-result-20260614T130000Z-dinov3_vits_384",
-                  status: "ready",
-                },
-              ],
+              variants: [],
             },
           ],
         });
@@ -128,7 +120,7 @@ describe("Analysis Studio read model", () => {
 
     const model = await loadAnalysisStudioReadModel({
       searchParams: {
-        analysisResultId: "analysis-result-20260614T130000Z-dinov3_vits_384",
+        analysisId: "analysis-20260614T130000Z",
       },
     });
 
@@ -137,6 +129,7 @@ describe("Analysis Studio read model", () => {
       {
         analysisId: "analysis-20260614T130000Z",
         analysisJobIds: ["analysis-job-20260614T130000Z"],
+        analyzedImageCount: 2,
         recipeIds: ["dinov3_vits_384"],
         sourceCollections: [{ label: "Bread", slug: "bread" }],
         status: "ready",
@@ -202,12 +195,11 @@ describe("Analysis Studio read model", () => {
       resultCount: 1,
     });
     expect(model.selectedState).toEqual({
-      analysisResultId: "analysis-result-20260614T130000Z-dinov3_vits_384",
-      state: "selected-result",
+      analysisId: "analysis-20260614T130000Z",
+      state: "selected-analysis",
     });
-    expect(model.selectedResult?.analysisResultId).toBe(
-      "analysis-result-20260614T130000Z-dinov3_vits_384",
-    );
+    expect(model.selectedAnalysis?.analysisId).toBe("analysis-20260614T130000Z");
+    expect(model.selectedResult).toBeNull();
     expect(JSON.stringify(model)).not.toContain("/Users/");
     expect(fetchMock).toHaveBeenCalledTimes(5);
     expect(fetchMock.mock.calls.map(([input]) => String(input)).sort()).toEqual([
