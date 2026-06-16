@@ -34,7 +34,7 @@ import {
   shouldHandleObjectDetailOverlayKey,
 } from "@/lib/detail-overlay-keyboard";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
@@ -742,7 +742,7 @@ export function CollectionObjectDetailOverlay({
         images.map((image) => [image.image_asset_id, image.is_favorite] as const),
       ),
   );
-  const closeRef = useRef<HTMLButtonElement>(null);
+  const closeRef = useRef<HTMLAnchorElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const activeImage = images[Math.min(activeImageIndex, Math.max(images.length - 1, 0))];
   const activeImageFavorite =
@@ -757,8 +757,8 @@ export function CollectionObjectDetailOverlay({
 
   const closeOverlay = useCallback(() => {
     document.getElementById(returnFocusId)?.focus();
-    router.push(closeHref);
-  }, [closeHref, returnFocusId, router]);
+    window.location.assign(closeHref);
+  }, [closeHref, returnFocusId]);
 
   const showNextImage = useCallback(() => {
     if (!hasMultipleImages) {
@@ -977,15 +977,14 @@ export function CollectionObjectDetailOverlay({
     <div
       aria-label={`${detail.object.title || "Object"} detail`}
       aria-modal="true"
-      className="fixed inset-0 z-50 overflow-y-auto bg-background/80 p-3 backdrop-blur-sm md:p-5"
+      className="fixed inset-y-0 right-0 left-16 z-50 overflow-y-auto bg-background/80 p-3 backdrop-blur-sm md:p-5"
       role="dialog"
     >
-      <button
+      <a
         aria-hidden="true"
-        className="fixed inset-0 cursor-default"
-        onClick={closeOverlay}
+        className="fixed inset-y-0 right-0 left-16 cursor-default"
+        href={closeHref}
         tabIndex={-1}
-        type="button"
       />
       <div
         className="relative mx-auto max-w-[1480px] overflow-hidden rounded-lg border bg-background shadow-2xl"
@@ -1068,17 +1067,18 @@ export function CollectionObjectDetailOverlay({
               Delete {actionNoun}
             </Button>
           </div>
-          <Button
+          <a
             aria-label="Close object detail"
-            className="absolute right-3 top-3"
-            onClick={closeOverlay}
+            className={buttonVariants({
+              className: "absolute right-3 top-3",
+              size: "icon",
+              variant: "ghost",
+            })}
+            href={closeHref}
             ref={closeRef}
-            size="icon"
-            type="button"
-            variant="ghost"
           >
             <X data-icon="inline-start" />
-          </Button>
+          </a>
         </header>
 
         <ImageStage
