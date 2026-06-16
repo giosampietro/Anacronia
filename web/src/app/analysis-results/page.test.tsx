@@ -75,6 +75,15 @@ function stubAnalysisStudioFetch() {
               title: "Unavailable Variant study",
               variants: [],
             },
+            {
+              analysis_id: "analysis-20260614T180000Z",
+              analysis_job_ids: ["analysis-job-20260614T180000Z"],
+              recipe_ids: ["dinov3_vits_384"],
+              source_collections: [{ label: "Hands/Mani", slug: "hands-mani" }],
+              status: "running",
+              title: "Planning-only run",
+              variants: [],
+            },
           ],
         });
       }
@@ -294,6 +303,24 @@ function stubAnalysisStudioFetch() {
               status: "partial_failed",
               viewer_hrefs: [],
             },
+            {
+              analysis_job_id: "analysis-job-20260614T180000Z",
+              analysis_result_ids: [],
+              recipe_ids: ["dinov3_vits_384"],
+              scope_item_count: 40,
+              stages: [
+                {
+                  output_counts: {
+                    missing_embeddings: 30,
+                    reusable_embeddings: 10,
+                  },
+                  stage_name: "embedding_planning",
+                  status: "ready",
+                },
+              ],
+              status: "running",
+              viewer_hrefs: [],
+            },
           ],
         });
       }
@@ -404,6 +431,28 @@ describe("AnalysisResultsPage", () => {
     expect(html).not.toContain("Variants will appear when this job produces Results.");
     expect(html).not.toContain("<h1");
     expect(html).not.toContain(">DINO comparison</h");
+  });
+
+  it("does not mark a planned running Variant ready from embedding planning", async () => {
+    stubAnalysisStudioFetch();
+
+    const html = normalizeServerHtml(
+      renderToString(
+        await AnalysisResultsPage({
+          searchParams: Promise.resolve({
+            analysisId: "analysis-20260614T180000Z",
+          }),
+        }),
+      ),
+    );
+
+    expect(html).toContain("Running Analysis");
+    expect(html).toContain("Variant 1");
+    expect(html).toContain("running");
+    expect(html).toContain("10 cached · 30 needed");
+    expect(html).toContain("Unavailable");
+    expect(html).not.toContain(">ready<");
+    expect(html).not.toContain("Open Explorer");
   });
 
   it("renders partial selected Analysis without flattening it to ready", async () => {

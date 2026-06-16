@@ -318,9 +318,9 @@ function selectedAnalysisVariantRows(
     return job.recipeIds
       .filter((recipeId) => !jobResultRecipeIds.has(recipeId))
       .map((recipeId, recipeIndex) => {
-        const stageForRecipe =
-          job.stages.find((stage) => stage.recipeId === recipeId) ??
-          job.stages.find((stage) => stage.outputCounts);
+        const stageForRecipe = job.stages.find(
+          (stage) => stage.recipeId === recipeId,
+        );
         const embeddingStage = job.stages.find(
           (stage) => stage.stageName === "embedding_planning" && stage.outputCounts,
         );
