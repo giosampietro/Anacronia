@@ -35,6 +35,9 @@ data/**
 .superpowers/
 .hf-cache/
 
+# Local reference dumps
+references/ImagePlot*/
+
 # OS / editor
 .DS_Store
 .idea/
