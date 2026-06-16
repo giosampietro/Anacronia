@@ -95,6 +95,7 @@ export type AnalysisStudioReadModel = {
   recipes: AnalysisStudioRecipeChoice[];
   recipesUnavailable: boolean;
   results: AnalysisStudioResultSummary[];
+  selectedAnalysis: AnalysisStudioAnalysisSummary | null;
   selectedJob: AnalysisStudioJobSummary | null;
   selectedResult: AnalysisStudioResultSummary | null;
   selectedState: ResolvedAnalysisStudioUrlState;
@@ -226,6 +227,7 @@ export async function loadAnalysisStudioReadModel({
   const selectedState = resolveAnalysisStudioUrlState(
     parseAnalysisStudioUrlState(searchParams),
     {
+      analysisIds: analysesResult.analyses.map((analysis) => analysis.analysisId),
       analysisJobIds: jobs.map((job) => job.analysisJobId),
       analysisResultIds: results.map((result) => result.analysisResultId),
     },
@@ -242,6 +244,12 @@ export async function loadAnalysisStudioReadModel({
     recipes: recipesResult.recipes,
     recipesUnavailable: recipesResult.unavailable,
     results,
+    selectedAnalysis:
+      selectedState.state === "selected-analysis"
+        ? analysesResult.analyses.find(
+            (analysis) => analysis.analysisId === selectedState.analysisId,
+          ) ?? null
+        : null,
     selectedJob:
       selectedState.state === "selected-job"
         ? jobs.find((job) => job.analysisJobId === selectedState.analysisJobId) ??

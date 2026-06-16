@@ -128,7 +128,7 @@ describe("Analysis Studio read model", () => {
 
     const model = await loadAnalysisStudioReadModel({
       searchParams: {
-        analysisResultId: "analysis-result-20260614T130000Z-dinov3_vits_384",
+        analysisId: "analysis-20260614T130000Z",
       },
     });
 
@@ -202,12 +202,11 @@ describe("Analysis Studio read model", () => {
       resultCount: 1,
     });
     expect(model.selectedState).toEqual({
-      analysisResultId: "analysis-result-20260614T130000Z-dinov3_vits_384",
-      state: "selected-result",
+      analysisId: "analysis-20260614T130000Z",
+      state: "selected-analysis",
     });
-    expect(model.selectedResult?.analysisResultId).toBe(
-      "analysis-result-20260614T130000Z-dinov3_vits_384",
-    );
+    expect(model.selectedAnalysis?.analysisId).toBe("analysis-20260614T130000Z");
+    expect(model.selectedResult).toBeNull();
     expect(JSON.stringify(model)).not.toContain("/Users/");
     expect(fetchMock).toHaveBeenCalledTimes(5);
     expect(fetchMock.mock.calls.map(([input]) => String(input)).sort()).toEqual([
