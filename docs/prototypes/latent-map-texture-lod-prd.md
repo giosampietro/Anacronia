@@ -4,6 +4,12 @@ Date: June 10, 2026
 
 Branch: `codex/latent-map-instanced-thumbnails`
 
+## Status
+
+- Role: prototype rendering/LOD contract.
+- Read for atlas texture detail, thumbnail display size, and zoom-dependent LOD behavior.
+- Not an analysis recipe or product architecture source.
+
 ## Goal
 
 Make latent-map thumbnails stay readable and performant while zooming by switching atlas texture resolution automatically.

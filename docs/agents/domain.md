@@ -1,5 +1,10 @@
 # Domain Docs
 
+## Status
+
+- Role: current agent operating rules for domain-doc consumption.
+- Read through root `AGENTS.md`; do not treat as product contract.
+
 How engineering skills should consume this repo's domain documentation when exploring the codebase.
 
 ## Layout
@@ -7,9 +12,11 @@ How engineering skills should consume this repo's domain documentation when expl
 This is a single-context repo.
 
 - Read root `CONTEXT.md` before planning or changing code.
+- Read `docs/README.md` after `CONTEXT.md` for the current doc map, active contracts, and historical-doc status.
 - Use the domain language from `CONTEXT.md` in issue titles, plans, tests, code comments, and UI copy.
 - Read relevant ADRs from `docs/adr/` when that directory exists.
 - For architecture review or beyond-MVP planning, read the latest note in `docs/architecture/` after `CONTEXT.md` and relevant ADRs.
+- Do not read every PRD or research note by default. Use `docs/README.md` to choose the smallest relevant set.
 - If `docs/adr/` does not exist, proceed silently.
 
 ## Domain Rules

@@ -2,6 +2,12 @@
 
 Date: June 15, 2026
 
+## Status
+
+- Role: current SigLIP2 model/runtime assessment for future #192 work.
+- Read before implementing SigLIP2 recipes.
+- Does not make SigLIP2 part of the current local Analysis Studio MVP.
+
 ## Context
 
 SigLIP2 should remain future durable Analysis Studio work, not another legacy

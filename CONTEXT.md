@@ -6,6 +6,8 @@ Anacronia is a local-first tool for building museum image collections that can l
 
 Anacronia is a single-user local application in the MVP.
 
+For doc navigation, read `docs/README.md` after this file. `CONTEXT.md` remains the glossary and invariant source; `docs/README.md` decides which PRD, ADR, prototype note, or research note to open next.
+
 ## Glossary
 
 ### Anacronia
@@ -240,6 +242,10 @@ The population definition for an Analysis Result. The first integrated scopes ar
 ### Analysis Recipe
 
 The method configuration used to create an Analysis Result. A recipe includes the embedding model and preprocessing choices, output dimensions, automatic downstream stages such as FAISS, UMAP, HDBSCAN, optional K-means, and relevant package/model versions. DINOv3 384 is the default first recipe for image-level latent-map analysis; DINOv3 256 and 512 are comparison choices. Future SigLIP2 and fusion recipes should use the same recipe/result model.
+
+DINOv3 recipes provide visual features from image pixels, not metadata. FAISS over DINO vectors can support closest-neighbor lookup, graph communities, community bridges, and future association-bridge relation artifacts. Source, artist, object, provider, folder, or generated semantic labels are separate signals and must not be described as DINO output.
+
+The current latent-map thesis is: global DINO finds visual families; graph bridges find outward connections; patch-level DINO can later find local motifs. Patch-token analysis, interpretable low-level visual feature sidecars, SigLIP2, and DINO/SigLIP fusion should all remain explicit Analysis Recipe or Analysis Artifact work with provenance rather than becoming hidden viewer behavior.
 
 ### Analysis Job
 

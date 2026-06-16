@@ -1,5 +1,11 @@
 # Export Schema
 
+## Status
+
+- Role: current scoped export field contract.
+- Read for JSONL, CSV, and package metadata field names.
+- Broader export/product rules live in `CONTEXT.md` and `docs/current-contract.md`.
+
 Anacronia exports one row or JSONL object per imported Image Asset.
 
 ## Source metadata fields

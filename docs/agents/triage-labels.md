@@ -1,5 +1,10 @@
 # Triage Labels
 
+## Status
+
+- Role: current agent operating rules for translating triage roles to GitHub labels.
+- Read through root `AGENTS.md`; do not treat as product contract.
+
 The skills speak in terms of five canonical triage roles. This file maps those roles to the actual label strings used in this repo's issue tracker.
 
 | Label in mattpocock/skills | Label in Anacronia tracker | Meaning                                  |

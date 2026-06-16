@@ -1,6 +1,10 @@
 # DINOv3 Latent Map Prototype Summary
 
-Status: review draft
+## Status
+
+- Role: historical disposable DINOv3 latent-map prototype summary.
+- Read for compact prototype background and multi-embedding research notes.
+- Superseded for current architecture by `docs/prd/anacronia-analysis-studio-prd.md` and `docs/current-contract.md`.
 
 This prototype is a disposable learning tool for testing whether Anacronia-style image sets can be explored through visual embedding space. It should not modify the main Anacronia app, database, or collection model. The output should teach us what to rebuild properly later.
 

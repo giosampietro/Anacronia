@@ -1,6 +1,10 @@
 # New Search Set UX Notes
 
-> Historical note: this document describes the earlier Search Set / collect prototype. Current implementation planning uses `Collection`, `Provider Search`, explicit Provider selection, and the live contract in `docs/ux/start-new-collection-contract.md`.
+## Status
+
+- Role: historical Search Set / collect prototype notes.
+- Superseded by `Collection`, `Provider Search`, explicit Provider selection, and the live contract in `docs/ux/start-new-collection-contract.md`.
+- Do not use this as current New Collection contract.
 
 Use this with `docs/ux/new-search-set-mockup.html`.
 

@@ -4,7 +4,11 @@ Date: June 13, 2026
 
 Branch: `codex/latent-map-instanced-thumbnails`
 
-Status: implemented through issue #224 and child issues, with post-close UX refinements recorded below. This supersedes the previous drawer/panel direction for the same feature.
+## Status
+
+- Role: implemented latent-map neighborhood comparison feature contract.
+- Implemented through issue #224 and child issues, with post-close UX refinements recorded below.
+- Supersedes the previous drawer/panel direction for the same feature.
 
 ## Problem Statement
 

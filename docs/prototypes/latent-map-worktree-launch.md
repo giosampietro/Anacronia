@@ -1,5 +1,11 @@
 # Latent Map Worktree Launch
 
+## Status
+
+- Role: local worktree QA launcher notes for the J Shoot latent-map run.
+- Read only when validating that specific worktree/run.
+- Not a portable setup contract.
+
 Use this when validating the latent-map viewer from the `codex/latent-map-instanced-thumbnails` worktree.
 
 ## One-Click Launch

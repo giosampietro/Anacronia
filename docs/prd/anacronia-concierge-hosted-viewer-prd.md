@@ -8,6 +8,12 @@ Related ADR: [0026 - Use concierge hosted viewers before full cloud SaaS](../adr
 
 Related PRD: [Anacronia Analysis Studio PRD](anacronia-analysis-studio-prd.md)
 
+## Status
+
+- Role: business/product strategy for private hosted Project Viewer Export after local Analysis Results are stable.
+- Read for: concierge hosted viewer, client project workflow, commercial sequencing.
+- Do not use as a reason to add SaaS, client upload, auth, billing, or cloud compute to the local MVP.
+
 ## Executive Summary
 
 Anacronia should not jump directly from local single-user research app to full multi-user SaaS. The next commercial step is a concierge hosted-viewer workflow: run analysis locally or on a controlled worker, then publish a private online latent-map viewer for a client project.

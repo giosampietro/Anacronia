@@ -1,5 +1,11 @@
 # Architecture Decision Records
 
+## Status
+
+- Role: scoped ADR router/index.
+- Read to find durable architectural decisions; individual ADRs carry the decision authority.
+- `CONTEXT.md` and `docs/current-contract.md` remain the compact domain/current-contract entrypoints.
+
 ADRs record architectural decisions that are hard to reverse, surprising without context, or the result of a real trade-off. `CONTEXT.md` remains the domain glossary and product model; ADRs explain why Anacronia chose a particular architecture or scope boundary.
 
 Before changing Provider Search, local storage, source identity, curation semantics, exports, packaging, or source-provider behavior, read the relevant ADRs in this directory and surface conflicts before changing code.

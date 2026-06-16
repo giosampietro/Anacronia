@@ -4,6 +4,12 @@ Date: June 12, 2026
 
 Branch: `codex/latent-map-instanced-thumbnails`
 
+## Status
+
+- Role: active planning memory for latent-map grouping and bridge experiments.
+- Read for graph communities, hierarchy, diagnostics, community bridges, association bridges, and patch-token direction.
+- `docs/prd/anacronia-analysis-studio-prd.md` and `docs/current-contract.md` control durable Analysis Result architecture.
+
 ## Goal
 
 Record the next clustering directions for the latent-map explorer after the first HDBSCAN experiment.
@@ -14,6 +20,7 @@ The purpose is durable project memory: future agents should not rediscover the s
 
 - This PRD is the planning memory for latent-map clustering experiments.
 - `latent-map-hdbscan-clustering-prd.md` records the first HDBSCAN implementation and its current limitations.
+- The Analysis Studio PRD records the higher-level visual-association thesis: global DINO finds visual families; graph bridges find outward connections; patch-level DINO can later find motifs.
 - GitHub Issues hold executable vertical slices.
 - ADR-0023 already covers the architectural boundary: clustering outputs are versioned Analysis Results with provenance.
 
@@ -41,6 +48,15 @@ Observed behavior:
 
 This does not mean there is no structure in the image set. It means density-separated islands are not the best first assumption for this dataset and embedding space.
 
+The stronger DINO-only direction is graph-based. Global DINO embeddings can identify visual families; FAISS kNN graph structure can reveal communities and outward bridges between those communities. These are still visual/formal relations only. They do not imply source, artist, object, or historical context unless separate Anacronia metadata is available.
+
+Community bridges and anchor-level association bridges are follow-up relation concepts on top of graph communities:
+
+- Community bridges: strong DINO edges or short paths crossing different graph communities.
+- Association bridges: selected-image relation sets that show how an anchor connects outward into another visual family.
+
+Both should be saved or served as explicit relation artifacts with provenance. They should not replace literal FAISS closest-neighbor lookup.
+
 ## Option Ranking
 
 | Order | Option | Implementation Priority | Product Value | Risk |
@@ -51,7 +67,9 @@ This does not mean there is no structure in the image set. It means density-sepa
 | 4 | HDBSCAN on reduced features | Later experiment | Medium | Medium |
 | 5 | Direct HDBSCAN on DINO vectors | Keep as baseline | Low for current data | Low |
 | 6 | K-means | Keep temporarily | Low | Low |
-| 7 | Richer embeddings or hybrid signals | Later architecture work | Potentially high | High |
+| 7 | Community bridges / association bridges | Follow-up after graph communities | High | Medium |
+| 8 | DINO patch-token motif search | Later design pass | High | High |
+| 9 | Richer embeddings or hybrid signals | Later architecture work | Potentially high | High |
 
 ## Recommended Implementation Order
 
@@ -194,7 +212,9 @@ The viewer should consume cluster artifacts uniformly. It should not need method
 2. [#222 Latent map: add hierarchical clustering with granularity control](https://github.com/giosampietro/Anacronia/issues/222)
 3. [#223 Latent map: add cluster diagnostics summary](https://github.com/giosampietro/Anacronia/issues/223)
 
-The implementation issues should be vertical slices through the analysis artifact generator, live/export loaders, viewer UI, URL state, tests, and real-data QA.
+These implementation issues are now closed and form the prototype history for graph communities, hierarchy, and diagnostics. Open clustering issues such as [#213](https://github.com/giosampietro/Anacronia/issues/213) and [#202](https://github.com/giosampietro/Anacronia/issues/202) should be revisited through durable Analysis Scope, Recipe, Result, and Artifact Store terminology before further implementation.
+
+Future executable issues should be created separately for community bridges, anchor-level association bridges, DINO patch-token motif search, and interpretable visual feature sidecars when those designs are ready. Those issues should be vertical slices through artifact generation, relation serving, viewer UI, URL state where needed, tests, and real-data QA.
 
 ## Issue #221 Implementation Note
 

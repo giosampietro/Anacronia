@@ -1,5 +1,10 @@
 # Browser Tooling
 
+## Status
+
+- Role: current agent operating rules for rendered local UI QA.
+- Read through root `AGENTS.md`; do not treat as product contract.
+
 Use one stable browser context for local UI QA. Do not improvise a new browser automation path when the app is already open.
 
 ## Default Local UI QA Path
