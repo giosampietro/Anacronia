@@ -322,8 +322,10 @@ describe("AnalysisResultsPage", () => {
     expect(html).toContain("Variants");
     expect(html).toContain("DINOv3 ViT-S 384px");
     expect(html).toContain("40 images");
-    expect(html).toContain("Shared embeddings");
-    expect(html).toContain("40 reused · 0 new");
+    expect(html).toContain("Embedding cache");
+    expect(html).toContain("40 cached · 0 computed");
+    expect(html).not.toContain("Shared embeddings");
+    expect(html).not.toContain("40 reused · 0 new");
     expect(html).toContain("Variant storage");
     expect(html).toContain("6.6 MB");
     expect(html).toContain("Open Explorer");
@@ -441,7 +443,7 @@ describe("AnalysisResultsPage", () => {
     expect(html).toContain("failed");
     expect(html).toContain("DINOv3 ViT-S 384px");
     expect(html).toContain("DINOv3 ViT-S 512px");
-    expect(html).toContain("0 reused · 25 new");
+    expect(html).toContain("0 cached · 25 computed");
     expect(html).toContain("300 KB");
     expect(html).toContain("Explorer unavailable");
     expect(html).not.toContain("Open Explorer");

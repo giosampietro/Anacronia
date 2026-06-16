@@ -201,8 +201,8 @@ function selectedAnalysisVariantRows(
       imageCount: result?.itemCount ?? 0,
       label: `Variant ${index + 1}`,
       recipeLabel: recipeLabels.join(", ") || "Recipe unavailable",
-      sharedEmbeddings: embeddingCounts
-        ? `${embeddingCounts.reusableEmbeddings} reused · ${embeddingCounts.missingEmbeddings} new`
+      embeddingCache: embeddingCounts
+        ? `${embeddingCounts.reusableEmbeddings} cached · ${embeddingCounts.missingEmbeddings} computed`
         : "Unavailable",
       status: variant.status,
       variantStorage: formatBytes(result?.storageTotals.totalBytes ?? 0),
@@ -459,7 +459,7 @@ function SelectedAnalysisOverview({
                   <TableHead>Status</TableHead>
                   <TableHead>Recipe</TableHead>
                   <TableHead>Images</TableHead>
-                  <TableHead>Shared embeddings</TableHead>
+                  <TableHead>Embedding cache</TableHead>
                   <TableHead>Variant storage</TableHead>
                   <TableHead className="text-right">Action</TableHead>
                 </TableRow>
@@ -484,7 +484,7 @@ function SelectedAnalysisOverview({
                       {formatCount(row.imageCount, "image")}
                     </TableCell>
                     <TableCell className="text-muted-foreground">
-                      {row.sharedEmbeddings}
+                      {row.embeddingCache}
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       {row.variantStorage}
