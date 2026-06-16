@@ -372,8 +372,10 @@ describe("AnalysisResultsPage", () => {
     expect(html).toContain("Run variant");
     expect(html).toContain("DINOv3 ViT-S 384px");
     expect(html).toContain("40 images");
-    expect(html).toContain("Embedding cache");
-    expect(html).toContain("40 cached · 0 computed");
+    expect(html).toContain("Image embeddings");
+    expect(html).toContain("40 reused · 0 computed");
+    expect(html).not.toContain("Embedding cache");
+    expect(html).not.toContain("40 cached");
     expect(html).not.toContain("Shared embeddings");
     expect(html).not.toContain("40 reused · 0 new");
     expect(html).toContain("Storage");
@@ -449,7 +451,7 @@ describe("AnalysisResultsPage", () => {
     expect(html).toContain("Running Analysis");
     expect(html).toContain("Variant 1");
     expect(html).toContain("running");
-    expect(html).toContain("10 cached · 30 needed");
+    expect(html).toContain("10 reusable · 30 needed");
     expect(html).toContain("Unavailable");
     expect(html).not.toContain(">ready<");
     expect(html).not.toContain("Open Explorer");
@@ -473,7 +475,7 @@ describe("AnalysisResultsPage", () => {
     expect(html).toContain("UMAP failed");
     expect(html).toContain("Variant 1");
     expect(html).toContain("Open Explorer");
-    expect(html).toContain("0 cached · 40 needed");
+    expect(html).toContain("0 reusable · 40 needed");
     expect(html).not.toContain("partial_failed");
     expect(html).not.toContain("No Variants were produced.");
   });
@@ -500,7 +502,7 @@ describe("AnalysisResultsPage", () => {
     expect(html).toContain("Run variant");
     expect(html).toContain("Variant 1");
     expect(html).toContain("40 images");
-    expect(html).toContain("0 cached · 40 needed");
+    expect(html).toContain("0 reusable · 40 needed");
     expect(html).toContain("Unavailable");
     expect(html).not.toContain("No Variants were produced.");
     expect(html).not.toContain("Open Explorer");
@@ -525,7 +527,7 @@ describe("AnalysisResultsPage", () => {
     expect(html).toContain("failed");
     expect(html).toContain("DINOv3 ViT-S 384px");
     expect(html).toContain("DINOv3 ViT-S 512px");
-    expect(html).toContain("0 cached · 25 computed");
+    expect(html).toContain("0 reused · 25 computed");
     expect(html).toContain("300 KB");
     expect(html).toContain("Unavailable");
     expect(html).not.toContain("Open Explorer");

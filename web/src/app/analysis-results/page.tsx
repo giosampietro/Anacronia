@@ -213,11 +213,12 @@ function jobStageLines(jobs: AnalysisStudioJobSummary[]): string[] {
 function formatEmbeddingCounts(
   counts: AnalysisStudioJobStageSummary["outputCounts"] | undefined,
   missingLabel: string,
+  reusableLabel: string,
 ): string {
   if (!counts) {
     return "Unavailable";
   }
-  return `${counts.reusableEmbeddings} cached · ${counts.missingEmbeddings} ${missingLabel}`;
+  return `${counts.reusableEmbeddings} ${reusableLabel} · ${counts.missingEmbeddings} ${missingLabel}`;
 }
 
 function plannedEmbeddingCounts(
@@ -294,7 +295,7 @@ function selectedAnalysisVariantRows(
       label: `Variant ${index + 1}`,
       recipeLabel: recipeLabels.join(", ") || "Recipe unavailable",
       embeddingCache: embeddingCounts
-        ? formatEmbeddingCounts(embeddingCounts, "computed")
+        ? formatEmbeddingCounts(embeddingCounts, "computed", "reused")
         : "Unavailable",
       status: variant.status,
       variantStorage: formatBytes(result?.storageTotals.totalBytes ?? 0),
@@ -338,6 +339,7 @@ function selectedAnalysisVariantRows(
             stageForRecipe?.outputCounts ??
               plannedEmbeddingCounts(job, embeddingStage?.outputCounts),
             "needed",
+            "reusable",
           ),
           status,
           variantStorage: "Unavailable",
@@ -666,7 +668,12 @@ function SelectedAnalysisOverview({
                   <TableHead className="h-8 px-1.5">Status</TableHead>
                   <TableHead className="h-8 px-1.5">Recipe</TableHead>
                   <TableHead className="h-8 px-1.5">Images</TableHead>
-                  <TableHead className="h-8 px-1.5">Embedding cache</TableHead>
+                  <TableHead
+                    className="h-8 px-1.5"
+                    title="Reusable per-image embeddings for this recipe"
+                  >
+                    Image embeddings
+                  </TableHead>
                   <TableHead className="h-8 px-1.5">Storage</TableHead>
                   <TableHead className="h-8 px-1.5 text-right">Action</TableHead>
                 </TableRow>
