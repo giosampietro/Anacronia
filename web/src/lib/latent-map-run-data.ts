@@ -134,11 +134,13 @@ export async function loadLatentMapAnalysisResultExportedViewerData({
     selectedRecipeRecord?.imageManifestKey ??
     firstArtifactKeyByRole(artifacts, "image-manifest");
   const layoutKeys =
-    selectedRecipeRecord?.layoutKeys.length > 0
+    selectedRecipeRecord !== undefined &&
+    selectedRecipeRecord.layoutKeys.length > 0
       ? selectedRecipeRecord.layoutKeys
       : artifactKeysByRole(artifacts, "layout");
   const clusterKeys =
-    selectedRecipeRecord?.clusterKeys.length > 0
+    selectedRecipeRecord !== undefined &&
+    selectedRecipeRecord.clusterKeys.length > 0
       ? selectedRecipeRecord.clusterKeys
       : artifactKeysByRole(artifacts, "cluster-result");
 

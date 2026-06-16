@@ -51,6 +51,26 @@ describe("AnalysisResultsPage", () => {
             },
           ]);
         }
+        if (url.endsWith("/analysis-recipes")) {
+          return Response.json({
+            default_recipe_id: "dinov3_vits_384",
+            recipes: [
+              {
+                input_size: 384,
+                is_default: true,
+                label: "DINOv3 ViT-S 384px",
+                recipe_id: "dinov3_vits_384",
+              },
+              {
+                input_size: 512,
+                is_default: false,
+                label: "DINOv3 ViT-S 512px",
+                recipe_id: "dinov3_vits_512",
+              },
+            ],
+            schema_version: 1,
+          });
+        }
         return Response.json({
           jobs: [
             {
@@ -110,10 +130,14 @@ describe("AnalysisResultsPage", () => {
       }),
     );
 
-    const html = renderToString(await AnalysisResultsPage()).replaceAll(
-      "<!-- -->",
-      "",
-    );
+    const html = renderToString(
+      await AnalysisResultsPage({
+        searchParams: Promise.resolve({
+          analysisResultId:
+            "analysis-result-20260614T130000Z-dinov3_vits_384",
+        }),
+      }),
+    ).replaceAll("<!-- -->", "");
 
     expect(html).toContain("data-app-space-shell=\"true\"");
     expect(html).toContain("data-active-space=\"analysis\"");
@@ -133,7 +157,7 @@ describe("AnalysisResultsPage", () => {
     expect(html).toContain("1 result");
     expect(html).toContain("3184 images indexed");
     expect(html).toContain("Recipe Choices");
-    expect(html).toContain("dinov3_vits_384");
+    expect(html).toContain("DINOv3 ViT-S 384px");
     expect(html).toContain("Job Status");
     expect(html).toContain("ready");
     expect(html).toContain("Analysis running");
@@ -147,8 +171,9 @@ describe("AnalysisResultsPage", () => {
     expect(html).not.toContain("faileds");
     expect(html).toContain("analysis-job-20260614T130000Z");
     expect(html).toContain("Submitted Jobs");
+    expect(html).toContain("Selected Analysis Result");
     expect(html).toContain("J Shoot");
-    expect(html).toContain("dinov3_vits_384");
+    expect(html).toContain("Required artifacts ready");
     expect(html).toContain("3184 images");
     expect(html).toContain("ready");
     expect(html).toContain(
