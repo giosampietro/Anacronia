@@ -247,10 +247,25 @@ def _record_from_manifest(
         )
         for collection in _dict_list(manifest.get("source_collections"))
     ]
-    variants = [
+    variants = _dedupe_variants([
         _analysis_variant(data_root=data_root, value=variant)
         for variant in _dict_list(manifest.get("variants"))
-    ]
+    ])
+    variant_ids = {variant.analysis_result_id for variant in variants}
+    for analysis_job_id in analysis_job_ids:
+        for analysis_result_id in _analysis_job_result_ids(
+            data_root=data_root,
+            analysis_job_id=analysis_job_id,
+        ):
+            if analysis_result_id in variant_ids:
+                continue
+            variants.append(
+                _analysis_variant(
+                    data_root=data_root,
+                    value={"analysis_result_id": analysis_result_id},
+                )
+            )
+            variant_ids.add(analysis_result_id)
     return AnalysisRecord(
         analysis_id=analysis_id,
         analysis_job_ids=analysis_job_ids,
@@ -272,6 +287,17 @@ def _dict_list(value: object) -> list[dict[str, object]]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, dict)]
+
+
+def _dedupe_variants(variants: list[AnalysisVariant]) -> list[AnalysisVariant]:
+    deduped: list[AnalysisVariant] = []
+    seen: set[str] = set()
+    for variant in variants:
+        if not variant.analysis_result_id or variant.analysis_result_id in seen:
+            continue
+        deduped.append(variant)
+        seen.add(variant.analysis_result_id)
+    return deduped
 
 
 def _analysis_status(
@@ -317,6 +343,18 @@ def _analysis_job_status(*, data_root: Path, analysis_job_id: str) -> str:
         return "missing"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     return str(manifest.get("status", "missing"))
+
+
+def _analysis_job_result_ids(*, data_root: Path, analysis_job_id: str) -> list[str]:
+    manifest_path = data_root / "analysis-jobs" / analysis_job_id / "analysis-job.json"
+    if not manifest_path.is_file():
+        return []
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    return [
+        str(analysis_result_id).strip()
+        for analysis_result_id in manifest.get("analysis_result_ids", [])
+        if str(analysis_result_id).strip()
+    ]
 
 
 def _require_title(title: str) -> str:

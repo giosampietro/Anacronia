@@ -125,7 +125,10 @@ export function AnalysisStudioAnalysisFilter({
             const isActive = analysis.analysisId === activeAnalysisId;
             const isOpen = openedAnalysisId === analysis.analysisId;
             const running = isAnalysisRunning(analysis);
-            const variantCount = analysis.variants.length;
+            const analyzedImageCount = analysis.analyzedImageCount;
+            const analyzedImageLabel = `${analyzedImageCount} ${
+              analyzedImageCount === 1 ? "image" : "images"
+            } analyzed`;
 
             return (
               <SidebarMenuItem key={analysis.analysisId}>
@@ -156,10 +159,10 @@ export function AnalysisStudioAnalysisFilter({
                       />
                     ) : null}
                     <span
-                      aria-label={`${variantCount} variants`}
-                      title={`${variantCount} variants`}
+                      aria-label={analyzedImageLabel}
+                      title={analyzedImageLabel}
                     >
-                      {variantCount}
+                      {analyzedImageCount}
                     </span>
                   </span>
                 </SidebarMenuButton>

@@ -1,12 +1,13 @@
 import type { CSSProperties } from "react";
 import Link from "next/link";
-import { Plus } from "lucide-react";
+import { ExternalLink, Plus } from "lucide-react";
 
 import { AnalysisJobAutoRefresh } from "@/components/analysis-job-auto-refresh";
 import { AnalysisStudioAnalysisFilter } from "@/components/analysis-studio-analysis-filter";
 import { AppSpaceShell } from "@/components/app-space-shell";
 import { ThemeSwitch } from "@/components/theme-switch";
 import { Badge } from "@/components/ui/badge";
+import { buttonVariants } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -32,10 +33,19 @@ import {
   SidebarProvider,
   SidebarTrigger,
 } from "@/components/ui/sidebar";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { shouldAutoRefreshAnalysisJobs } from "@/lib/analysis-job-refresh";
 import {
   loadAnalysisStudioReadModel,
   type AnalysisStudioAnalysisSummary,
+  type AnalysisStudioJobSummary,
   type AnalysisStudioReadModel,
 } from "@/lib/analysis-studio-read-model";
 import type { AnalysisStudioSearchParams } from "@/lib/analysis-studio-url";
@@ -67,6 +77,61 @@ function collectionNames(analysis: AnalysisStudioAnalysisSummary): string {
 
 function variantCount(analysis: AnalysisStudioAnalysisSummary): string {
   return formatCount(analysis.variants.length, "variant");
+}
+
+function recipeLabelById(model: AnalysisStudioReadModel): Map<string, string> {
+  return new Map(
+    model.recipes.map((recipe) => [recipe.recipeId, recipe.label]),
+  );
+}
+
+function selectedAnalysisJobs(
+  analysis: AnalysisStudioAnalysisSummary,
+  model: AnalysisStudioReadModel,
+): AnalysisStudioJobSummary[] {
+  return model.jobs.filter((job) =>
+    analysis.analysisJobIds.includes(job.analysisJobId),
+  );
+}
+
+function selectedAnalysisVariantRows(
+  analysis: AnalysisStudioAnalysisSummary,
+  model: AnalysisStudioReadModel,
+) {
+  const resultsById = new Map(
+    model.results.map((result) => [result.analysisResultId, result]),
+  );
+  const recipesById = recipeLabelById(model);
+
+  return analysis.variants.map((variant, index) => {
+    const result = resultsById.get(variant.analysisResultId);
+    const recipeLabels = result?.recipeLabels.length
+      ? result.recipeLabels
+      : analysis.recipeIds.map((recipeId) => recipesById.get(recipeId) ?? recipeId);
+    const explorerHref =
+      result?.canOpenExplorer === true
+        ? result.explorerHref
+        : variant.status === "ready"
+          ? variant.explorerHref
+          : undefined;
+
+    return {
+      analysisResultId: variant.analysisResultId,
+      canOpenExplorer: Boolean(explorerHref),
+      explorerHref,
+      imageCount: result?.itemCount ?? 0,
+      label: `Variant ${index + 1}`,
+      recipeLabel: recipeLabels.join(", ") || "Recipe unavailable",
+      status: variant.status,
+    };
+  });
+}
+
+function jobActivityText(jobs: AnalysisStudioJobSummary[]): string {
+  if (jobs.length === 0) {
+    return "No jobs yet.";
+  }
+  return jobs.map((job) => job.analysisJobId).join(", ");
 }
 
 function activeAnalysisId(model: AnalysisStudioReadModel): string | null {
@@ -187,9 +252,14 @@ function NewAnalysisPlaceholder() {
 
 function SelectedAnalysisOverview({
   analysis,
+  model,
 }: {
   analysis: AnalysisStudioAnalysisSummary;
+  model: AnalysisStudioReadModel;
 }) {
+  const jobs = selectedAnalysisJobs(analysis, model);
+  const variantRows = selectedAnalysisVariantRows(analysis, model);
+
   return (
     <section
       aria-label="Selected Analysis overview"
@@ -217,12 +287,77 @@ function SelectedAnalysisOverview({
               {variantCount(analysis)}
             </span>
           </div>
-          {analysis.analysisJobIds.length > 0 ? (
+          {jobs.length > 0 ? (
             <p className="font-mono text-xs text-muted-foreground">
-              {analysis.analysisJobIds.join(", ")}
+              {jobActivityText(jobs)}
             </p>
           ) : (
             <p className="text-sm text-muted-foreground">No jobs yet.</p>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card size="sm" className="lg:col-span-2">
+        <CardHeader>
+          <CardTitle>Variants</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {variantRows.length > 0 ? (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Variant</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Recipe</TableHead>
+                  <TableHead>Images</TableHead>
+                  <TableHead className="text-right">Action</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {variantRows.map((row) => (
+                  <TableRow key={row.analysisResultId}>
+                    <TableCell className="font-medium">{row.label}</TableCell>
+                    <TableCell>
+                      <Badge
+                        variant={
+                          row.status === "failed" ? "destructive" : "outline"
+                        }
+                      >
+                        {row.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {row.recipeLabel}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {formatCount(row.imageCount, "image")}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {row.canOpenExplorer && row.explorerHref ? (
+                        <Link
+                          className={buttonVariants({
+                            size: "xs",
+                            variant: "outline",
+                          })}
+                          href={row.explorerHref}
+                        >
+                          <ExternalLink data-icon="inline-start" />
+                          Open Explorer
+                        </Link>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">
+                          Explorer unavailable
+                        </span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              No variants available yet.
+            </p>
           )}
         </CardContent>
       </Card>
@@ -251,7 +386,12 @@ function AnalysisStudioMainPanel({ model }: { model: AnalysisStudioReadModel }) 
   }
 
   if (model.selectedState.state === "selected-analysis" && model.selectedAnalysis) {
-    return <SelectedAnalysisOverview analysis={model.selectedAnalysis} />;
+    return (
+      <SelectedAnalysisOverview
+        analysis={model.selectedAnalysis}
+        model={model}
+      />
+    );
   }
 
   if (model.selectedState.state === "missing-analysis") {

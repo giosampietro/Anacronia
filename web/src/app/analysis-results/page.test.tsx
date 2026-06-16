@@ -27,17 +27,9 @@ function stubAnalysisStudioFetch() {
               analysis_job_ids: ["analysis-job-20260614T130000Z"],
               recipe_ids: ["dinov3_vits_384"],
               source_collections: [{ label: "Bread", slug: "bread" }],
-              status: "ready",
+              status: "pending",
               title: "Bread visual study",
-              variants: [
-                {
-                  analysis_result_id:
-                    "analysis-result-20260614T130000Z-dinov3_vits_384",
-                  explorer_href:
-                    "/latent-map?analysisResultId=analysis-result-20260614T130000Z-dinov3_vits_384",
-                  status: "ready",
-                },
-              ],
+              variants: [],
             },
             {
               analysis_id: "analysis-20260614T140000Z",
@@ -175,12 +167,18 @@ describe("AnalysisResultsPage", () => {
     expect(html).toContain("Bread visual study");
     expect(html).toContain("DINO comparison");
     expect(html).toContain("DINO comparison in progress");
-    expect(html).toContain("1 variants");
-    expect(html).toContain("0 variants");
+    expect(html).toContain("40 images analyzed");
     expect(html).toContain("Selected Analysis overview");
     expect(html).toContain("Source Collections");
     expect(html).toContain("Job activity");
     expect(html).toContain("analysis-job-20260614T130000Z");
+    expect(html).toContain("Variants");
+    expect(html).toContain("DINOv3 ViT-S 384px");
+    expect(html).toContain("40 images");
+    expect(html).toContain("Open Explorer");
+    expect(html).toContain(
+      "href=\"/latent-map?analysisResultId=analysis-result-20260614T130000Z-dinov3_vits_384\"",
+    );
     expect(html).toContain("ready");
     expect(html).not.toContain(">Analysis Results<");
     expect(html).not.toContain(">Jobs<");

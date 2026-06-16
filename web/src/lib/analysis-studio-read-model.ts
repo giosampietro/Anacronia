@@ -25,6 +25,7 @@ export type AnalysisStudioRecipeChoice = {
 export type AnalysisStudioAnalysisSummary = {
   analysisId: string;
   analysisJobIds: string[];
+  analyzedImageCount: number;
   recipeIds: string[];
   sourceCollections: AnalysisStudioCollectionChoice[];
   status: string;
@@ -224,10 +225,17 @@ export async function loadAnalysisStudioReadModel({
       (recipeId) => recipeLabelById.get(recipeId) ?? recipeId,
     ),
   }));
+  const analyses = analysesResult.analyses.map((analysis) =>
+    enrichAnalysisWithJobResults({
+      analysis,
+      jobs,
+      results,
+    }),
+  );
   const selectedState = resolveAnalysisStudioUrlState(
     parseAnalysisStudioUrlState(searchParams),
     {
-      analysisIds: analysesResult.analyses.map((analysis) => analysis.analysisId),
+      analysisIds: analyses.map((analysis) => analysis.analysisId),
       analysisJobIds: jobs.map((job) => job.analysisJobId),
       analysisResultIds: results.map((result) => result.analysisResultId),
     },
@@ -235,7 +243,7 @@ export async function loadAnalysisStudioReadModel({
 
   return {
     activeJob: jobs.find((job) => shouldAutoRefreshAnalysisJobs([job.status])) ?? null,
-    analyses: analysesResult.analyses,
+    analyses,
     analysesUnavailable: analysesResult.unavailable,
     collections: collectionsResult.collections,
     collectionsUnavailable: collectionsResult.unavailable,
@@ -246,7 +254,7 @@ export async function loadAnalysisStudioReadModel({
     results,
     selectedAnalysis:
       selectedState.state === "selected-analysis"
-        ? analysesResult.analyses.find(
+        ? analyses.find(
             (analysis) => analysis.analysisId === selectedState.analysisId,
           ) ?? null
         : null,
@@ -427,6 +435,7 @@ function normalizeAnalyses(payload: unknown): AnalysisStudioAnalysisSummary[] {
       return {
         analysisId,
         analysisJobIds: normalizeStringList(analysis.analysis_job_ids),
+        analyzedImageCount: 0,
         recipeIds: normalizeStringList(analysis.recipe_ids),
         sourceCollections: normalizeAnalysisSourceCollections(
           analysis.source_collections,
@@ -484,6 +493,90 @@ function normalizeAnalysisVariants(
     .filter(
       (item): item is AnalysisStudioAnalysisVariantSummary => item !== null,
     );
+}
+
+function enrichAnalysisWithJobResults({
+  analysis,
+  jobs,
+  results,
+}: {
+  analysis: AnalysisStudioAnalysisSummary;
+  jobs: AnalysisStudioJobSummary[];
+  results: AnalysisStudioResultSummary[];
+}): AnalysisStudioAnalysisSummary {
+  const associatedJobs = jobs.filter((job) =>
+    analysis.analysisJobIds.includes(job.analysisJobId),
+  );
+  const resultIds = [
+    ...analysis.variants.map((variant) => variant.analysisResultId),
+    ...associatedJobs.flatMap((job) => job.analysisResultIds),
+  ];
+  const resultsById = new Map(
+    results.map((result) => [result.analysisResultId, result]),
+  );
+  const variants: AnalysisStudioAnalysisVariantSummary[] = [];
+  const seenVariantIds = new Set<string>();
+
+  for (const resultId of resultIds) {
+    if (seenVariantIds.has(resultId)) {
+      continue;
+    }
+    seenVariantIds.add(resultId);
+    const existingVariant = analysis.variants.find(
+      (variant) => variant.analysisResultId === resultId,
+    );
+    const result = resultsById.get(resultId);
+    variants.push({
+      analysisResultId: resultId,
+      ...(existingVariant?.explorerHref || result?.explorerHref
+        ? { explorerHref: existingVariant?.explorerHref ?? result?.explorerHref }
+        : {}),
+      status: existingVariant?.status ?? result?.state ?? "unknown",
+    });
+  }
+
+  const analyzedImageCount = Math.max(
+    0,
+    ...[...seenVariantIds]
+      .map((resultId) => resultsById.get(resultId)?.itemCount ?? 0)
+      .filter((count) => count > 0),
+  );
+
+  return {
+    ...analysis,
+    analyzedImageCount,
+    status: summarizeAnalysisStatus({
+      associatedJobs,
+      fallbackStatus: analysis.status,
+      variants,
+    }),
+    variants,
+  };
+}
+
+function summarizeAnalysisStatus({
+  associatedJobs,
+  fallbackStatus,
+  variants,
+}: {
+  associatedJobs: AnalysisStudioJobSummary[];
+  fallbackStatus: string;
+  variants: AnalysisStudioAnalysisVariantSummary[];
+}): string {
+  if (
+    associatedJobs.some((job) =>
+      ["queued", "running", "stopping"].includes(job.status),
+    )
+  ) {
+    return "running";
+  }
+  if (variants.length > 0) {
+    return "ready";
+  }
+  if (associatedJobs.some((job) => job.status === "failed")) {
+    return "failed";
+  }
+  return fallbackStatus;
 }
 
 function normalizeRecipes(payload: unknown): AnalysisStudioRecipeChoice[] {

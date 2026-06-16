@@ -64,17 +64,9 @@ describe("Analysis Studio read model", () => {
               analysis_job_ids: ["analysis-job-20260614T130000Z"],
               recipe_ids: ["dinov3_vits_384"],
               source_collections: [{ label: "Bread", slug: "bread" }],
-              status: "ready",
+              status: "pending",
               title: "Bread visual study",
-              variants: [
-                {
-                  analysis_result_id:
-                    "analysis-result-20260614T130000Z-dinov3_vits_384",
-                  explorer_href:
-                    "/latent-map?analysisResultId=analysis-result-20260614T130000Z-dinov3_vits_384",
-                  status: "ready",
-                },
-              ],
+              variants: [],
             },
           ],
         });
@@ -137,6 +129,7 @@ describe("Analysis Studio read model", () => {
       {
         analysisId: "analysis-20260614T130000Z",
         analysisJobIds: ["analysis-job-20260614T130000Z"],
+        analyzedImageCount: 2,
         recipeIds: ["dinov3_vits_384"],
         sourceCollections: [{ label: "Bread", slug: "bread" }],
         status: "ready",

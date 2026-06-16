@@ -8,6 +8,7 @@ import type { AnalysisStudioAnalysisSummary } from "@/lib/analysis-studio-read-m
 const breadAnalysis: AnalysisStudioAnalysisSummary = {
   analysisId: "analysis-bread",
   analysisJobIds: ["analysis-job-bread"],
+  analyzedImageCount: 40,
   recipeIds: ["dinov3_vits_384"],
   sourceCollections: [{ label: "Bread", slug: "bread" }],
   status: "ready",
@@ -24,6 +25,7 @@ const breadAnalysis: AnalysisStudioAnalysisSummary = {
 const comparisonAnalysis: AnalysisStudioAnalysisSummary = {
   analysisId: "analysis-comparison",
   analysisJobIds: ["analysis-job-comparison"],
+  analyzedImageCount: 0,
   recipeIds: ["dinov3_vits_512"],
   sourceCollections: [
     { label: "Bread", slug: "bread" },
@@ -73,7 +75,16 @@ describe("AnalysisStudioAnalysisFilter", () => {
     expect(html).toContain("Bread, Hands/Mani");
     expect(html).toContain("Clear Analysis filter");
     expect(html).toContain("DINO comparison in progress");
+    expect(html).toContain("0 images analyzed");
     expect(html).not.toContain("Bread visual study");
+  });
+
+  it("uses the row badge for analyzed image count rather than variant count", () => {
+    const html = renderFilter({ activeAnalysisId: "analysis-bread" });
+
+    expect(html).toContain(">40<");
+    expect(html).toContain("40 images analyzed");
+    expect(html).not.toContain("1 variants");
   });
 
   it("renders an explicit no-match state for filtered Analyses", () => {
