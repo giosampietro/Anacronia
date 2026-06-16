@@ -1,6 +1,7 @@
 import { shouldAutoRefreshAnalysisJobs } from "@/lib/analysis-job-refresh";
 import type { AnalysisResultStatusState } from "@/lib/analysis-result-status";
 import {
+  type AnalysisStudioUrlState,
   createAnalysisStudioHref,
   parseAnalysisStudioUrlState,
   resolveAnalysisStudioUrlState,
@@ -77,6 +78,7 @@ export type AnalysisStudioReadModel = {
   recipes: AnalysisStudioRecipeChoice[];
   recipesUnavailable: boolean;
   results: AnalysisStudioResultSummary[];
+  resultsUnavailable: boolean;
   selectedJob: AnalysisStudioJobSummary | null;
   selectedResult: AnalysisStudioResultSummary | null;
   selectedState: ResolvedAnalysisStudioUrlState;
@@ -173,11 +175,17 @@ export async function loadAnalysisStudioReadModel({
       (recipeId) => recipeLabelById.get(recipeId) ?? recipeId,
     ),
   }));
-  const selectedState = resolveAnalysisStudioUrlState(
-    parseAnalysisStudioUrlState(searchParams),
+  const requestedState = parseAnalysisStudioUrlState(searchParams);
+  const resolvedState = resolveAnalysisStudioUrlState(requestedState, {
+    analysisJobIds: jobs.map((job) => job.analysisJobId),
+    analysisResultIds: results.map((result) => result.analysisResultId),
+  });
+  const selectedState = preserveRequestedSelectionWhenUnavailable(
+    requestedState,
+    resolvedState,
     {
-      analysisJobIds: jobs.map((job) => job.analysisJobId),
-      analysisResultIds: results.map((result) => result.analysisResultId),
+      jobsUnavailable: jobsResult.unavailable,
+      resultsUnavailable: resultsResult.unavailable,
     },
   );
 
@@ -190,6 +198,7 @@ export async function loadAnalysisStudioReadModel({
     recipes: recipesResult.recipes,
     recipesUnavailable: recipesResult.unavailable,
     results,
+    resultsUnavailable: resultsResult.unavailable,
     selectedJob:
       selectedState.state === "selected-job"
         ? jobs.find((job) => job.analysisJobId === selectedState.analysisJobId) ??
@@ -210,6 +219,28 @@ export async function loadAnalysisStudioReadModel({
       resultCount: results.length,
     },
   };
+}
+
+function preserveRequestedSelectionWhenUnavailable(
+  requestedState: AnalysisStudioUrlState,
+  resolvedState: ResolvedAnalysisStudioUrlState,
+  {
+    jobsUnavailable,
+    resultsUnavailable,
+  }: {
+    jobsUnavailable: boolean;
+    resultsUnavailable: boolean;
+  },
+) {
+  if (resolvedState.state === "missing-result" && resultsUnavailable) {
+    return requestedState;
+  }
+
+  if (resolvedState.state === "missing-job" && jobsUnavailable) {
+    return requestedState;
+  }
+
+  return resolvedState;
 }
 
 export { createAnalysisStudioHref };
