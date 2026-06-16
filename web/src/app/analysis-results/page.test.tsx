@@ -1,13 +1,15 @@
 import { renderToString } from "react-dom/server";
+import { redirect } from "next/navigation";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("next/navigation", () => ({
+  redirect: vi.fn(),
   useRouter: () => ({
     refresh: vi.fn(),
   }),
 }));
 
-import AnalysisResultsPage from "@/app/analysis-results/page";
+import AnalysisResultsPage, { createAnalysisAction } from "@/app/analysis-results/page";
 
 function normalizeServerHtml(html: string): string {
   return html.replaceAll("<!-- -->", "");
@@ -202,5 +204,78 @@ describe("AnalysisResultsPage", () => {
     expect(html).toContain("Analysis not found");
     expect(html).toContain("analysis-missing");
     expect(html).not.toContain("Selected Analysis overview");
+  });
+
+  it("renders the New Analysis form with title, Collections, and recipe controls", async () => {
+    stubAnalysisStudioFetch();
+
+    const html = normalizeServerHtml(
+      renderToString(
+        await AnalysisResultsPage({
+          searchParams: Promise.resolve({
+            mode: "new-analysis",
+          }),
+        }),
+      ),
+    );
+
+    expect(html).toContain("Name the Analysis");
+    expect(html).toContain("Analysis title");
+    expect(html).toContain("Bread visual study");
+    expect(html).toContain("Choose Collections");
+    expect(html).toContain("Collection 1");
+    expect(html).toContain("Add Collection");
+    expect(html).toContain("Scope preview");
+    expect(html).toContain("Choose Recipes");
+    expect(html).toContain("DINOv3 ViT-S 384px");
+    expect(html).toContain("384px image embeddings");
+    expect(html).toContain("Start analysis");
+    expect(html).not.toContain("Choose a title, collections, and recipes.");
+  });
+
+  it("submits New Analysis form data and redirects to the created Analysis", async () => {
+    const fetchMock = vi.fn(async () => (
+      Response.json(
+        {
+          analysis: {
+            analysis_id: "analysis-20260616T210000Z",
+          },
+          initial_analysis_job: {
+            analysis_job_id: "analysis-job-20260616T210000Z",
+            status: "running",
+          },
+        },
+        { status: 201 },
+      )
+    ));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const form = new FormData();
+    form.append("title", "Bread visual study");
+    form.append("collection_slugs", "bread");
+    form.append("collection_slugs", "hands-mani");
+    form.append("collection_slugs", "bread");
+    form.append("recipe_ids", "dinov3_vits_384");
+    form.append("recipe_ids", "dinov3_vits_512");
+
+    await createAnalysisAction(form);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:18670/analyses",
+      {
+        body: JSON.stringify({
+          collection_slugs: ["bread", "hands-mani"],
+          recipe_ids: ["dinov3_vits_384", "dinov3_vits_512"],
+          start_job: true,
+          title: "Bread visual study",
+        }),
+        cache: "no-store",
+        headers: { "content-type": "application/json" },
+        method: "POST",
+      },
+    );
+    expect(redirect).toHaveBeenCalledWith(
+      "/analysis-results?analysisId=analysis-20260616T210000Z",
+    );
   });
 });

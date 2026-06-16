@@ -22,7 +22,11 @@ from anacronia.analysis_jobs import (
 )
 from anacronia.analysis_result_registry import LocalAnalysisResultRegistry
 from anacronia.analysis_result_contract import browser_safe_analysis_result_summary
-from anacronia.analysis_recipes import browser_safe_analysis_recipe_catalog
+from anacronia.analysis_recipes import (
+    browser_safe_analysis_recipe_catalog,
+    select_analysis_recipes,
+)
+from anacronia.analysis_scopes import resolve_analysis_scope
 from anacronia.analysis_stage_runner import LatentMapAnalysisStageRunner
 from anacronia.artifact_store import ArtifactStoreError, validate_artifact_key
 from anacronia.collection_runs import (
@@ -220,10 +224,15 @@ class AnalysisJobRequest(BaseModel):
     recipe_ids: list[str] | None = None
 
 
+class AnalysisScopePreviewRequest(BaseModel):
+    collection_slugs: list[str] = Field(default_factory=list)
+
+
 class AnalysisRequest(BaseModel):
     title: str
     collection_slugs: list[str] = Field(default_factory=list)
     recipe_ids: list[str] = Field(default_factory=list)
+    start_job: bool = False
 
 
 class RenameAnalysisRequest(BaseModel):
@@ -325,6 +334,22 @@ def serialize_local_folder_import_summary(
 
 def serialize_analysis_job_summary(summary: AnalysisJobSummary) -> dict[str, object]:
     return serialize_analysis_job_manifest(summary.manifest_path)
+
+
+def serialize_analysis_scope_preview(resolved_scope) -> dict[str, object]:
+    scope = resolved_scope.payload.get("scope", {})
+    if not isinstance(scope, dict):
+        scope = {}
+    collection_slugs = [
+        str(slug)
+        for slug in scope.get("collection_slugs", [])
+        if str(slug).strip()
+    ]
+    return {
+        "collection_slugs": collection_slugs,
+        "counts": dict(resolved_scope.counts),
+        "item_count": resolved_scope.item_count,
+    }
 
 
 def serialize_analysis(record) -> dict[str, object]:
@@ -862,10 +887,32 @@ def create_app(
     def get_analysis_recipes() -> dict[str, object]:
         return browser_safe_analysis_recipe_catalog()
 
+    @app.post("/analysis-scopes/preview")
+    def preview_analysis_scope(
+        request: AnalysisScopePreviewRequest,
+    ) -> dict[str, object]:
+        try:
+            resolved_scope = resolve_analysis_scope(
+                database_path=resolved_database_path,
+                data_root=resolved_data_root,
+                collection_slugs=request.collection_slugs,
+            )
+        except LookupError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        return {
+            "scope_preview": serialize_analysis_scope_preview(resolved_scope),
+        }
+
     @app.post("/analyses", status_code=201)
     def create_analysis(request: AnalysisRequest) -> dict[str, object]:
         store = LocalAnalysisStore(resolved_data_root)
         try:
+            if request.start_job:
+                ensure_no_active_provider_search()
+                ensure_no_active_analysis_job()
+                select_analysis_recipes(request.recipe_ids)
             source_collections = [
                 AnalysisSourceCollection(
                     label=get_search_set(
@@ -881,12 +928,32 @@ def create_app(
                 source_collections=source_collections,
                 recipe_ids=request.recipe_ids,
             )
+            initial_analysis_job: AnalysisJobSummary | None = None
+            if request.start_job:
+                initial_analysis_job = submit_analysis_job(
+                    database_path=resolved_database_path,
+                    data_root=resolved_data_root,
+                    collection_slugs=request.collection_slugs,
+                    recipe_ids=request.recipe_ids,
+                    stage_runner=resolved_analysis_stage_runner,
+                )
+                analysis = store.attach_analysis_job(
+                    analysis_id=analysis.analysis_id,
+                    analysis_job_id=initial_analysis_job.analysis_job_id,
+                )
+        except AnalysisJobBusyError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
         except LookupError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
 
-        return {"analysis": serialize_analysis(analysis)}
+        payload: dict[str, object] = {"analysis": serialize_analysis(analysis)}
+        if initial_analysis_job is not None:
+            payload["initial_analysis_job"] = serialize_analysis_job_summary(
+                initial_analysis_job
+            )
+        return payload
 
     @app.get("/analyses")
     def get_analyses() -> dict[str, object]:
