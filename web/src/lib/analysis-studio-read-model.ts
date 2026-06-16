@@ -22,6 +22,22 @@ export type AnalysisStudioRecipeChoice = {
   recipeId: string;
 };
 
+export type AnalysisStudioAnalysisSummary = {
+  analysisId: string;
+  analysisJobIds: string[];
+  recipeIds: string[];
+  sourceCollections: AnalysisStudioCollectionChoice[];
+  status: string;
+  title: string;
+  variants: AnalysisStudioAnalysisVariantSummary[];
+};
+
+export type AnalysisStudioAnalysisVariantSummary = {
+  analysisResultId: string;
+  explorerHref?: string;
+  status: string;
+};
+
 export type AnalysisStudioJobSummary = {
   analysisJobId: string;
   analysisResultIds: string[];
@@ -70,6 +86,8 @@ export type AnalysisStudioResultSummary = {
 
 export type AnalysisStudioReadModel = {
   activeJob: AnalysisStudioJobSummary | null;
+  analyses: AnalysisStudioAnalysisSummary[];
+  analysesUnavailable: boolean;
   collections: AnalysisStudioCollectionChoice[];
   collectionsUnavailable: boolean;
   jobs: AnalysisStudioJobSummary[];
@@ -88,6 +106,31 @@ export type AnalysisStudioReadModel = {
 
 type AnalysisResultApiPayload = {
   results?: unknown;
+};
+
+type AnalysisApiPayload = {
+  analyses?: unknown;
+};
+
+type AnalysisApiItem = {
+  analysis_id?: unknown;
+  analysis_job_ids?: unknown;
+  recipe_ids?: unknown;
+  source_collections?: unknown;
+  status?: unknown;
+  title?: unknown;
+  variants?: unknown;
+};
+
+type AnalysisSourceCollectionApiItem = {
+  label?: unknown;
+  slug?: unknown;
+};
+
+type AnalysisVariantApiItem = {
+  analysis_result_id?: unknown;
+  explorer_href?: unknown;
+  status?: unknown;
 };
 
 type AnalysisResultApiItem = {
@@ -151,9 +194,16 @@ export async function loadAnalysisStudioReadModel({
   apiPort?: number;
   searchParams?: AnalysisStudioSearchParams;
 } = {}): Promise<AnalysisStudioReadModel> {
-  const [collectionsResult, recipesResult, jobsResult, resultsResult] =
+  const [
+    collectionsResult,
+    analysesResult,
+    recipesResult,
+    jobsResult,
+    resultsResult,
+  ] =
     await Promise.all([
       listCollections({ apiPort }),
+      listAnalyses({ apiPort }),
       listRecipes({ apiPort }),
       listJobs({ apiPort }),
       listResults({ apiPort }),
@@ -183,6 +233,8 @@ export async function loadAnalysisStudioReadModel({
 
   return {
     activeJob: jobs.find((job) => shouldAutoRefreshAnalysisJobs([job.status])) ?? null,
+    analyses: analysesResult.analyses,
+    analysesUnavailable: analysesResult.unavailable,
     collections: collectionsResult.collections,
     collectionsUnavailable: collectionsResult.unavailable,
     jobs,
@@ -213,6 +265,28 @@ export async function loadAnalysisStudioReadModel({
 }
 
 export { createAnalysisStudioHref };
+
+async function listAnalyses({ apiPort }: { apiPort: number }): Promise<{
+  analyses: AnalysisStudioAnalysisSummary[];
+  unavailable: boolean;
+}> {
+  try {
+    const response = await fetch(`http://127.0.0.1:${apiPort}/analyses`, {
+      cache: "no-store",
+      method: "GET",
+    });
+    if (!response.ok) {
+      return { analyses: [], unavailable: true };
+    }
+    const payload = (await response.json()) as AnalysisApiPayload;
+    return {
+      analyses: normalizeAnalyses(payload.analyses),
+      unavailable: false,
+    };
+  } catch {
+    return { analyses: [], unavailable: true };
+  }
+}
 
 async function listCollections({ apiPort }: { apiPort: number }): Promise<{
   collections: AnalysisStudioCollectionChoice[];
@@ -327,6 +401,81 @@ function normalizeCollections(payload: unknown): AnalysisStudioCollectionChoice[
     })
     .filter((item): item is AnalysisStudioCollectionChoice => item !== null)
     .sort((left, right) => left.label.localeCompare(right.label));
+}
+
+function normalizeAnalyses(payload: unknown): AnalysisStudioAnalysisSummary[] {
+  if (!Array.isArray(payload)) {
+    return [];
+  }
+
+  return payload
+    .map((item): AnalysisStudioAnalysisSummary | null => {
+      const analysis = item as AnalysisApiItem;
+      const analysisId = normalizeString(analysis?.analysis_id);
+      const title = normalizeString(analysis?.title);
+      if (!analysisId || !title) {
+        return null;
+      }
+      return {
+        analysisId,
+        analysisJobIds: normalizeStringList(analysis.analysis_job_ids),
+        recipeIds: normalizeStringList(analysis.recipe_ids),
+        sourceCollections: normalizeAnalysisSourceCollections(
+          analysis.source_collections,
+        ),
+        status: normalizeString(analysis.status) ?? "unknown",
+        title,
+        variants: normalizeAnalysisVariants(analysis.variants),
+      };
+    })
+    .filter((item): item is AnalysisStudioAnalysisSummary => item !== null);
+}
+
+function normalizeAnalysisSourceCollections(
+  payload: unknown,
+): AnalysisStudioCollectionChoice[] {
+  if (!Array.isArray(payload)) {
+    return [];
+  }
+  return payload
+    .map((item): AnalysisStudioCollectionChoice | null => {
+      const collection = item as AnalysisSourceCollectionApiItem;
+      const slug = normalizeString(collection?.slug);
+      if (!slug) {
+        return null;
+      }
+      return {
+        label: normalizeString(collection.label) ?? slug,
+        slug,
+      };
+    })
+    .filter((item): item is AnalysisStudioCollectionChoice => item !== null);
+}
+
+function normalizeAnalysisVariants(
+  payload: unknown,
+): AnalysisStudioAnalysisVariantSummary[] {
+  if (!Array.isArray(payload)) {
+    return [];
+  }
+  return payload
+    .map((item): AnalysisStudioAnalysisVariantSummary | null => {
+      const variant = item as AnalysisVariantApiItem;
+      const analysisResultId = normalizeString(variant?.analysis_result_id);
+      if (!analysisResultId) {
+        return null;
+      }
+      return {
+        analysisResultId,
+        ...(normalizeString(variant.explorer_href)
+          ? { explorerHref: normalizeString(variant.explorer_href) }
+          : {}),
+        status: normalizeString(variant.status) ?? "unknown",
+      };
+    })
+    .filter(
+      (item): item is AnalysisStudioAnalysisVariantSummary => item !== null,
+    );
 }
 
 function normalizeRecipes(payload: unknown): AnalysisStudioRecipeChoice[] {

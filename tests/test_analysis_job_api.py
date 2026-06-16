@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from fastapi.testclient import TestClient
 from PIL import Image
 
+from anacronia.analyses import LocalAnalysisStore
 from anacronia.analysis_jobs import AnalysisStageArtifact, AnalysisStageResult
 from anacronia.analysis_result_registry import LocalAnalysisResultRegistry
 from anacronia.api import create_app
@@ -124,6 +125,30 @@ def write_manifest_artifacts(data_root, manifest):
         path.write_bytes(b"x" * artifact["byte_size"])
 
 
+def write_analysis_job_manifest(data_root, analysis_job_id, *, status):
+    job_dir = data_root / "analysis-jobs" / analysis_job_id
+    job_dir.mkdir(parents=True, exist_ok=True)
+    (job_dir / "analysis-job.json").write_text(
+        json.dumps(
+            {
+                "analysis_job_id": analysis_job_id,
+                "analysis_result_ids": [],
+                "recipe_ids": ["dinov3_vits_384"],
+                "scope_snapshot": {
+                    "snapshot_id": f"scope-{analysis_job_id}",
+                },
+                "sibling_group_id": f"sibling-{analysis_job_id}",
+                "stages": [],
+                "status": status,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
 class FakeStageRunner:
     def __init__(self):
         self.calls = []
@@ -207,6 +232,188 @@ def test_analysis_recipe_api_returns_browser_safe_catalog(tmp_path):
         "primary": "hdbscan",
     }
     assert str(storage.data_root) not in json.dumps(payload)
+
+
+def test_analysis_api_creates_loads_and_lists_titled_analysis(tmp_path):
+    storage = create_collection(tmp_path, display_name="Bread")
+    client = TestClient(
+        create_app(database_path=storage.database_path, data_root=storage.data_root)
+    )
+
+    response = client.post(
+        "/analyses",
+        json={
+            "collection_slugs": ["bread"],
+            "recipe_ids": ["dinov3_vits_384"],
+            "title": "Bread visual study",
+        },
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert str(storage.data_root) not in json.dumps(payload)
+    analysis = payload["analysis"]
+    assert analysis["analysis_id"].startswith("analysis-")
+    assert analysis["title"] == "Bread visual study"
+    assert analysis["source_collections"] == [{"label": "Bread", "slug": "bread"}]
+    assert analysis["recipe_ids"] == ["dinov3_vits_384"]
+    assert analysis["analysis_job_ids"] == []
+    assert analysis["variants"] == []
+    assert analysis["status"] == "pending"
+
+    detail = client.get(f"/analyses/{analysis['analysis_id']}")
+    assert detail.status_code == 200
+    assert detail.json() == {"analysis": analysis}
+
+    listed = client.get("/analyses")
+    assert listed.status_code == 200
+    assert listed.json() == {"analyses": [analysis]}
+
+
+def test_analysis_api_requires_title_and_renames_title_only(tmp_path):
+    storage = create_collection(tmp_path, display_name="Bread")
+    client = TestClient(
+        create_app(database_path=storage.database_path, data_root=storage.data_root)
+    )
+
+    invalid = client.post(
+        "/analyses",
+        json={
+            "collection_slugs": ["bread"],
+            "recipe_ids": ["dinov3_vits_384"],
+            "title": "   ",
+        },
+    )
+
+    assert invalid.status_code == 422
+    assert invalid.json()["detail"] == "Analysis title is required."
+
+    created = client.post(
+        "/analyses",
+        json={
+            "collection_slugs": ["bread"],
+            "recipe_ids": ["dinov3_vits_384"],
+            "title": "Bread visual study",
+        },
+    ).json()["analysis"]
+
+    renamed_response = client.patch(
+        f"/analyses/{created['analysis_id']}",
+        json={"title": "Bread atlas review"},
+    )
+
+    assert renamed_response.status_code == 200
+    renamed = renamed_response.json()["analysis"]
+    assert renamed["analysis_id"] == created["analysis_id"]
+    assert renamed["title"] == "Bread atlas review"
+    assert renamed["source_collections"] == created["source_collections"]
+    assert renamed["recipe_ids"] == created["recipe_ids"]
+    assert renamed["analysis_job_ids"] == created["analysis_job_ids"]
+    assert renamed["variants"] == created["variants"]
+    assert renamed["created_at"] == created["created_at"]
+    assert renamed["updated_at"] >= created["updated_at"]
+
+    loaded = client.get(f"/analyses/{created['analysis_id']}").json()["analysis"]
+    assert loaded == renamed
+
+
+def test_analysis_api_reports_running_and_failed_analyses_without_variants(tmp_path):
+    storage = create_collection(tmp_path, display_name="Bread")
+    client = TestClient(
+        create_app(database_path=storage.database_path, data_root=storage.data_root)
+    )
+    store = LocalAnalysisStore(storage.data_root)
+
+    running = client.post(
+        "/analyses",
+        json={
+            "collection_slugs": ["bread"],
+            "recipe_ids": ["dinov3_vits_384"],
+            "title": "Bread running study",
+        },
+    ).json()["analysis"]
+    failed = client.post(
+        "/analyses",
+        json={
+            "collection_slugs": ["bread"],
+            "recipe_ids": ["dinov3_vits_384"],
+            "title": "Bread failed study",
+        },
+    ).json()["analysis"]
+    write_analysis_job_manifest(
+        storage.data_root,
+        "analysis-job-running",
+        status="running",
+    )
+    write_analysis_job_manifest(
+        storage.data_root,
+        "analysis-job-failed",
+        status="failed",
+    )
+
+    store.attach_analysis_job(
+        analysis_id=running["analysis_id"],
+        analysis_job_id="analysis-job-running",
+    )
+    store.attach_analysis_job(
+        analysis_id=failed["analysis_id"],
+        analysis_job_id="analysis-job-failed",
+    )
+
+    running_payload = client.get(f"/analyses/{running['analysis_id']}").json()[
+        "analysis"
+    ]
+    failed_payload = client.get(f"/analyses/{failed['analysis_id']}").json()[
+        "analysis"
+    ]
+    assert running_payload["analysis_job_ids"] == ["analysis-job-running"]
+    assert running_payload["status"] == "running"
+    assert running_payload["variants"] == []
+    assert failed_payload["analysis_job_ids"] == ["analysis-job-failed"]
+    assert failed_payload["status"] == "failed"
+    assert failed_payload["variants"] == []
+
+
+def test_analysis_api_exposes_variant_result_links_without_local_paths(tmp_path):
+    storage = create_collection(tmp_path, display_name="Bread")
+    manifest = analysis_result_manifest()
+    write_manifest_artifacts(storage.data_root, manifest)
+    LocalAnalysisResultRegistry(storage.data_root).register(manifest)
+    client = TestClient(
+        create_app(database_path=storage.database_path, data_root=storage.data_root)
+    )
+    created = client.post(
+        "/analyses",
+        json={
+            "collection_slugs": ["bread"],
+            "recipe_ids": ["dinov3_vits_384"],
+            "title": "Bread visual study",
+        },
+    ).json()["analysis"]
+
+    LocalAnalysisStore(storage.data_root).attach_analysis_result(
+        analysis_id=created["analysis_id"],
+        analysis_result_id=manifest["analysis_result_id"],
+    )
+
+    response = client.get(f"/analyses/{created['analysis_id']}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert str(storage.data_root) not in json.dumps(payload)
+    analysis = payload["analysis"]
+    assert analysis["analysis_job_ids"] == [manifest["analysis_job_id"]]
+    assert analysis["status"] == "ready"
+    assert analysis["variants"] == [
+        {
+            "analysis_result_id": manifest["analysis_result_id"],
+            "explorer_href": (
+                "/latent-map?analysisResultId="
+                "analysis-result-20260614T130000Z-dinov3_vits_384"
+            ),
+            "status": "ready",
+        }
+    ]
 
 
 def test_analysis_result_api_lists_registry_summaries_without_local_paths(tmp_path):
