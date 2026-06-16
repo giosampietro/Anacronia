@@ -45,6 +45,24 @@ function stubAnalysisStudioFetch() {
               title: "DINO comparison",
               variants: [],
             },
+            {
+              analysis_id: "analysis-20260614T150000Z",
+              analysis_job_ids: ["analysis-job-20260614T150000Z"],
+              recipe_ids: ["dinov3_vits_384", "dinov3_vits_512"],
+              source_collections: [{ label: "Bread", slug: "bread" }],
+              status: "pending",
+              title: "Partial DINO study",
+              variants: [],
+            },
+            {
+              analysis_id: "analysis-20260614T160000Z",
+              analysis_job_ids: ["analysis-job-20260614T160000Z"],
+              recipe_ids: ["dinov3_vits_384"],
+              source_collections: [{ label: "Hands/Mani", slug: "hands-mani" }],
+              status: "pending",
+              title: "Failed gesture study",
+              variants: [],
+            },
           ],
         });
       }
@@ -58,6 +76,20 @@ function stubAnalysisStudioFetch() {
                 "analysis-result-20260614T130000Z-dinov3_vits_384",
               explorer_href:
                 "/latent-map?analysisResultId=analysis-result-20260614T130000Z-dinov3_vits_384",
+              explorer_readiness: { ready: true },
+              item_count: 40,
+              recipe_ids: ["dinov3_vits_384"],
+              recipe_names: ["dinov3_vits_384"],
+              result_state: { state: "ready" },
+              scope_label: "Bread",
+              status: "ready",
+            },
+            {
+              analysis_job_id: "analysis-job-20260614T150000Z",
+              analysis_result_id:
+                "analysis-result-20260614T150000Z-dinov3_vits_384",
+              explorer_href:
+                "/latent-map?analysisResultId=analysis-result-20260614T150000Z-dinov3_vits_384",
               explorer_readiness: { ready: true },
               item_count: 40,
               recipe_ids: ["dinov3_vits_384"],
@@ -125,6 +157,45 @@ function stubAnalysisStudioFetch() {
                 },
               ],
               status: "running",
+              viewer_hrefs: [],
+            },
+            {
+              analysis_job_id: "analysis-job-20260614T150000Z",
+              analysis_result_ids: [
+                "analysis-result-20260614T150000Z-dinov3_vits_384",
+              ],
+              recipe_ids: ["dinov3_vits_384", "dinov3_vits_512"],
+              stages: [
+                {
+                  recipe_id: "dinov3_vits_384",
+                  stage_name: "result_registration",
+                  status: "ready",
+                },
+                {
+                  error: "UMAP failed",
+                  recipe_id: "dinov3_vits_512",
+                  stage_name: "umap",
+                  status: "failed",
+                },
+              ],
+              status: "partial_failed",
+              viewer_hrefs: [
+                "/latent-map?analysisResultId=analysis-result-20260614T150000Z-dinov3_vits_384",
+              ],
+            },
+            {
+              analysis_job_id: "analysis-job-20260614T160000Z",
+              analysis_result_ids: [],
+              recipe_ids: ["dinov3_vits_384"],
+              stages: [
+                {
+                  error: "clustering failed",
+                  recipe_id: "dinov3_vits_384",
+                  stage_name: "cluster_projection",
+                  status: "failed",
+                },
+              ],
+              status: "failed",
               viewer_hrefs: [],
             },
           ],
@@ -204,6 +275,73 @@ describe("AnalysisResultsPage", () => {
     expect(html).toContain("Analysis not found");
     expect(html).toContain("analysis-missing");
     expect(html).not.toContain("Selected Analysis overview");
+  });
+
+  it("renders running selected Analysis with contextual job progress", async () => {
+    stubAnalysisStudioFetch();
+
+    const html = normalizeServerHtml(
+      renderToString(
+        await AnalysisResultsPage({
+          searchParams: Promise.resolve({
+            analysisId: "analysis-20260614T140000Z",
+          }),
+        }),
+      ),
+    );
+
+    expect(html).toContain("Selected Analysis overview");
+    expect(html).toContain("Bread, Hands/Mani");
+    expect(html).toContain("Running Analysis");
+    expect(html).toContain("embedding computation");
+    expect(html).toContain("DINOv3 ViT-S 512px");
+    expect(html).toContain("Variants will appear when this job produces Results.");
+    expect(html).not.toContain("<h1");
+    expect(html).not.toContain(">DINO comparison</h");
+  });
+
+  it("renders partial selected Analysis without flattening it to ready", async () => {
+    stubAnalysisStudioFetch();
+
+    const html = normalizeServerHtml(
+      renderToString(
+        await AnalysisResultsPage({
+          searchParams: Promise.resolve({
+            analysisId: "analysis-20260614T150000Z",
+          }),
+        }),
+      ),
+    );
+
+    expect(html).toContain("Partial Analysis");
+    expect(html).toContain("partial failed");
+    expect(html).toContain("UMAP failed");
+    expect(html).toContain("Variant 1");
+    expect(html).toContain("Open Explorer");
+    expect(html).not.toContain("partial_failed");
+    expect(html).not.toContain("No Variants were produced.");
+  });
+
+  it("renders failed selected Analysis with failure context and no Variant action", async () => {
+    stubAnalysisStudioFetch();
+
+    const html = normalizeServerHtml(
+      renderToString(
+        await AnalysisResultsPage({
+          searchParams: Promise.resolve({
+            analysisId: "analysis-20260614T160000Z",
+          }),
+        }),
+      ),
+    );
+
+    expect(html).toContain("Selected Analysis overview");
+    expect(html).toContain("Hands/Mani");
+    expect(html).toContain("Failed Analysis");
+    expect(html).toContain("failed · cluster projection");
+    expect(html).toContain("clustering failed");
+    expect(html).toContain("No Variants were produced.");
+    expect(html).not.toContain("Open Explorer");
   });
 
   it("renders the New Analysis form with title, Collections, and recipe controls", async () => {

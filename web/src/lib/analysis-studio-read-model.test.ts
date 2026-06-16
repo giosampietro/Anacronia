@@ -210,4 +210,130 @@ describe("Analysis Studio read model", () => {
       "http://127.0.0.1:18670/search-sets",
     ]);
   });
+
+  it("keeps a selected Analysis partial when one recipe succeeds and another fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+
+        if (url.endsWith("/search-sets")) {
+          return Response.json([
+            { display_name: "Bread", slug: "bread", terms: [] },
+          ]);
+        }
+
+        if (url.endsWith("/analysis-recipes")) {
+          return Response.json({
+            default_recipe_id: "dinov3_vits_384",
+            recipes: [
+              {
+                input_size: 384,
+                is_default: true,
+                label: "DINOv3 ViT-S 384px",
+                recipe_id: "dinov3_vits_384",
+              },
+              {
+                input_size: 512,
+                is_default: false,
+                label: "DINOv3 ViT-S 512px",
+                recipe_id: "dinov3_vits_512",
+              },
+            ],
+            schema_version: 1,
+          });
+        }
+
+        if (url.endsWith("/analysis-jobs")) {
+          return Response.json({
+            jobs: [
+              {
+                analysis_job_id: "analysis-job-20260614T150000Z",
+                analysis_result_ids: [
+                  "analysis-result-20260614T150000Z-dinov3_vits_384",
+                ],
+                recipe_ids: ["dinov3_vits_384", "dinov3_vits_512"],
+                stages: [
+                  {
+                    recipe_id: "dinov3_vits_384",
+                    stage_name: "result_registration",
+                    status: "ready",
+                  },
+                  {
+                    error: "UMAP failed",
+                    recipe_id: "dinov3_vits_512",
+                    stage_name: "umap",
+                    status: "failed",
+                  },
+                ],
+                status: "partial_failed",
+                viewer_hrefs: [
+                  "/latent-map?analysisResultId=analysis-result-20260614T150000Z-dinov3_vits_384",
+                ],
+              },
+            ],
+          });
+        }
+
+        if (url.endsWith("/analyses")) {
+          return Response.json({
+            analyses: [
+              {
+                analysis_id: "analysis-20260614T150000Z",
+                analysis_job_ids: ["analysis-job-20260614T150000Z"],
+                recipe_ids: ["dinov3_vits_384", "dinov3_vits_512"],
+                source_collections: [{ label: "Bread", slug: "bread" }],
+                status: "pending",
+                title: "Partial DINO study",
+                variants: [],
+              },
+            ],
+          });
+        }
+
+        if (url.endsWith("/analysis-results")) {
+          return Response.json({
+            results: [
+              {
+                analysis_job_id: "analysis-job-20260614T150000Z",
+                analysis_result_id:
+                  "analysis-result-20260614T150000Z-dinov3_vits_384",
+                explorer_href:
+                  "/latent-map?analysisResultId=analysis-result-20260614T150000Z-dinov3_vits_384",
+                explorer_readiness: { ready: true },
+                item_count: 40,
+                recipe_ids: ["dinov3_vits_384"],
+                result_state: { state: "ready" },
+                scope_label: "Bread",
+                status: "ready",
+              },
+            ],
+          });
+        }
+
+        throw new Error(`Unexpected fetch: ${url}`);
+      }),
+    );
+
+    const model = await loadAnalysisStudioReadModel({
+      searchParams: { analysisId: "analysis-20260614T150000Z" },
+    });
+
+    expect(model.selectedAnalysis).toMatchObject({
+      analysisId: "analysis-20260614T150000Z",
+      analyzedImageCount: 40,
+      status: "partial",
+      variants: [
+        {
+          analysisResultId:
+            "analysis-result-20260614T150000Z-dinov3_vits_384",
+          status: "ready",
+        },
+      ],
+    });
+    expect(model.jobs[0]).toMatchObject({
+      recipeLabels: ["DINOv3 ViT-S 384px", "DINOv3 ViT-S 512px"],
+      status: "partial_failed",
+    });
+  });
 });
