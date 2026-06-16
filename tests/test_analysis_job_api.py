@@ -240,6 +240,36 @@ def test_analysis_recipe_api_returns_browser_safe_catalog(tmp_path):
     assert str(storage.data_root) not in json.dumps(payload)
 
 
+def test_analysis_scope_preview_api_returns_browser_safe_counts(tmp_path):
+    storage = create_collection(tmp_path, display_name="Bread")
+    client = TestClient(
+        create_app(database_path=storage.database_path, data_root=storage.data_root)
+    )
+
+    response = client.post(
+        "/analysis-scopes/preview",
+        json={"collection_slugs": ["bread"]},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert str(storage.data_root) not in json.dumps(payload)
+    assert payload == {
+        "scope_preview": {
+            "collection_slugs": ["bread"],
+            "counts": {
+                "active_images": 2,
+                "active_memberships": 2,
+                "candidate_memberships": 2,
+                "duplicates_collapsed": 0,
+                "missing_or_removed_material": 0,
+                "selected_collections": 1,
+            },
+            "item_count": 2,
+        }
+    }
+
+
 def test_analysis_api_creates_loads_and_lists_titled_analysis(tmp_path):
     storage = create_collection(tmp_path, display_name="Bread")
     client = TestClient(
@@ -274,6 +304,59 @@ def test_analysis_api_creates_loads_and_lists_titled_analysis(tmp_path):
     listed = client.get("/analyses")
     assert listed.status_code == 200
     assert listed.json() == {"analyses": [analysis]}
+
+
+def test_analysis_api_can_create_analysis_and_start_initial_job(tmp_path):
+    storage = create_collection(tmp_path, display_name="Bread")
+    stage_runner = FakeStageRunner()
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            analysis_stage_runner=stage_runner,
+        )
+    )
+
+    response = client.post(
+        "/analyses",
+        json={
+            "collection_slugs": ["bread"],
+            "recipe_ids": ["dinov3_vits_384"],
+            "start_job": True,
+            "title": "Bread visual study",
+        },
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert str(storage.data_root) not in json.dumps(payload)
+    analysis = payload["analysis"]
+    assert analysis["analysis_id"].startswith("analysis-")
+    assert payload["initial_analysis_job"]["status"] == "running"
+    assert analysis["analysis_job_ids"] == [
+        payload["initial_analysis_job"]["analysis_job_id"]
+    ]
+    assert analysis["status"] == "running"
+    assert analysis["variants"] == []
+
+    ready_payload = wait_for_api_job_status(
+        client,
+        payload["initial_analysis_job"]["analysis_job_id"],
+        "ready",
+    )
+    loaded = client.get(f"/analyses/{analysis['analysis_id']}").json()["analysis"]
+    assert loaded["analysis_job_ids"] == [ready_payload["analysis_job_id"]]
+    assert loaded["status"] == "ready"
+    assert loaded["variants"] == [
+        {
+            "analysis_result_id": ready_payload["analysis_result_ids"][0],
+            "explorer_href": (
+                "/latent-map?analysisResultId="
+                f"{ready_payload['analysis_result_ids'][0]}"
+            ),
+            "status": "ready",
+        }
+    ]
 
 
 def test_analysis_api_requires_title_and_renames_title_only(tmp_path):

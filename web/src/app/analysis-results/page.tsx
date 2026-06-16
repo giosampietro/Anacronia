@@ -1,10 +1,12 @@
 import type { CSSProperties } from "react";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { ExternalLink, Plus } from "lucide-react";
 
 import { AnalysisJobAutoRefresh } from "@/components/analysis-job-auto-refresh";
 import { AnalysisStudioAnalysisFilter } from "@/components/analysis-studio-analysis-filter";
 import { AppSpaceShell } from "@/components/app-space-shell";
+import { NewAnalysisForm } from "@/components/new-analysis-form";
 import { ThemeSwitch } from "@/components/theme-switch";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
@@ -14,11 +16,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  Empty,
-  EmptyHeader,
-  EmptyTitle,
-} from "@/components/ui/empty";
 import {
   Sidebar,
   SidebarContent,
@@ -56,6 +53,17 @@ export const dynamic = "force-dynamic";
 export const metadata = {
   title: "Analysis Studio | Anacronia",
 };
+
+const DEFAULT_API_PORT = 18670;
+
+function getApiPort(): number {
+  const value = Number.parseInt(process.env.ANACRONIA_API_PORT ?? "", 10);
+  return Number.isFinite(value) ? value : DEFAULT_API_PORT;
+}
+
+function analysisApiUrl(path: string): string {
+  return `http://127.0.0.1:${getApiPort()}${path}`;
+}
 
 function getSearchParam(
   searchParams: AnalysisStudioSearchParams,
@@ -138,6 +146,55 @@ function activeAnalysisId(model: AnalysisStudioReadModel): string | null {
   return model.selectedState.state === "selected-analysis"
     ? model.selectedState.analysisId
     : null;
+}
+
+function formString(formData: FormData, key: string): string {
+  const value = formData.get(key);
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function formStringList(formData: FormData, key: string): string[] {
+  return formData
+    .getAll(key)
+    .flatMap((value) => (typeof value === "string" ? value.split(",") : []))
+    .map((value) => value.trim())
+    .filter((value, index, values) => value !== "" && values.indexOf(value) === index);
+}
+
+export async function createAnalysisAction(formData: FormData) {
+  "use server";
+
+  const response = await fetch(analysisApiUrl("/analyses"), {
+    body: JSON.stringify({
+      collection_slugs: formStringList(formData, "collection_slugs"),
+      recipe_ids: formStringList(formData, "recipe_ids"),
+      start_job: true,
+      title: formString(formData, "title"),
+    }),
+    cache: "no-store",
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  const payload = (await response
+    .json()
+    .catch((): Record<string, unknown> => ({}))) as {
+    analysis?: { analysis_id?: unknown };
+    detail?: unknown;
+  };
+  const analysisId =
+    typeof payload.analysis?.analysis_id === "string"
+      ? payload.analysis.analysis_id
+      : "";
+
+  if (!response.ok || !analysisId) {
+    const searchParams = new URLSearchParams({ mode: "new-analysis" });
+    if (typeof payload.detail === "string" && payload.detail.trim() !== "") {
+      searchParams.set("analysisError", payload.detail);
+    }
+    redirect(`/analysis-results?${searchParams}`);
+  }
+
+  redirect(createAnalysisStudioHref({ analysisId, state: "selected-analysis" }));
 }
 
 function AnalysisStudioSidebar({
@@ -231,21 +288,14 @@ function AnalysisOverview({ model }: { model: AnalysisStudioReadModel }) {
   );
 }
 
-function NewAnalysisPlaceholder() {
+function NewAnalysisPanel({ model }: { model: AnalysisStudioReadModel }) {
   return (
     <section aria-label="New Analysis">
-      <Card>
-        <CardHeader>
-          <CardTitle>New Analysis</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Empty className="border">
-            <EmptyHeader>
-              <EmptyTitle>Choose a title, collections, and recipes.</EmptyTitle>
-            </EmptyHeader>
-          </Empty>
-        </CardContent>
-      </Card>
+      <NewAnalysisForm
+        action={createAnalysisAction}
+        collections={model.collections}
+        recipes={model.recipes}
+      />
     </section>
   );
 }
@@ -382,7 +432,7 @@ function MissingAnalysis({ analysisId }: { analysisId: string }) {
 
 function AnalysisStudioMainPanel({ model }: { model: AnalysisStudioReadModel }) {
   if (model.selectedState.state === "new-analysis") {
-    return <NewAnalysisPlaceholder />;
+    return <NewAnalysisPanel model={model} />;
   }
 
   if (model.selectedState.state === "selected-analysis" && model.selectedAnalysis) {
