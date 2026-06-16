@@ -1,7 +1,8 @@
 from pathlib import Path
 import json
+import os
 import shutil
-from typing import Annotated, Callable, Literal, Mapping, TypeVar
+from typing import Annotated, Callable, Literal, Mapping, MutableMapping, TypeVar
 
 from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.responses import FileResponse
@@ -146,6 +147,22 @@ GridPageOffset = Annotated[int, Query(ge=0)]
 GridPagination = dict[str, int | bool | None]
 T = TypeVar("T")
 LocalResultSetView = Literal["objects", "images"]
+
+
+def _ensure_huggingface_home(
+    *,
+    project_root: Path,
+    environment: MutableMapping[str, str] = os.environ,
+) -> Path:
+    configured_hf_home = environment.get("HF_HOME", "").strip()
+    hf_home = (
+        Path(configured_hf_home).expanduser()
+        if configured_hf_home
+        else project_root / ".hf-cache"
+    )
+    environment.setdefault("HF_HOME", str(hf_home))
+    hf_home.mkdir(parents=True, exist_ok=True)
+    return hf_home
 
 
 def paginate_grid_items(
@@ -852,6 +869,7 @@ def create_app(
 ) -> FastAPI:
     app = FastAPI(title="Anacronia")
     project_root = Path(__file__).resolve().parents[2]
+    _ensure_huggingface_home(project_root=project_root)
     if database_path is None:
         storage = initialize_storage(project_root=project_root, data_root=data_root)
         resolved_database_path = storage.database_path
