@@ -4,6 +4,12 @@ Date: June 9, 2026
 
 Branch: `codex/latent-map-instanced-thumbnails`
 
+## Status
+
+- Role: prototype rendering comparison/history.
+- Read for evidence that generated atlas rendering was already the real thumbnail path.
+- Not a current product contract.
+
 ## Purpose
 
 This branch re-checks the latent-map thumbnail renderer against the pushed

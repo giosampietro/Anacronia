@@ -3,6 +3,12 @@
 **Date:** 2026-05-29  
 **Project context:** build source adapters / scrapers for public-domain or open-access image collections. Current first target is **The Met**; later expand to all relevant image/museum/archive sources below.
 
+## Status
+
+- Role: provider research backlog and handoff.
+- Read for future provider/source candidates and rights-normalization ideas.
+- Not a current implementation contract; check `CONTEXT.md`, current PRDs, and provider-specific issues before coding.
+
 ## Core rule
 
 Do **not** collapse everything into a generic `public_domain=true`.

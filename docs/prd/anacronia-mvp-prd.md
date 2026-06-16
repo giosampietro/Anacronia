@@ -1,5 +1,12 @@
 # Anacronia MVP PRD
 
+## Status
+
+- Role: canonical PRD for the original local collection-builder MVP.
+- Read for: Library / Collections, Provider Search, local-folder import, curation, export, provider rules, setup.
+- Do not use as the current Analysis Studio or Latent Space Explorer architecture contract. Use `docs/prd/anacronia-analysis-studio-prd.md` for that.
+- `CONTEXT.md` remains the shorter glossary/invariant source.
+
 ## Problem Statement
 
 Researchers, artists, and technically curious users need a reliable way to build local museum image collections for later visual analysis, AI, OpenCV, machine learning, clustering, and semantic enrichment. Existing museum APIs expose useful data, but each provider has different fields, image rules, rights metadata, and search behavior. Manually reviewing thousands of records before download is too slow, while naive scraping creates fragile datasets, duplicated files, unclear provenance, and inconsistent image quality.

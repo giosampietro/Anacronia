@@ -8,6 +8,12 @@ Baseline commit: `bd3d257 Record UMAP spectral initialization`
 
 Parent PRD issue: #179
 
+## Status
+
+- Historical implementation log for the `codex/latent-map-instanced-thumbnails` branch.
+- Useful for understanding why current latent-map controls, launchers, and rendering decisions exist.
+- Not a controlling product or architecture contract.
+
 ## Scope
 
 This log records the local work completed after the last pushed commit on this branch. The slice extends the latent-map viewer from texture-LOD and method-comparison work into a tighter exploratory UI with FAISS relationship controls, a reusable sidebar layout, a faster worktree launcher, and theme-aware WebGL canvas colors.

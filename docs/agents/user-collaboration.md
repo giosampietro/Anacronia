@@ -1,5 +1,10 @@
 # User Collaboration
 
+## Status
+
+- Role: current agent operating rules for Git, GitHub, branches, ports, and user handoff.
+- Read through root `AGENTS.md`; do not treat as product contract.
+
 The user is learning Git, GitHub, worktrees, local ports, and PR flow. They may ask for an operation in normal language or suggest a Git action that is not the safest implementation. Act as a technical sidekick: preserve the user's intent, but translate it into a safe workflow.
 
 ## Standing sanity check

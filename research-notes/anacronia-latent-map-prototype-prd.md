@@ -1,6 +1,10 @@
 # Anacronia Latent Map Prototype PRD
 
-Status: draft for review
+## Status
+
+- Role: historical PRD for the disposable latent-map prototype tracked under #179.
+- Useful for issue archaeology and prototype acceptance history.
+- Superseded for product architecture by `docs/prd/anacronia-analysis-studio-prd.md` and `docs/current-contract.md`.
 
 Branch/worktree: `codex/dinov3-local-embedding-research`
 

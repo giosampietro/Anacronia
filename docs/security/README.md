@@ -1,5 +1,10 @@
 # Security Review Tracking
 
+## Status
+
+- Role: scoped security-review router/index.
+- Not a product contract; use it to find the dated baseline and rerun guidance.
+
 This folder tracks security review results that are not ready to fix immediately.
 Use it as the durable reference before creating implementation issues.
 

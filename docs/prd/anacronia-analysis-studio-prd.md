@@ -2,7 +2,7 @@
 
 Date: June 12, 2026
 
-Updated: June 14, 2026
+Updated: June 16, 2026
 
 Related ADRs:
 
@@ -10,7 +10,16 @@ Related ADRs:
 - [0026 - Use concierge hosted viewers before full cloud SaaS](../adr/0026-use-concierge-hosted-viewer-before-full-cloud-saas.md)
 - [0027 - Use a persistent nav rail for app spaces](../adr/0027-use-persistent-nav-rail-for-app-spaces.md)
 
-Related GitHub PRD: [Issue 220 - PRD: Analysis Studio, Analysis Scope, and Latent Space Explorer integration](https://github.com/giosampietro/Anacronia/issues/220)
+Related GitHub PRDs:
+
+- [Issue 286 - PRD: Analysis Studio consolidation and durable analysis architecture](https://github.com/giosampietro/Anacronia/issues/286) is the current controlling PRD issue.
+- [Issue 220 - PRD: Analysis Studio, Analysis Scope, and Latent Space Explorer integration](https://github.com/giosampietro/Anacronia/issues/220) is prior integration context superseded by the consolidation direction.
+
+## Status
+
+- Role: current controlling PRD for Analysis Studio, durable Analysis Results, and Latent Space Explorer integration.
+- Read for: analysis architecture, DINOv3 recipes, Artifact Store/Registry, Explorer readiness, visual-association direction, future SigLIP2/fusion sequencing.
+- Do not use historical latent-map prototype notes as product contract when this PRD speaks to the same topic.
 
 ## Problem Statement
 
@@ -47,6 +56,26 @@ The first implementation treats cross-Collection scope as first-class. One Colle
 Reusable per-image embeddings are stored separately as **Image Embedding Results**. Scope-level outputs such as FAISS indexes, UMAP layouts, HDBSCAN labels, cluster metadata, render caches, and viewer manifests are stored as immutable **Analysis Results** with an artifact manifest.
 
 An Analysis Recipe owns the complete Explorer-ready artifact plan for its Analysis Result. For the default DINOv3 Explorer recipes, the Analysis Job should generate the numeric/provenance artifacts plus viewer manifest data, FAISS relation index, UMAP layout data, HDBSCAN cluster data, and 32px, 64px, and 96px atlas render caches during the analysis pass. 128px atlases are optional recipe configuration. The Latent Space Explorer consumes completed Analysis Results and must not generate, mutate, or repair analysis artifacts. It may keep temporary view state such as zoom, pan, selection, filters, thumbnail mode, and URL state.
+
+## Core Bet For Visual Association
+
+The current product thesis for visual association is:
+
+```text
+global DINO finds visual families
+graph bridges find outward connections
+patch-level DINO can later find motifs
+```
+
+DINOv3 output must be treated as visual signal from pixels, not metadata. FAISS over DINO vectors can answer nearest-neighbor and graph-neighborhood questions, but it cannot know source, artist, object identity, provider, date, folder meaning, or historical context. Those signals belong to Library/Collections provenance, local-folder path metadata, generated metadata, or future user annotations, and must stay separate from the embedding signal.
+
+For DINO-only work, the strongest next exploratory direction is to use saved FAISS/DINO artifacts as a graph substrate. Graph-community clustering finds visual families; community bridges and association bridges should look for strong DINO edges or short paths that connect different visual communities. This is a visual/formal bridge, not proof of historical or semantic relation. UMAP remains navigation layout only and must not become the source of similarity truth.
+
+Patch-token DINO analysis remains a later but strategically important direction. Unlike global image embeddings, patch tokens describe local image regions. A patch-level recipe could support region-to-region search, local motif retrieval, heatmaps explaining why two images relate, and recurring visual structures such as ornament, line rhythm, folds, hands, borders, texture, or contour fragments. The first design pass should consider lower-resolution patch recipes such as 224 or 256 before 384 because patch count, index size, and storage grow quickly with resolution.
+
+ImagePlot/OpenCV-style work should be framed as interpretable visual feature sidecars, not as the primary similarity model. Feature sidecars may include paper/background tone, margin ratio, blank-area ratio, edge density, line orientation, texture descriptors, contrast, palette, foreground occupancy, and near-duplicate hashes. They should support diagnostics, filtering, explanations, duplicate suppression, or reranking over DINO candidates. They should not replace DINO/FAISS as the latent-map similarity layer and must not be written into provider metadata.
+
+Future SigLIP2 and fusion work should keep DINO and SigLIP2 as separate embedding spaces until explicit fusion or disagreement artifacts are designed. The most promising future relation families are productive disagreement (`DINO close / SigLIP2 far` as formal echo, `DINO far / SigLIP2 close` as semantic leap), short association trails with visible edge types, and named fusion recipes such as visual-leaning, balanced, and semantic-leaning results. Generic averaging is not expected to produce the surprising association behavior by itself.
 
 ## App Shell And Navigation
 
@@ -227,8 +256,11 @@ Starting an Analysis Job should redirect back into the selected-job state for th
 - Future SigLIP2 implementation should follow the local model assessment in [research-notes/siglip2-local-model-assessment.md](../../research-notes/siglip2-local-model-assessment.md): device/backend, batch size, dtype, model unloading, and memory fallback are Analysis Job runtime diagnostics, not recipe identity. Text retrieval remains a separate future issue from image-only SigLIP2 embeddings.
 - For each selected recipe, FAISS, UMAP, and HDBSCAN run automatically.
 - KMeans remains optional and secondary for legacy/historical comparison.
-- HDBSCAN is the primary cluster model.
+- HDBSCAN remains a first-class cluster artifact, but real-run evidence moved the preferred exploratory grouping direction toward FAISS kNN graph communities, hierarchy, and diagnostics. Clusters and communities are lenses, not objective classifications.
 - HDBSCAN unassigned/noise points are surfaced as Unclustered.
+- Future DINO-only association work should build on graph communities by adding community bridges and anchor-level association bridges as explicit relation artifacts rather than changing raw FAISS closest-neighbor semantics.
+- Future patch-token DINO work should be a separate recipe/artifact family for region-level search, motif discovery, local correspondence, and heatmap explanations. It is not part of the first integrated image-level Analysis Studio implementation.
+- Interpretable low-level visual feature sidecars may be added as optional Analysis Artifacts for diagnostics, duplicate suppression, filtering, or reranking. Prefer simple feature families and explicit provenance over a broad "OpenCV" bucket.
 - Analysis Studio should show background job stages: embedding, FAISS, UMAP, HDBSCAN, optional KMeans, and Explorer atlas generation.
 - Analysis Studio should expose job progress without blocking navigation.
 - Analysis Studio should be a workspace with a Studio-local sidebar and main panel, mirroring the Collections workspace. It should not be a standalone dashboard-style page.
@@ -261,7 +293,7 @@ Starting an Analysis Job should redirect back into the selected-job state for th
 - The Explorer is a visual App Space for existing Analysis Results and should use the same shell as Library and Analysis Studio by default.
 - The Explorer should not be trapped inside one Collection route, although Collection pages can open it with a selected result.
 - The Explorer opens one primary Analysis Result at a time for the integrated MVP.
-- The Explorer can later add side-by-side comparison, animated layout tweening, and weighted fusion controls.
+- The Explorer can later add side-by-side comparison, animated tweening between Analysis Results or recipes, and weighted fusion controls. Existing Neighborhood Layout Mode tweening remains a current Explorer interaction, not a recipe-comparison feature.
 - FAISS relation lookup is a live query-time service over the selected Analysis Result's FAISS index and ID map, not a precomputed neighbor JSON cache and not the UMAP layout graph.
 - Default FAISS relation lookup should exclude removed images and cannot include new images absent from the Analysis Result.
 - The backend should query deep enough to fill requested neighbors after filtering removed items; historical `*_neighbors.jsonl` files are legacy prototype artifacts and should not cap or drive Explorer interactions.
@@ -363,7 +395,7 @@ Required manifest groups:
 - Whole-Library Analysis implementation, unless explicitly pulled into the first implementation plan.
 - Manual arbitrary image subset scopes.
 - Side-by-side Explorer comparison.
-- Animated tweening between recipes or layouts.
+- Animated tweening between Analysis Results, recipes, or global layouts. Existing Neighborhood Layout Mode tweening remains current Explorer interaction behavior.
 - Weighted DINOv3 + SigLIP2 fusion controls.
 - Semantic text search over embeddings.
 - Exposing low-level runtime controls such as batch size, MPS/PyTorch/Core ML backend choice, padding color, or raw model backbone selection in the first user-facing Analysis Studio.

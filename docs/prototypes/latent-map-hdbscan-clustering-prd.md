@@ -4,6 +4,12 @@ Date: June 12, 2026
 
 Branch: `codex/latent-map-instanced-thumbnails`
 
+## Status
+
+- Role: historical HDBSCAN implementation and outcome.
+- Read for presets, artifact shape, and why graph communities/hierarchy became the preferred next grouping direction.
+- Not the preferred grouping model by itself.
+
 ## Goal
 
 Add density-based cluster results to the latent-map workflow so visual group focus is useful beyond K-means.

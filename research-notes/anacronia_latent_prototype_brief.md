@@ -1,5 +1,11 @@
 # Anacronia Image Latent-Space Prototype — Coding Agent Brief
 
+## Status
+
+- Role: long historical raw brief for the disposable latent-map prototype.
+- Read for: archaeology, early reasoning, rejected options, source links.
+- Do not use as current product contract. Use `docs/prd/anacronia-analysis-studio-prd.md` and `docs/README.md` first.
+
 ## 0. Goal
 
 Build a local-first prototype for navigating a growing image archive through visual latent-space search and visualization.

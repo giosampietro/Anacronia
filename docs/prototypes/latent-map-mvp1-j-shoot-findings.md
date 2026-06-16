@@ -8,6 +8,13 @@ Run directory: `/private/tmp/anacronia-latent-map-runs/20260609T130049Z-mvp1-j-s
 
 Source folder: `/Users/giorgio/Documents/Codex/Exports/J Shoot/images`
 
+## Status
+
+- Role: historical real-data run findings for J Shoot MVP1.
+- Read for observed timings, data shape, and DINO 256/384 behavior.
+- Not a current architecture contract.
+- Superseded default: current Analysis Studio uses DINOv3 384 first; 256 remains a comparison/cost option.
+
 ## Pipeline
 
 - Model: `facebook/dinov3-vits16-pretrain-lvd1689m`

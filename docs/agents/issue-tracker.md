@@ -1,5 +1,10 @@
 # Issue tracker: GitHub
 
+## Status
+
+- Role: current agent operating rules for GitHub issue operations.
+- Read through root `AGENTS.md`; do not treat as product contract.
+
 Issues and PRDs for this repo live in GitHub Issues for `giosampietro/Anacronia`. Use the `gh` CLI for issue operations.
 
 ## Conventions

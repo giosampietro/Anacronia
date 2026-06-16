@@ -1,6 +1,10 @@
 # Current Prototype Review
 
-> Historical note: this review targeted the earlier Search Set / collect prototype. Current implementation planning uses `Collection`, `Provider Search`, explicit Provider selection, and the live contracts in `docs/ux/start-new-collection-contract.md`, `docs/ux/local-result-set-contract.md`, and `docs/ux/curation-actions-contract.md`.
+## Status
+
+- Role: historical Search Set / collect prototype review.
+- Superseded by `Collection`, `Provider Search`, explicit Provider selection, and the live contracts in `docs/ux/start-new-collection-contract.md`, `docs/ux/local-result-set-contract.md`, and `docs/ux/curation-actions-contract.md`.
+- Do not treat `Collect from Met`, `Start at candidate`, or `Candidate limit: 1000` as current UI contract.
 
 Screenshot reviewed: selected empty Search Set named `Test`.
 
