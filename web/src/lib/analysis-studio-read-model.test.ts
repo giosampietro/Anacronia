@@ -7,7 +7,7 @@ describe("Analysis Studio read model", () => {
     vi.unstubAllGlobals();
   });
 
-  it("loads collections, recipes, jobs, registry results, health, storage, staleness, and selected state without local result scanning", async () => {
+  it("loads analyses, collections, recipes, jobs, registry results, health, storage, staleness, and selected state without local result scanning", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       expect(init?.method ?? "GET").toBe("GET");
@@ -37,6 +37,29 @@ describe("Analysis Studio read model", () => {
         });
       }
 
+      if (url.endsWith("/analyses")) {
+        return Response.json({
+          analyses: [
+            {
+              analysis_id: "analysis-20260614T130000Z",
+              analysis_job_ids: ["analysis-job-20260614T130000Z"],
+              source_collections: [{ label: "Bread", slug: "bread" }],
+              status: "ready",
+              title: "Bread visual study",
+              variants: [
+                {
+                  analysis_result_id:
+                    "analysis-result-20260614T130000Z-dinov3_vits_384",
+                  explorer_href:
+                    "/latent-map?analysisResultId=analysis-result-20260614T130000Z-dinov3_vits_384",
+                  status: "ready",
+                },
+              ],
+            },
+          ],
+        });
+      }
+
       if (url.endsWith("/analysis-jobs")) {
         return Response.json({
           jobs: [
@@ -45,8 +68,33 @@ describe("Analysis Studio read model", () => {
               analysis_result_ids: [
                 "analysis-result-20260614T130000Z-dinov3_vits_384",
               ],
+              created_at: "2026-06-14T13:00:00Z",
               recipe_ids: ["dinov3_vits_384"],
-              stages: [],
+              scope_snapshot: {
+                counts: {
+                  collections: 1,
+                  images: 2,
+                },
+                item_count: 2,
+                snapshot_id: "analysis-scope-snapshot-bread",
+              },
+              stages: [
+                {
+                  output_counts: {
+                    missing_embeddings: 0,
+                    reusable_embeddings: 2,
+                  },
+                  stage_name: "embedding_planning",
+                  status: "ready",
+                },
+                {
+                  elapsed_ms: 123,
+                  output_artifact_count: 4,
+                  recipe_id: "dinov3_vits_384",
+                  stage_name: "atlas_generation",
+                  status: "ready",
+                },
+              ],
               status: "ready",
               viewer_hrefs: [
                 "/latent-map?analysisResultId=analysis-result-20260614T130000Z-dinov3_vits_384",
@@ -87,6 +135,10 @@ describe("Analysis Studio read model", () => {
                 removed_image_count: 0,
                 state: "current",
               },
+              storage_by_role: {
+                "faiss-index": 1024,
+                "thumbnail-atlas": 2048,
+              },
               storage_totals: {
                 durable: 1024,
                 "render-cache": 2048,
@@ -104,10 +156,37 @@ describe("Analysis Studio read model", () => {
 
     const model = await loadAnalysisStudioReadModel({
       searchParams: {
+        analysisId: "analysis-20260614T130000Z",
         analysisResultId: "analysis-result-20260614T130000Z-dinov3_vits_384",
       },
     });
 
+    expect(model.analyses[0]).toEqual({
+      analysisId: "analysis-20260614T130000Z",
+      analysisJobIds: ["analysis-job-20260614T130000Z"],
+      sourceCollections: [{ label: "Bread", slug: "bread" }],
+      status: "ready",
+      title: "Bread visual study",
+      variants: [
+        {
+          analysisResultId: "analysis-result-20260614T130000Z-dinov3_vits_384",
+          explorerHref:
+            "/latent-map?analysisResultId=analysis-result-20260614T130000Z-dinov3_vits_384",
+          itemCount: 2,
+          recipeLabels: ["DINOv3 ViT-S 384px"],
+          sharedEmbeddings: {
+            missingCount: 0,
+            reusableCount: 2,
+          },
+          status: "ready",
+          storage: {
+            embeddingBytes: 0,
+            totalBytes: 3072,
+            variantBytes: 3072,
+          },
+        },
+      ],
+    });
     expect(model.collections).toEqual([{ label: "Bread", slug: "bread" }]);
     expect(model.recipes).toEqual([
       {
@@ -119,7 +198,44 @@ describe("Analysis Studio read model", () => {
     ]);
     expect(model.jobs[0]).toMatchObject({
       analysisJobId: "analysis-job-20260614T130000Z",
+      createdAt: "2026-06-14T13:00:00Z",
+      producedResults: [
+        {
+          analysisResultId: "analysis-result-20260614T130000Z-dinov3_vits_384",
+          href: "/analysis-results?analysisResultId=analysis-result-20260614T130000Z-dinov3_vits_384",
+          itemCount: 2,
+          recipeId: "dinov3_vits_384",
+          recipeLabel: "DINOv3 ViT-S 384px",
+          scopeLabel: "Bread",
+          state: "ready",
+        },
+      ],
       recipeLabels: ["DINOv3 ViT-S 384px"],
+      scopeSnapshot: {
+        counts: {
+          collections: 1,
+          images: 2,
+        },
+        itemCount: 2,
+        snapshotId: "analysis-scope-snapshot-bread",
+      },
+      stages: [
+        {
+          outputCounts: {
+            missing_embeddings: 0,
+            reusable_embeddings: 2,
+          },
+          stageName: "embedding_planning",
+          status: "ready",
+        },
+        {
+          elapsedMs: 123,
+          outputArtifactCount: 4,
+          recipeId: "dinov3_vits_384",
+          stageName: "atlas_generation",
+          status: "ready",
+        },
+      ],
       status: "ready",
     });
     expect(model.results[0]).toMatchObject({
@@ -153,21 +269,24 @@ describe("Analysis Studio read model", () => {
         totalBytes: 3072,
         viewerCacheBytes: 0,
       },
+      storageByRole: {
+        "faiss-index": 1024,
+        "thumbnail-atlas": 2048,
+      },
     });
     expect(model.summary).toEqual({
-      indexedImageCount: 2,
-      resultCount: 1,
+      analysisCount: 1,
+      sourceImageCount: 2,
     });
     expect(model.selectedState).toEqual({
-      analysisResultId: "analysis-result-20260614T130000Z-dinov3_vits_384",
-      state: "selected-result",
+      analysisId: "analysis-20260614T130000Z",
+      state: "selected-analysis",
     });
-    expect(model.selectedResult?.analysisResultId).toBe(
-      "analysis-result-20260614T130000Z-dinov3_vits_384",
-    );
+    expect(model.selectedAnalysis?.analysisId).toBe("analysis-20260614T130000Z");
     expect(JSON.stringify(model)).not.toContain("/Users/");
-    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(fetchMock).toHaveBeenCalledTimes(5);
     expect(fetchMock.mock.calls.map(([input]) => String(input)).sort()).toEqual([
+      "http://127.0.0.1:18670/analyses",
       "http://127.0.0.1:18670/analysis-jobs",
       "http://127.0.0.1:18670/analysis-recipes",
       "http://127.0.0.1:18670/analysis-results",

@@ -209,6 +209,257 @@ def test_analysis_recipe_api_returns_browser_safe_catalog(tmp_path):
     assert str(storage.data_root) not in json.dumps(payload)
 
 
+def test_analysis_api_creates_persistent_analysis_and_starts_job(tmp_path):
+    storage = create_collection(tmp_path)
+    stage_runner = FakeStageRunner()
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            analysis_stage_runner=stage_runner,
+        )
+    )
+
+    response = client.post(
+        "/analyses",
+        json={
+            "title": "Bread visual study",
+            "collection_slugs": ["analysis-board"],
+            "recipe_ids": ["dinov3_vits_384"],
+        },
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert str(storage.data_root) not in json.dumps(payload)
+    analysis = payload["analysis"]
+    assert analysis["analysis_id"].startswith("analysis-")
+    assert analysis["title"] == "Bread visual study"
+    assert analysis["source_collections"] == [
+        {"label": "Analysis Board", "slug": "analysis-board"}
+    ]
+    assert analysis["analysis_job_ids"] == [payload["job"]["analysis_job_id"]]
+    assert analysis["variants"] == []
+    assert analysis["status"] in {"ready", "running"}
+    assert payload["job"]["status"] == "running"
+
+    list_response = client.get("/analyses")
+
+    assert list_response.status_code == 200
+    list_payload = list_response.json()
+    assert str(storage.data_root) not in json.dumps(list_payload)
+    assert [item["analysis_id"] for item in list_payload["analyses"]] == [
+        analysis["analysis_id"]
+    ]
+    assert list_payload["analyses"][0]["title"] == "Bread visual study"
+
+
+def test_analysis_api_requires_title_before_starting_job(tmp_path):
+    storage = create_collection(tmp_path)
+    stage_runner = FakeStageRunner()
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            analysis_stage_runner=stage_runner,
+        )
+    )
+
+    response = client.post(
+        "/analyses",
+        json={
+            "title": "   ",
+            "collection_slugs": ["analysis-board"],
+            "recipe_ids": ["dinov3_vits_384"],
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Analysis title is required."
+    assert stage_runner.calls == []
+    assert client.get("/analyses").json()["analyses"] == []
+    assert client.get("/analysis-jobs").json()["jobs"] == []
+
+
+def test_analysis_api_requires_source_collection_before_starting_job(tmp_path):
+    storage = create_collection(tmp_path)
+    stage_runner = FakeStageRunner()
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            analysis_stage_runner=stage_runner,
+        )
+    )
+
+    response = client.post(
+        "/analyses",
+        json={
+            "title": "No source scope",
+            "collection_slugs": [],
+            "recipe_ids": ["dinov3_vits_384"],
+        },
+    )
+
+    assert response.status_code == 422
+    assert (
+        response.json()["detail"]
+        == "At least one Collection is required for an Analysis Scope."
+    )
+    assert stage_runner.calls == []
+    assert client.get("/analyses").json()["analyses"] == []
+    assert client.get("/analysis-jobs").json()["jobs"] == []
+
+
+def test_analysis_api_loads_analysis_by_stable_id(tmp_path):
+    storage = create_collection(tmp_path)
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            analysis_stage_runner=FakeStageRunner(),
+        )
+    )
+    created = client.post(
+        "/analyses",
+        json={
+            "title": "Stable selected analysis",
+            "collection_slugs": ["analysis-board"],
+            "recipe_ids": ["dinov3_vits_384"],
+        },
+    ).json()["analysis"]
+
+    response = client.get(f"/analyses/{created['analysis_id']}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert str(storage.data_root) not in json.dumps(payload)
+    assert payload["analysis"]["analysis_id"] == created["analysis_id"]
+    assert payload["analysis"]["title"] == "Stable selected analysis"
+
+
+def test_analysis_api_renames_only_analysis_title(tmp_path):
+    storage = create_collection(tmp_path)
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            analysis_stage_runner=FakeStageRunner(),
+        )
+    )
+    created = client.post(
+        "/analyses",
+        json={
+            "title": "Original title",
+            "collection_slugs": ["analysis-board"],
+            "recipe_ids": ["dinov3_vits_384"],
+        },
+    ).json()["analysis"]
+
+    response = client.patch(
+        f"/analyses/{created['analysis_id']}",
+        json={"title": "Renamed title"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert str(storage.data_root) not in json.dumps(payload)
+    renamed = payload["analysis"]
+    assert renamed["analysis_id"] == created["analysis_id"]
+    assert renamed["title"] == "Renamed title"
+    assert renamed["source_collections"] == created["source_collections"]
+    assert renamed["analysis_job_ids"] == created["analysis_job_ids"]
+    loaded = client.get(f"/analyses/{created['analysis_id']}").json()["analysis"]
+    assert loaded["title"] == "Renamed title"
+
+
+def test_analysis_api_lists_completed_result_as_variant(tmp_path):
+    storage = create_collection(tmp_path)
+    stage_runner = FakeStageRunner()
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            analysis_stage_runner=stage_runner,
+        )
+    )
+    created_payload = client.post(
+        "/analyses",
+        json={
+            "title": "Variant source",
+            "collection_slugs": ["analysis-board"],
+            "recipe_ids": ["dinov3_vits_384"],
+        },
+    ).json()
+    analysis_id = created_payload["analysis"]["analysis_id"]
+    ready_job = wait_for_api_job_status(
+        client,
+        created_payload["job"]["analysis_job_id"],
+        "ready",
+    )
+    result_id = ready_job["analysis_result_ids"][0]
+
+    response = client.get(f"/analyses/{analysis_id}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert str(storage.data_root) not in json.dumps(payload)
+    assert payload["analysis"]["status"] == "ready"
+    assert payload["analysis"]["variants"] == [
+        {
+            "analysis_result_id": result_id,
+            "explorer_href": f"/latent-map?analysisResultId={result_id}",
+            "status": "ready",
+        }
+    ]
+
+
+def test_analysis_api_keeps_failed_analysis_without_result(tmp_path, monkeypatch):
+    storage = create_collection(tmp_path, display_name="Failure Board")
+
+    class FastFailProductionRunner:
+        def run_stage(self, request):
+            raise RuntimeError("production runner unavailable in test")
+
+    monkeypatch.setattr(
+        "anacronia.api.LatentMapAnalysisStageRunner",
+        lambda: FastFailProductionRunner(),
+    )
+    client = TestClient(
+        create_app(database_path=storage.database_path, data_root=storage.data_root)
+    )
+
+    created_payload = client.post(
+        "/analyses",
+        json={
+            "title": "Failed run stays visible",
+            "collection_slugs": ["failure-board"],
+            "recipe_ids": ["dinov3_vits_384"],
+        },
+    ).json()
+    failed_job = wait_for_api_job_status(
+        client,
+        created_payload["job"]["analysis_job_id"],
+        "failed",
+    )
+
+    response = client.get(
+        f"/analyses/{created_payload['analysis']['analysis_id']}",
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert str(storage.data_root) not in json.dumps(payload)
+    analysis = payload["analysis"]
+    assert analysis["status"] == "failed"
+    assert analysis["title"] == "Failed run stays visible"
+    assert analysis["source_collections"] == [
+        {"label": "Failure Board", "slug": "failure-board"}
+    ]
+    assert analysis["analysis_job_ids"] == [failed_job["analysis_job_id"]]
+    assert analysis["variants"] == []
+
+
 def test_analysis_result_api_lists_registry_summaries_without_local_paths(tmp_path):
     storage = initialize_storage(project_root=tmp_path)
     manifest = analysis_result_manifest()
@@ -257,6 +508,12 @@ def test_analysis_result_api_lists_registry_summaries_without_local_paths(tmp_pa
             "sibling_group_id": "analysis-sibling-20260614T130000Z",
             "status": "ready",
             "staleness": manifest["staleness"],
+            "storage_by_role": {
+                "faiss-index": 5,
+                "image-manifest": 3,
+                "layout": 2,
+                "thumbnail-atlas": 2,
+            },
             "storage_totals": {
                 "durable": 10,
                 "render-cache": 2,

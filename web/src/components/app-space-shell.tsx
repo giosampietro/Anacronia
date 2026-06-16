@@ -9,6 +9,7 @@ import {
 import Link from "next/link";
 import { FlaskConical, Images, Network } from "lucide-react";
 
+import { ThemeSwitch } from "@/components/theme-switch";
 import { cn } from "@/lib/utils";
 
 export type AppSpace = "library" | "analysis" | "explorer";
@@ -117,6 +118,9 @@ function AppSpaceRail({ activeSpace }: { activeSpace: AppSpace }) {
             </Link>
           );
         })}
+      </div>
+      <div className="mt-auto flex flex-col items-center pt-4">
+        <ThemeSwitch variant="rail" />
       </div>
     </nav>
   );

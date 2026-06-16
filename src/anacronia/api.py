@@ -16,6 +16,11 @@ from anacronia.analysis_jobs import (
     recover_stale_analysis_jobs,
     submit_analysis_job,
 )
+from anacronia.analyses import (
+    AnalysisTitleError,
+    LocalAnalysisStore,
+    validate_analysis_title,
+)
 from anacronia.analysis_result_registry import LocalAnalysisResultRegistry
 from anacronia.analysis_result_contract import browser_safe_analysis_result_summary
 from anacronia.analysis_recipes import browser_safe_analysis_recipe_catalog
@@ -216,6 +221,16 @@ class AnalysisJobRequest(BaseModel):
     recipe_ids: list[str] | None = None
 
 
+class AnalysisRequest(BaseModel):
+    title: str
+    collection_slugs: list[str] = Field(default_factory=list)
+    recipe_ids: list[str] | None = None
+
+
+class RenameAnalysisRequest(BaseModel):
+    title: str
+
+
 def serialize_search_set(search_set: SearchSet) -> dict[str, object]:
     return {
         "display_name": search_set.display_name,
@@ -396,10 +411,19 @@ def serialize_analysis_job_manifest(manifest_path: Path) -> dict[str, object]:
     scope_snapshot = manifest.get("scope_snapshot", {})
     if not isinstance(scope_snapshot, dict):
         scope_snapshot = {}
+    scope_snapshot_payload: dict[str, object] | None = None
+    if scope_snapshot:
+        scope_snapshot_payload = {
+            "counts": scope_snapshot.get("counts", {}),
+            "item_count": scope_snapshot.get("item_count"),
+            "snapshot_id": scope_snapshot.get("snapshot_id"),
+        }
     return {
         "analysis_job_id": manifest["analysis_job_id"],
         "analysis_result_ids": analysis_result_ids,
+        "created_at": manifest.get("created_at"),
         "recipe_ids": list(manifest.get("recipe_ids", [])),
+        "scope_snapshot": scope_snapshot_payload,
         "scope_snapshot_id": scope_snapshot.get("snapshot_id"),
         "sibling_group_id": manifest.get("sibling_group_id"),
         "stages": list(manifest.get("stages", [])),
@@ -843,6 +867,79 @@ def create_app(
     @app.get("/analysis-recipes")
     def get_analysis_recipes() -> dict[str, object]:
         return browser_safe_analysis_recipe_catalog()
+
+    @app.post("/analyses", status_code=201)
+    def create_analysis(request: AnalysisRequest) -> dict[str, object]:
+        ensure_no_active_provider_search()
+        try:
+            analysis_title = validate_analysis_title(request.title)
+            summary = submit_analysis_job(
+                database_path=resolved_database_path,
+                data_root=resolved_data_root,
+                collection_slugs=request.collection_slugs,
+                recipe_ids=request.recipe_ids,
+                stage_runner=resolved_analysis_stage_runner,
+            )
+            analysis = LocalAnalysisStore(
+                data_root=resolved_data_root,
+                database_path=resolved_database_path,
+            ).create_for_job(
+                title=analysis_title,
+                collection_slugs=request.collection_slugs,
+                job=summary,
+            )
+        except AnalysisJobBusyError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        except LookupError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except AnalysisTitleError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
+        return {
+            "analysis": analysis.to_public_dict(),
+            "job": serialize_analysis_job_summary(summary),
+        }
+
+    @app.get("/analyses")
+    def get_analyses() -> dict[str, object]:
+        return {
+            "analyses": [
+                analysis.to_public_dict()
+                for analysis in LocalAnalysisStore(
+                    data_root=resolved_data_root,
+                    database_path=resolved_database_path,
+                ).list()
+            ]
+        }
+
+    @app.get("/analyses/{analysis_id}")
+    def get_analysis(analysis_id: str) -> dict[str, object]:
+        try:
+            analysis = LocalAnalysisStore(
+                data_root=resolved_data_root,
+                database_path=resolved_database_path,
+            ).summarize(analysis_id)
+        except FileNotFoundError as error:
+            raise HTTPException(status_code=404, detail="Analysis not found.") from error
+        return {"analysis": analysis.to_public_dict()}
+
+    @app.patch("/analyses/{analysis_id}")
+    def rename_analysis(
+        analysis_id: str,
+        request: RenameAnalysisRequest,
+    ) -> dict[str, object]:
+        try:
+            analysis = LocalAnalysisStore(
+                data_root=resolved_data_root,
+                database_path=resolved_database_path,
+            ).rename(analysis_id=analysis_id, title=request.title)
+        except FileNotFoundError as error:
+            raise HTTPException(status_code=404, detail="Analysis not found.") from error
+        except AnalysisTitleError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        return {"analysis": analysis.to_public_dict()}
 
     @app.post("/analysis-jobs", status_code=201)
     def create_analysis_job(request: AnalysisJobRequest) -> dict[str, object]:

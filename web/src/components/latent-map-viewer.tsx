@@ -11,7 +11,6 @@ import {
 } from "react";
 import { Keyboard, Palette, X } from "lucide-react";
 
-import { ThemeSwitch } from "@/components/theme-switch";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -2078,9 +2077,6 @@ export function LatentMapViewer({
           <SidebarHeader>
             <div className="flex h-12 min-w-0 items-center gap-3 rounded-xl px-2 group-data-[collapsible=icon]:hidden">
               <span className="truncate text-lg font-semibold">Anacronia</span>
-              <div className="ml-auto shrink-0">
-                <ThemeSwitch />
-              </div>
             </div>
           </SidebarHeader>
 

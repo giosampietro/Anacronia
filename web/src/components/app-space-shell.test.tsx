@@ -24,6 +24,7 @@ describe("AppSpaceShell", () => {
     expect(html).toContain("href=\"/latent-map\"");
     expect(html).toContain("Latent Space Explorer");
     expect(html).toContain("aria-current=\"page\"");
+    expect(html).toContain("Switch to light theme");
     expect(html).toContain("Analysis Studio content");
   });
 

@@ -1,6 +1,6 @@
 "use client";
 
-import type { CSSProperties, ReactNode } from "react";
+import { useState, type CSSProperties, type ReactNode } from "react";
 import Link from "next/link";
 import {
   Boxes,
@@ -8,8 +8,13 @@ import {
   Database,
   FileSearch,
   FlaskConical,
+  FolderClosed,
+  FolderOpen,
+  ListFilter,
   Play,
   Plus,
+  Search,
+  X,
 } from "lucide-react";
 
 import { AnalysisJobAutoRefresh } from "@/components/analysis-job-auto-refresh";
@@ -35,6 +40,7 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
+import { Spinner } from "@/components/ui/spinner";
 import {
   Sidebar,
   SidebarContent,
@@ -43,9 +49,9 @@ import {
   SidebarGroupContent,
   SidebarGroupLabel,
   SidebarHeader,
+  SidebarInput,
   SidebarInset,
   SidebarMenu,
-  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarProvider,
@@ -60,9 +66,11 @@ import {
 import type { AppVersionStamp } from "@/lib/app-version";
 import { shouldAutoRefreshAnalysisJobs } from "@/lib/analysis-job-refresh";
 import type {
+  AnalysisStudioAnalysisSummary,
   AnalysisStudioJobSummary,
   AnalysisStudioReadModel,
   AnalysisStudioResultSummary,
+  AnalysisStudioJobStageSummary,
 } from "@/lib/analysis-studio-read-model";
 import { createAnalysisStudioHref } from "@/lib/analysis-studio-read-model";
 import type { StatusRow } from "@/lib/status";
@@ -87,6 +95,19 @@ const ANALYSIS_JOB_STAGE_ORDER = [
   "result_registration",
 ];
 
+const ANALYSIS_JOB_STAGE_LABELS: Record<string, string> = {
+  atlas_generation: "Explorer atlas generation",
+  embedding_computation: "Embedding computation",
+  embedding_planning: "Embedding planning",
+  faiss: "FAISS",
+  hdbscan: "HDBSCAN",
+  job_runtime: "Job runtime",
+  result_registration: "Result creation",
+  scope_snapshot: "Scope snapshot",
+  umap: "UMAP",
+  viewer_metadata: "Viewer metadata",
+};
+
 function formatCount(count: number, singular: string, plural = `${singular}s`) {
   return `${count} ${count === 1 ? singular : plural}`;
 }
@@ -102,10 +123,29 @@ function formatBytes(bytes: number) {
   return `${(kib / 1024).toFixed(1)} MB`;
 }
 
+function formatOptionalBytes(bytes: number | null) {
+  return bytes === null ? "Unavailable" : formatBytes(bytes);
+}
+
+function formatSharedEmbeddings(
+  variant: AnalysisStudioAnalysisSummary["variants"][number],
+) {
+  const parts = [
+    variant.sharedEmbeddings.reusableCount === null
+      ? null
+      : `${variant.sharedEmbeddings.reusableCount} reused`,
+    variant.sharedEmbeddings.missingCount === null
+      ? null
+      : `${variant.sharedEmbeddings.missingCount} new`,
+  ].filter((value): value is string => value !== null);
+  return parts.length > 0 ? parts.join(" · ") : "Unavailable";
+}
+
 function formatStageName(stageName: string | undefined) {
-  return stageName !== undefined && stageName.length > 0
-    ? stageName.replaceAll("_", " ")
-    : "analysis job";
+  if (stageName === undefined || stageName.length === 0) {
+    return "analysis job";
+  }
+  return ANALYSIS_JOB_STAGE_LABELS[stageName] ?? stageName.replaceAll("_", " ");
 }
 
 function getLatestStage(job: AnalysisStudioJobSummary) {
@@ -139,10 +179,97 @@ function getActiveStageName(job: AnalysisStudioJobSummary) {
 }
 
 function getFailedStageName(job: AnalysisStudioJobSummary) {
-  const failedStage = [...(job.stages ?? [])]
+  return formatStageName(
+    getFailedStage(job)?.stageName ?? getLatestStage(job)?.stageName,
+  );
+}
+
+function getFailedStage(job: AnalysisStudioJobSummary) {
+  return [...(job.stages ?? [])]
     .reverse()
     .find((stage) => stage.status === "failed");
-  return formatStageName(failedStage?.stageName ?? getLatestStage(job)?.stageName);
+}
+
+function getRecipeLabelForStage(
+  job: AnalysisStudioJobSummary,
+  recipeId: string | undefined,
+) {
+  if (recipeId === undefined || recipeId.length === 0) {
+    return null;
+  }
+  const recipeIndex = job.recipeIds.indexOf(recipeId);
+  if (recipeIndex >= 0) {
+    return job.recipeLabels[recipeIndex] ?? recipeId;
+  }
+  return recipeId;
+}
+
+function formatJobActivityStage(job: AnalysisStudioJobSummary) {
+  if (job.status === "failed" || job.status === "partial_failed") {
+    return `Failed at ${getFailedStageName(job)}`;
+  }
+  if (job.status === "running" || job.status === "queued") {
+    return `Current stage: ${getActiveStageName(job)}`;
+  }
+  return getActiveStageName(job);
+}
+
+function formatDuration(elapsedMs: number | undefined) {
+  if (elapsedMs === undefined || elapsedMs <= 0) {
+    return null;
+  }
+  if (elapsedMs < 1000) {
+    return `${elapsedMs} ms`;
+  }
+  return `${(elapsedMs / 1000).toFixed(1)} s`;
+}
+
+function formatTimestamp(timestamp: string | null) {
+  if (timestamp === null || timestamp.length === 0) {
+    return "Unknown";
+  }
+  const parsed = new Date(timestamp);
+  if (Number.isNaN(parsed.getTime())) {
+    return timestamp;
+  }
+  return parsed
+    .toISOString()
+    .replace(".000Z", " UTC")
+    .replace("T", " ");
+}
+
+function formatStageOutputCounts(
+  outputCounts: Record<string, number> | undefined,
+) {
+  if (outputCounts === undefined || Object.keys(outputCounts).length === 0) {
+    return null;
+  }
+  return Object.entries(outputCounts)
+    .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey))
+    .map(([key, value]) => `${value} ${key.replaceAll("_", " ")}`)
+    .join(" · ");
+}
+
+function formatScopeCounts(counts: Record<string, number>) {
+  const entries = Object.entries(counts);
+  if (entries.length === 0) {
+    return "No scope breakdown recorded";
+  }
+  return entries
+    .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey))
+    .map(([key, value]) => `${value} ${key.replaceAll("_", " ")}`)
+    .join(" · ");
+}
+
+function createStageMetaSummary(stage: AnalysisStudioJobStageSummary) {
+  const parts = [
+    formatDuration(stage.elapsedMs),
+    stage.outputArtifactCount !== undefined && stage.outputArtifactCount > 0
+      ? formatCount(stage.outputArtifactCount, "artifact")
+      : null,
+    formatStageOutputCounts(stage.outputCounts),
+  ].filter((value): value is string => value !== null);
+  return parts.length > 0 ? parts.join(" · ") : "No output details recorded";
 }
 
 function formatAnalysisJobStatusCount(count: number, status: string) {
@@ -195,6 +322,38 @@ function createJobSecondaryLabel(job: AnalysisStudioJobSummary) {
   return `${compactAnalysisJobId(job.analysisJobId)} · ${recipeLabel}`;
 }
 
+function sourceCollectionSummary(analysis: AnalysisStudioAnalysisSummary) {
+  return analysis.sourceCollections
+    .map((source) => source.label)
+    .filter(Boolean)
+    .join(", ");
+}
+
+function isAnalysisRunning(analysis: AnalysisStudioAnalysisSummary) {
+  return analysis.status === "running" || analysis.status === "queued";
+}
+
+function filterAnalyses(
+  analyses: AnalysisStudioAnalysisSummary[],
+  filterText: string,
+) {
+  const query = filterText.trim().toLowerCase();
+  if (query.length === 0) {
+    return analyses;
+  }
+  return analyses.filter((analysis) => {
+    const searchable = [
+      analysis.title,
+      analysis.status,
+      ...analysis.sourceCollections.map((source) => source.label),
+      ...analysis.sourceCollections.map((source) => source.slug),
+    ]
+      .join(" ")
+      .toLowerCase();
+    return searchable.includes(query);
+  });
+}
+
 function createBadgeVariant(
   state: string,
 ): "secondary" | "destructive" | "outline" {
@@ -216,10 +375,20 @@ function AnalysisStudioSidebarContent({
   model: AnalysisStudioReadModel;
   rows: StatusRow[];
 }) {
+  const [analysisFilterText, setAnalysisFilterText] = useState("");
+  const activeAnalysisId =
+    model.selectedState.state === "selected-analysis"
+      ? model.selectedState.analysisId
+      : null;
+  const [openedAnalysisId, setOpenedAnalysisId] = useState<string | null>(
+    activeAnalysisId,
+  );
+  const filteredAnalyses = filterAnalyses(model.analyses, analysisFilterText);
+
   return (
     <>
       <SidebarHeader>
-        <WorkspaceBrandHeader />
+        <WorkspaceBrandHeader label="Analysis Studio" />
         <SidebarMenu className="gap-3">
           <SidebarMenuItem>
             <SidebarMenuButton
@@ -233,125 +402,102 @@ function AnalysisStudioSidebarContent({
               </span>
             </SidebarMenuButton>
           </SidebarMenuItem>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              isActive={model.selectedState.state === "overview"}
-              render={<Link href={createAnalysisStudioHref({ state: "overview" })} />}
-              tooltip="Overview"
-            >
-              <FlaskConical />
-              <span className="group-data-[collapsible=icon]:hidden">Overview</span>
-            </SidebarMenuButton>
-            <SidebarMenuBadge>{model.summary.resultCount}</SidebarMenuBadge>
-          </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
 
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>Analysis Results</SidebarGroupLabel>
+          <SidebarGroupLabel>Analyses</SidebarGroupLabel>
           <SidebarGroupContent>
-            <SidebarMenu className="mt-3 gap-0.5">
-              {model.results.length === 0 ? (
-                <Empty className="border group-data-[collapsible=icon]:hidden">
-                  <EmptyHeader>
-                    <EmptyMedia variant="icon">
-                      <FileSearch />
-                    </EmptyMedia>
-                    <EmptyTitle>No Analysis Results</EmptyTitle>
-                  </EmptyHeader>
-                </Empty>
-              ) : (
-                model.results.map((result) => {
-                  const isActive =
-                    model.selectedState.state === "selected-result" &&
-                    model.selectedState.analysisResultId === result.analysisResultId;
-                  return (
-                    <SidebarMenuItem key={result.analysisResultId}>
-                      <SidebarMenuButton
-                        className={cn(
-                          "h-auto gap-2 rounded-md px-2 py-1.5 text-[13px] font-normal group-data-[collapsible=icon]:justify-center",
-                          isActive && "bg-sidebar-accent text-sidebar-accent-foreground",
-                        )}
-                        isActive={isActive}
-                        render={
-                          <Link
-                            href={createAnalysisStudioHref({
-                              analysisResultId: result.analysisResultId,
-                              state: "selected-result",
-                            })}
-                          />
-                        }
-                        tooltip={`${result.scopeLabel} · ${createResultSecondaryLabel(result)}`}
-                      >
-                        <FileSearch className="mt-0.5 shrink-0 text-sidebar-foreground/65" />
-                        <span className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
-                          <span className="block truncate">{result.scopeLabel}</span>
-                          <span className="block truncate text-[11px] leading-4 text-sidebar-foreground/55">
-                            {createResultSidebarMetaLabel(result)}
-                          </span>
-                        </span>
-                        <span className="ml-auto shrink-0 font-mono text-[11px] text-sidebar-foreground/55 group-data-[collapsible=icon]:hidden">
-                          {result.itemCount}
-                        </span>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  );
-                })
-              )}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+            <div className="relative group-data-[collapsible=icon]:hidden">
+              <ListFilter className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 opacity-50" />
+              <SidebarInput
+                aria-label="Filter Analyses"
+                className="pl-8 pr-8"
+                onChange={(event) => setAnalysisFilterText(event.currentTarget.value)}
+                placeholder="Filter by title or collection"
+                value={analysisFilterText}
+              />
+              {analysisFilterText !== "" ? (
+                <button
+                  aria-label="Clear Analysis filter"
+                  className="absolute right-1.5 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-3 focus-visible:ring-sidebar-ring focus-visible:outline-hidden"
+                  onClick={() => setAnalysisFilterText("")}
+                  type="button"
+                >
+                  <X className="size-3.5" />
+                </button>
+              ) : null}
+            </div>
 
-        <SidebarGroup>
-          <SidebarGroupLabel>Jobs</SidebarGroupLabel>
-          <SidebarGroupContent>
             <SidebarMenu className="mt-3 gap-0.5">
-              {model.jobs.length === 0 ? (
+              {filteredAnalyses.length === 0 ? (
                 <Empty className="border group-data-[collapsible=icon]:hidden">
                   <EmptyHeader>
                     <EmptyMedia variant="icon">
-                      <Clock3 />
+                      <Search />
                     </EmptyMedia>
-                    <EmptyTitle>No Jobs</EmptyTitle>
+                    <EmptyTitle>
+                      {model.analyses.length === 0
+                        ? "New analyses will appear here."
+                        : "No matching Analyses"}
+                    </EmptyTitle>
                   </EmptyHeader>
                 </Empty>
               ) : (
-                model.jobs.map((job) => {
-                  const isActive =
-                    model.selectedState.state === "selected-job" &&
-                    model.selectedState.analysisJobId === job.analysisJobId;
+                filteredAnalyses.map((analysis) => {
+                  const isActive = activeAnalysisId === analysis.analysisId;
+                  const isOpen = openedAnalysisId === analysis.analysisId || isActive;
+                  const sourceSummary =
+                    sourceCollectionSummary(analysis) || "No source Collections";
                   return (
-                    <SidebarMenuItem key={job.analysisJobId}>
+                    <SidebarMenuItem key={analysis.analysisId}>
                       <SidebarMenuButton
+                        aria-expanded={isOpen}
                         className={cn(
-                          "h-auto gap-2 rounded-md px-2 py-1.5 text-[13px] font-normal group-data-[collapsible=icon]:justify-center",
-                          isActive && "bg-sidebar-accent text-sidebar-accent-foreground",
+                          "h-8 gap-2 rounded-md px-2 text-[13px] font-normal group-data-[collapsible=icon]:justify-center",
+                          isOpen && "bg-sidebar-accent text-sidebar-accent-foreground",
                         )}
                         isActive={isActive}
+                        onClick={() => setOpenedAnalysisId(analysis.analysisId)}
                         render={
                           <Link
                             href={createAnalysisStudioHref({
-                              analysisJobId: job.analysisJobId,
-                              state: "selected-job",
+                              analysisId: analysis.analysisId,
+                              state: "selected-analysis",
                             })}
                           />
                         }
-                        tooltip={`${job.analysisJobId} · ${createJobSecondaryLabel(job)}`}
+                        tooltip={analysis.title}
                       >
-                        <Clock3 className="mt-0.5 shrink-0 text-sidebar-foreground/65" />
-                        <span className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
-                          <span className="block truncate">
-                            {job.recipeLabels[0] ?? "Analysis job"}
-                          </span>
-                          <span className="block truncate text-[11px] leading-4 text-sidebar-foreground/55">
-                            {compactAnalysisJobId(job.analysisJobId)}
-                          </span>
+                        {isOpen ? (
+                          <FolderOpen className="text-sidebar-foreground/75" />
+                        ) : (
+                          <FolderClosed className="text-sidebar-foreground/65" />
+                        )}
+                        <span className="min-w-0 flex-1 truncate group-data-[collapsible=icon]:hidden">
+                          {analysis.title}
                         </span>
-                        <span className="ml-auto shrink-0 font-mono text-[11px] text-sidebar-foreground/55 group-data-[collapsible=icon]:hidden">
-                          {job.status}
+                        <span className="ml-auto flex shrink-0 items-center gap-1 font-mono text-[11px] font-normal tabular-nums text-sidebar-foreground/55 group-data-[collapsible=icon]:hidden">
+                          {isAnalysisRunning(analysis) ? (
+                            <Spinner
+                              aria-label={`${analysis.title} analysis in progress`}
+                              className="size-3"
+                            />
+                          ) : null}
+                          <span
+                            aria-label={`${analysis.variants.length} variants`}
+                            title={`${analysis.variants.length} variants`}
+                          >
+                            {analysis.variants.length}
+                          </span>
                         </span>
                       </SidebarMenuButton>
+                      {isOpen ? (
+                        <p className="ml-8 mr-2 pb-1 pr-2 text-xs leading-5 text-sidebar-foreground/55 group-data-[collapsible=icon]:hidden">
+                          {sourceSummary}
+                        </p>
+                      ) : null}
                     </SidebarMenuItem>
                   );
                 })
@@ -372,59 +518,57 @@ function AnalysisStudioSidebarContent({
 }
 
 function OverviewWorkspace({ model }: { model: AnalysisStudioReadModel }) {
+  const attachedAnalysisJobIds = new Set(
+    model.analyses.flatMap((analysis) => analysis.analysisJobIds),
+  );
+  const attachedJobs = model.jobs.filter((job) =>
+    attachedAnalysisJobIds.has(job.analysisJobId),
+  );
   const stateSummary =
-    model.jobs.length > 0
-      ? summarizeJobStates(model.jobs)
+    attachedJobs.length > 0
+      ? summarizeJobStates(attachedJobs)
       : model.jobsUnavailable
         ? "Job API unavailable"
         : "No jobs found";
-  const recipeSummary = new Set(
-    model.results.flatMap((result) => result.recipeLabels),
-  );
+  const recipeSummary = [
+    ...new Set(
+      model.analyses.flatMap((analysis) =>
+        analysis.variants.flatMap((variant) => variant.recipeLabels),
+      ),
+    ),
+  ].sort((left, right) => left.localeCompare(right));
 
   return (
     <div className="flex flex-col gap-6">
-      <header className="flex flex-col gap-2">
-        <p className="text-sm font-medium uppercase tracking-[0.18em] text-muted-foreground">
-          Analysis Studio
-        </p>
-        <h1 className="text-3xl font-semibold tracking-normal">Analysis Results</h1>
-        <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
-          Durable Analysis Results live here. Select a Result or Job from the
-          Studio sidebar, or start a new Analysis.
-        </p>
-      </header>
-
       <div className="grid gap-4 md:grid-cols-3">
         <Card size="sm">
           <CardHeader>
-            <CardTitle>Analysis Scope</CardTitle>
-            <CardDescription>Durable results currently indexed.</CardDescription>
+            <CardTitle>Analyses run</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-1">
-            <p className="text-2xl font-semibold">{model.summary.resultCount}</p>
+            <p className="text-2xl font-semibold">{model.summary.analysisCount}</p>
             <p className="text-sm text-muted-foreground">
-              {formatCount(model.summary.indexedImageCount, "image")} indexed
+              {formatCount(model.summary.sourceImageCount, "image")}
             </p>
           </CardContent>
         </Card>
         <Card size="sm">
           <CardHeader>
-            <CardTitle>Recipe Choices</CardTitle>
-            <CardDescription>Recipe variants already represented in Results.</CardDescription>
+            <CardTitle>Recipes used</CardTitle>
           </CardHeader>
-          <CardContent>
-            <p className="text-sm leading-6 text-muted-foreground">
-              {recipeSummary.size > 0
-                ? [...recipeSummary].sort((left, right) => left.localeCompare(right)).join(", ")
-                : "No recipes yet"}
-            </p>
+          <CardContent className="flex flex-col gap-1 text-sm leading-6 text-muted-foreground">
+            {recipeSummary.length > 0 ? (
+              recipeSummary.map((recipeLabel) => (
+                <p key={recipeLabel}>{recipeLabel}</p>
+              ))
+            ) : (
+              <p>No recipes yet</p>
+            )}
           </CardContent>
         </Card>
         <Card size="sm">
           <CardHeader>
-            <CardTitle>Job Status</CardTitle>
-            <CardDescription>Current Analysis Job history summary.</CardDescription>
+            <CardTitle>Analysis jobs</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-sm leading-6 text-muted-foreground">{stateSummary}</p>
@@ -432,16 +576,15 @@ function OverviewWorkspace({ model }: { model: AnalysisStudioReadModel }) {
         </Card>
       </div>
 
-      {model.results.length === 0 ? (
+      {model.analyses.length === 0 ? (
         <Empty className="border bg-card">
           <EmptyHeader>
             <EmptyMedia variant="icon">
               <Boxes />
             </EmptyMedia>
-            <EmptyTitle>No Analysis Results yet</EmptyTitle>
+            <EmptyTitle>No analyses yet</EmptyTitle>
             <EmptyDescription>
-              Start a new Analysis to create the first durable Result for the
-              Latent Space Explorer.
+              Start a new Analysis to create the first Variant.
             </EmptyDescription>
           </EmptyHeader>
           <EmptyContent>
@@ -460,64 +603,58 @@ function OverviewWorkspace({ model }: { model: AnalysisStudioReadModel }) {
 
 function NewAnalysisWorkspace({ model }: { model: AnalysisStudioReadModel }) {
   return (
-    <div className="flex flex-col gap-6">
-      <header className="flex flex-col gap-2">
-        <p className="text-sm font-medium uppercase tracking-[0.18em] text-muted-foreground">
-          Analysis Studio
-        </p>
-        <h1 className="text-3xl font-semibold tracking-normal">New Analysis</h1>
-        <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
-          Choose a Collection and recipe set to create durable Analysis Results.
-        </p>
-      </header>
-
+    <div className="flex flex-col gap-4">
       <Card>
         <CardHeader>
-          <CardTitle>Start Analysis Job</CardTitle>
-          <CardDescription>
-            This keeps the current submission path alive until the dedicated New
-            Analysis flow lands in the next slice.
-          </CardDescription>
+          <CardTitle>New Analysis</CardTitle>
         </CardHeader>
         <CardContent>
+          {model.analysisError ? (
+            <Alert className="mb-4" variant="destructive">
+              <AlertTitle>Analysis was not created</AlertTitle>
+              <AlertDescription>{model.analysisError}</AlertDescription>
+            </Alert>
+          ) : null}
           <form
-            action="/api/analysis-jobs"
+            action="/api/analyses"
             className="grid gap-4"
             method="post"
           >
-            {model.collections.length > 0 ? (
-              <label className="grid gap-2 text-sm text-foreground">
-                <span>Collection</span>
-                <select
-                  className="h-10 rounded-2xl border border-border bg-input/50 px-3 text-foreground outline-none transition focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30"
-                  name="collection_slugs"
-                >
-                  {model.collections.map((collection) => (
-                    <option key={collection.slug} value={collection.slug}>
-                      {collection.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : (
-              <label className="grid gap-2 text-sm text-foreground">
-                <span>Collection slugs</span>
-                <input
-                  className="h-10 rounded-2xl border border-border bg-input/50 px-3 text-foreground outline-none transition focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30"
-                  name="collection_slugs"
-                  placeholder={
-                    model.collectionsUnavailable
-                      ? "Collection API unavailable"
-                      : "j-shoot, mood-board"
-                  }
-                  type="text"
-                />
-              </label>
-            )}
+            <label className="grid max-w-md gap-2 text-sm text-foreground">
+              <span>Name the Analysis</span>
+              <input
+                autoComplete="off"
+                className="h-10 rounded-2xl border border-border bg-input/50 px-3 text-foreground outline-none transition focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30"
+                name="title"
+                required
+                type="text"
+              />
+            </label>
 
             <fieldset className="grid gap-3">
               <legend className="text-sm font-medium text-foreground">
-                Recipe IDs
+                Choose Collections
+              </legend>
+              <div className="grid gap-2 md:grid-cols-2">
+                {model.collections.map((collection) => (
+                  <label
+                    className="flex min-h-10 items-center gap-2 rounded-2xl border border-border px-3 text-sm text-foreground"
+                    key={collection.slug}
+                  >
+                    <input
+                      name="collection_slugs"
+                      type="checkbox"
+                      value={collection.slug}
+                    />
+                    {collection.label}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+
+            <fieldset className="grid gap-3">
+              <legend className="text-sm font-medium text-foreground">
+                Recipes
               </legend>
               <div className="flex flex-wrap gap-3">
                 {model.recipes.map((recipe) => (
@@ -543,11 +680,8 @@ function NewAnalysisWorkspace({ model }: { model: AnalysisStudioReadModel }) {
                 type="submit"
               >
                 <Play data-icon="inline-start" />
-                Run Analysis
+                Create Analysis
               </button>
-              <p className="text-sm text-muted-foreground">
-                Result and Job detail panels will deepen in the next slices.
-              </p>
             </div>
           </form>
         </CardContent>
@@ -652,6 +786,9 @@ function SelectedResultWorkspace({
 }
 
 function SelectedJobWorkspace({ job }: { job: AnalysisStudioJobSummary }) {
+  const failedStage = getFailedStage(job);
+  const failedRecipeLabel = getRecipeLabelForStage(job, failedStage?.recipeId);
+
   return (
     <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-2">
@@ -668,48 +805,307 @@ function SelectedJobWorkspace({ job }: { job: AnalysisStudioJobSummary }) {
         <CardHeader>
           <CardTitle>{job.analysisJobId}</CardTitle>
           <CardDescription>
-            Process history is separate from durable Analysis Results.
+            Durable Job state tracks execution history separately from durable Analysis
+            Results.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant={createBadgeVariant(job.status)}>{job.status}</Badge>
-            {job.status === "running" || job.status === "queued" ? (
-              <span className="text-sm text-muted-foreground">
-                Current stage: {getActiveStageName(job)}
-              </span>
-            ) : null}
-            {job.status === "failed" || job.status === "partial_failed" ? (
-              <span className="text-sm text-muted-foreground">
-                Failed at {getFailedStageName(job)}
-              </span>
-            ) : null}
+          <div className="grid gap-4 md:grid-cols-4">
+            <Card size="sm">
+              <CardHeader>
+                <CardTitle>Status</CardTitle>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-2">
+                <Badge variant={createBadgeVariant(job.status)}>{job.status}</Badge>
+                {job.status === "running" || job.status === "queued" ? (
+                  <p className="text-sm text-muted-foreground">
+                    Current stage: {getActiveStageName(job)}
+                  </p>
+                ) : null}
+                {job.status === "failed" || job.status === "partial_failed" ? (
+                  <p className="text-sm text-muted-foreground">
+                    Failed at {getFailedStageName(job)}
+                  </p>
+                ) : null}
+              </CardContent>
+            </Card>
+
+            <Card size="sm">
+              <CardHeader>
+                <CardTitle>Analysis Scope</CardTitle>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-1">
+                <p className="text-base font-medium">
+                  {job.scopeSnapshot?.itemCount !== null &&
+                  job.scopeSnapshot?.itemCount !== undefined
+                    ? `${job.scopeSnapshot.itemCount} items in scope`
+                    : "Scope size unavailable"}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  {job.scopeSnapshot
+                    ? formatScopeCounts(job.scopeSnapshot.counts)
+                    : "Scope snapshot missing"}
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card size="sm">
+              <CardHeader>
+                <CardTitle>Recipes</CardTitle>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-1">
+                {job.recipeLabels.map((recipeLabel) => (
+                  <p className="text-sm text-muted-foreground" key={recipeLabel}>
+                    {recipeLabel}
+                  </p>
+                ))}
+              </CardContent>
+            </Card>
+
+            <Card size="sm">
+              <CardHeader>
+                <CardTitle>Created</CardTitle>
+              </CardHeader>
+              <CardContent className="text-sm text-muted-foreground">
+                {formatTimestamp(job.createdAt)}
+              </CardContent>
+            </Card>
           </div>
 
-          <div className="grid gap-2">
-            <h2 className="text-sm font-medium text-foreground">Produced Results</h2>
-            {job.analysisResultIds.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No completed result yet.</p>
-            ) : (
-              <div className="flex flex-col gap-2">
-                {job.analysisResultIds.map((analysisResultId) => (
-                  <Link
-                    className={cn(
-                      buttonVariants({ variant: "outline", size: "sm" }),
-                      "justify-start",
-                    )}
-                    href={createAnalysisStudioHref({
-                      analysisResultId,
-                      state: "selected-result",
-                    })}
-                    key={analysisResultId}
-                  >
-                    {analysisResultId}
-                  </Link>
-                ))}
-              </div>
-            )}
+          {failedStage ? (
+            <Alert variant="destructive">
+              <Clock3 />
+              <AlertTitle>Failed recipe</AlertTitle>
+              <AlertDescription>
+                <span className="font-medium">
+                  {failedRecipeLabel ?? "Unknown recipe"}
+                </span>
+                {" · "}
+                {`Failed at ${getFailedStageName(job)}`}
+                {failedStage.error ? ` · ${failedStage.error}` : ""}
+              </AlertDescription>
+            </Alert>
+          ) : null}
+
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,0.65fr)]">
+            <Card>
+              <CardHeader>
+                <CardTitle>Stage Timeline</CardTitle>
+                <CardDescription>
+                  Recorded execution stages from the durable Job manifest.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-3">
+                {job.stages.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    No stage records available yet.
+                  </p>
+                ) : (
+                  job.stages.map((stage, index) => {
+                    const stageRecipeLabel = getRecipeLabelForStage(
+                      job,
+                      stage.recipeId,
+                    );
+                    return (
+                      <div
+                        className="rounded-2xl border border-border bg-muted/20 p-4"
+                        key={`${stage.stageName ?? "stage"}-${stage.recipeId ?? "global"}-${stage.startedAt ?? stage.completedAt ?? index}`}
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-sm font-medium text-foreground">
+                            {formatStageName(stage.stageName)}
+                          </p>
+                          {stageRecipeLabel ? (
+                            <Badge variant="outline">{stageRecipeLabel}</Badge>
+                          ) : null}
+                          <Badge variant={createBadgeVariant(stage.status ?? "unknown")}>
+                            {stage.status ?? "unknown"}
+                          </Badge>
+                        </div>
+                        <p className="mt-2 text-sm text-muted-foreground">
+                          {createStageMetaSummary(stage)}
+                        </p>
+                        {stage.error ? (
+                          <p className="mt-2 text-sm text-destructive">{stage.error}</p>
+                        ) : null}
+                      </div>
+                    );
+                  })
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Recipe Results</CardTitle>
+                <CardDescription>
+                  Completed sibling Results are linked by recipe. Open the Result first,
+                  then enter the Explorer from there.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-3">
+                {job.producedResults.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No completed result yet.</p>
+                ) : (
+                  job.producedResults.map((result) => (
+                    <Link
+                      className={cn(
+                        buttonVariants({ size: "sm", variant: "outline" }),
+                        "h-auto justify-start px-4 py-3",
+                      )}
+                      href={result.href}
+                      key={result.analysisResultId}
+                    >
+                      <span className="flex min-w-0 flex-col items-start gap-1">
+                        <span className="truncate font-medium">{result.recipeLabel}</span>
+                        <span className="truncate text-xs text-muted-foreground">
+                          {`${result.scopeLabel} · ${formatCount(result.itemCount, "image")} · ${result.state}`}
+                        </span>
+                      </span>
+                    </Link>
+                  ))
+                )}
+              </CardContent>
+            </Card>
           </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function SelectedAnalysisWorkspace({
+  analysis,
+  model,
+}: {
+  analysis: AnalysisStudioAnalysisSummary;
+  model: AnalysisStudioReadModel;
+}) {
+  const analysisJobs = model.jobs.filter((job) =>
+    analysis.analysisJobIds.includes(job.analysisJobId),
+  );
+  const resultById = new Map(
+    model.results.map((result) => [result.analysisResultId, result]),
+  );
+  const sourceSummary =
+    sourceCollectionSummary(analysis) || "No source Collections recorded";
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)]">
+        <Card size="sm">
+          <CardHeader>
+            <CardTitle>Source Collections</CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm text-muted-foreground">
+            {sourceSummary}
+          </CardContent>
+        </Card>
+
+        <Card size="sm">
+          <CardHeader>
+            <CardTitle>Job activity</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-2 text-sm text-muted-foreground">
+            {analysisJobs.length === 0 ? (
+              <p>No job activity recorded.</p>
+            ) : (
+              analysisJobs.map((job) => {
+                const failedStage = getFailedStage(job);
+                return (
+                  <div className="grid gap-1" key={job.analysisJobId}>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant={createBadgeVariant(job.status)}>
+                        {job.status}
+                      </Badge>
+                      <span className="font-mono text-xs">
+                        {compactAnalysisJobId(job.analysisJobId)}
+                      </span>
+                      <span>{formatJobActivityStage(job)}</span>
+                    </div>
+                    {failedStage?.error ? (
+                      <p className="text-xs text-destructive">
+                        {failedStage.error}
+                      </p>
+                    ) : null}
+                  </div>
+                );
+              })
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Variants</CardTitle>
+        </CardHeader>
+        <CardContent className="overflow-x-auto">
+          {analysis.variants.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No Variants yet.</p>
+          ) : (
+            <table className="w-full min-w-[58rem] text-left text-sm">
+              <thead className="border-b text-xs text-muted-foreground">
+                <tr>
+                  <th className="py-2 pr-4 font-medium">Variant</th>
+                  <th className="py-2 pr-4 font-medium">Status</th>
+                  <th className="py-2 pr-4 font-medium">Recipe</th>
+                  <th className="py-2 pr-4 font-medium">Images</th>
+                  <th className="py-2 pr-4 font-medium">Shared embeddings</th>
+                  <th className="py-2 pr-4 font-medium">Variant storage</th>
+                  <th className="py-2 text-right font-medium">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {analysis.variants.map((variant, index) => {
+                  const result = resultById.get(variant.analysisResultId);
+                  const recipeLabel =
+                    variant.recipeLabels.join(", ") || "Recipe unavailable";
+                  return (
+                    <tr key={variant.analysisResultId}>
+                      <td className="py-3 pr-4 font-medium">{`Variant ${index + 1}`}</td>
+                      <td className="py-3 pr-4">
+                        <Badge variant={createBadgeVariant(variant.status)}>
+                          {variant.status}
+                        </Badge>
+                      </td>
+                      <td className="py-3 pr-4 text-muted-foreground">
+                        {recipeLabel}
+                      </td>
+                      <td className="py-3 pr-4 text-muted-foreground">
+                        {variant.itemCount === null
+                          ? "Unavailable"
+                          : formatCount(variant.itemCount, "image")}
+                      </td>
+                      <td className="py-3 pr-4 text-muted-foreground">
+                        {formatSharedEmbeddings(variant)}
+                      </td>
+                      <td className="py-3 pr-4 text-muted-foreground">
+                        {formatOptionalBytes(variant.storage.variantBytes)}
+                      </td>
+                      <td className="py-3 text-right">
+                        {result?.canOpenExplorer ? (
+                          <Link
+                            className={buttonVariants({
+                              size: "sm",
+                              variant: "outline",
+                            })}
+                            href={variant.explorerHref}
+                          >
+                            Open Explorer
+                          </Link>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">
+                            Unavailable
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
         </CardContent>
       </Card>
     </div>
@@ -737,6 +1133,35 @@ function MissingWorkspace({
 }
 
 function renderWorkspaceState(model: AnalysisStudioReadModel) {
+  if (model.selectedState.state === "selected-analysis" && model.selectedAnalysis) {
+    return (
+      <SelectedAnalysisWorkspace
+        analysis={model.selectedAnalysis}
+        model={model}
+      />
+    );
+  }
+
+  if (model.selectedState.state === "selected-analysis" && model.analysesUnavailable) {
+    return (
+      <MissingWorkspace
+        description="Analyses could not be loaded from the backend."
+        icon={<FlaskConical />}
+        title="Analyses unavailable"
+      />
+    );
+  }
+
+  if (model.selectedState.state === "missing-analysis") {
+    return (
+      <MissingWorkspace
+        description={model.selectedState.analysisId}
+        icon={<FlaskConical />}
+        title="Analysis not found"
+      />
+    );
+  }
+
   if (model.selectedState.state === "selected-result" && model.selectedResult) {
     return <SelectedResultWorkspace result={model.selectedResult} />;
   }

@@ -30,6 +30,7 @@ class AnalysisResultSummary:
     status: str
     result_state: dict[str, object]
     artifact_health: dict[str, object]
+    storage_by_role: dict[str, int]
     storage_totals: dict[str, int]
     staleness: dict[str, object]
     explorer_readiness: dict[str, object]
@@ -51,6 +52,7 @@ class AnalysisResultSummary:
             "sibling_group_id": self.sibling_group_id,
             "status": self.status,
             "staleness": self.staleness,
+            "storage_by_role": self.storage_by_role,
             "storage_totals": self.storage_totals,
         }
 
@@ -197,6 +199,7 @@ class LocalAnalysisResultRegistry:
             sibling_group_id=str(manifest.get("sibling_group_id", "")),
             status=status,
             staleness=_mapping(manifest.get("staleness")),
+            storage_by_role=_storage_by_role(artifacts, artifact_states),
             storage_totals=_storage_totals(artifact_states),
         )
 
@@ -321,6 +324,21 @@ def _storage_totals(states: list[ArtifactState]) -> dict[str, int]:
         else:
             totals["durable"] += byte_size
     return totals
+
+
+def _storage_by_role(
+    artifacts: list[dict[str, object]],
+    states: list[ArtifactState],
+) -> dict[str, int]:
+    totals: dict[str, int] = {}
+    for artifact, state in zip(artifacts, states, strict=False):
+        if not state.exists:
+            continue
+        role = str(artifact.get("role", "")).strip()
+        if not role:
+            continue
+        totals[role] = totals.get(role, 0) + int(state.byte_size or 0)
+    return dict(sorted(totals.items()))
 
 
 def _sibling_group(
