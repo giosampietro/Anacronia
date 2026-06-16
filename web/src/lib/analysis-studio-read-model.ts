@@ -570,6 +570,9 @@ function summarizeAnalysisStatus({
   ) {
     return "running";
   }
+  if (associatedJobs.some((job) => job.status === "partial_failed")) {
+    return "partial";
+  }
   if (variants.length > 0) {
     return "ready";
   }

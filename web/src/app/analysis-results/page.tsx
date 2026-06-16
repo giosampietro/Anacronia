@@ -87,6 +87,26 @@ function variantCount(analysis: AnalysisStudioAnalysisSummary): string {
   return formatCount(analysis.variants.length, "variant");
 }
 
+function analysisStatusLabel(status: string): string {
+  if (status === "running") {
+    return "Running Analysis";
+  }
+  if (status === "failed") {
+    return "Failed Analysis";
+  }
+  if (status === "partial") {
+    return "Partial Analysis";
+  }
+  if (status === "ready") {
+    return "Ready";
+  }
+  return "Pending Analysis";
+}
+
+function humanizeStageName(stageName: string | undefined): string {
+  return stageName ? stageName.replaceAll("_", " ") : "stage unavailable";
+}
+
 function recipeLabelById(model: AnalysisStudioReadModel): Map<string, string> {
   return new Map(
     model.recipes.map((recipe) => [recipe.recipeId, recipe.label]),
@@ -100,6 +120,34 @@ function selectedAnalysisJobs(
   return model.jobs.filter((job) =>
     analysis.analysisJobIds.includes(job.analysisJobId),
   );
+}
+
+function jobStageLines(jobs: AnalysisStudioJobSummary[]): string[] {
+  return jobs.flatMap((job) => {
+    const activeStage =
+      job.stages.find((stage) => stage.status === "running") ??
+      job.stages.find((stage) => stage.status === "failed") ??
+      job.stages.at(-1);
+    if (!activeStage) {
+      return [`${humanizeStageName(job.status)} · ${job.analysisJobId}`];
+    }
+    const recipeIndex = activeStage.recipeId
+      ? job.recipeIds.indexOf(activeStage.recipeId)
+      : -1;
+    const recipeLabel =
+      recipeIndex >= 0
+        ? job.recipeLabels[recipeIndex] ?? activeStage.recipeId
+        : activeStage.recipeId;
+    const parts = [
+      humanizeStageName(job.status),
+      humanizeStageName(activeStage.stageName),
+      recipeLabel,
+    ].filter(Boolean);
+    if (activeStage.error) {
+      parts.push(activeStage.error);
+    }
+    return [parts.join(" · ")];
+  });
 }
 
 function selectedAnalysisVariantRows(
@@ -140,6 +188,22 @@ function jobActivityText(jobs: AnalysisStudioJobSummary[]): string {
     return "No jobs yet.";
   }
   return jobs.map((job) => job.analysisJobId).join(", ");
+}
+
+function variantEmptyText(
+  analysis: AnalysisStudioAnalysisSummary,
+  jobs: AnalysisStudioJobSummary[],
+): string {
+  if (analysis.status === "running") {
+    return "Variants will appear when this job produces Results.";
+  }
+  if (analysis.status === "failed") {
+    return "No Variants were produced.";
+  }
+  if (jobs.length === 0) {
+    return "No job has been started for this Analysis.";
+  }
+  return "No Variants available yet.";
 }
 
 function activeAnalysisId(model: AnalysisStudioReadModel): string | null {
@@ -309,6 +373,7 @@ function SelectedAnalysisOverview({
 }) {
   const jobs = selectedAnalysisJobs(analysis, model);
   const variantRows = selectedAnalysisVariantRows(analysis, model);
+  const stageLines = jobStageLines(jobs);
 
   return (
     <section
@@ -331,16 +396,23 @@ function SelectedAnalysisOverview({
         <CardContent className="space-y-2">
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant={analysis.status === "failed" ? "destructive" : "outline"}>
-              {analysis.status}
+              {analysisStatusLabel(analysis.status)}
             </Badge>
             <span className="text-sm text-muted-foreground">
               {variantCount(analysis)}
             </span>
           </div>
           {jobs.length > 0 ? (
-            <p className="font-mono text-xs text-muted-foreground">
-              {jobActivityText(jobs)}
-            </p>
+            <div className="space-y-1">
+              <p className="font-mono text-xs text-muted-foreground">
+                {jobActivityText(jobs)}
+              </p>
+              {stageLines.map((line) => (
+                <p className="text-sm text-muted-foreground" key={line}>
+                  {line}
+                </p>
+              ))}
+            </div>
           ) : (
             <p className="text-sm text-muted-foreground">No jobs yet.</p>
           )}
@@ -406,7 +478,7 @@ function SelectedAnalysisOverview({
             </Table>
           ) : (
             <p className="text-sm text-muted-foreground">
-              No variants available yet.
+              {variantEmptyText(analysis, jobs)}
             </p>
           )}
         </CardContent>
