@@ -63,6 +63,15 @@ function stubAnalysisStudioFetch() {
               title: "Failed gesture study",
               variants: [],
             },
+            {
+              analysis_id: "analysis-20260614T170000Z",
+              analysis_job_ids: ["analysis-job-20260614T170000Z"],
+              recipe_ids: ["dinov3_vits_384", "dinov3_vits_512"],
+              source_collections: [{ label: "Bread", slug: "bread" }],
+              status: "pending",
+              title: "Unavailable Variant study",
+              variants: [],
+            },
           ],
         });
       }
@@ -83,6 +92,12 @@ function stubAnalysisStudioFetch() {
               result_state: { state: "ready" },
               scope_label: "Bread",
               status: "ready",
+              storage_totals: {
+                durable: 600000,
+                "render-cache": 5900000,
+                total: 6600000,
+                "viewer-cache": 100000,
+              },
             },
             {
               analysis_job_id: "analysis-job-20260614T150000Z",
@@ -97,6 +112,36 @@ function stubAnalysisStudioFetch() {
               result_state: { state: "ready" },
               scope_label: "Bread",
               status: "ready",
+            },
+            {
+              analysis_job_id: "analysis-job-20260614T170000Z",
+              analysis_result_id:
+                "analysis-result-20260614T170000Z-dinov3_vits_384",
+              explorer_readiness: { ready: false },
+              item_count: 25,
+              recipe_ids: ["dinov3_vits_384"],
+              recipe_names: ["dinov3_vits_384"],
+              result_state: { state: "ready" },
+              scope_label: "Bread",
+              status: "ready",
+              storage_totals: {
+                durable: 300000,
+                "render-cache": 0,
+                total: 300000,
+                "viewer-cache": 0,
+              },
+            },
+            {
+              analysis_job_id: "analysis-job-20260614T170000Z",
+              analysis_result_id:
+                "analysis-result-20260614T170000Z-dinov3_vits_512",
+              explorer_readiness: { ready: false },
+              item_count: 0,
+              recipe_ids: ["dinov3_vits_512"],
+              recipe_names: ["dinov3_vits_512"],
+              result_state: { state: "failed" },
+              scope_label: "Bread",
+              status: "failed",
             },
           ],
         });
@@ -139,7 +184,16 @@ function stubAnalysisStudioFetch() {
                 "analysis-result-20260614T130000Z-dinov3_vits_384",
               ],
               recipe_ids: ["dinov3_vits_384"],
-              stages: [],
+              stages: [
+                {
+                  output_counts: {
+                    missing_embeddings: 0,
+                    reusable_embeddings: 40,
+                  },
+                  stage_name: "embedding_planning",
+                  status: "ready",
+                },
+              ],
               status: "ready",
               viewer_hrefs: [
                 "/latent-map?analysisResultId=analysis-result-20260614T130000Z-dinov3_vits_384",
@@ -198,6 +252,26 @@ function stubAnalysisStudioFetch() {
               status: "failed",
               viewer_hrefs: [],
             },
+            {
+              analysis_job_id: "analysis-job-20260614T170000Z",
+              analysis_result_ids: [
+                "analysis-result-20260614T170000Z-dinov3_vits_384",
+                "analysis-result-20260614T170000Z-dinov3_vits_512",
+              ],
+              recipe_ids: ["dinov3_vits_384", "dinov3_vits_512"],
+              stages: [
+                {
+                  output_counts: {
+                    missing_embeddings: 25,
+                    reusable_embeddings: 0,
+                  },
+                  stage_name: "embedding_planning",
+                  status: "ready",
+                },
+              ],
+              status: "partial_failed",
+              viewer_hrefs: [],
+            },
           ],
         });
       }
@@ -248,6 +322,12 @@ describe("AnalysisResultsPage", () => {
     expect(html).toContain("Variants");
     expect(html).toContain("DINOv3 ViT-S 384px");
     expect(html).toContain("40 images");
+    expect(html).toContain("Embedding cache");
+    expect(html).toContain("40 cached · 0 computed");
+    expect(html).not.toContain("Shared embeddings");
+    expect(html).not.toContain("40 reused · 0 new");
+    expect(html).toContain("Variant storage");
+    expect(html).toContain("6.6 MB");
     expect(html).toContain("Open Explorer");
     expect(html).toContain(
       "href=\"/latent-map?analysisResultId=analysis-result-20260614T130000Z-dinov3_vits_384\"",
@@ -342,6 +422,37 @@ describe("AnalysisResultsPage", () => {
     expect(html).toContain("clustering failed");
     expect(html).toContain("No Variants were produced.");
     expect(html).not.toContain("Open Explorer");
+  });
+
+  it("renders incomplete and failed Variant rows without Explorer shortcuts", async () => {
+    stubAnalysisStudioFetch();
+
+    const html = normalizeServerHtml(
+      renderToString(
+        await AnalysisResultsPage({
+          searchParams: Promise.resolve({
+            analysisId: "analysis-20260614T170000Z",
+          }),
+        }),
+      ),
+    );
+
+    expect(html).toContain("Variant 1");
+    expect(html).toContain("Variant 2");
+    expect(html).toContain("incomplete");
+    expect(html).toContain("failed");
+    expect(html).toContain("DINOv3 ViT-S 384px");
+    expect(html).toContain("DINOv3 ViT-S 512px");
+    expect(html).toContain("0 cached · 25 computed");
+    expect(html).toContain("300 KB");
+    expect(html).toContain("Explorer unavailable");
+    expect(html).not.toContain("Open Explorer");
+    expect(html).not.toContain(
+      "href=\"/latent-map?analysisResultId=analysis-result-20260614T170000Z-dinov3_vits_384\"",
+    );
+    expect(html).not.toContain(
+      "href=\"/latent-map?analysisResultId=analysis-result-20260614T170000Z-dinov3_vits_512\"",
+    );
   });
 
   it("renders the New Analysis form with title, Collections, and recipe controls", async () => {

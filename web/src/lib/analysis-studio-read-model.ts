@@ -51,6 +51,10 @@ export type AnalysisStudioJobSummary = {
 
 export type AnalysisStudioJobStageSummary = {
   error?: string;
+  outputCounts?: {
+    missingEmbeddings: number;
+    reusableEmbeddings: number;
+  };
   recipeId?: string;
   stageName?: string;
   status?: string;
@@ -647,8 +651,10 @@ function normalizeJobStages(payload: unknown): AnalysisStudioJobStageSummary[] {
         return null;
       }
       const stage = item as Record<string, unknown>;
+      const outputCounts = normalizeJobStageOutputCounts(stage.output_counts);
       return {
         ...(typeof stage.error === "string" ? { error: stage.error } : {}),
+        ...(outputCounts ? { outputCounts } : {}),
         ...(typeof stage.recipe_id === "string"
           ? { recipeId: stage.recipe_id }
           : {}),
@@ -659,6 +665,25 @@ function normalizeJobStages(payload: unknown): AnalysisStudioJobStageSummary[] {
       };
     })
     .filter((item): item is AnalysisStudioJobStageSummary => item !== null);
+}
+
+function normalizeJobStageOutputCounts(
+  payload: unknown,
+): AnalysisStudioJobStageSummary["outputCounts"] | undefined {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return undefined;
+  }
+  const counts = payload as Record<string, unknown>;
+  if (
+    !("missing_embeddings" in counts) &&
+    !("reusable_embeddings" in counts)
+  ) {
+    return undefined;
+  }
+  return {
+    missingEmbeddings: normalizeNumber(counts.missing_embeddings),
+    reusableEmbeddings: normalizeNumber(counts.reusable_embeddings),
+  };
 }
 
 function normalizeResults(
