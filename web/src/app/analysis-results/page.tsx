@@ -78,6 +78,19 @@ function formatCount(count: number, singular: string, plural = `${singular}s`) {
   return `${count} ${count === 1 ? singular : plural}`;
 }
 
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return "Unavailable";
+  }
+  if (bytes < 1000) {
+    return `${bytes} B`;
+  }
+  if (bytes < 1000000) {
+    return `${(bytes / 1000).toFixed(bytes < 10000 ? 1 : 0)} KB`;
+  }
+  return `${(bytes / 1000000).toFixed(bytes < 10000000 ? 1 : 0)} MB`;
+}
+
 function collectionNames(analysis: AnalysisStudioAnalysisSummary): string {
   const names = analysis.sourceCollections.map((collection) => collection.label);
   return names.length > 0 ? names.join(", ") : "No source Collections";
@@ -157,10 +170,20 @@ function selectedAnalysisVariantRows(
   const resultsById = new Map(
     model.results.map((result) => [result.analysisResultId, result]),
   );
+  const jobsById = new Map(model.jobs.map((job) => [job.analysisJobId, job]));
   const recipesById = recipeLabelById(model);
 
   return analysis.variants.map((variant, index) => {
     const result = resultsById.get(variant.analysisResultId);
+    const embeddingStage = result
+      ? jobsById
+          .get(result.analysisJobId)
+          ?.stages.find(
+            (stage) =>
+              stage.stageName === "embedding_planning" && stage.outputCounts,
+          )
+      : undefined;
+    const embeddingCounts = embeddingStage?.outputCounts;
     const recipeLabels = result?.recipeLabels.length
       ? result.recipeLabels
       : analysis.recipeIds.map((recipeId) => recipesById.get(recipeId) ?? recipeId);
@@ -178,7 +201,11 @@ function selectedAnalysisVariantRows(
       imageCount: result?.itemCount ?? 0,
       label: `Variant ${index + 1}`,
       recipeLabel: recipeLabels.join(", ") || "Recipe unavailable",
+      sharedEmbeddings: embeddingCounts
+        ? `${embeddingCounts.reusableEmbeddings} reused · ${embeddingCounts.missingEmbeddings} new`
+        : "Unavailable",
       status: variant.status,
+      variantStorage: formatBytes(result?.storageTotals.totalBytes ?? 0),
     };
   });
 }
@@ -432,6 +459,8 @@ function SelectedAnalysisOverview({
                   <TableHead>Status</TableHead>
                   <TableHead>Recipe</TableHead>
                   <TableHead>Images</TableHead>
+                  <TableHead>Shared embeddings</TableHead>
+                  <TableHead>Variant storage</TableHead>
                   <TableHead className="text-right">Action</TableHead>
                 </TableRow>
               </TableHeader>
@@ -453,6 +482,12 @@ function SelectedAnalysisOverview({
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       {formatCount(row.imageCount, "image")}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {row.sharedEmbeddings}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {row.variantStorage}
                     </TableCell>
                     <TableCell className="text-right">
                       {row.canOpenExplorer && row.explorerHref ? (

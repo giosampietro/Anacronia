@@ -46,7 +46,16 @@ describe("Analysis Studio read model", () => {
                 "analysis-result-20260614T130000Z-dinov3_vits_384",
               ],
               recipe_ids: ["dinov3_vits_384"],
-              stages: [],
+              stages: [
+                {
+                  output_counts: {
+                    missing_embeddings: 0,
+                    reusable_embeddings: 2,
+                  },
+                  stage_name: "embedding_planning",
+                  status: "ready",
+                },
+              ],
               status: "ready",
               viewer_hrefs: [
                 "/latent-map?analysisResultId=analysis-result-20260614T130000Z-dinov3_vits_384",
@@ -156,6 +165,16 @@ describe("Analysis Studio read model", () => {
     expect(model.jobs[0]).toMatchObject({
       analysisJobId: "analysis-job-20260614T130000Z",
       recipeLabels: ["DINOv3 ViT-S 384px"],
+      stages: [
+        {
+          outputCounts: {
+            missingEmbeddings: 0,
+            reusableEmbeddings: 2,
+          },
+          stageName: "embedding_planning",
+          status: "ready",
+        },
+      ],
       status: "ready",
     });
     expect(model.results[0]).toMatchObject({
