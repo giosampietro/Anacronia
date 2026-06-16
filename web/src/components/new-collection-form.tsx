@@ -189,8 +189,15 @@ export function NewCollectionForm({
   const [termsText, setTermsText] = useState("");
   const duplicateName = isDuplicateCollectionName(displayName, existingCollections);
   const serverDuplicateName = serverError === "duplicate_name" && displayName.trim() === "";
+  const hasLocalFolderSelection =
+    trajectory === "local-folder" &&
+    folderPath.trim() !== "";
+  const missingLocalFolderName =
+    displayName.trim() === "" && hasLocalFolderSelection;
   const nameError = duplicateName || serverDuplicateName
     ? "A Collection with this name already exists."
+    : missingLocalFolderName
+      ? "Collection name is required."
     : "";
   const canStart = canStartNewCollectionSearch(
     displayName,
@@ -244,7 +251,7 @@ export function NewCollectionForm({
             id="collection_name_entry"
             name="collection_name_entry"
             onChange={(event) => setDisplayName(event.currentTarget.value)}
-            placeholder="Snake studies"
+            placeholder="Collection name"
             required
             spellCheck={false}
             value={displayName}
@@ -341,6 +348,7 @@ export function NewCollectionForm({
                     setFolderPath(event.currentTarget.value);
                     setFolderPathDisplay(event.currentTarget.value);
                   }}
+                  placeholder="/Users/giorgio/Desktop/reference-folder"
                   required
                   spellCheck={false}
                   value={folderPathDisplay}
