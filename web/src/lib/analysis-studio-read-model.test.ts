@@ -56,6 +56,30 @@ describe("Analysis Studio read model", () => {
         });
       }
 
+      if (url.endsWith("/analyses")) {
+        return Response.json({
+          analyses: [
+            {
+              analysis_id: "analysis-20260614T130000Z",
+              analysis_job_ids: ["analysis-job-20260614T130000Z"],
+              recipe_ids: ["dinov3_vits_384"],
+              source_collections: [{ label: "Bread", slug: "bread" }],
+              status: "ready",
+              title: "Bread visual study",
+              variants: [
+                {
+                  analysis_result_id:
+                    "analysis-result-20260614T130000Z-dinov3_vits_384",
+                  explorer_href:
+                    "/latent-map?analysisResultId=analysis-result-20260614T130000Z-dinov3_vits_384",
+                  status: "ready",
+                },
+              ],
+            },
+          ],
+        });
+      }
+
       if (url.endsWith("/analysis-results")) {
         return Response.json({
           results: [
@@ -109,6 +133,25 @@ describe("Analysis Studio read model", () => {
     });
 
     expect(model.collections).toEqual([{ label: "Bread", slug: "bread" }]);
+    expect(model.analyses).toEqual([
+      {
+        analysisId: "analysis-20260614T130000Z",
+        analysisJobIds: ["analysis-job-20260614T130000Z"],
+        recipeIds: ["dinov3_vits_384"],
+        sourceCollections: [{ label: "Bread", slug: "bread" }],
+        status: "ready",
+        title: "Bread visual study",
+        variants: [
+          {
+            analysisResultId:
+              "analysis-result-20260614T130000Z-dinov3_vits_384",
+            explorerHref:
+              "/latent-map?analysisResultId=analysis-result-20260614T130000Z-dinov3_vits_384",
+            status: "ready",
+          },
+        ],
+      },
+    ]);
     expect(model.recipes).toEqual([
       {
         inputSize: 384,
@@ -166,8 +209,9 @@ describe("Analysis Studio read model", () => {
       "analysis-result-20260614T130000Z-dinov3_vits_384",
     );
     expect(JSON.stringify(model)).not.toContain("/Users/");
-    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(fetchMock).toHaveBeenCalledTimes(5);
     expect(fetchMock.mock.calls.map(([input]) => String(input)).sort()).toEqual([
+      "http://127.0.0.1:18670/analyses",
       "http://127.0.0.1:18670/analysis-jobs",
       "http://127.0.0.1:18670/analysis-recipes",
       "http://127.0.0.1:18670/analysis-results",

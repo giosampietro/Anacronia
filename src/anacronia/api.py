@@ -7,6 +7,10 @@ from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
+from anacronia.analyses import (
+    AnalysisSourceCollection,
+    LocalAnalysisStore,
+)
 from anacronia.analysis_jobs import (
     ANALYSIS_JOB_MANIFEST_NAME,
     AnalysisJobBusyError,
@@ -216,6 +220,16 @@ class AnalysisJobRequest(BaseModel):
     recipe_ids: list[str] | None = None
 
 
+class AnalysisRequest(BaseModel):
+    title: str
+    collection_slugs: list[str] = Field(default_factory=list)
+    recipe_ids: list[str] = Field(default_factory=list)
+
+
+class RenameAnalysisRequest(BaseModel):
+    title: str
+
+
 def serialize_search_set(search_set: SearchSet) -> dict[str, object]:
     return {
         "display_name": search_set.display_name,
@@ -311,6 +325,10 @@ def serialize_local_folder_import_summary(
 
 def serialize_analysis_job_summary(summary: AnalysisJobSummary) -> dict[str, object]:
     return serialize_analysis_job_manifest(summary.manifest_path)
+
+
+def serialize_analysis(record) -> dict[str, object]:
+    return record.to_public_dict()
 
 
 def serialize_analysis_result_summary(summary) -> dict[str, object]:
@@ -843,6 +861,70 @@ def create_app(
     @app.get("/analysis-recipes")
     def get_analysis_recipes() -> dict[str, object]:
         return browser_safe_analysis_recipe_catalog()
+
+    @app.post("/analyses", status_code=201)
+    def create_analysis(request: AnalysisRequest) -> dict[str, object]:
+        store = LocalAnalysisStore(resolved_data_root)
+        try:
+            source_collections = [
+                AnalysisSourceCollection(
+                    label=get_search_set(
+                        database_path=resolved_database_path,
+                        slug=collection_slug,
+                    ).display_name,
+                    slug=collection_slug,
+                )
+                for collection_slug in request.collection_slugs
+            ]
+            analysis = store.create(
+                title=request.title,
+                source_collections=source_collections,
+                recipe_ids=request.recipe_ids,
+            )
+        except LookupError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
+        return {"analysis": serialize_analysis(analysis)}
+
+    @app.get("/analyses")
+    def get_analyses() -> dict[str, object]:
+        store = LocalAnalysisStore(resolved_data_root)
+        return {
+            "analyses": [serialize_analysis(analysis) for analysis in store.list()]
+        }
+
+    @app.get("/analyses/{analysis_id}")
+    def get_analysis(analysis_id: str) -> dict[str, object]:
+        store = LocalAnalysisStore(resolved_data_root)
+        try:
+            return {"analysis": serialize_analysis(store.load(analysis_id))}
+        except FileNotFoundError as error:
+            raise HTTPException(
+                status_code=404,
+                detail="Analysis not found.",
+            ) from error
+
+    @app.patch("/analyses/{analysis_id}")
+    def rename_analysis(
+        analysis_id: str,
+        request: RenameAnalysisRequest,
+    ) -> dict[str, object]:
+        store = LocalAnalysisStore(resolved_data_root)
+        try:
+            analysis = store.rename_title(
+                analysis_id=analysis_id,
+                title=request.title,
+            )
+        except FileNotFoundError as error:
+            raise HTTPException(
+                status_code=404,
+                detail="Analysis not found.",
+            ) from error
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        return {"analysis": serialize_analysis(analysis)}
 
     @app.post("/analysis-jobs", status_code=201)
     def create_analysis_job(request: AnalysisJobRequest) -> dict[str, object]:
