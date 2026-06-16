@@ -148,12 +148,12 @@ function ObjectDetailPendingOverlay({
     <div
       aria-label="Loading object detail"
       aria-modal="true"
-      className="fixed inset-0 z-50 overflow-y-auto bg-background/80 p-3 backdrop-blur-sm md:p-5"
+      className="fixed inset-y-0 right-0 left-16 z-50 overflow-y-auto bg-background/80 p-3 backdrop-blur-sm md:p-5"
       role="dialog"
     >
       <button
         aria-hidden="true"
-        className="fixed inset-0 cursor-default"
+        className="fixed inset-y-0 right-0 left-16 cursor-default"
         onClick={onClose}
         tabIndex={-1}
         type="button"
@@ -312,12 +312,12 @@ export function ObjectDetailErrorOverlay({
     <div
       aria-label="Object detail unavailable"
       aria-modal="true"
-      className="fixed inset-0 z-50 overflow-y-auto bg-background/80 p-3 backdrop-blur-sm md:p-5"
+      className="fixed inset-y-0 right-0 left-16 z-50 overflow-y-auto bg-background/80 p-3 backdrop-blur-sm md:p-5"
       role="dialog"
     >
       <button
         aria-hidden="true"
-        className="fixed inset-0 cursor-default"
+        className="fixed inset-y-0 right-0 left-16 cursor-default"
         onClick={closeOverlay}
         tabIndex={-1}
         type="button"

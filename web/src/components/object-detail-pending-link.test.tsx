@@ -38,6 +38,8 @@ describe("ObjectDetailPendingLink", () => {
 
     expect(html).toContain("Tile contents");
     expect(html).toContain("Coiled Snake Bowl");
+    expect(html).toContain("left-16");
+    expect(html).not.toContain("class=\"fixed inset-0 z-50");
     expect(html).toContain("http://127.0.0.1:18670/image-assets/9/thumb");
     expect(html).toContain("aspect-ratio:1600 / 800");
     expect(html).toContain('width="1600"');
@@ -84,6 +86,8 @@ describe("ObjectDetailErrorOverlay", () => {
     );
 
     expect(html).toContain("Object detail unavailable");
+    expect(html).toContain("left-16");
+    expect(html).not.toContain("class=\"fixed inset-0 z-50");
     expect(html).toContain("Met object 40");
     expect(html).toContain("Close detail");
     expect(html).toContain("Try opening the object again");
