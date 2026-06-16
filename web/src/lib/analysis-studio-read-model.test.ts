@@ -46,6 +46,7 @@ describe("Analysis Studio read model", () => {
                 "analysis-result-20260614T130000Z-dinov3_vits_384",
               ],
               recipe_ids: ["dinov3_vits_384"],
+              scope_item_count: 2,
               stages: [
                 {
                   output_counts: {
@@ -165,6 +166,7 @@ describe("Analysis Studio read model", () => {
     expect(model.jobs[0]).toMatchObject({
       analysisJobId: "analysis-job-20260614T130000Z",
       recipeLabels: ["DINOv3 ViT-S 384px"],
+      scopeItemCount: 2,
       stages: [
         {
           outputCounts: {

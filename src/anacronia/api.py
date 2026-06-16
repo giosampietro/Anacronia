@@ -8,6 +8,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from anacronia.analyses import (
+    AnalysisRecord,
     AnalysisSourceCollection,
     LocalAnalysisStore,
 )
@@ -235,6 +236,10 @@ class AnalysisRequest(BaseModel):
     start_job: bool = False
 
 
+class AnalysisVariantRequest(BaseModel):
+    recipe_ids: list[str] = Field(default_factory=list)
+
+
 class RenameAnalysisRequest(BaseModel):
     title: str
 
@@ -356,6 +361,32 @@ def serialize_analysis(record) -> dict[str, object]:
     return record.to_public_dict()
 
 
+def ready_analysis_variant_recipe_ids(
+    *,
+    analysis: AnalysisRecord,
+    data_root: Path,
+) -> set[str]:
+    registry = LocalAnalysisResultRegistry(data_root)
+    recipe_ids: set[str] = set()
+    for variant in analysis.variants:
+        if variant.status != "ready":
+            continue
+        try:
+            summary = registry.summarize(variant.analysis_result_id)
+        except FileNotFoundError:
+            continue
+        if summary.status != "ready" or summary.explorer_readiness.get("ready") is not True:
+            continue
+        recipe_ids.update(summary.recipe_ids or summary.recipe_names)
+    return recipe_ids
+
+
+def duplicate_ready_variant_detail(recipe_ids: set[str]) -> str:
+    listed_recipe_ids = ", ".join(sorted(recipe_ids))
+    label = "recipe" if len(recipe_ids) == 1 else "recipes"
+    return f"Analysis already has a ready Variant for {label}: {listed_recipe_ids}."
+
+
 def serialize_analysis_result_summary(summary) -> dict[str, object]:
     payload = summary.to_public_dict()
     payload["explorer_href"] = (
@@ -439,10 +470,14 @@ def serialize_analysis_job_manifest(manifest_path: Path) -> dict[str, object]:
     scope_snapshot = manifest.get("scope_snapshot", {})
     if not isinstance(scope_snapshot, dict):
         scope_snapshot = {}
+    scope_item_count = scope_snapshot.get("item_count", 0)
+    if not isinstance(scope_item_count, (int, float)):
+        scope_item_count = 0
     return {
         "analysis_job_id": manifest["analysis_job_id"],
         "analysis_result_ids": analysis_result_ids,
         "recipe_ids": list(manifest.get("recipe_ids", [])),
+        "scope_item_count": max(0, int(scope_item_count)),
         "scope_snapshot_id": scope_snapshot.get("snapshot_id"),
         "sibling_group_id": manifest.get("sibling_group_id"),
         "stages": list(manifest.get("stages", [])),
@@ -954,6 +989,59 @@ def create_app(
                 initial_analysis_job
             )
         return payload
+
+    @app.post("/analyses/{analysis_id}/variants", status_code=201)
+    def create_analysis_variant(
+        analysis_id: str,
+        request: AnalysisVariantRequest,
+    ) -> dict[str, object]:
+        ensure_no_active_provider_search()
+        store = LocalAnalysisStore(resolved_data_root)
+        try:
+            analysis = store.load(analysis_id)
+            recipe_ids = [
+                recipe.recipe_id for recipe in select_analysis_recipes(request.recipe_ids)
+            ]
+            duplicate_recipe_ids = set(recipe_ids).intersection(
+                ready_analysis_variant_recipe_ids(
+                    analysis=analysis,
+                    data_root=resolved_data_root,
+                )
+            )
+            if duplicate_recipe_ids:
+                raise HTTPException(
+                    status_code=409,
+                    detail=duplicate_ready_variant_detail(duplicate_recipe_ids),
+                )
+            summary = submit_analysis_job(
+                database_path=resolved_database_path,
+                data_root=resolved_data_root,
+                collection_slugs=[
+                    collection.slug for collection in analysis.source_collections
+                ],
+                recipe_ids=recipe_ids,
+                stage_runner=resolved_analysis_stage_runner,
+            )
+            analysis = store.attach_analysis_job(
+                analysis_id=analysis.analysis_id,
+                analysis_job_id=summary.analysis_job_id,
+            )
+        except FileNotFoundError as error:
+            raise HTTPException(
+                status_code=404,
+                detail="Analysis not found.",
+            ) from error
+        except AnalysisJobBusyError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        except LookupError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
+        return {
+            "analysis": serialize_analysis(analysis),
+            "analysis_job": serialize_analysis_job_summary(summary),
+        }
 
     @app.get("/analyses")
     def get_analyses() -> dict[str, object]:
