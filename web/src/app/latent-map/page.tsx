@@ -8,6 +8,11 @@ import {
   getAdditionalAnalysisResultRoots,
   getLatentMapRunsRoot,
 } from "@/lib/analysis-result-roots";
+import {
+  createLatentMapStartupRecorder,
+  encodedTextByteLength,
+  type LatentMapStartupMeasurement,
+} from "@/lib/latent-map-startup-measurement";
 import { loadLatentMapAnalysisResultViewerData } from "@/lib/latent-map-analysis-result-open";
 import { latentMapFixture } from "@/lib/latent-map-fixture";
 import {
@@ -27,6 +32,12 @@ type LatentMapSearchParams = Record<string, string | string[] | undefined>;
 type ExportedThumbnailAtlas = NonNullable<
   ExportedLatentMapViewerData["thumbnail_atlases"]
 >[number];
+type LoadedLatentMapViewerData = {
+  startupMeasurement?: LatentMapStartupMeasurement;
+  viewerData: ReturnType<typeof normalizeExportedLatentMapViewerData> & {
+    analysis_result_id?: string;
+  };
+};
 
 function getSearchParam(
   searchParams: LatentMapSearchParams,
@@ -181,6 +192,20 @@ function isMissingFileError(error: unknown): boolean {
 export async function loadLatentMapViewerData(
   searchParams: LatentMapSearchParams,
 ) {
+  const loaded = await loadLatentMapViewerDataWithStartupMeasurement(
+    searchParams,
+  );
+
+  return loaded.viewerData;
+}
+
+export async function loadLatentMapViewerDataWithStartupMeasurement(
+  searchParams: LatentMapSearchParams,
+  options: { measureStartup?: boolean } = {},
+): Promise<LoadedLatentMapViewerData> {
+  const startupRecorder = options.measureStartup
+    ? createLatentMapStartupRecorder()
+    : undefined;
   const viewerDataPath = process.env.ANACRONIA_LATENT_MAP_VIEWER_DATA;
   const runsRoot = getLatentMapRunsRoot();
   const analysisResultId = getSearchParam(searchParams, "analysisResultId");
@@ -214,6 +239,7 @@ export async function loadLatentMapViewerData(
           getSearchParam(searchParams, "layout") ?? fallbackRawData?.layout_id,
         selectedRecipeName:
           getSearchParam(searchParams, "recipe") ?? fallbackRawData?.recipe_name,
+        startupRecorder,
       });
       rawData = loaded.rawData;
       dataRunDir = loaded.runDir;
@@ -221,7 +247,10 @@ export async function loadLatentMapViewerData(
       activeAnalysisResultSourceFolder = loaded.sourceFolder;
     } else {
       if (!resolvedViewerDataPath || !fallbackRawData || !fallbackRunDir) {
-        return latentMapFixture;
+        return {
+          startupMeasurement: startupRecorder?.snapshot(),
+          viewerData: latentMapFixture,
+        };
       }
       const runDir = resolveRunDir({
         resolvedViewerDataPath,
@@ -262,29 +291,56 @@ export async function loadLatentMapViewerData(
     await hydrateThumbnailAtlas({ rawData, runDir: dataRunDir });
   }
 
-  const normalizedData = normalizeExportedLatentMapViewerData({
-    neighborApiPath: activeAnalysisResultId
-      ? `/api/latent-map/neighbors?analysisResultId=${encodeURIComponent(
-          activeAnalysisResultId,
-        )}`
-      : `/api/latent-map/neighbors?run=${encodeURIComponent(
-          path.basename(dataRunDir),
-        )}`,
-    rawData,
-    sourceFolder,
-    thumbnailApiPath: activeAnalysisResultId
-      ? `/api/latent-map/thumbnails?analysisResultId=${encodeURIComponent(
-          activeAnalysisResultId,
-        )}`
-      : `/api/latent-map/thumbnails?run=${encodeURIComponent(
-          path.basename(dataRunDir),
-        )}`,
-    thumbnailResourceParamName: activeAnalysisResultId ? "artifactKey" : "path",
-  });
-
-  return activeAnalysisResultId
+  const normalizeViewerData = () =>
+    normalizeExportedLatentMapViewerData({
+      neighborApiPath: activeAnalysisResultId
+        ? `/api/latent-map/neighbors?analysisResultId=${encodeURIComponent(
+            activeAnalysisResultId,
+          )}`
+        : `/api/latent-map/neighbors?run=${encodeURIComponent(
+            path.basename(dataRunDir),
+          )}`,
+      rawData,
+      sourceFolder,
+      thumbnailApiPath: activeAnalysisResultId
+        ? `/api/latent-map/thumbnails?analysisResultId=${encodeURIComponent(
+            activeAnalysisResultId,
+          )}`
+        : `/api/latent-map/thumbnails?run=${encodeURIComponent(
+            path.basename(dataRunDir),
+          )}`,
+      thumbnailResourceParamName: activeAnalysisResultId ? "artifactKey" : "path",
+    });
+  const normalizedData = startupRecorder
+    ? startupRecorder.timeSync(
+        "normalize-exported-viewer-data",
+        {
+          analysisResultId: activeAnalysisResultId,
+          pointCount: rawData.points?.length ?? 0,
+        },
+        normalizeViewerData,
+      )
+    : normalizeViewerData();
+  const viewerData = activeAnalysisResultId
     ? { ...normalizedData, analysis_result_id: activeAnalysisResultId }
     : normalizedData;
+
+  if (startupRecorder) {
+    const serializedViewerData = startupRecorder.timeSync(
+      "viewer-data-json-serialization-estimate",
+      { pointCount: viewerData.points.length },
+      () => JSON.stringify(viewerData),
+    );
+
+    startupRecorder.record("viewer-data-json-serialization-size", {
+      bytes: encodedTextByteLength(serializedViewerData),
+    });
+  }
+
+  return {
+    startupMeasurement: startupRecorder?.snapshot(),
+    viewerData,
+  };
 }
 
 export default async function LatentMapPage({
@@ -332,7 +388,13 @@ export default async function LatentMapPage({
     );
   }
 
-  const viewerData = await loadLatentMapViewerData(resolvedSearchParams);
+  const loadedViewerData = await loadLatentMapViewerDataWithStartupMeasurement(
+    resolvedSearchParams,
+    {
+      measureStartup: shouldMeasureStartup(resolvedSearchParams),
+    },
+  );
+  const viewerData = loadedViewerData.viewerData;
   const initialState = parseLatentMapUrlState(
     toUrlSearchParams(resolvedSearchParams),
     viewerData,
@@ -344,7 +406,19 @@ export default async function LatentMapPage({
       contentClassName="min-w-0"
       focusModeAvailable
     >
-      <LatentMapViewer data={viewerData} initialState={initialState} />
+      <LatentMapViewer
+        data={viewerData}
+        initialState={initialState}
+        startupMeasurement={loadedViewerData.startupMeasurement}
+      />
     </AppSpaceShell>
   );
+}
+
+function shouldMeasureStartup(searchParams: LatentMapSearchParams): boolean {
+  const value =
+    getSearchParam(searchParams, "measureStartup") ??
+    getSearchParam(searchParams, "startupMeasurement");
+
+  return value === "1" || value === "true";
 }

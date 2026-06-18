@@ -2,6 +2,11 @@ import {
   loadLatentMapAnalysisResultExportedViewerData,
 } from "@/lib/latent-map-run-data";
 import type { AnalysisResultStatusSummary } from "@/lib/analysis-result-status";
+import {
+  encodedTextByteLength,
+  type LatentMapStartupMetricMetadata,
+  type LatentMapStartupRecorder,
+} from "@/lib/latent-map-startup-measurement";
 import type { ExportedLatentMapViewerData } from "@/lib/latent-map-viewer-data";
 
 const DEFAULT_API_PORT = 18670;
@@ -45,6 +50,7 @@ export async function loadLatentMapAnalysisResultViewerData({
   selectedClusterId,
   selectedLayoutId,
   selectedRecipeName,
+  startupRecorder,
 }: {
   additionalRunsRoots?: string[];
   analysisResultId: string;
@@ -52,20 +58,27 @@ export async function loadLatentMapAnalysisResultViewerData({
   selectedClusterId?: string | null;
   selectedLayoutId?: string | null;
   selectedRecipeName?: string | null;
+  startupRecorder?: LatentMapStartupRecorder;
 }): Promise<LoadedLatentMapAnalysisResultViewerData> {
-  const result = await fetchAnalysisResultDetail(analysisResultId);
+  const result = await fetchAnalysisResultDetail({
+    analysisResultId,
+    startupRecorder,
+  });
 
   return {
     rawData: await loadLatentMapAnalysisResultExportedViewerData({
       analysisResult: result,
-      readArtifactText: (artifactKey) =>
+      readArtifactText: (artifactKey, artifactRole) =>
         fetchAnalysisResultArtifactText({
           analysisResultId,
           artifactKey,
+          artifactRole,
+          startupRecorder,
         }),
       selectedClusterId,
       selectedLayoutId,
       selectedRecipeName,
+      startupRecorder,
     }),
     runDir: "",
     sourceFolder: stringValue(result.scope_label) || "Analysis Result",
@@ -73,24 +86,50 @@ export async function loadLatentMapAnalysisResultViewerData({
   };
 }
 
-async function fetchAnalysisResultDetail(
-  analysisResultId: string,
-): Promise<AnalysisResultDetail> {
-  const response = await fetch(
-    `${apiBaseUrl()}/analysis-results/${encodeURIComponent(analysisResultId)}`,
-    {
-      cache: "no-store",
-      method: "GET",
+async function fetchAnalysisResultDetail({
+  analysisResultId,
+  startupRecorder,
+}: {
+  analysisResultId: string;
+  startupRecorder?: LatentMapStartupRecorder;
+}): Promise<AnalysisResultDetail> {
+  const metadata: LatentMapStartupMetricMetadata = {
+    analysisResultId,
+    bytes: 0,
+  };
+  const content = await measureStartupAsync(
+    startupRecorder,
+    "analysis-result-detail-fetch",
+    metadata,
+    async () => {
+      const response = await fetch(
+        `${apiBaseUrl()}/analysis-results/${encodeURIComponent(analysisResultId)}`,
+        {
+          cache: "no-store",
+          method: "GET",
+        },
+      );
+      if (response.status === 404) {
+        throw new Error(`Analysis Result not found: ${analysisResultId}`);
+      }
+      if (!response.ok) {
+        throw new Error(
+          `Analysis Result could not be loaded: ${analysisResultId}`,
+        );
+      }
+
+      const text = await response.text();
+      metadata.bytes = encodedTextByteLength(text);
+      return text;
     },
   );
-  if (response.status === 404) {
-    throw new Error(`Analysis Result not found: ${analysisResultId}`);
-  }
-  if (!response.ok) {
-    throw new Error(`Analysis Result could not be loaded: ${analysisResultId}`);
-  }
 
-  const payload = (await response.json()) as AnalysisResultDetailPayload;
+  const payload = measureStartupSync(
+    startupRecorder,
+    "analysis-result-detail-parse",
+    metadata,
+    () => JSON.parse(content) as AnalysisResultDetailPayload,
+  );
   if (!payload.result) {
     throw new Error(`Analysis Result could not be loaded: ${analysisResultId}`);
   }
@@ -100,26 +139,71 @@ async function fetchAnalysisResultDetail(
 async function fetchAnalysisResultArtifactText({
   analysisResultId,
   artifactKey,
+  artifactRole,
+  startupRecorder,
 }: {
   analysisResultId: string;
   artifactKey: string;
+  artifactRole?: string;
+  startupRecorder?: LatentMapStartupRecorder;
 }): Promise<string> {
-  const response = await fetch(
-    `${apiBaseUrl()}/analysis-results/${encodeURIComponent(
-      analysisResultId,
-    )}/artifacts/${encodeArtifactKeyPath(artifactKey)}`,
-    {
-      cache: "no-store",
-      method: "GET",
+  const metadata: LatentMapStartupMetricMetadata = {
+    analysisResultId,
+    artifactKey,
+    artifactRole: artifactRole ?? null,
+    bytes: 0,
+  };
+
+  return measureStartupAsync(
+    startupRecorder,
+    "analysis-result-artifact-fetch",
+    metadata,
+    async () => {
+      const response = await fetch(
+        `${apiBaseUrl()}/analysis-results/${encodeURIComponent(
+          analysisResultId,
+        )}/artifacts/${encodeArtifactKeyPath(artifactKey)}`,
+        {
+          cache: "no-store",
+          method: "GET",
+        },
+      );
+      if (response.status === 404) {
+        throw new Error(
+          `Pinned Analysis Result artifact is missing: ${artifactKey}`,
+        );
+      }
+      if (!response.ok) {
+        throw new Error(`Pinned Analysis Result artifact failed: ${artifactKey}`);
+      }
+
+      const text = await response.text();
+      metadata.bytes = encodedTextByteLength(text);
+      return text;
     },
   );
-  if (response.status === 404) {
-    throw new Error(`Pinned Analysis Result artifact is missing: ${artifactKey}`);
-  }
-  if (!response.ok) {
-    throw new Error(`Pinned Analysis Result artifact failed: ${artifactKey}`);
-  }
-  return response.text();
+}
+
+function measureStartupAsync<T>(
+  startupRecorder: LatentMapStartupRecorder | undefined,
+  name: string,
+  metadata: LatentMapStartupMetricMetadata,
+  operation: () => Promise<T>,
+): Promise<T> {
+  return startupRecorder
+    ? startupRecorder.timeAsync(name, metadata, operation)
+    : operation();
+}
+
+function measureStartupSync<T>(
+  startupRecorder: LatentMapStartupRecorder | undefined,
+  name: string,
+  metadata: LatentMapStartupMetricMetadata,
+  operation: () => T,
+): T {
+  return startupRecorder
+    ? startupRecorder.timeSync(name, metadata, operation)
+    : operation();
 }
 
 function statusFromAnalysisResult(

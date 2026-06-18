@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { loadLatentMapAnalysisResultViewerData } from "@/lib/latent-map-analysis-result-open";
+import { createLatentMapStartupRecorder } from "@/lib/latent-map-startup-measurement";
 
 const ANALYSIS_RESULT_ID = "analysis-result-20260614T130000Z-dinov3_vits_384";
 
@@ -39,6 +40,45 @@ describe("loadLatentMapAnalysisResultViewerData", () => {
       canOpenExplorer: true,
       state: "ready",
     });
+  });
+
+  it("records startup measurements for detail, artifact, parse, validation, and normalization work", async () => {
+    vi.stubGlobal("fetch", vi.fn(fetchAnalysisResultFixture));
+    const startupRecorder = createLatentMapStartupRecorder();
+
+    const result = await loadLatentMapAnalysisResultViewerData({
+      analysisResultId: ANALYSIS_RESULT_ID,
+      selectedClusterId: "hdbscan_detail",
+      selectedLayoutId: "umap_a",
+      selectedRecipeName: "dinov3_vits_384",
+      startupRecorder,
+    });
+    const measurement = startupRecorder.snapshot();
+    const entryNames = measurement.entries.map((entry) => entry.name);
+
+    expect(result.rawData.points).toHaveLength(2);
+    expect(entryNames).toEqual(
+      expect.arrayContaining([
+        "analysis-result-detail-fetch",
+        "analysis-result-detail-parse",
+        "analysis-result-artifact-fetch",
+        "analysis-result-artifact-parse",
+        "vector-id-map-validation",
+        "analysis-result-viewer-normalization",
+      ]),
+    );
+    expect(measurement.summary.artifactBytes).toBeGreaterThan(0);
+    expect(measurement.entries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            artifactKey: "viewer/atlases/64px/atlas-manifest.json",
+            artifactRole: "thumbnail-atlas",
+          }),
+          name: "analysis-result-artifact-fetch",
+        }),
+      ]),
+    );
   });
 
   it("does not fall back to local fixture data when backend detail is missing", async () => {
@@ -118,7 +158,19 @@ async function fetchAnalysisResultFixture(input: RequestInfo | URL) {
   if (url.endsWith(`/analysis-results/${ANALYSIS_RESULT_ID}`)) {
     return Response.json({ result: analysisResultDetailFixture() });
   }
-  if (url.endsWith("/manifest.jsonl")) {
+  const artifactKey = url.includes("/artifacts/")
+    ? decodeArtifactKeyFromUrl(url)
+    : null;
+
+  if (artifactKey) {
+    return artifactResponseFixture(artifactKey);
+  }
+
+  return new Response("unexpected", { status: 500 });
+}
+
+function artifactResponseFixture(artifactKey: string) {
+  if (artifactKey === "manifest.jsonl") {
     return new Response(
       [
         JSON.stringify({
@@ -138,13 +190,13 @@ async function fetchAnalysisResultFixture(input: RequestInfo | URL) {
       ].join("\n"),
     );
   }
-  if (url.endsWith("/indexes/dinov3_vits_384_faiss_id_map.json")) {
+  if (artifactKey === "indexes/dinov3_vits_384_faiss_id_map.json") {
     return textResponse([
       { faiss_id: 0, image_id: "image-asset-1" },
       { faiss_id: 1, image_id: "image-asset-2" },
     ]);
   }
-  if (url.endsWith("/layouts/dinov3_vits_384_umap.json")) {
+  if (artifactKey === "layouts/dinov3_vits_384_umap.json") {
     return textResponse({
       layout_id: "umap_a",
       method: "umap",
@@ -156,7 +208,7 @@ async function fetchAnalysisResultFixture(input: RequestInfo | URL) {
       recipe_name: "dinov3_vits_384",
     });
   }
-  if (url.endsWith("/clusters/dinov3_vits_384_hdbscan.json")) {
+  if (artifactKey === "clusters/dinov3_vits_384_hdbscan.json") {
     return textResponse({
       cluster_count: 1,
       cluster_id: "hdbscan_detail",
@@ -168,7 +220,7 @@ async function fetchAnalysisResultFixture(input: RequestInfo | URL) {
       recipe_name: "dinov3_vits_384",
     });
   }
-  if (url.endsWith("/viewer/atlases/64px/atlas-manifest.json")) {
+  if (artifactKey === "viewer/atlases/64px/atlas-manifest.json") {
     return textResponse({
       asset_kind: "latent-map-thumbnail-atlas",
       atlas_size: 512,
@@ -182,6 +234,21 @@ async function fetchAnalysisResultFixture(input: RequestInfo | URL) {
     });
   }
   return new Response("unexpected", { status: 500 });
+}
+
+function decodeArtifactKeyFromUrl(url: string): string {
+  const marker = "/artifacts/";
+  const index = url.indexOf(marker);
+
+  if (index === -1) {
+    return "";
+  }
+
+  return url
+    .slice(index + marker.length)
+    .split("/")
+    .map((part) => decodeURIComponent(part))
+    .join("/");
 }
 
 function analysisResultDetailFixture() {

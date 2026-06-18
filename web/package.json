@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "measure:latent-map": "node scripts/measure-latent-map-first-open.mjs",
     "test": "vitest run"
   },
   "dependencies": {

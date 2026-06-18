@@ -1,7 +1,10 @@
 import { renderToString } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import LatentMapPage, { loadLatentMapViewerData } from "@/app/latent-map/page";
+import LatentMapPage, {
+  loadLatentMapViewerData,
+  loadLatentMapViewerDataWithStartupMeasurement,
+} from "@/app/latent-map/page";
 
 const ANALYSIS_RESULT_ID = "analysis-result-20260614T130000Z-dinov3_vits_384";
 
@@ -87,6 +90,48 @@ describe("loadLatentMapViewerData", () => {
     expect(data.analysis_result_id).toBe(analysisResultId);
     expect(data.points).toHaveLength(1);
     expect(data.thumbnail_atlases).toBeUndefined();
+  });
+
+  it("returns and renders startup measurement data when requested", async () => {
+    vi.stubGlobal("fetch", vi.fn(fetchAnalysisResultFixture));
+
+    const loaded = await loadLatentMapViewerDataWithStartupMeasurement(
+      { analysisResultId: ANALYSIS_RESULT_ID },
+      { measureStartup: true },
+    );
+
+    expect(loaded.viewerData.analysis_result_id).toBe(ANALYSIS_RESULT_ID);
+    expect(loaded.startupMeasurement).toMatchObject({
+      schema_version: 1,
+      summary: {
+        artifactBytes: expect.any(Number),
+        serializationBytes: expect.any(Number),
+      },
+    });
+
+    const html = renderToString(
+      await LatentMapPage({
+        searchParams: Promise.resolve({
+          analysisResultId: ANALYSIS_RESULT_ID,
+          measureStartup: "1",
+        }),
+      }),
+    ).replaceAll("<!-- -->", "");
+
+    expect(html).toContain('data-testid="latent-map-startup-measurement"');
+    expect(html).toContain('data-startup-measured="true"');
+    expect(html).toContain("analysis-result-artifact-fetch");
+  });
+
+  it("keeps startup measurement disabled by default", async () => {
+    vi.stubGlobal("fetch", vi.fn(fetchAnalysisResultFixture));
+
+    const loaded = await loadLatentMapViewerDataWithStartupMeasurement({
+      analysisResultId: ANALYSIS_RESULT_ID,
+    });
+
+    expect(loaded.viewerData.analysis_result_id).toBe(ANALYSIS_RESULT_ID);
+    expect(loaded.startupMeasurement).toBeUndefined();
   });
 
   it("renders an intentional empty Explorer rail entry without a selected result", async () => {

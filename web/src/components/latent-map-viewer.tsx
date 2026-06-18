@@ -113,6 +113,7 @@ import {
   type LatentMapDurableState,
 } from "@/lib/latent-map-viewer-state";
 import { normalizeLatentMapRelationResponse } from "@/lib/latent-map-viewer-data";
+import type { LatentMapStartupMeasurement } from "@/lib/latent-map-startup-measurement";
 import {
   createLatentMapWebglRuntime,
   getLatentMapThumbnailWorldScale,
@@ -129,6 +130,7 @@ type LatentMapViewerProps = {
   initialState?: LatentMapDurableState;
   initialRenderMode?: LatentMapRenderMode;
   initialSelectedImageId?: string | null;
+  startupMeasurement?: LatentMapStartupMeasurement;
 };
 
 type PointerPosition = {
@@ -449,6 +451,7 @@ export function LatentMapViewer({
   initialState,
   initialRenderMode = "points",
   initialSelectedImageId = null,
+  startupMeasurement,
 }: LatentMapViewerProps) {
   const initialDurableState = createInitialDurableState({
     data,
@@ -2066,6 +2069,9 @@ export function LatentMapViewer({
     "--sidebar-width": "20rem",
     "--sidebar-width-mobile": "20rem",
   } as CSSProperties;
+  const startupMeasurementJson = startupMeasurement
+    ? JSON.stringify(startupMeasurement).replaceAll("<", "\\u003c")
+    : null;
 
   return (
     <SidebarProvider
@@ -2073,6 +2079,13 @@ export function LatentMapViewer({
       defaultOpen
       style={sidebarStyle}
     >
+      {startupMeasurementJson ? (
+        <script
+          data-testid="latent-map-startup-measurement"
+          type="application/json"
+          dangerouslySetInnerHTML={{ __html: startupMeasurementJson }}
+        />
+      ) : null}
       {!uiOverlayHidden ? (
         <Sidebar collapsible="offcanvas" variant="inset">
           <SidebarHeader>
@@ -2516,6 +2529,17 @@ export function LatentMapViewer({
             data-neighborhood-status={neighborhoodRuntimePlan.status}
             data-point-count={stats.pointCount}
             data-render-mode={renderMode}
+            data-startup-artifact-fetch-ms={
+              startupMeasurement?.summary.artifactFetchMs
+            }
+            data-startup-measured={startupMeasurement ? "true" : undefined}
+            data-startup-normalization-ms={
+              startupMeasurement?.summary.normalizationMs
+            }
+            data-startup-serialization-bytes={
+              startupMeasurement?.summary.serializationBytes
+            }
+            data-startup-total-ms={startupMeasurement?.totalMs}
             data-runtime-average-frame-ms={runtimeSnapshot.averageFrameMs}
             data-runtime-average-render-ms={runtimeSnapshot.averageRenderMs}
             data-runtime-atlas-page-count={runtimeSnapshot.atlasPageCount}
