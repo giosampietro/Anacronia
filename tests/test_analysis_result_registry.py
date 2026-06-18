@@ -2,6 +2,7 @@ import json
 
 import pytest
 
+from anacronia import analysis_result_registry
 from anacronia.artifact_store import ArtifactStoreError
 from anacronia.analysis_result_registry import LocalAnalysisResultRegistry
 
@@ -98,6 +99,15 @@ def write_manifest_artifacts(data_root, manifest):
         path.write_bytes(b"x" * artifact["byte_size"])
 
 
+def write_manifest(data_root, manifest):
+    result_dir = data_root / "analysis-results" / manifest["analysis_result_id"]
+    result_dir.mkdir(parents=True, exist_ok=True)
+    (result_dir / "analysis-result.json").write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
 def test_registry_registers_loads_and_lists_browser_safe_summary(tmp_path):
     manifest = valid_manifest()
     write_manifest_artifacts(tmp_path, manifest)
@@ -181,6 +191,74 @@ def test_registry_reports_missing_artifacts_separately_from_failed_state(tmp_pat
         "durable": 8,
         "render-cache": 0,
         "total": 8,
+        "viewer-cache": 0,
+    }
+
+
+def test_registry_list_skips_optional_artifact_stats_but_strict_summary_reports_gaps(
+    tmp_path,
+    monkeypatch,
+):
+    manifest = valid_manifest()
+    result_dir = tmp_path / "analysis-results" / manifest["analysis_result_id"]
+    for artifact in manifest["artifacts"]:
+        if not artifact["required"]:
+            continue
+        path = result_dir / artifact["key"]
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"x" * artifact["byte_size"])
+    write_manifest(tmp_path, manifest)
+
+    stat_keys = []
+    original_stat = analysis_result_registry.LocalFilesystemArtifactStore.stat
+
+    def counting_stat(self, namespace, key, **kwargs):
+        stat_keys.append(key)
+        return original_stat(self, namespace, key, **kwargs)
+
+    monkeypatch.setattr(
+        analysis_result_registry.LocalFilesystemArtifactStore,
+        "stat",
+        counting_stat,
+    )
+    registry = LocalAnalysisResultRegistry(tmp_path)
+
+    list_summary = registry.list()[0]
+
+    assert stat_keys == [
+        "manifest.jsonl",
+        "layouts/dinov3_vits_384_umap.json",
+        "indexes/dinov3_vits_384_flat_ip.faiss",
+    ]
+    assert list_summary.artifact_health == {
+        "missing_optional_artifact_keys": [],
+        "missing_optional_render_cache_artifact_keys": [],
+        "missing_required_artifact_keys": [],
+        "ready": True,
+    }
+    assert list_summary.storage_totals == {
+        "durable": 10,
+        "render-cache": 2,
+        "total": 12,
+        "viewer-cache": 0,
+    }
+
+    strict_summary = registry.summarize(manifest["analysis_result_id"])
+
+    assert strict_summary.artifact_health == {
+        "missing_optional_artifact_keys": [
+            "viewer/atlases/32px/atlas-manifest.json"
+        ],
+        "missing_optional_render_cache_artifact_keys": [
+            "viewer/atlases/32px/atlas-manifest.json"
+        ],
+        "missing_required_artifact_keys": [],
+        "ready": True,
+    }
+    assert strict_summary.storage_totals == {
+        "durable": 10,
+        "render-cache": 0,
+        "total": 10,
         "viewer-cache": 0,
     }
 

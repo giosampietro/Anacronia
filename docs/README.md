@@ -74,6 +74,7 @@ Do not read every PRD by default.
 | Atlas/LOD rendering | `docs/prototypes/latent-map-texture-lod-prd.md` | Prototype rendering memory |
 | Instanced thumbnail rendering | `docs/prototypes/latent-map-instanced-thumbnail-rendering.md` | Prototype implementation memory |
 | J Shoot launch workflow | `docs/prototypes/latent-map-worktree-launch.md` | Local QA/worktree instructions |
+| Analysis Studio and Collection sluggishness fix | `docs/prototypes/performance-regression-diagnosis-2026-06-18.md` | Historical diagnosis and performance handoff |
 | Post-commit implementation record | `docs/prototypes/latent-map-post-bd3d257-implementation-log.md` | Historical log, not controlling product contract |
 
 ## UX / Workflow Contracts

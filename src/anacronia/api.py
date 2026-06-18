@@ -368,7 +368,10 @@ def serialize_analysis_result_detail(
     registry: LocalAnalysisResultRegistry,
     analysis_result_id: str,
 ) -> dict[str, object]:
-    summary = registry.summarize(analysis_result_id)
+    summary = registry.summarize(
+        analysis_result_id,
+        validate_optional_artifacts=False,
+    )
     manifest = registry.load(analysis_result_id)
     browser_summary = browser_safe_analysis_result_summary(manifest)
     return {
@@ -1027,15 +1030,16 @@ def create_app(
     @app.get("/analysis-results")
     def get_analysis_results() -> dict[str, object]:
         registry = LocalAnalysisResultRegistry(resolved_data_root)
+        summaries = registry.list()
         return {
             "results": [
                 serialize_analysis_result_summary(summary)
-                for summary in registry.list()
+                for summary in summaries
                 if summary.status != "deleted"
             ],
             "sibling_groups": [
                 sibling_group.to_public_dict()
-                for sibling_group in registry.list_sibling_groups()
+                for sibling_group in registry.list_sibling_groups(summaries=summaries)
             ],
         }
 
