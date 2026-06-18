@@ -155,6 +155,52 @@ describe("AppShell", () => {
     expect(html).not.toContain("lucide-hard-drive");
   });
 
+  it("summarizes an active local folder import ahead of an idle worker", () => {
+    const html = renderToString(
+      <AppShell
+        activeSearchSetSlug="intaglio"
+        appVersionStamp={{ display: "v0.1.60", title: "App version v0.1.60" }}
+        collectAvailable
+        contentHeaderImageCount={38}
+        contentHeaderObjectCount={12}
+        dashboardView={dashboardView}
+        filterText=""
+        rows={[
+          {
+            detail: "Listening on localhost:18660",
+            displayState: "ok",
+            name: "Next.js UI",
+            state: "ok",
+          },
+          {
+            detail: "Reachable on localhost:18670",
+            displayState: "ok",
+            name: "FastAPI backend",
+            state: "ok",
+          },
+          {
+            detail: "Ready for searches",
+            displayState: "idle",
+            name: "Python worker",
+            state: "idle",
+          },
+          {
+            detail: "Studio Folder: 300/2900 files, 280 imported, 20 skipped",
+            displayState: "active",
+            name: "Local folder import",
+            state: "running",
+          },
+        ]}
+        workspaceMode="search-set"
+      >
+        <div>Grid</div>
+      </AppShell>,
+    );
+
+    expect(html).toContain(">active<");
+    expect(html).not.toContain(">idle<");
+  });
+
   it("renders the project attribution in the sidebar footer", () => {
     const html = renderToString(
       <AppShell

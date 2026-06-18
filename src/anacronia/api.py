@@ -86,6 +86,10 @@ from anacronia.local_folder_import import (
     create_local_folder_collection,
     import_local_image_folder,
 )
+from anacronia.local_folder_import_progress import (
+    LocalFolderImportProgress,
+    get_active_local_folder_import_progress,
+)
 from anacronia.local_folder_picker import (
     LocalFolderPickerCancelled,
     LocalFolderPickerUnavailable,
@@ -329,6 +333,22 @@ def serialize_local_folder_import_summary(
             }
             for skipped_file in summary.skipped_files
         ],
+    }
+
+
+def serialize_local_folder_import_progress(
+    progress: LocalFolderImportProgress,
+) -> dict[str, object]:
+    return {
+        "status": progress.status,
+        "display_name": progress.display_name,
+        "search_set_slug": progress.search_set_slug,
+        "folder_path": str(progress.folder_path),
+        "phase": progress.phase,
+        "discovered_file_count": progress.discovered_file_count,
+        "processed_file_count": progress.processed_file_count,
+        "imported_image_count": progress.imported_image_count,
+        "skipped_file_count": progress.skipped_file_count,
     }
 
 
@@ -876,7 +896,7 @@ def create_app(
     @app.get("/health")
     def health() -> dict[str, object]:
         worker_status = get_worker_status(database_path=resolved_database_path)
-        return {
+        payload = {
             "service": "api",
             "status": "ok",
             "worker": {
@@ -885,6 +905,14 @@ def create_app(
                 "active_collect_job_id": worker_status.active_collect_job_id,
             },
         }
+        active_local_folder_import = get_active_local_folder_import_progress(
+            database_path=resolved_database_path
+        )
+        if active_local_folder_import is not None:
+            payload["local_folder_import"] = serialize_local_folder_import_progress(
+                active_local_folder_import
+            )
+        return payload
 
     @app.get("/analysis-recipes")
     def get_analysis_recipes() -> dict[str, object]:

@@ -129,4 +129,17 @@ describe("NewCollectionForm", () => {
     expect(html).toContain("aria-busy=\"true\"");
     expect(html).toContain("disabled=\"\"");
   });
+
+  it("shows persistent local folder import guidance while the action is pending", () => {
+    formStatus.pending = true;
+
+    const html = renderToString(
+      renderForm({ initialTrajectory: "local-folder" }),
+    );
+
+    expect(html).toContain("Importing...");
+    expect(html).toContain("Local folder import running");
+    expect(html).toContain("Keep Anacronia open while this import finishes.");
+    expect(html).toContain("role=\"status\"");
+  });
 });

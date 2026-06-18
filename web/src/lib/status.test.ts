@@ -73,4 +73,34 @@ describe("createStatusRows", () => {
       detail: "Processing",
     });
   });
+
+  it("adds a local folder import row when the API reports active import progress", () => {
+    const rows = createStatusRows({
+      uiPort: 18660,
+      apiPort: 18670,
+      apiHealth: {
+        service: "api",
+        status: "ok",
+        worker: { service: "worker", status: "idle" },
+        local_folder_import: {
+          status: "running",
+          display_name: "Studio Folder",
+          search_set_slug: "studio-folder",
+          folder_path: "/Users/giorgio/Pictures/Studio Folder",
+          phase: "importing",
+          discovered_file_count: 2900,
+          processed_file_count: 300,
+          imported_image_count: 280,
+          skipped_file_count: 20,
+        },
+      },
+    });
+
+    expect(rows[3]).toEqual({
+      name: "Local folder import",
+      state: "running",
+      displayState: "active",
+      detail: "Studio Folder: 300/2900 files, 280 imported, 20 skipped",
+    });
+  });
 });

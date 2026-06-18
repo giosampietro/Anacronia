@@ -165,6 +165,30 @@ function SubmitTrajectoryButton({
   );
 }
 
+function LocalFolderImportPendingNotice() {
+  const { pending } = useFormStatus();
+
+  if (!pending) {
+    return null;
+  }
+
+  return (
+    <div
+      aria-live="polite"
+      className="flex items-start gap-2 rounded-lg border bg-muted/40 px-3 py-2 text-sm text-muted-foreground"
+      role="status"
+    >
+      <Spinner className="mt-0.5 size-4" />
+      <span className="grid gap-0.5">
+        <span className="font-medium text-foreground">
+          Local folder import running
+        </span>
+        <span>Keep Anacronia open while this import finishes.</span>
+      </span>
+    </div>
+  );
+}
+
 function localFolderDisplayName(folderPath: string): string {
   const normalizedPath = folderPath.trim();
   const segments = normalizedPath.split(/[\\/]+/).filter((segment) => segment !== "");
@@ -361,6 +385,7 @@ export function NewCollectionForm({
                 pendingLabel="Importing..."
               />
             </div>
+            <LocalFolderImportPendingNotice />
           </StepCard>
         </>
       ) : null}
