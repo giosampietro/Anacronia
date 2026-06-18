@@ -150,7 +150,10 @@ export function normalizeExportedLatentMapViewerData({
     ...(thumbnailAtlases.length > 0 ? { thumbnail_atlases: thumbnailAtlases } : {}),
     points: points.map((point): LatentMapPoint => {
       const thumbnailPath = String(point.thumbnail_path ?? "");
-      const previewPath = String(point.preview_path ?? thumbnailPath);
+      const rawPreviewPath =
+        typeof point.preview_path === "string" ? point.preview_path : "";
+      const previewPath =
+        rawPreviewPath.trim().length > 0 ? rawPreviewPath : thumbnailPath;
 
       return {
         image_id: String(point.image_id ?? ""),

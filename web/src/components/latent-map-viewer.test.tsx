@@ -1,7 +1,10 @@
 import { renderToString } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { LatentMapViewer } from "@/components/latent-map-viewer";
+import {
+  LatentMapHoverPreview,
+  LatentMapViewer,
+} from "@/components/latent-map-viewer";
 import { latentMapFixture } from "@/lib/latent-map-fixture";
 import type {
   LatentMapGeneratedThumbnailAtlas,
@@ -75,6 +78,75 @@ function createFixtureWithOpposites(): LatentMapViewerData {
 }
 
 describe("LatentMapViewer", () => {
+  it("renders hover previews from the thumbnail while the full preview loads", () => {
+    const html = renderToString(
+      <LatentMapHoverPreview
+        box={{ height: 384, width: 512 }}
+        point={{
+          cluster_id: 1,
+          height: 600,
+          image_id: "img_1",
+          preview_path: "/api/latent-map/thumbnails?artifactKey=preview.jpg",
+          relative_path: "image.jpg",
+          thumbnail_path: "/api/latent-map/thumbnails?artifactKey=thumb.jpg",
+          width: 800,
+          x: 0,
+          y: 0,
+        }}
+        position={{ x: 40, y: 50 }}
+      />,
+    ).replaceAll("<!-- -->", "");
+
+    expect(html).toContain('data-testid="latent-map-hover-preview"');
+    expect(html).toContain('data-hover-preview-image-id="img_1"');
+    expect(html).toContain(
+      'data-hover-preview-source="/api/latent-map/thumbnails?artifactKey=thumb.jpg"',
+    );
+    expect(html).toContain(
+      'data-hover-preview-preview-source="/api/latent-map/thumbnails?artifactKey=preview.jpg"',
+    );
+    expect(html).toContain('data-hover-preview-status="loading"');
+    expect(html).toContain('loading="eager"');
+    expect(html).toContain("opacity-0");
+    expect(html).not.toContain("shadow-2xl opacity-100");
+  });
+
+  it("renders hover previews from the loaded atlas crop when available", () => {
+    const html = renderToString(
+      <LatentMapHoverPreview
+        atlasPreview={{
+          pageHeight: 2048,
+          pagePath: "/api/latent-map/thumbnails?artifactKey=atlas-page.png",
+          pageWidth: 2048,
+          rect: [128, 256, 64, 48],
+        }}
+        box={{ height: 384, width: 512 }}
+        point={{
+          cluster_id: 1,
+          height: 600,
+          image_id: "img_1",
+          preview_path: "/api/latent-map/thumbnails?artifactKey=preview.jpg",
+          relative_path: "image.jpg",
+          thumbnail_path: "/api/latent-map/thumbnails?artifactKey=thumb.jpg",
+          width: 800,
+          x: 0,
+          y: 0,
+        }}
+        position={{ x: 40, y: 50 }}
+      />,
+    ).replaceAll("<!-- -->", "");
+
+    expect(html).toContain('data-hover-preview-source-kind="atlas"');
+    expect(html).toContain(
+      'data-hover-preview-source="/api/latent-map/thumbnails?artifactKey=atlas-page.png"',
+    );
+    expect(html).toContain('data-hover-preview-status="ready"');
+    expect(html).toContain("bg-background opacity-100 shadow-2xl");
+    expect(html).toContain("background-image");
+    expect(html).toContain("filter:blur(4px)");
+    expect(html).not.toContain('loading="eager"');
+  });
+
   it("renders directly as a map surface with prototype fixture data", () => {
     const html = renderToString(<LatentMapViewer data={latentMapFixture} />)
       .replaceAll("<!-- -->", "");
