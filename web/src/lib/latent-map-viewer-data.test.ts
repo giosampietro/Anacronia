@@ -169,6 +169,31 @@ describe("normalizeExportedLatentMapViewerData", () => {
     );
   });
 
+  it("falls back to the thumbnail URL when an exported preview path is blank", () => {
+    const data = normalizeExportedLatentMapViewerData({
+      sourceFolder: "/source/images",
+      thumbnailApiPath:
+        "/api/latent-map/thumbnails?analysisResultId=latent-map-run-1",
+      thumbnailResourceParamName: "artifactKey",
+      rawData: {
+        points: [
+          {
+            image_id: "img_1",
+            thumbnail_path: "thumbnails/img_1.jpg",
+            preview_path: "",
+          },
+        ],
+      },
+    });
+
+    expect(data.points[0].thumbnail_path).toBe(
+      "/api/latent-map/thumbnails?analysisResultId=latent-map-run-1&artifactKey=thumbnails%2Fimg_1.jpg",
+    );
+    expect(data.points[0].preview_path).toBe(
+      "/api/latent-map/thumbnails?analysisResultId=latent-map-run-1&artifactKey=thumbnails%2Fimg_1.jpg",
+    );
+  });
+
   it("can address thumbnails by artifact key for Analysis Result opens", () => {
     const data = normalizeExportedLatentMapViewerData({
       sourceFolder: "/source/images",

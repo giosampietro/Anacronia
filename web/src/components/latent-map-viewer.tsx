@@ -74,8 +74,11 @@ import {
   type LatentMapTextureDetail,
   type LatentMapRuntimeRendererInfo,
   type LatentMapThumbnailSize,
+  type LatentMapGeneratedThumbnailAtlas,
+  type LatentMapPoint,
   type LatentMapViewerData,
 } from "@/lib/latent-map-viewer";
+import { getLatentMapHoverPreviewSources } from "@/lib/latent-map-hover-preview";
 import {
   createLatentMapPointerHitRadius,
   createLatentMapSpatialIndex,
@@ -138,6 +141,10 @@ type PointerPosition = {
   y: number;
 };
 
+type HoverPointerPosition = PointerPosition & {
+  lookupId: number;
+};
+
 type LatentMapViewStateUpdate =
   | LatentMapViewState
   | ((current: LatentMapViewState) => LatentMapViewState);
@@ -149,6 +156,7 @@ const DEFAULT_VIEW: LatentMapViewState = {
 };
 const ATLAS_TEXTURE_SIZE = 2048;
 const FPS_COUNTER_ACTIVE_TIMEOUT_MS = 700;
+const HOVER_PREVIEW_PRELOAD_DELAY_MS = 75;
 const THUMBNAIL_PLANNING_VIEW_IDLE_DELAY_MS = 220;
 
 function areLatentMapViewsEqual(
@@ -445,6 +453,252 @@ function getLatentMapPreviewBox({
   };
 }
 
+function getLatentMapHoverAtlasPreview({
+  point,
+  thumbnailAtlas,
+}: {
+  point: LatentMapPoint;
+  thumbnailAtlas: LatentMapGeneratedThumbnailAtlas | undefined;
+}): LatentMapHoverAtlasPreview | null {
+  if (!thumbnailAtlas) {
+    return null;
+  }
+
+  const item = thumbnailAtlas.items.find(
+    (candidate) => candidate.image_id === point.image_id,
+  );
+
+  if (!item) {
+    return null;
+  }
+
+  const page = thumbnailAtlas.pages.find(
+    (candidate) => candidate.index === item.page_index,
+  );
+  const rect = item.content_rect ?? item.tile_rect;
+
+  if (
+    !page ||
+    page.path.length === 0 ||
+    page.width <= 0 ||
+    page.height <= 0 ||
+    rect[2] <= 0 ||
+    rect[3] <= 0
+  ) {
+    return null;
+  }
+
+  return {
+    pageHeight: page.height,
+    pagePath: page.path,
+    pageWidth: page.width,
+    rect,
+  };
+}
+
+type LatentMapPreviewBox = ReturnType<typeof getLatentMapPreviewBox>;
+type LatentMapHoverPreviewStatus = "failed" | "loading" | "ready";
+type LatentMapHoverAtlasPreview = {
+  pageHeight: number;
+  pagePath: string;
+  pageWidth: number;
+  rect: [number, number, number, number];
+};
+
+export function LatentMapHoverPreview({
+  atlasPreview,
+  box,
+  point,
+  position,
+}: {
+  atlasPreview?: LatentMapHoverAtlasPreview | null;
+  box: LatentMapPreviewBox;
+  point: LatentMapPoint;
+  position: PointerPosition;
+}) {
+  const { fallbackSource, primarySource } =
+    getLatentMapHoverPreviewSources(point);
+  const thumbnailSource = fallbackSource ?? primarySource;
+  const initialSource = atlasPreview ? null : thumbnailSource;
+  const [failedPrimarySource, setFailedPrimarySource] = useState<string | null>(
+    null,
+  );
+  const [activeSource, setActiveSource] = useState(initialSource);
+  const [loadState, setLoadState] = useState<{
+    source: string | null;
+    status: LatentMapHoverPreviewStatus;
+  }>({
+    source: initialSource,
+    status: initialSource ? "loading" : atlasPreview ? "ready" : "failed",
+  });
+  const previewSource =
+    primarySource &&
+    primarySource !== thumbnailSource &&
+    failedPrimarySource !== primarySource
+      ? primarySource
+      : null;
+  const placeholderReady =
+    Boolean(atlasPreview) ||
+    Boolean(
+      thumbnailSource &&
+        activeSource === thumbnailSource &&
+        loadState.source === thumbnailSource &&
+        loadState.status === "ready",
+    );
+  const status =
+    activeSource && loadState.source === activeSource
+      ? loadState.status
+      : atlasPreview
+        ? "ready"
+        : activeSource
+          ? "loading"
+          : "failed";
+
+  useEffect(() => {
+    if (!previewSource || !placeholderReady || typeof window === "undefined") {
+      return undefined;
+    }
+
+    let image: HTMLImageElement | null = null;
+    const timeoutId = window.setTimeout(() => {
+      image = new window.Image();
+      image.onload = () => {
+        setActiveSource(previewSource);
+        setLoadState({ source: previewSource, status: "ready" });
+      };
+      image.onerror = () => {
+        setFailedPrimarySource(previewSource);
+      };
+      image.src = previewSource;
+    }, HOVER_PREVIEW_PRELOAD_DELAY_MS);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      if (!image) {
+        return;
+      }
+      image.onload = null;
+      image.onerror = null;
+    };
+  }, [placeholderReady, previewSource]);
+
+  if ((!activeSource && !atlasPreview) || status === "failed") {
+    return null;
+  }
+
+  const viewportWidth =
+    typeof window === "undefined"
+      ? position.x + box.width + 30
+      : window.innerWidth;
+  const viewportHeight =
+    typeof window === "undefined"
+      ? position.y + box.height + 30
+      : window.innerHeight;
+
+  return (
+    <div
+      aria-hidden="true"
+      className={cn(
+        "pointer-events-none fixed z-50 overflow-hidden rounded-lg ring-0 transition-opacity duration-75",
+        status === "ready"
+          ? "bg-background opacity-100 shadow-2xl"
+          : "opacity-0",
+      )}
+      data-hover-preview-fallback-source={fallbackSource ?? ""}
+      data-hover-preview-image-id={point.image_id}
+      data-hover-preview-preview-source={primarySource ?? ""}
+      data-hover-preview-source={activeSource ?? atlasPreview?.pagePath ?? ""}
+      data-hover-preview-source-kind={
+        activeSource
+          ? activeSource.includes("previews%2F")
+            ? "preview"
+            : "thumbnail"
+          : "atlas"
+      }
+      data-hover-preview-status={status}
+      data-testid="latent-map-hover-preview"
+      style={{
+        left: Math.min(position.x + 14, viewportWidth - box.width - 16),
+        top: Math.min(position.y + 14, viewportHeight - box.height - 16),
+        height: box.height,
+        width: box.width,
+      }}
+    >
+      {activeSource ? (
+        <NextImage
+          key={`${point.image_id}:${activeSource}`}
+          alt=""
+          className="block size-full object-contain"
+          height={box.height}
+          loading="eager"
+          onError={() => {
+            if (primarySource && activeSource === primarySource) {
+              setFailedPrimarySource(primarySource);
+              if (atlasPreview) {
+                setActiveSource(null);
+                setLoadState({ source: null, status: "ready" });
+                return;
+              }
+              if (fallbackSource) {
+                setActiveSource(fallbackSource);
+                setLoadState({ source: fallbackSource, status: "loading" });
+                return;
+              }
+            }
+
+            if (primarySource && activeSource !== primarySource) {
+              setActiveSource(primarySource);
+              setLoadState({ source: primarySource, status: "loading" });
+              return;
+            }
+
+            setLoadState({ source: activeSource, status: "failed" });
+          }}
+          onLoad={() => setLoadState({ source: activeSource, status: "ready" })}
+          src={activeSource}
+          unoptimized
+          width={box.width}
+        />
+      ) : atlasPreview ? (
+        <LatentMapHoverAtlasImage atlasPreview={atlasPreview} box={box} />
+      ) : null}
+    </div>
+  );
+}
+
+function LatentMapHoverAtlasImage({
+  atlasPreview,
+  box,
+}: {
+  atlasPreview: LatentMapHoverAtlasPreview;
+  box: LatentMapPreviewBox;
+}) {
+  const [rectX, rectY, rectWidth, rectHeight] = atlasPreview.rect;
+  const scale = Math.min(
+    box.width / Math.max(rectWidth, 1),
+    box.height / Math.max(rectHeight, 1),
+  );
+  const width = Math.max(1, Math.round(rectWidth * scale));
+  const height = Math.max(1, Math.round(rectHeight * scale));
+
+  return (
+    <div className="flex size-full items-center justify-center">
+      <div
+        className="bg-no-repeat"
+        style={{
+          backgroundImage: `url("${atlasPreview.pagePath}")`,
+          backgroundPosition: `${-rectX * scale}px ${-rectY * scale}px`,
+          backgroundSize: `${atlasPreview.pageWidth * scale}px ${atlasPreview.pageHeight * scale}px`,
+          filter: "blur(4px)",
+          height,
+          transform: "scale(1.03)",
+          width,
+        }}
+      />
+    </div>
+  );
+}
+
 export function LatentMapViewer({
   className,
   data,
@@ -464,7 +718,8 @@ export function LatentMapViewer({
   const runtimeRef = useRef<LatentMapWebglRuntime | null>(null);
   const runtimeStateRef = useRef<LatentMapRuntimeState | null>(null);
   const hoverFrameRef = useRef<number | null>(null);
-  const hoverPointerRef = useRef<PointerPosition | null>(null);
+  const hoverPointerRef = useRef<HoverPointerPosition | null>(null);
+  const hoverLookupIdRef = useRef(0);
   const fpsActivityTimeoutRef = useRef<number | null>(null);
   const previousResolvedTextureDetailRef = useRef<number | null>(null);
   const latestNeighborRequestIdRef = useRef(0);
@@ -484,10 +739,12 @@ export function LatentMapViewer({
   const [visualTheme, setVisualTheme] =
     useState<LatentMapRuntimeState["visualTheme"]>(DEFAULT_THEME);
   const [hoveredImageId, setHoveredImageId] = useState<string | null>(null);
-  const [hoverPosition, setHoverPosition] = useState<PointerPosition>({
+  const [hoverPosition, setHoverPosition] = useState<HoverPointerPosition>({
+    lookupId: 0,
     x: 0,
     y: 0,
   });
+  const [resolvedHoverLookupId, setResolvedHoverLookupId] = useState(0);
   const [selectedImageId, setSelectedImageId] = useState<string | null>(
     initialDurableState.selectedImageId,
   );
@@ -740,6 +997,8 @@ export function LatentMapViewer({
         width: hoveredPoint.width,
       })
     : null;
+  const hoverPreviewResolved =
+    hoverPosition.lookupId === resolvedHoverLookupId;
   const textureDetailOptions = useMemo(
     () => getLatentMapAvailableTextureDetails(data),
     [data],
@@ -798,6 +1057,12 @@ export function LatentMapViewer({
     () => getLatentMapThumbnailAtlasForSize(data, resolvedTextureDetail),
     [data, resolvedTextureDetail],
   );
+  const hoverAtlasPreview = hoveredPoint
+    ? getLatentMapHoverAtlasPreview({
+        point: hoveredPoint,
+        thumbnailAtlas,
+      })
+    : null;
   const fallbackThumbnailAtlas = useMemo(
     () =>
       shouldUseLatentMapAutoFallbackAtlas({
@@ -1675,7 +1940,7 @@ export function LatentMapViewer({
     return nearestPoint;
   }
 
-  function scheduleHoverLookup(pointer: PointerPosition) {
+  function scheduleHoverLookup(pointer: HoverPointerPosition) {
     hoverPointerRef.current = pointer;
 
     if (hoverFrameRef.current !== null) {
@@ -1692,10 +1957,12 @@ export function LatentMapViewer({
 
       if (neighborhoodLayoutActive) {
         setHoveredImageId(null);
+        setResolvedHoverLookupId(nextPointer.lookupId);
         return;
       }
 
       setHoveredImageId(getNearestPointAt(nextPointer)?.image_id ?? null);
+      setResolvedHoverLookupId(nextPointer.lookupId);
     });
   }
 
@@ -1939,9 +2206,18 @@ export function LatentMapViewer({
   }
 
   function handlePointerMove(event: React.PointerEvent<HTMLDivElement>) {
-    setHoverPosition({
+    const hoverLookupId = hoverLookupIdRef.current + 1;
+    const hoverPointer = {
+      lookupId: hoverLookupId,
       x: event.clientX,
       y: event.clientY,
+    };
+
+    hoverLookupIdRef.current = hoverLookupId;
+    setHoverPosition({
+      lookupId: hoverPointer.lookupId,
+      x: hoverPointer.x,
+      y: hoverPointer.y,
     });
 
     const wrapper = wrapperRef.current;
@@ -1967,10 +2243,7 @@ export function LatentMapViewer({
       return;
     }
 
-    scheduleHoverLookup({
-      x: event.clientX,
-      y: event.clientY,
-    });
+    scheduleHoverLookup(hoverPointer);
   }
 
   function handlePointerUp(event: React.PointerEvent<HTMLDivElement>) {
@@ -2881,31 +3154,14 @@ export function LatentMapViewer({
             </div>
           ) : null}
 
-          {hoveredPoint && hoverPreviewBox ? (
-            <div
-              className="pointer-events-none fixed z-50 overflow-hidden rounded-lg bg-background shadow-2xl ring-0"
-              style={{
-                left: Math.min(
-                  hoverPosition.x + 14,
-                  window.innerWidth - hoverPreviewBox.width - 16,
-                ),
-                top: Math.min(
-                  hoverPosition.y + 14,
-                  window.innerHeight - hoverPreviewBox.height - 16,
-                ),
-                height: hoverPreviewBox.height,
-                width: hoverPreviewBox.width,
-              }}
-            >
-              <NextImage
-                alt=""
-                className="block size-full object-contain"
-                height={hoverPreviewBox.height}
-                src={hoveredPoint.preview_path ?? hoveredPoint.thumbnail_path}
-                unoptimized
-                width={hoverPreviewBox.width}
-              />
-            </div>
+          {hoveredPoint && hoverPreviewBox && hoverPreviewResolved ? (
+            <LatentMapHoverPreview
+              key={hoveredPoint.image_id}
+              atlasPreview={hoverAtlasPreview}
+              box={hoverPreviewBox}
+              point={hoveredPoint}
+              position={hoverPosition}
+            />
           ) : null}
         </section>
       </SidebarInset>
