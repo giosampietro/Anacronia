@@ -1,6 +1,10 @@
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 
+import {
+  encodedTextByteLength,
+  type LatentMapStartupRecorder,
+} from "@/lib/latent-map-startup-measurement";
 import type { ExportedLatentMapViewerData } from "@/lib/latent-map-viewer-data";
 
 export const LATENT_MAP_RUNS_ROOT = "/private/tmp/anacronia-latent-map-runs";
@@ -103,6 +107,7 @@ export async function loadLatentMapAnalysisResultExportedViewerData({
   selectedClusterId,
   selectedLayoutId,
   selectedRecipeName,
+  startupRecorder,
 }: {
   analysisResult: {
     analysis_result_id?: unknown;
@@ -110,10 +115,11 @@ export async function loadLatentMapAnalysisResultExportedViewerData({
     recipes?: unknown;
     scope_label?: unknown;
   };
-  readArtifactText: (artifactKey: string) => Promise<string>;
+  readArtifactText: (artifactKey: string, artifactRole?: string) => Promise<string>;
   selectedClusterId?: string | null;
   selectedLayoutId?: string | null;
   selectedRecipeName?: string | null;
+  startupRecorder?: LatentMapStartupRecorder;
 }): Promise<ExportedLatentMapViewerData> {
   const artifacts = normalizeAnalysisResultArtifacts(analysisResult.artifacts);
   const availableRecipes = normalizeAnalysisResultRecipes(analysisResult.recipes);
@@ -143,24 +149,40 @@ export async function loadLatentMapAnalysisResultExportedViewerData({
     selectedRecipeRecord.clusterKeys.length > 0
       ? selectedRecipeRecord.clusterKeys
       : artifactKeysByRole(artifacts, "cluster-result");
+  const vectorIdMapKey = selectedRecipeRecord?.vectorIdMapKey ?? null;
 
   if (!imageManifestKey) {
     throw new Error("Analysis Result has no image manifest artifact.");
   }
 
-  const manifestRows = parseJsonLines<ManifestRow>(
-    await readArtifactText(imageManifestKey),
+  const manifestContent = await readArtifactText(
+    imageManifestKey,
+    "image-manifest",
+  );
+  const manifestRows = measureStartupSync(
+    startupRecorder,
+    "analysis-result-artifact-parse",
+    {
+      artifactKey: imageManifestKey,
+      artifactRole: "image-manifest",
+      bytes: encodedTextByteLength(manifestContent),
+    },
+    () => parseJsonLines<ManifestRow>(manifestContent),
   );
   const layouts = await loadRunOutputsByArtifactKeys<LayoutFile>({
+    artifactRole: "layout",
     keys: layoutKeys,
     readArtifactText,
     recipeName: selectedRecipe,
+    startupRecorder,
   });
   const clusters = sortClusterOutputs(
     await loadRunOutputsByArtifactKeys<ClusterFile>({
+      artifactRole: "cluster-result",
       keys: clusterKeys,
       readArtifactText,
       recipeName: selectedRecipe,
+      startupRecorder,
     }),
   );
   const layout = pickOutputById({
@@ -181,37 +203,94 @@ export async function loadLatentMapAnalysisResultExportedViewerData({
     throw new Error(`Analysis Result has no cluster result for ${selectedRecipe}.`);
   }
 
-  if (selectedRecipeRecord?.vectorIdMapKey) {
-    const vectorImageIds = parseImageIdOrderMap(
-      await readArtifactText(selectedRecipeRecord.vectorIdMapKey),
+  if (vectorIdMapKey) {
+    const vectorContent = await readArtifactText(vectorIdMapKey, "vector-id-map");
+    const vectorImageIds = measureStartupSync(
+      startupRecorder,
+      "analysis-result-artifact-parse",
+      {
+        artifactKey: vectorIdMapKey,
+        artifactRole: "vector-id-map",
+        bytes: encodedTextByteLength(vectorContent),
+      },
+      () => parseImageIdOrderMap(vectorContent),
     );
 
-    validatePinnedPointOrder({
-      artifactLabel: `layout ${String(layout.value.layout_id ?? "")}`,
-      expectedImageIds: vectorImageIds,
-      points: layout.value.points ?? [],
-    });
-    validatePinnedPointOrder({
-      artifactLabel: `cluster ${String(cluster.value.cluster_id ?? "")}`,
-      expectedImageIds: vectorImageIds,
-      points: cluster.value.points ?? [],
-    });
+    measureStartupSync(
+      startupRecorder,
+      "vector-id-map-validation",
+      {
+        clusterId: String(cluster.value.cluster_id ?? ""),
+        layoutId: String(layout.value.layout_id ?? ""),
+        pointCount: vectorImageIds.length,
+      },
+      () => {
+        validatePinnedPointOrder({
+          artifactLabel: `layout ${String(layout.value.layout_id ?? "")}`,
+          expectedImageIds: vectorImageIds,
+          points: layout.value.points ?? [],
+        });
+        validatePinnedPointOrder({
+          artifactLabel: `cluster ${String(cluster.value.cluster_id ?? "")}`,
+          expectedImageIds: vectorImageIds,
+          points: cluster.value.points ?? [],
+        });
+      },
+    );
   }
 
-  const manifestByImageId = new Map(
-    manifestRows.map((row) => [String(row.image_id ?? ""), row]),
-  );
-  const clusterByImageId = new Map(
-    (cluster.value.points ?? []).map((point) => [
-      String(point.image_id ?? ""),
-      point,
-    ]),
+  const points = measureStartupSync(
+    startupRecorder,
+    "analysis-result-viewer-normalization",
+    {
+      pointCount: layout.value.points?.length ?? 0,
+      recipeName: selectedRecipe,
+    },
+    () => {
+      const manifestByImageId = new Map(
+        manifestRows.map((row) => [String(row.image_id ?? ""), row]),
+      );
+      const clusterByImageId = new Map(
+        (cluster.value.points ?? []).map((point) => [
+          String(point.image_id ?? ""),
+          point,
+        ]),
+      );
+
+      return (layout.value.points ?? []).map((point) => {
+        const imageId = String(point.image_id ?? "");
+        const manifestRow = manifestByImageId.get(imageId);
+        const clusterPoint = clusterByImageId.get(imageId);
+
+        return {
+          cluster_id: Number(clusterPoint?.cluster_id ?? 0),
+          ...(typeof clusterPoint?.group_key === "string" &&
+          clusterPoint.group_key.length > 0
+            ? { cluster_group_key: clusterPoint.group_key }
+            : {}),
+          ...(typeof clusterPoint?.membership === "number"
+            ? { cluster_membership: clusterPoint.membership }
+            : {}),
+          height: Number(manifestRow?.height ?? 1),
+          image_id: imageId,
+          preview_path: String(
+            manifestRow?.preview_path ?? manifestRow?.thumbnail_path ?? "",
+          ),
+          relative_path: String(manifestRow?.relative_path ?? ""),
+          thumbnail_path: String(manifestRow?.thumbnail_path ?? ""),
+          width: Number(manifestRow?.width ?? 1),
+          x: Number(point.x ?? 0),
+          y: Number(point.y ?? 0),
+        };
+      });
+    },
   );
   const thumbnailAtlasManifestPaths =
     selectedRecipeRecord?.thumbnailAtlasManifestPaths ?? {};
   const thumbnailAtlases = await loadThumbnailAtlasesFromArtifacts({
     manifestPaths: thumbnailAtlasManifestPaths,
     readArtifactText,
+    startupRecorder,
   });
   const thumbnailAtlas =
     thumbnailAtlases.find((atlas) => atlas.tile_size === 64) ??
@@ -230,32 +309,7 @@ export async function loadLatentMapAnalysisResultExportedViewerData({
     cluster_id: String(cluster.value.cluster_id ?? ""),
     cluster_result: buildAvailableCluster(cluster.value),
     layout_id: String(layout.value.layout_id ?? ""),
-    points: (layout.value.points ?? []).map((point) => {
-      const imageId = String(point.image_id ?? "");
-      const manifestRow = manifestByImageId.get(imageId);
-      const clusterPoint = clusterByImageId.get(imageId);
-
-      return {
-        cluster_id: Number(clusterPoint?.cluster_id ?? 0),
-        ...(typeof clusterPoint?.group_key === "string" &&
-        clusterPoint.group_key.length > 0
-          ? { cluster_group_key: clusterPoint.group_key }
-          : {}),
-        ...(typeof clusterPoint?.membership === "number"
-          ? { cluster_membership: clusterPoint.membership }
-          : {}),
-        height: Number(manifestRow?.height ?? 1),
-        image_id: imageId,
-        preview_path: String(
-          manifestRow?.preview_path ?? manifestRow?.thumbnail_path ?? "",
-        ),
-        relative_path: String(manifestRow?.relative_path ?? ""),
-        thumbnail_path: String(manifestRow?.thumbnail_path ?? ""),
-        width: Number(manifestRow?.width ?? 1),
-        x: Number(point.x ?? 0),
-        y: Number(point.y ?? 0),
-      };
-    }),
+    points,
     recipe_name: selectedRecipe,
     run_id: String(analysisResult.analysis_result_id ?? "analysis-result"),
     ...(thumbnailAtlas ? { thumbnail_atlas: thumbnailAtlas } : {}),
@@ -483,6 +537,17 @@ function parseJsonLines<T>(content: string): T[] {
     .map((line) => JSON.parse(line) as T);
 }
 
+function measureStartupSync<T>(
+  startupRecorder: LatentMapStartupRecorder | undefined,
+  name: string,
+  metadata: Record<string, boolean | number | string | null | undefined>,
+  operation: () => T,
+): T {
+  return startupRecorder
+    ? startupRecorder.timeSync(name, metadata, operation)
+    : operation();
+}
+
 function normalizeAnalysisResultArtifacts(
   value: unknown,
 ): AnalysisResultArtifactSummary[] {
@@ -569,20 +634,38 @@ function firstArtifactKeyByRole(
 }
 
 async function loadRunOutputsByArtifactKeys<T extends { recipe_name?: unknown }>({
+  artifactRole,
   keys,
   readArtifactText,
   recipeName,
+  startupRecorder,
 }: {
+  artifactRole: string;
   keys: string[];
-  readArtifactText: (artifactKey: string) => Promise<string>;
+  readArtifactText: (artifactKey: string, artifactRole?: string) => Promise<string>;
   recipeName: string;
+  startupRecorder?: LatentMapStartupRecorder;
 }): Promise<LoadedRunOutput<T>[]> {
   const outputs = await Promise.all(
-    keys.map(async (key) => ({
-      fileName: path.basename(key),
-      path: key,
-      value: JSON.parse(await readArtifactText(key)) as T,
-    })),
+    keys.map(async (key) => {
+      const content = await readArtifactText(key, artifactRole);
+      const value = measureStartupSync(
+        startupRecorder,
+        "analysis-result-artifact-parse",
+        {
+          artifactKey: key,
+          artifactRole,
+          bytes: encodedTextByteLength(content),
+        },
+        () => JSON.parse(content) as T,
+      );
+
+      return {
+        fileName: path.basename(key),
+        path: key,
+        value,
+      };
+    }),
   );
 
   return outputs.filter(
@@ -619,14 +702,27 @@ function parseImageIdOrderMap(content: string): string[] {
 async function loadThumbnailAtlasesFromArtifacts({
   manifestPaths,
   readArtifactText,
+  startupRecorder,
 }: {
   manifestPaths: Record<string, string>;
-  readArtifactText: (artifactKey: string) => Promise<string>;
+  readArtifactText: (artifactKey: string, artifactRole?: string) => Promise<string>;
+  startupRecorder?: LatentMapStartupRecorder;
 }): Promise<LoadedThumbnailAtlas[]> {
   const atlases = await Promise.all(
     Object.values(manifestPaths).map(async (artifactKey) => {
       try {
-        return JSON.parse(await readArtifactText(artifactKey)) as LoadedThumbnailAtlas;
+        const content = await readArtifactText(artifactKey, "thumbnail-atlas");
+
+        return measureStartupSync(
+          startupRecorder,
+          "analysis-result-artifact-parse",
+          {
+            artifactKey,
+            artifactRole: "thumbnail-atlas",
+            bytes: encodedTextByteLength(content),
+          },
+          () => JSON.parse(content) as LoadedThumbnailAtlas,
+        );
       } catch {
         return null;
       }
