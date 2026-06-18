@@ -984,10 +984,18 @@ def _elapsed_ms(start: float) -> int:
 
 def _write_json(path: Path, payload: dict[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(payload, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
+    temp_path = path.with_name(
+        f".{path.name}.{threading.get_ident()}.{time.monotonic_ns()}.tmp"
     )
+    try:
+        temp_path.write_text(
+            json.dumps(payload, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        temp_path.replace(path)
+    finally:
+        if temp_path.exists():
+            temp_path.unlink()
 
 
 def _read_json(path: Path) -> dict[str, object]:

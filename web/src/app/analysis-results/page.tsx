@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ExternalLink, Plus } from "lucide-react";
 
+import { AddAnalysisVariantForm } from "@/components/add-analysis-variant-form";
 import { AnalysisJobAutoRefresh } from "@/components/analysis-job-auto-refresh";
 import { AnalysisStudioAnalysisFilter } from "@/components/analysis-studio-analysis-filter";
 import { AppSpaceShell } from "@/components/app-space-shell";
@@ -38,10 +39,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Spinner } from "@/components/ui/spinner";
 import { shouldAutoRefreshAnalysisJobs } from "@/lib/analysis-job-refresh";
 import {
   loadAnalysisStudioReadModel,
   type AnalysisStudioAnalysisSummary,
+  type AnalysisStudioJobStageSummary,
   type AnalysisStudioJobSummary,
   type AnalysisStudioReadModel,
 } from "@/lib/analysis-studio-read-model";
@@ -96,10 +99,6 @@ function collectionNames(analysis: AnalysisStudioAnalysisSummary): string {
   return names.length > 0 ? names.join(", ") : "No source Collections";
 }
 
-function variantCount(analysis: AnalysisStudioAnalysisSummary): string {
-  return formatCount(analysis.variants.length, "variant");
-}
-
 function analysisStatusLabel(status: string): string {
   if (status === "running") {
     return "Running Analysis";
@@ -116,8 +115,36 @@ function analysisStatusLabel(status: string): string {
   return "Pending Analysis";
 }
 
+function selectedAnalysisActivityStatus(
+  analysisStatus: string,
+  variantRows: Array<{ canOpenExplorer: boolean; status: string }>,
+): string {
+  if (variantRows.some((row) => shouldAutoRefreshAnalysisJobs([row.status]))) {
+    return "running";
+  }
+  const hasFailedVariant = variantRows.some((row) => row.status === "failed");
+  const hasReadyExplorer = variantRows.some(
+    (row) => row.status === "ready" && row.canOpenExplorer,
+  );
+  if (hasFailedVariant && hasReadyExplorer) {
+    return "partial";
+  }
+  if (hasFailedVariant) {
+    return "failed";
+  }
+  return analysisStatus;
+}
+
 function humanizeStageName(stageName: string | undefined): string {
   return stageName ? stageName.replaceAll("_", " ") : "stage unavailable";
+}
+
+function compactStageError(error: string): string {
+  const summary = error.split(":")[0]?.trim();
+  if (summary) {
+    return summary;
+  }
+  return error.length > 90 ? `${error.slice(0, 87)}...` : error;
 }
 
 function recipeLabelById(model: AnalysisStudioReadModel): Map<string, string> {
@@ -133,6 +160,26 @@ function selectedAnalysisJobs(
   return model.jobs.filter((job) =>
     analysis.analysisJobIds.includes(job.analysisJobId),
   );
+}
+
+function selectedAnalysisReadyRecipeIds(
+  analysis: AnalysisStudioAnalysisSummary,
+  model: AnalysisStudioReadModel,
+): string[] {
+  const resultsById = new Map(
+    model.results.map((result) => [result.analysisResultId, result]),
+  );
+  const recipeIds = new Set<string>();
+  for (const variant of analysis.variants) {
+    const result = resultsById.get(variant.analysisResultId);
+    if (result?.state !== "ready" || result.canOpenExplorer !== true) {
+      continue;
+    }
+    for (const recipeId of result.recipeIds) {
+      recipeIds.add(recipeId);
+    }
+  }
+  return [...recipeIds];
 }
 
 function jobStageLines(jobs: AnalysisStudioJobSummary[]): string[] {
@@ -157,10 +204,56 @@ function jobStageLines(jobs: AnalysisStudioJobSummary[]): string[] {
       recipeLabel,
     ].filter(Boolean);
     if (activeStage.error) {
-      parts.push(activeStage.error);
+      parts.push(compactStageError(activeStage.error));
     }
     return [parts.join(" · ")];
   });
+}
+
+function formatEmbeddingCounts(
+  counts: AnalysisStudioJobStageSummary["outputCounts"] | undefined,
+  missingLabel: string,
+  reusableLabel: string,
+): string {
+  if (!counts) {
+    return "Unavailable";
+  }
+  return `${counts.reusableEmbeddings} ${reusableLabel} · ${counts.missingEmbeddings} ${missingLabel}`;
+}
+
+function plannedEmbeddingCounts(
+  job: AnalysisStudioJobSummary,
+  counts: AnalysisStudioJobStageSummary["outputCounts"] | undefined,
+): AnalysisStudioJobStageSummary["outputCounts"] | undefined {
+  if (!counts) {
+    return undefined;
+  }
+  if (job.recipeIds.length <= 1) {
+    return counts;
+  }
+  const plannedEmbeddingTotal = job.scopeItemCount * job.recipeIds.length;
+  if (job.scopeItemCount <= 0 || plannedEmbeddingTotal <= 0) {
+    return undefined;
+  }
+  if (
+    counts.reusableEmbeddings === 0 &&
+    counts.missingEmbeddings === plannedEmbeddingTotal
+  ) {
+    return {
+      missingEmbeddings: job.scopeItemCount,
+      reusableEmbeddings: 0,
+    };
+  }
+  if (
+    counts.missingEmbeddings === 0 &&
+    counts.reusableEmbeddings === plannedEmbeddingTotal
+  ) {
+    return {
+      missingEmbeddings: 0,
+      reusableEmbeddings: job.scopeItemCount,
+    };
+  }
+  return undefined;
 }
 
 function selectedAnalysisVariantRows(
@@ -173,7 +266,7 @@ function selectedAnalysisVariantRows(
   const jobsById = new Map(model.jobs.map((job) => [job.analysisJobId, job]));
   const recipesById = recipeLabelById(model);
 
-  return analysis.variants.map((variant, index) => {
+  const rows = analysis.variants.map((variant, index) => {
     const result = resultsById.get(variant.analysisResultId);
     const embeddingStage = result
       ? jobsById
@@ -202,17 +295,78 @@ function selectedAnalysisVariantRows(
       label: `Variant ${index + 1}`,
       recipeLabel: recipeLabels.join(", ") || "Recipe unavailable",
       embeddingCache: embeddingCounts
-        ? `${embeddingCounts.reusableEmbeddings} cached · ${embeddingCounts.missingEmbeddings} computed`
+        ? formatEmbeddingCounts(embeddingCounts, "computed", "reused")
         : "Unavailable",
       status: variant.status,
       variantStorage: formatBytes(result?.storageTotals.totalBytes ?? 0),
     };
   });
+
+  const representedResultIds = new Set(
+    analysis.variants.map((variant) => variant.analysisResultId),
+  );
+  const plannedRows = selectedAnalysisJobs(analysis, model).flatMap((job) => {
+    const jobResultRecipeIds = new Set(
+      job.analysisResultIds.flatMap((resultId) => {
+        const result = resultsById.get(resultId);
+        return result?.recipeIds ?? [];
+      }),
+    );
+    if (!["queued", "running", "stopping", "failed", "partial_failed"].includes(job.status)) {
+      return [];
+    }
+
+    return job.recipeIds
+      .filter((recipeId) => !jobResultRecipeIds.has(recipeId))
+      .map((recipeId, recipeIndex) => {
+        const stageForRecipe = job.stages.find(
+          (stage) => stage.recipeId === recipeId,
+        );
+        const embeddingStage = job.stages.find(
+          (stage) => stage.stageName === "embedding_planning" && stage.outputCounts,
+        );
+        const status =
+          stageForRecipe?.status ??
+          (job.status === "partial_failed" ? "failed" : job.status);
+        return {
+          analysisResultId: `planned-${job.analysisJobId}-${recipeId}-${recipeIndex}`,
+          canOpenExplorer: false,
+          explorerHref: undefined,
+          imageCount: job.scopeItemCount,
+          label: `Variant ${rows.length + recipeIndex + 1}`,
+          recipeLabel: recipesById.get(recipeId) ?? recipeId,
+          embeddingCache: formatEmbeddingCounts(
+            stageForRecipe?.outputCounts ??
+              plannedEmbeddingCounts(job, embeddingStage?.outputCounts),
+            "needed",
+            "reusable",
+          ),
+          status,
+          variantStorage: "Unavailable",
+        };
+      });
+  });
+
+  for (const row of plannedRows) {
+    if (representedResultIds.has(row.analysisResultId)) {
+      continue;
+    }
+    rows.push(row);
+    representedResultIds.add(row.analysisResultId);
+  }
+
+  return rows.map((row, index) => ({
+    ...row,
+    label: `Variant ${index + 1}`,
+  }));
 }
 
 function jobActivityText(jobs: AnalysisStudioJobSummary[]): string {
   if (jobs.length === 0) {
     return "No jobs yet.";
+  }
+  if (jobs.length > 1) {
+    return formatCount(jobs.length, "job");
   }
   return jobs.map((job) => job.analysisJobId).join(", ");
 }
@@ -286,6 +440,48 @@ export async function createAnalysisAction(formData: FormData) {
   }
 
   redirect(createAnalysisStudioHref({ analysisId, state: "selected-analysis" }));
+}
+
+export async function createAnalysisVariantAction(formData: FormData) {
+  "use server";
+
+  const analysisId = formString(formData, "analysis_id");
+  const response = await fetch(
+    analysisApiUrl(`/analyses/${encodeURIComponent(analysisId)}/variants`),
+    {
+      body: JSON.stringify({
+        recipe_ids: formStringList(formData, "recipe_ids"),
+      }),
+      cache: "no-store",
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    },
+  );
+  const payload = (await response
+    .json()
+    .catch((): Record<string, unknown> => ({}))) as {
+    analysis?: { analysis_id?: unknown };
+    detail?: unknown;
+  };
+  const redirectedAnalysisId =
+    typeof payload.analysis?.analysis_id === "string"
+      ? payload.analysis.analysis_id
+      : analysisId;
+
+  if (!response.ok || !redirectedAnalysisId) {
+    const searchParams = new URLSearchParams({ analysisId });
+    if (typeof payload.detail === "string" && payload.detail.trim() !== "") {
+      searchParams.set("variantError", payload.detail);
+    }
+    redirect(`/analysis-results?${searchParams}`);
+  }
+
+  redirect(
+    createAnalysisStudioHref({
+      analysisId: redirectedAnalysisId,
+      state: "selected-analysis",
+    }),
+  );
 }
 
 function AnalysisStudioSidebar({
@@ -401,6 +597,10 @@ function SelectedAnalysisOverview({
   const jobs = selectedAnalysisJobs(analysis, model);
   const variantRows = selectedAnalysisVariantRows(analysis, model);
   const stageLines = jobStageLines(jobs);
+  const activityStatus = selectedAnalysisActivityStatus(
+    analysis.status,
+    variantRows,
+  );
 
   return (
     <section
@@ -422,11 +622,11 @@ function SelectedAnalysisOverview({
         </CardHeader>
         <CardContent className="space-y-2">
           <div className="flex flex-wrap items-center gap-2">
-            <Badge variant={analysis.status === "failed" ? "destructive" : "outline"}>
-              {analysisStatusLabel(analysis.status)}
+            <Badge variant={activityStatus === "failed" ? "destructive" : "outline"}>
+              {analysisStatusLabel(activityStatus)}
             </Badge>
             <span className="text-sm text-muted-foreground">
-              {variantCount(analysis)}
+              {formatCount(variantRows.length, "variant")}
             </span>
           </div>
           {jobs.length > 0 ? (
@@ -446,50 +646,75 @@ function SelectedAnalysisOverview({
         </CardContent>
       </Card>
 
-      <Card size="sm" className="lg:col-span-2">
+      <Card size="sm" className="min-w-0 lg:col-span-2">
         <CardHeader>
           <CardTitle>Variants</CardTitle>
+          <div data-slot="card-action">
+            <AddAnalysisVariantForm
+              action={createAnalysisVariantAction}
+              analysisId={analysis.analysisId}
+              disabledRecipeIds={selectedAnalysisReadyRecipeIds(analysis, model)}
+              recipes={model.recipes}
+              sourceCollections={analysis.sourceCollections}
+            />
+          </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="min-w-0">
           {variantRows.length > 0 ? (
-            <Table>
+            <Table className="min-w-[44rem] text-xs">
               <TableHeader>
                 <TableRow>
-                  <TableHead>Variant</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Recipe</TableHead>
-                  <TableHead>Images</TableHead>
-                  <TableHead>Embedding cache</TableHead>
-                  <TableHead>Variant storage</TableHead>
-                  <TableHead className="text-right">Action</TableHead>
+                  <TableHead className="h-8 px-1.5">Variant</TableHead>
+                  <TableHead className="h-8 px-1.5">Status</TableHead>
+                  <TableHead className="h-8 px-1.5">Recipe</TableHead>
+                  <TableHead className="h-8 px-1.5">Images</TableHead>
+                  <TableHead
+                    className="h-8 px-1.5"
+                    title="Reusable per-image embeddings for this recipe"
+                  >
+                    Image embeddings
+                  </TableHead>
+                  <TableHead className="h-8 px-1.5">Storage</TableHead>
+                  <TableHead className="h-8 px-1.5 text-right">Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {variantRows.map((row) => (
                   <TableRow key={row.analysisResultId}>
-                    <TableCell className="font-medium">{row.label}</TableCell>
-                    <TableCell>
+                    <TableCell className="px-1.5 py-2 font-medium">
+                      {row.label}
+                    </TableCell>
+                    <TableCell className="px-1.5 py-2">
                       <Badge
                         variant={
                           row.status === "failed" ? "destructive" : "outline"
                         }
                       >
+                        {shouldAutoRefreshAnalysisJobs([row.status]) ? (
+                          <Spinner className="size-3" data-icon="inline-start" />
+                        ) : null}
                         {row.status}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {row.recipeLabel}
+                    <TableCell
+                      className="max-w-36 px-1.5 py-2 text-muted-foreground"
+                      title={row.recipeLabel}
+                    >
+                      <span className="block truncate">{row.recipeLabel}</span>
                     </TableCell>
-                    <TableCell className="text-muted-foreground">
+                    <TableCell className="px-1.5 py-2 text-muted-foreground">
                       {formatCount(row.imageCount, "image")}
                     </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {row.embeddingCache}
+                    <TableCell
+                      className="max-w-36 px-1.5 py-2 text-muted-foreground"
+                      title={row.embeddingCache}
+                    >
+                      <span className="block truncate">{row.embeddingCache}</span>
                     </TableCell>
-                    <TableCell className="text-muted-foreground">
+                    <TableCell className="px-1.5 py-2 text-muted-foreground">
                       {row.variantStorage}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="px-1.5 py-2 text-right">
                       {row.canOpenExplorer && row.explorerHref ? (
                         <Link
                           className={buttonVariants({
@@ -503,7 +728,7 @@ function SelectedAnalysisOverview({
                         </Link>
                       ) : (
                         <span className="text-xs text-muted-foreground">
-                          Explorer unavailable
+                          Unavailable
                         </span>
                       )}
                     </TableCell>

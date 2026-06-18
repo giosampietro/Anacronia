@@ -9,7 +9,10 @@ vi.mock("next/navigation", () => ({
   }),
 }));
 
-import AnalysisResultsPage, { createAnalysisAction } from "@/app/analysis-results/page";
+import AnalysisResultsPage, {
+  createAnalysisAction,
+  createAnalysisVariantAction,
+} from "@/app/analysis-results/page";
 
 function normalizeServerHtml(html: string): string {
   return html.replaceAll("<!-- -->", "");
@@ -70,6 +73,15 @@ function stubAnalysisStudioFetch() {
               source_collections: [{ label: "Bread", slug: "bread" }],
               status: "pending",
               title: "Unavailable Variant study",
+              variants: [],
+            },
+            {
+              analysis_id: "analysis-20260614T180000Z",
+              analysis_job_ids: ["analysis-job-20260614T180000Z"],
+              recipe_ids: ["dinov3_vits_384"],
+              source_collections: [{ label: "Hands/Mani", slug: "hands-mani" }],
+              status: "running",
+              title: "Planning-only run",
               variants: [],
             },
           ],
@@ -219,7 +231,16 @@ function stubAnalysisStudioFetch() {
                 "analysis-result-20260614T150000Z-dinov3_vits_384",
               ],
               recipe_ids: ["dinov3_vits_384", "dinov3_vits_512"],
+              scope_item_count: 40,
               stages: [
+                {
+                  output_counts: {
+                    missing_embeddings: 80,
+                    reusable_embeddings: 0,
+                  },
+                  stage_name: "embedding_planning",
+                  status: "ready",
+                },
                 {
                   recipe_id: "dinov3_vits_384",
                   stage_name: "result_registration",
@@ -241,11 +262,21 @@ function stubAnalysisStudioFetch() {
               analysis_job_id: "analysis-job-20260614T160000Z",
               analysis_result_ids: [],
               recipe_ids: ["dinov3_vits_384"],
+              scope_item_count: 40,
               stages: [
                 {
-                  error: "clustering failed",
+                  output_counts: {
+                    missing_embeddings: 40,
+                    reusable_embeddings: 0,
+                  },
+                  stage_name: "embedding_planning",
+                  status: "ready",
+                },
+                {
+                  error:
+                    "Hugging Face access failed: DINOv3 is gated for this process. Run batch-cmd/login-huggingface.command, confirm model access, then restart Anacronia so the backend reads .hf-cache/token.",
                   recipe_id: "dinov3_vits_384",
-                  stage_name: "cluster_projection",
+                  stage_name: "embedding_computation",
                   status: "failed",
                 },
               ],
@@ -270,6 +301,24 @@ function stubAnalysisStudioFetch() {
                 },
               ],
               status: "partial_failed",
+              viewer_hrefs: [],
+            },
+            {
+              analysis_job_id: "analysis-job-20260614T180000Z",
+              analysis_result_ids: [],
+              recipe_ids: ["dinov3_vits_384"],
+              scope_item_count: 40,
+              stages: [
+                {
+                  output_counts: {
+                    missing_embeddings: 30,
+                    reusable_embeddings: 10,
+                  },
+                  stage_name: "embedding_planning",
+                  status: "ready",
+                },
+              ],
+              status: "running",
               viewer_hrefs: [],
             },
           ],
@@ -320,13 +369,16 @@ describe("AnalysisResultsPage", () => {
     expect(html).toContain("Job activity");
     expect(html).toContain("analysis-job-20260614T130000Z");
     expect(html).toContain("Variants");
+    expect(html).toContain("Run variant");
     expect(html).toContain("DINOv3 ViT-S 384px");
     expect(html).toContain("40 images");
-    expect(html).toContain("Embedding cache");
-    expect(html).toContain("40 cached · 0 computed");
+    expect(html).toContain("Image embeddings");
+    expect(html).toContain("40 reused · 0 computed");
+    expect(html).not.toContain("Embedding cache");
+    expect(html).not.toContain("40 cached");
     expect(html).not.toContain("Shared embeddings");
     expect(html).not.toContain("40 reused · 0 new");
-    expect(html).toContain("Variant storage");
+    expect(html).toContain("Storage");
     expect(html).toContain("6.6 MB");
     expect(html).toContain("Open Explorer");
     expect(html).toContain(
@@ -375,9 +427,34 @@ describe("AnalysisResultsPage", () => {
     expect(html).toContain("Running Analysis");
     expect(html).toContain("embedding computation");
     expect(html).toContain("DINOv3 ViT-S 512px");
-    expect(html).toContain("Variants will appear when this job produces Results.");
+    expect(html).toContain("Variant 1");
+    expect(html).toContain("running");
+    expect(html).toContain("Unavailable");
+    expect(html).not.toContain("Variants will appear when this job produces Results.");
     expect(html).not.toContain("<h1");
     expect(html).not.toContain(">DINO comparison</h");
+  });
+
+  it("does not mark a planned running Variant ready from embedding planning", async () => {
+    stubAnalysisStudioFetch();
+
+    const html = normalizeServerHtml(
+      renderToString(
+        await AnalysisResultsPage({
+          searchParams: Promise.resolve({
+            analysisId: "analysis-20260614T180000Z",
+          }),
+        }),
+      ),
+    );
+
+    expect(html).toContain("Running Analysis");
+    expect(html).toContain("Variant 1");
+    expect(html).toContain("running");
+    expect(html).toContain("10 reusable · 30 needed");
+    expect(html).toContain("Unavailable");
+    expect(html).not.toContain(">ready<");
+    expect(html).not.toContain("Open Explorer");
   });
 
   it("renders partial selected Analysis without flattening it to ready", async () => {
@@ -398,11 +475,12 @@ describe("AnalysisResultsPage", () => {
     expect(html).toContain("UMAP failed");
     expect(html).toContain("Variant 1");
     expect(html).toContain("Open Explorer");
+    expect(html).toContain("0 reusable · 40 needed");
     expect(html).not.toContain("partial_failed");
     expect(html).not.toContain("No Variants were produced.");
   });
 
-  it("renders failed selected Analysis with failure context and no Variant action", async () => {
+  it("renders failed selected Analysis with a retryable failed Variant row", async () => {
     stubAnalysisStudioFetch();
 
     const html = normalizeServerHtml(
@@ -418,9 +496,15 @@ describe("AnalysisResultsPage", () => {
     expect(html).toContain("Selected Analysis overview");
     expect(html).toContain("Hands/Mani");
     expect(html).toContain("Failed Analysis");
-    expect(html).toContain("failed · cluster projection");
-    expect(html).toContain("clustering failed");
-    expect(html).toContain("No Variants were produced.");
+    expect(html).toContain("failed · embedding computation");
+    expect(html).toContain("Hugging Face access failed");
+    expect(html).not.toContain("Run batch-cmd/login-huggingface.command");
+    expect(html).toContain("Run variant");
+    expect(html).toContain("Variant 1");
+    expect(html).toContain("40 images");
+    expect(html).toContain("0 reusable · 40 needed");
+    expect(html).toContain("Unavailable");
+    expect(html).not.toContain("No Variants were produced.");
     expect(html).not.toContain("Open Explorer");
   });
 
@@ -443,9 +527,9 @@ describe("AnalysisResultsPage", () => {
     expect(html).toContain("failed");
     expect(html).toContain("DINOv3 ViT-S 384px");
     expect(html).toContain("DINOv3 ViT-S 512px");
-    expect(html).toContain("0 cached · 25 computed");
+    expect(html).toContain("0 reused · 25 computed");
     expect(html).toContain("300 KB");
-    expect(html).toContain("Explorer unavailable");
+    expect(html).toContain("Unavailable");
     expect(html).not.toContain("Open Explorer");
     expect(html).not.toContain(
       "href=\"/latent-map?analysisResultId=analysis-result-20260614T170000Z-dinov3_vits_384\"",
@@ -525,6 +609,45 @@ describe("AnalysisResultsPage", () => {
     );
     expect(redirect).toHaveBeenCalledWith(
       "/analysis-results?analysisId=analysis-20260616T210000Z",
+    );
+  });
+
+  it("submits Variant form data under the selected Analysis", async () => {
+    const fetchMock = vi.fn(async () => (
+      Response.json(
+        {
+          analysis: {
+            analysis_id: "analysis-20260614T130000Z",
+          },
+          analysis_job: {
+            analysis_job_id: "analysis-job-20260616T220000Z",
+            status: "running",
+          },
+        },
+        { status: 201 },
+      )
+    ));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const form = new FormData();
+    form.append("analysis_id", "analysis-20260614T130000Z");
+    form.append("recipe_ids", "dinov3_vits_512");
+
+    await createAnalysisVariantAction(form);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:18670/analyses/analysis-20260614T130000Z/variants",
+      {
+        body: JSON.stringify({
+          recipe_ids: ["dinov3_vits_512"],
+        }),
+        cache: "no-store",
+        headers: { "content-type": "application/json" },
+        method: "POST",
+      },
+    );
+    expect(redirect).toHaveBeenCalledWith(
+      "/analysis-results?analysisId=analysis-20260614T130000Z",
     );
   });
 });

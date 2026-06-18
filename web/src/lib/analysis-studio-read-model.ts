@@ -44,6 +44,7 @@ export type AnalysisStudioJobSummary = {
   analysisResultIds: string[];
   recipeIds: string[];
   recipeLabels: string[];
+  scopeItemCount: number;
   stages: AnalysisStudioJobStageSummary[];
   status: string;
   viewerHrefs: string[];
@@ -176,6 +177,7 @@ type AnalysisJobApiItem = {
   analysis_job_id?: unknown;
   analysis_result_ids?: unknown;
   recipe_ids?: unknown;
+  scope_item_count?: unknown;
   stages?: unknown;
   status?: unknown;
   viewer_hrefs?: unknown;
@@ -630,6 +632,7 @@ function normalizeJobs(
         analysisJobId,
         analysisResultIds: normalizeStringList(job.analysis_result_ids),
         recipeIds: normalizeStringList(job.recipe_ids),
+        scopeItemCount: normalizeNumber(job.scope_item_count),
         stages: normalizeJobStages(job.stages),
         status: normalizeString(job.status) ?? "unknown",
         viewerHrefs: normalizeStringList(job.viewer_hrefs),

@@ -359,6 +359,162 @@ def test_analysis_api_can_create_analysis_and_start_initial_job(tmp_path):
     ]
 
 
+def test_analysis_api_starts_variant_job_under_existing_analysis_scope(tmp_path):
+    storage = create_collection(tmp_path, display_name="Bread")
+    stage_runner = FakeStageRunner()
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            analysis_stage_runner=stage_runner,
+        )
+    )
+    created = client.post(
+        "/analyses",
+        json={
+            "collection_slugs": ["bread"],
+            "recipe_ids": ["dinov3_vits_384"],
+            "title": "Bread visual study",
+        },
+    ).json()["analysis"]
+
+    response = client.post(
+        f"/analyses/{created['analysis_id']}/variants",
+        json={"recipe_ids": ["dinov3_vits_512"]},
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert str(storage.data_root) not in json.dumps(payload)
+    analysis = payload["analysis"]
+    analysis_job = payload["analysis_job"]
+    assert analysis["analysis_id"] == created["analysis_id"]
+    assert analysis["source_collections"] == [{"label": "Bread", "slug": "bread"}]
+    assert analysis["analysis_job_ids"] == [analysis_job["analysis_job_id"]]
+    assert analysis_job["recipe_ids"] == ["dinov3_vits_512"]
+    assert analysis_job["status"] == "running"
+
+    listed = client.get("/analyses").json()["analyses"]
+    assert [item["analysis_id"] for item in listed] == [created["analysis_id"]]
+
+    ready_payload = wait_for_api_job_status(
+        client,
+        analysis_job["analysis_job_id"],
+        "ready",
+    )
+    loaded = client.get(f"/analyses/{created['analysis_id']}").json()["analysis"]
+    assert loaded["analysis_job_ids"] == [ready_payload["analysis_job_id"]]
+    assert loaded["status"] == "ready"
+    assert loaded["variants"] == [
+        {
+            "analysis_result_id": ready_payload["analysis_result_ids"][0],
+            "explorer_href": (
+                "/latent-map?analysisResultId="
+                f"{ready_payload['analysis_result_ids'][0]}"
+            ),
+            "status": "ready",
+        }
+    ]
+
+
+def test_analysis_api_rejects_duplicate_ready_variant_recipe(tmp_path):
+    storage = create_collection(tmp_path, display_name="Bread")
+    manifest = analysis_result_manifest()
+    write_manifest_artifacts(storage.data_root, manifest)
+    LocalAnalysisResultRegistry(storage.data_root).register(manifest)
+    client = TestClient(
+        create_app(database_path=storage.database_path, data_root=storage.data_root)
+    )
+    created = client.post(
+        "/analyses",
+        json={
+            "collection_slugs": ["bread"],
+            "recipe_ids": ["dinov3_vits_384"],
+            "title": "Bread visual study",
+        },
+    ).json()["analysis"]
+    store = LocalAnalysisStore(storage.data_root)
+    store.attach_analysis_result(
+        analysis_id=created["analysis_id"],
+        analysis_result_id=manifest["analysis_result_id"],
+    )
+
+    response = client.post(
+        f"/analyses/{created['analysis_id']}/variants",
+        json={"recipe_ids": ["dinov3_vits_384"]},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == (
+        "Analysis already has a ready Variant for recipe: dinov3_vits_384."
+    )
+    loaded = client.get(f"/analyses/{created['analysis_id']}").json()["analysis"]
+    assert loaded["analysis_job_ids"] == [manifest["analysis_job_id"]]
+    assert loaded["variants"] == [
+        {
+            "analysis_result_id": manifest["analysis_result_id"],
+            "explorer_href": (
+                "/latent-map?analysisResultId="
+                "analysis-result-20260614T130000Z-dinov3_vits_384"
+            ),
+            "status": "ready",
+        }
+    ]
+
+
+def test_analysis_api_allows_retrying_incomplete_variant_recipe(tmp_path):
+    storage = create_collection(tmp_path, display_name="Bread")
+    manifest = analysis_result_manifest()
+    LocalAnalysisResultRegistry(storage.data_root).register(manifest)
+    stage_runner = FakeStageRunner()
+    client = TestClient(
+        create_app(
+            database_path=storage.database_path,
+            data_root=storage.data_root,
+            analysis_stage_runner=stage_runner,
+        )
+    )
+    created = client.post(
+        "/analyses",
+        json={
+            "collection_slugs": ["bread"],
+            "recipe_ids": ["dinov3_vits_384"],
+            "title": "Bread visual study",
+        },
+    ).json()["analysis"]
+    store = LocalAnalysisStore(storage.data_root)
+    store.attach_analysis_result(
+        analysis_id=created["analysis_id"],
+        analysis_result_id=manifest["analysis_result_id"],
+    )
+
+    response = client.post(
+        f"/analyses/{created['analysis_id']}/variants",
+        json={"recipe_ids": ["dinov3_vits_384"]},
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    analysis_job = payload["analysis_job"]
+    assert payload["analysis"]["analysis_id"] == created["analysis_id"]
+    assert analysis_job["recipe_ids"] == ["dinov3_vits_384"]
+
+    ready_payload = wait_for_api_job_status(
+        client,
+        analysis_job["analysis_job_id"],
+        "ready",
+    )
+    loaded = client.get(f"/analyses/{created['analysis_id']}").json()["analysis"]
+    assert loaded["analysis_job_ids"] == [
+        manifest["analysis_job_id"],
+        ready_payload["analysis_job_id"],
+    ]
+    assert [variant["analysis_result_id"] for variant in loaded["variants"]] == [
+        manifest["analysis_result_id"],
+        ready_payload["analysis_result_ids"][0],
+    ]
+
+
 def test_analysis_api_requires_title_and_renames_title_only(tmp_path):
     storage = create_collection(tmp_path, display_name="Bread")
     client = TestClient(
@@ -908,6 +1064,7 @@ def test_analysis_job_api_starts_job_and_returns_openable_result(tmp_path):
     assert payload["status"] == "running"
     assert payload["recipe_ids"] == ["dinov3_vits_384"]
     assert payload["analysis_result_ids"] == []
+    assert payload["scope_item_count"] == 2
     assert payload["analysis_job_id"].startswith("analysis-job-")
     assert "manifest_path" not in payload
     assert str(storage.data_root) not in json.dumps(payload)
@@ -983,6 +1140,7 @@ def test_analysis_job_api_default_runner_fails_truthfully_without_fake_result(
     )
     assert "production runner unavailable in test" in failed_payload["stages"][-1]["error"]
     assert failed_payload["stages"][-1]["stage_name"] == "embedding_computation"
+    assert failed_payload["scope_item_count"] == 2
 
     result_dirs = list((storage.data_root / "analysis-results").glob("*/analysis-result.json"))
     assert result_dirs == []

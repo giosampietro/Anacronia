@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 import json
+import os
 from pathlib import Path
 import sqlite3
 
@@ -32,6 +33,31 @@ from anacronia.met_ingest import (
 )
 from anacronia.provider_adapters import ProviderIngestRequest
 from anacronia.storage import initialize_storage
+
+
+def test_create_app_sets_project_huggingface_cache_when_unset(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("HF_HOME", raising=False)
+
+    create_app(database_path=tmp_path / "anacronia.sqlite", data_root=tmp_path)
+
+    assert Path(os.environ["HF_HOME"]) == (
+        Path(__file__).resolve().parents[1] / ".hf-cache"
+    )
+
+
+def test_create_app_preserves_existing_huggingface_cache(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    custom_hf_home = tmp_path / "hf-home"
+    monkeypatch.setenv("HF_HOME", str(custom_hf_home))
+
+    create_app(database_path=tmp_path / "anacronia.sqlite", data_root=tmp_path)
+
+    assert Path(os.environ["HF_HOME"]) == custom_hf_home
 
 
 def write_local_test_image(path: Path, *, size: tuple[int, int] = (640, 320)) -> None:
