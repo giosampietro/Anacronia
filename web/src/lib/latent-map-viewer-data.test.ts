@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  mergeLatentMapViewerDataThumbnailAtlases,
   normalizeExportedLatentMapViewerData,
+  normalizeExportedLatentMapThumbnailAtlas,
   normalizeLatentMapNeighborResponse,
   normalizeLatentMapRelationResponse,
 } from "@/lib/latent-map-viewer-data";
@@ -317,6 +319,81 @@ describe("normalizeExportedLatentMapViewerData", () => {
     expect(data.thumbnail_atlas?.items[0].uv_rect).toEqual([
       0.0078125, 0.0703125, 0.484375, 0.359375,
     ]);
+  });
+
+  it("exposes normalized atlas manifest URLs without hydrating the manifests", () => {
+    const data = normalizeExportedLatentMapViewerData({
+      atlasManifestApiPath:
+        "/api/latent-map/atlas-manifests?analysisResultId=result-1",
+      rawData: {
+        run_id: "result-1",
+        thumbnail_atlas_manifest_paths: {
+          "32": "viewer/atlases/32px/atlas-manifest.json",
+          "64": "viewer/atlases/64px/atlas-manifest.json",
+        },
+      },
+      sourceFolder: "Fixture",
+      thumbnailApiPath:
+        "/api/latent-map/thumbnails?analysisResultId=result-1",
+      thumbnailResourceParamName: "artifactKey",
+    });
+
+    expect(data.thumbnail_atlases).toBeUndefined();
+    expect(data.thumbnail_atlas_manifest_urls).toEqual({
+      "32":
+        "/api/latent-map/atlas-manifests?analysisResultId=result-1&artifactKey=viewer%2Fatlases%2F32px%2Fatlas-manifest.json",
+      "64":
+        "/api/latent-map/atlas-manifests?analysisResultId=result-1&artifactKey=viewer%2Fatlases%2F64px%2Fatlas-manifest.json",
+    });
+  });
+
+  it("normalizes a lazily fetched atlas manifest and merges it into viewer data", () => {
+    const baseData = normalizeExportedLatentMapViewerData({
+      rawData: {
+        points: [],
+        run_id: "run-1",
+        thumbnail_atlas_manifest_paths: {
+          "96": "viewer/atlases/96px/atlas-manifest.json",
+        },
+      },
+      sourceFolder: "Fixture",
+      thumbnailApiPath: "/api/latent-map/thumbnails?run=run-1",
+    });
+    const atlas = normalizeExportedLatentMapThumbnailAtlas({
+      rawAtlas: {
+        asset_kind: "latent-map-thumbnail-atlas",
+        atlas_size: 512,
+        image_count: 1,
+        items: [],
+        page_count: 1,
+        pages: [
+          {
+            height: 512,
+            index: 0,
+            path: "viewer/atlases/96px/page-000.png",
+            width: 512,
+          },
+        ],
+        run_id: "run-1",
+        schema_version: 1,
+        tile_size: 96,
+      },
+      thumbnailApiPath: "/api/latent-map/thumbnails?run=run-1",
+      thumbnailResourceParamName: "path",
+    });
+
+    expect(atlas).toBeDefined();
+    const merged = mergeLatentMapViewerDataThumbnailAtlases(
+      baseData,
+      atlas ? [atlas] : [],
+    );
+
+    expect(merged.thumbnail_atlases?.map((entry) => entry.tile_size)).toEqual([
+      96,
+    ]);
+    expect(merged.thumbnail_atlas?.pages[0]?.path).toBe(
+      "/api/latent-map/thumbnails?run=run-1&path=viewer%2Fatlases%2F96px%2Fpage-000.png",
+    );
   });
 
   it("normalizes multiple generated atlas sizes for client-side LOD switching", () => {

@@ -206,6 +206,7 @@ export async function loadLatentMapViewerDataWithStartupMeasurement(
   const startupRecorder = options.measureStartup
     ? createLatentMapStartupRecorder()
     : undefined;
+  const shouldHydrateAtlases = shouldHydrateThumbnailAtlases(searchParams);
   const viewerDataPath = process.env.ANACRONIA_LATENT_MAP_VIEWER_DATA;
   const runsRoot = getLatentMapRunsRoot();
   const analysisResultId = getSearchParam(searchParams, "analysisResultId");
@@ -237,6 +238,7 @@ export async function loadLatentMapViewerDataWithStartupMeasurement(
           fallbackRawData?.cluster_id,
         selectedLayoutId:
           getSearchParam(searchParams, "layout") ?? fallbackRawData?.layout_id,
+        loadThumbnailAtlases: shouldHydrateAtlases,
         selectedRecipeName:
           getSearchParam(searchParams, "recipe") ?? fallbackRawData?.recipe_name,
         startupRecorder,
@@ -287,7 +289,7 @@ export async function loadLatentMapViewerDataWithStartupMeasurement(
     activeAnalysisResultSourceFolder ?? (await loadLatentMapSourceFolder(dataRunDir));
   const sourceFolder = loadedSourceFolder;
 
-  if (!activeAnalysisResultId) {
+  if (!activeAnalysisResultId && shouldHydrateAtlases) {
     await hydrateThumbnailAtlas({ rawData, runDir: dataRunDir });
   }
 
@@ -298,6 +300,13 @@ export async function loadLatentMapViewerDataWithStartupMeasurement(
             activeAnalysisResultId,
           )}`
         : `/api/latent-map/neighbors?run=${encodeURIComponent(
+            path.basename(dataRunDir),
+          )}`,
+      atlasManifestApiPath: activeAnalysisResultId
+        ? `/api/latent-map/atlas-manifests?analysisResultId=${encodeURIComponent(
+            activeAnalysisResultId,
+          )}`
+        : `/api/latent-map/atlas-manifests?run=${encodeURIComponent(
             path.basename(dataRunDir),
           )}`,
       rawData,
@@ -421,4 +430,10 @@ function shouldMeasureStartup(searchParams: LatentMapSearchParams): boolean {
     getSearchParam(searchParams, "startupMeasurement");
 
   return value === "1" || value === "true";
+}
+
+function shouldHydrateThumbnailAtlases(
+  searchParams: LatentMapSearchParams,
+): boolean {
+  return getSearchParam(searchParams, "mode") === "thumbnails";
 }

@@ -93,12 +93,14 @@ function appendResourceQueryParam({
 }
 
 export function normalizeExportedLatentMapViewerData({
+  atlasManifestApiPath = "/api/latent-map/atlas-manifests",
   rawData,
   neighborApiPath = "/api/latent-map/neighbors",
   sourceFolder,
   thumbnailApiPath = "/api/latent-map/thumbnails",
   thumbnailResourceParamName = "path",
 }: {
+  atlasManifestApiPath?: string;
   neighborApiPath?: string;
   rawData: ExportedLatentMapViewerData;
   sourceFolder: string;
@@ -115,6 +117,11 @@ export function normalizeExportedLatentMapViewerData({
     rawAtlases: rawData.thumbnail_atlases,
     singleAtlas: thumbnailAtlas,
     thumbnailApiPath,
+    thumbnailResourceParamName,
+  });
+  const thumbnailAtlasManifestUrls = normalizeThumbnailAtlasManifestUrls({
+    atlasManifestApiPath,
+    rawData,
     thumbnailResourceParamName,
   });
   const clusterResult = normalizeAvailableCluster(rawData.cluster_result);
@@ -148,6 +155,9 @@ export function normalizeExportedLatentMapViewerData({
     ...(neighborLookupPath ? { neighbor_lookup_path: neighborLookupPath } : {}),
     ...(thumbnailAtlas ? { thumbnail_atlas: thumbnailAtlas } : {}),
     ...(thumbnailAtlases.length > 0 ? { thumbnail_atlases: thumbnailAtlases } : {}),
+    ...(Object.keys(thumbnailAtlasManifestUrls).length > 0
+      ? { thumbnail_atlas_manifest_urls: thumbnailAtlasManifestUrls }
+      : {}),
     points: points.map((point): LatentMapPoint => {
       const thumbnailPath = String(point.thumbnail_path ?? "");
       const rawPreviewPath =
@@ -200,6 +210,112 @@ export function normalizeExportedLatentMapViewerData({
       };
     }),
   };
+}
+
+export function normalizeExportedLatentMapThumbnailAtlas({
+  expectedTileSize,
+  rawAtlas,
+  thumbnailApiPath = "/api/latent-map/thumbnails",
+  thumbnailResourceParamName = "path",
+}: {
+  expectedTileSize?: number;
+  rawAtlas: Partial<LatentMapGeneratedThumbnailAtlas> | undefined;
+  thumbnailApiPath?: string;
+  thumbnailResourceParamName?: string;
+}): LatentMapGeneratedThumbnailAtlas | undefined {
+  return normalizeThumbnailAtlas({
+    expectedTileSize,
+    rawAtlas,
+    thumbnailApiPath,
+    thumbnailResourceParamName,
+  });
+}
+
+export function mergeLatentMapViewerDataThumbnailAtlases(
+  data: LatentMapViewerData,
+  atlases: LatentMapGeneratedThumbnailAtlas[],
+): LatentMapViewerData {
+  if (atlases.length === 0) {
+    return data;
+  }
+
+  const atlasesBySize = new Map<number, LatentMapGeneratedThumbnailAtlas>();
+
+  [
+    ...(data.thumbnail_atlases ?? []),
+    ...(data.thumbnail_atlas ? [data.thumbnail_atlas] : []),
+    ...atlases,
+  ]
+    .filter((atlas) => Number.isFinite(atlas.tile_size) && atlas.tile_size > 0)
+    .forEach((atlas) => {
+      if (!atlasesBySize.has(atlas.tile_size)) {
+        atlasesBySize.set(atlas.tile_size, atlas);
+      }
+    });
+
+  const mergedAtlases = [...atlasesBySize.values()].sort(
+    (left, right) => left.tile_size - right.tile_size,
+  );
+  const primaryAtlas =
+    mergedAtlases.find((atlas) => atlas.tile_size === 64) ?? mergedAtlases[0];
+
+  return {
+    ...data,
+    ...(primaryAtlas ? { thumbnail_atlas: primaryAtlas } : {}),
+    ...(mergedAtlases.length > 0 ? { thumbnail_atlases: mergedAtlases } : {}),
+  };
+}
+
+function normalizeThumbnailAtlasManifestUrls({
+  atlasManifestApiPath,
+  rawData,
+  thumbnailResourceParamName,
+}: {
+  atlasManifestApiPath: string;
+  rawData: ExportedLatentMapViewerData;
+  thumbnailResourceParamName: string;
+}): Record<string, string> {
+  const manifestPaths = normalizeThumbnailAtlasManifestPaths(rawData);
+
+  return Object.fromEntries(
+    Object.entries(manifestPaths).map(([tileSize, manifestPath]) => [
+      tileSize,
+      createResourceUrl({
+        apiPath: atlasManifestApiPath,
+        resourcePath: manifestPath,
+        resourceParamName: thumbnailResourceParamName,
+      }),
+    ]),
+  );
+}
+
+function normalizeThumbnailAtlasManifestPaths(
+  rawData: ExportedLatentMapViewerData,
+): Record<string, string> {
+  if (rawData.thumbnail_atlas_manifest_paths) {
+    return Object.fromEntries(
+      Object.entries(rawData.thumbnail_atlas_manifest_paths).filter(
+        (entry): entry is [string, string] =>
+          entry[0].length > 0 &&
+          typeof entry[1] === "string" &&
+          entry[1].length > 0,
+      ),
+    );
+  }
+
+  if (
+    typeof rawData.thumbnail_atlas_manifest_path === "string" &&
+    rawData.thumbnail_atlas_manifest_path.length > 0
+  ) {
+    const tileSize =
+      /(?:^|\/)(\d+)px\/atlas-manifest\.json$/.exec(
+        rawData.thumbnail_atlas_manifest_path,
+      )?.[1] ?? "64";
+
+    return { [tileSize]: rawData.thumbnail_atlas_manifest_path };
+  }
+
+  return {};
 }
 
 function normalizeThumbnailAtlases({
@@ -354,15 +470,17 @@ function normalizeClusterGroups(groups: unknown[]): LatentMapClusterGroup[] {
 }
 
 function normalizeThumbnailAtlas({
+  expectedTileSize,
   rawAtlas,
   thumbnailApiPath,
   thumbnailResourceParamName,
 }: {
+  expectedTileSize?: number;
   rawAtlas: Partial<LatentMapGeneratedThumbnailAtlas> | undefined;
   thumbnailApiPath: string;
   thumbnailResourceParamName: string;
 }): LatentMapGeneratedThumbnailAtlas | undefined {
-  if (!rawAtlas) {
+  if (!isValidThumbnailAtlas(rawAtlas, expectedTileSize)) {
     return undefined;
   }
 
@@ -406,6 +524,89 @@ function normalizeThumbnailAtlas({
         })
       : [],
   };
+}
+
+function isValidThumbnailAtlas(
+  rawAtlas: Partial<LatentMapGeneratedThumbnailAtlas> | undefined,
+  expectedTileSize?: number,
+): rawAtlas is LatentMapGeneratedThumbnailAtlas {
+  if (!rawAtlas || typeof rawAtlas !== "object") {
+    return false;
+  }
+
+  const tileSize = Number(rawAtlas.tile_size);
+  const atlasSize = Number(rawAtlas.atlas_size);
+  const imageCount = Number(rawAtlas.image_count);
+  const pageCount = Number(rawAtlas.page_count);
+
+  if (
+    rawAtlas.schema_version !== 1 ||
+    rawAtlas.asset_kind !== "latent-map-thumbnail-atlas" ||
+    typeof rawAtlas.run_id !== "string" ||
+    rawAtlas.run_id.length === 0 ||
+    !isPositiveInteger(tileSize) ||
+    !isPositiveInteger(atlasSize) ||
+    !isNonNegativeInteger(imageCount) ||
+    !isNonNegativeInteger(pageCount) ||
+    (expectedTileSize !== undefined && tileSize !== expectedTileSize) ||
+    !Array.isArray(rawAtlas.pages) ||
+    rawAtlas.pages.length !== pageCount ||
+    !Array.isArray(rawAtlas.items)
+  ) {
+    return false;
+  }
+
+  return (
+    rawAtlas.pages.every(isValidThumbnailAtlasPage) &&
+    rawAtlas.items.every(isValidThumbnailAtlasItem)
+  );
+}
+
+function isValidThumbnailAtlasPage(
+  page: LatentMapGeneratedThumbnailAtlas["pages"][number],
+) {
+  return (
+    typeof page.path === "string" &&
+    page.path.length > 0 &&
+    isNonNegativeInteger(Number(page.index)) &&
+    isPositiveInteger(Number(page.width)) &&
+    isPositiveInteger(Number(page.height))
+  );
+}
+
+function isValidThumbnailAtlasItem(
+  item: LatentMapGeneratedThumbnailAtlas["items"][number],
+) {
+  return (
+    typeof item.image_id === "string" &&
+    item.image_id.length > 0 &&
+    typeof item.page_path === "string" &&
+    item.page_path.length > 0 &&
+    typeof item.source_thumbnail_path === "string" &&
+    item.source_thumbnail_path.length > 0 &&
+    isNonNegativeInteger(Number(item.page_index)) &&
+    isPositiveInteger(Number(item.width)) &&
+    isPositiveInteger(Number(item.height)) &&
+    isNumberTuple(item.tile_rect) &&
+    isNumberTuple(item.uv_rect) &&
+    (item.content_rect === undefined || isNumberTuple(item.content_rect))
+  );
+}
+
+function isNumberTuple(value: unknown): value is [number, number, number, number] {
+  return (
+    Array.isArray(value) &&
+    value.length === 4 &&
+    value.every((entry) => Number.isFinite(Number(entry)))
+  );
+}
+
+function isPositiveInteger(value: number) {
+  return Number.isInteger(value) && value > 0;
+}
+
+function isNonNegativeInteger(value: number) {
+  return Number.isInteger(value) && value >= 0;
 }
 
 function normalizeNumberTuple(

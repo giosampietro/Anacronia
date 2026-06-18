@@ -224,6 +224,39 @@ describe("LatentMapViewer", () => {
     expect(html).not.toContain("detail panel");
   });
 
+  it("keeps point rendering while thumbnail atlas manifests are pending", () => {
+    const html = renderToString(
+      <LatentMapViewer
+        data={{
+          ...latentMapFixture,
+          thumbnail_atlas: undefined,
+          thumbnail_atlas_manifest_urls: {
+            "64": "/api/latent-map/atlas-manifests?run=run-1&path=viewer%2Fatlases%2F64px%2Fatlas-manifest.json",
+          },
+          thumbnail_atlases: undefined,
+        }}
+        initialState={{
+          clusterFilter: "all",
+          faissNeighborCount: 20,
+          faissRelationMode: "closest",
+          renderMode: "thumbnails",
+          selectedImageId: null,
+          sourceFilter: "all",
+          textureDetail: "auto",
+          thumbnailSize: 64,
+          view: { offsetX: 0, offsetY: 0, zoom: 1 },
+        }}
+      />,
+    ).replaceAll("<!-- -->", "");
+
+    expect(html).toContain("data-render-mode=\"thumbnails\"");
+    expect(html).toContain("data-runtime-render-mode=\"points\"");
+    expect(html).toContain("data-thumbnail-atlas-manifest-pending=\"true\"");
+    expect(html).toContain("data-thumbnail-count=\"0\"");
+    expect(html).toContain("data-thumbnail-atlas-page-count=\"0\"");
+    expect(html).toContain("data-thumbnail-sprite-baseline-textures=\"0\"");
+  });
+
   it("renders method comparison selectors when alternate outputs are available", () => {
     const html = renderToString(
       <LatentMapViewer

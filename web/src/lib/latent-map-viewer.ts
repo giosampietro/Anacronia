@@ -36,6 +36,7 @@ export type LatentMapViewerData = {
   neighbor_lookup_path?: string;
   thumbnail_atlas?: LatentMapGeneratedThumbnailAtlas;
   thumbnail_atlases?: LatentMapGeneratedThumbnailAtlas[];
+  thumbnail_atlas_manifest_urls?: Record<string, string>;
   points: LatentMapPoint[];
 };
 
@@ -383,12 +384,54 @@ export function getLatentMapGeneratedThumbnailAtlases(
   );
 }
 
+export function getLatentMapThumbnailAtlasManifestStatus({
+  atlases,
+  manifestUrls,
+  unavailableTileSizes = [],
+}: {
+  atlases: LatentMapGeneratedThumbnailAtlas[];
+  manifestUrls?: Record<string, string>;
+  unavailableTileSizes?: number[];
+}): {
+  loadedTileSizes: number[];
+  pendingTileSizes: number[];
+  unavailableTileSizes: number[];
+} {
+  const manifestTileSizes = getSortedPositiveNumbers(
+    Object.keys(manifestUrls ?? {}).map(Number),
+  );
+  const loadedTileSizes = getSortedPositiveNumbers(
+    atlases.map((atlas) => atlas.tile_size),
+  );
+  const unavailableManifestTileSizes = getSortedPositiveNumbers(
+    unavailableTileSizes,
+  ).filter((tileSize) => manifestTileSizes.includes(tileSize));
+  const loadedTileSizeSet = new Set(loadedTileSizes);
+  const unavailableTileSizeSet = new Set(unavailableManifestTileSizes);
+
+  return {
+    loadedTileSizes,
+    pendingTileSizes: manifestTileSizes.filter(
+      (tileSize) =>
+        !loadedTileSizeSet.has(tileSize) &&
+        !unavailableTileSizeSet.has(tileSize),
+    ),
+    unavailableTileSizes: unavailableManifestTileSizes,
+  };
+}
+
 export function getLatentMapAvailableTextureDetails(
   data: LatentMapViewerData,
 ): number[] {
   return getLatentMapGeneratedThumbnailAtlases(data).map(
     (atlas) => atlas.tile_size,
   );
+}
+
+function getSortedPositiveNumbers(values: number[]) {
+  return [...new Set(values)]
+    .filter((value) => Number.isFinite(value) && value > 0)
+    .sort((left, right) => left - right);
 }
 
 export function getLatentMapThumbnailStateScaleMultiplier(
