@@ -6,6 +6,7 @@ from pathlib import Path
 
 from anacronia.analysis_result_contract import (
     analysis_result_artifact_counts,
+    analysis_result_artifact_required,
     analysis_result_explorer_readiness,
     assert_analysis_result_manifest_contract,
 )
@@ -122,13 +123,16 @@ class LocalAnalysisResultRegistry:
         if not results_dir.is_dir():
             return []
         return [
-            self.summarize(path.parent.name)
+            self.summarize(path.parent.name, validate_optional_artifacts=False)
             for path in sorted(results_dir.glob(f"*/{ANALYSIS_RESULT_MANIFEST_NAME}"))
         ]
 
-    def list_sibling_groups(self) -> list[AnalysisResultSiblingGroup]:
+    def list_sibling_groups(
+        self,
+        summaries: list[AnalysisResultSummary] | None = None,
+    ) -> list[AnalysisResultSiblingGroup]:
         groups: dict[str, list[AnalysisResultSummary]] = {}
-        for summary in self.list():
+        for summary in summaries if summaries is not None else self.list():
             group_id = summary.sibling_group_id or summary.analysis_result_id
             groups.setdefault(group_id, []).append(summary)
 
@@ -147,7 +151,12 @@ class LocalAnalysisResultRegistry:
             storage_totals=summary.storage_totals,
         )
 
-    def summarize(self, analysis_result_id: str) -> AnalysisResultSummary:
+    def summarize(
+        self,
+        analysis_result_id: str,
+        *,
+        validate_optional_artifacts: bool = True,
+    ) -> AnalysisResultSummary:
         manifest = self.load(analysis_result_id)
         artifacts = _manifest_artifacts(manifest)
         namespace = _analysis_result_namespace(str(manifest["analysis_result_id"]))
@@ -161,6 +170,8 @@ class LocalAnalysisResultRegistry:
                 },
             )
             for artifact in artifacts
+            if validate_optional_artifacts
+            or analysis_result_artifact_required(artifact)
         ]
         existing_artifact_keys = {
             state.key for state in artifact_states if state.exists
@@ -168,6 +179,7 @@ class LocalAnalysisResultRegistry:
         artifact_health = _artifact_health(
             artifacts=artifacts,
             existing_artifact_keys=existing_artifact_keys,
+            validate_optional_artifacts=validate_optional_artifacts,
         )
         status = str(manifest.get("status", ""))
         explorer_readiness = dict(artifact_health)
@@ -197,7 +209,11 @@ class LocalAnalysisResultRegistry:
             sibling_group_id=str(manifest.get("sibling_group_id", "")),
             status=status,
             staleness=_mapping(manifest.get("staleness")),
-            storage_totals=_storage_totals(artifact_states),
+            storage_totals=_storage_totals(
+                artifacts=artifacts,
+                states=artifact_states,
+                use_declared_optional_artifact_sizes=not validate_optional_artifacts,
+            ),
         )
 
     def _result_dir(self, analysis_result_id: str) -> Path:
@@ -308,18 +324,36 @@ def _scope_snapshot_id(manifest: dict[str, object]) -> str:
     return str(scope_snapshot.get("snapshot_id", ""))
 
 
-def _storage_totals(states: list[ArtifactState]) -> dict[str, int]:
+def _storage_totals(
+    *,
+    artifacts: list[dict[str, object]],
+    states: list[ArtifactState],
+    use_declared_optional_artifact_sizes: bool,
+) -> dict[str, int]:
     totals = {"durable": 0, "render-cache": 0, "total": 0, "viewer-cache": 0}
-    for state in states:
-        if not state.exists:
-            continue
-        byte_size = int(state.byte_size or 0)
-        totals["total"] += byte_size
-        retention_class = state.retention_class or "durable"
-        if retention_class in totals:
-            totals[retention_class] += byte_size
+    states_by_key = {state.key: state for state in states}
+    for artifact in artifacts:
+        key = str(artifact["key"])
+        state = states_by_key.get(key)
+        if state is not None:
+            if not state.exists:
+                continue
+            byte_size = int(state.byte_size or 0)
+        elif use_declared_optional_artifact_sizes and not analysis_result_artifact_required(
+            artifact
+        ):
+            byte_size = int(artifact.get("byte_size", 0) or 0)
         else:
-            totals["durable"] += byte_size
+            continue
+
+        retention_class = str(
+            artifact.get("retention_class")
+            or (state.retention_class if state is not None else "")
+        )
+        if retention_class not in totals:
+            retention_class = "durable"
+        totals["total"] += byte_size
+        totals[retention_class] += byte_size
     return totals
 
 
@@ -356,7 +390,14 @@ def _artifact_health(
     *,
     artifacts: list[dict[str, object]],
     existing_artifact_keys: set[str],
+    validate_optional_artifacts: bool = True,
 ) -> dict[str, object]:
+    if not validate_optional_artifacts:
+        existing_artifact_keys = existing_artifact_keys | {
+            str(artifact["key"])
+            for artifact in artifacts
+            if not analysis_result_artifact_required(artifact)
+        }
     health = analysis_result_explorer_readiness(
         artifacts=artifacts,
         existing_artifact_keys=existing_artifact_keys,

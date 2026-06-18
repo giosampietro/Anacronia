@@ -19,6 +19,10 @@ from anacronia.local_folder_import import (
     local_folder_source_image_identity,
     sha256_file,
 )
+from anacronia.local_folder_import_progress import (
+    get_active_local_folder_import_progress,
+    get_latest_local_folder_import_progress,
+)
 from anacronia.search_sets import create_or_continue_search_set
 from anacronia.storage import initialize_storage
 
@@ -244,3 +248,35 @@ def test_skips_corrupt_and_unsupported_files(tmp_path):
         "image_processing_failed",
         "unsupported_file_type",
     ]
+
+
+def test_import_records_completed_local_folder_progress(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    folder = tmp_path / "incoming"
+    write_image(folder / "valid.jpg")
+    (folder / "corrupt.png").write_bytes(b"not really an image")
+    (folder / "notes.txt").write_text("ignore me", encoding="utf-8")
+
+    create_local_folder_collection(
+        database_path=storage.database_path,
+        data_root=storage.data_root,
+        display_name="Mixed Folder",
+        folder_path=folder,
+    )
+
+    assert get_active_local_folder_import_progress(
+        database_path=storage.database_path
+    ) is None
+    latest_progress = get_latest_local_folder_import_progress(
+        database_path=storage.database_path
+    )
+    assert latest_progress is not None
+    assert latest_progress.status == "completed"
+    assert latest_progress.display_name == "Mixed Folder"
+    assert latest_progress.search_set_slug == "mixed-folder"
+    assert latest_progress.folder_path == folder
+    assert latest_progress.phase == "completed"
+    assert latest_progress.discovered_file_count == 3
+    assert latest_progress.processed_file_count == 3
+    assert latest_progress.imported_image_count == 1
+    assert latest_progress.skipped_file_count == 2

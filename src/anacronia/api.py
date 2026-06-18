@@ -88,6 +88,10 @@ from anacronia.local_folder_import import (
     create_local_folder_collection,
     import_local_image_folder,
 )
+from anacronia.local_folder_import_progress import (
+    LocalFolderImportProgress,
+    get_active_local_folder_import_progress,
+)
 from anacronia.local_folder_picker import (
     LocalFolderPickerCancelled,
     LocalFolderPickerUnavailable,
@@ -354,6 +358,22 @@ def serialize_local_folder_import_summary(
     }
 
 
+def serialize_local_folder_import_progress(
+    progress: LocalFolderImportProgress,
+) -> dict[str, object]:
+    return {
+        "status": progress.status,
+        "display_name": progress.display_name,
+        "search_set_slug": progress.search_set_slug,
+        "folder_path": str(progress.folder_path),
+        "phase": progress.phase,
+        "discovered_file_count": progress.discovered_file_count,
+        "processed_file_count": progress.processed_file_count,
+        "imported_image_count": progress.imported_image_count,
+        "skipped_file_count": progress.skipped_file_count,
+    }
+
+
 def serialize_analysis_job_summary(summary: AnalysisJobSummary) -> dict[str, object]:
     return serialize_analysis_job_manifest(summary.manifest_path)
 
@@ -416,7 +436,10 @@ def serialize_analysis_result_detail(
     registry: LocalAnalysisResultRegistry,
     analysis_result_id: str,
 ) -> dict[str, object]:
-    summary = registry.summarize(analysis_result_id)
+    summary = registry.summarize(
+        analysis_result_id,
+        validate_optional_artifacts=False,
+    )
     manifest = registry.load(analysis_result_id)
     browser_summary = browser_safe_analysis_result_summary(manifest)
     return {
@@ -926,7 +949,7 @@ def create_app(
     @app.get("/health")
     def health() -> dict[str, object]:
         worker_status = get_worker_status(database_path=resolved_database_path)
-        return {
+        payload = {
             "service": "api",
             "status": "ok",
             "worker": {
@@ -935,6 +958,14 @@ def create_app(
                 "active_collect_job_id": worker_status.active_collect_job_id,
             },
         }
+        active_local_folder_import = get_active_local_folder_import_progress(
+            database_path=resolved_database_path
+        )
+        if active_local_folder_import is not None:
+            payload["local_folder_import"] = serialize_local_folder_import_progress(
+                active_local_folder_import
+            )
+        return payload
 
     @app.get("/analysis-recipes")
     def get_analysis_recipes() -> dict[str, object]:
@@ -1133,15 +1164,16 @@ def create_app(
     @app.get("/analysis-results")
     def get_analysis_results() -> dict[str, object]:
         registry = LocalAnalysisResultRegistry(resolved_data_root)
+        summaries = registry.list()
         return {
             "results": [
                 serialize_analysis_result_summary(summary)
-                for summary in registry.list()
+                for summary in summaries
                 if summary.status != "deleted"
             ],
             "sibling_groups": [
                 sibling_group.to_public_dict()
-                for sibling_group in registry.list_sibling_groups()
+                for sibling_group in registry.list_sibling_groups(summaries=summaries)
             ],
         }
 

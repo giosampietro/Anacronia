@@ -19,11 +19,11 @@ class LocalFolderPickerUnavailable(RuntimeError):
 
 def choose_local_folder_path() -> Path:
     try:
-        return choose_local_folder_path_with_jxa()
+        return choose_local_folder_path_with_applescript()
     except LocalFolderPickerCancelled:
         raise
     except LocalFolderPickerUnavailable:
-        return choose_local_folder_path_with_applescript()
+        return choose_local_folder_path_with_jxa()
 
 
 def choose_local_folder_path_with_jxa() -> Path:
@@ -60,10 +60,7 @@ $.exit(2);
 
 def choose_local_folder_path_with_applescript() -> Path:
     prompt = escape_applescript_string("Choose a folder of images to import")
-    script = (
-        'tell application "Finder" to activate\n'
-        f'POSIX path of (choose folder with prompt "{prompt}")'
-    )
+    script = f'POSIX path of (choose folder with prompt "{prompt}")'
     result = run_osascript(["osascript", "-e", script])
     return parse_folder_picker_result(
         result,

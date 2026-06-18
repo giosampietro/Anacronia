@@ -324,7 +324,10 @@ def _analysis_variant(*, data_root: Path, value: dict[str, object]) -> AnalysisV
     if not analysis_result_id:
         return AnalysisVariant(analysis_result_id="", status="missing")
     try:
-        summary = LocalAnalysisResultRegistry(data_root).summarize(analysis_result_id)
+        summary = LocalAnalysisResultRegistry(data_root).summarize(
+            analysis_result_id,
+            validate_optional_artifacts=False,
+        )
     except FileNotFoundError:
         return AnalysisVariant(
             analysis_result_id=analysis_result_id,

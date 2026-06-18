@@ -421,74 +421,62 @@ def list_collection_objects(
                       AND descriptors.normalized_value LIKE ?
                   )
                 )
+            ),
+            ranked_collection_image_assets AS (
+              SELECT
+                collection_image_assets.*,
+                COUNT(collection_image_assets.id) OVER (
+                  PARTITION BY
+                    collection_image_assets.provider,
+                    collection_image_assets.object_id
+                ) AS image_count,
+                MAX(collection_image_assets.id) OVER (
+                  PARTITION BY
+                    collection_image_assets.provider,
+                    collection_image_assets.object_id
+                ) AS latest_image_asset_id,
+                ROW_NUMBER() OVER (
+                  PARTITION BY
+                    collection_image_assets.provider,
+                    collection_image_assets.object_id
+                  ORDER BY
+                    CASE WHEN collection_image_assets.image_role = 'primary' THEN 0 ELSE 1 END,
+                    COALESCE(collection_image_assets.image_index, 0),
+                    collection_image_assets.id
+                ) AS cover_rank
+              FROM collection_image_assets
             )
             SELECT
-              collection_image_assets.provider,
-              collection_image_assets.object_id,
-              collection_image_assets.title,
-              collection_image_assets.object_name,
-              collection_image_assets.artist_display_name,
-              COUNT(collection_image_assets.id) AS image_count,
-              (
-                SELECT cover.id
-                FROM collection_image_assets AS cover
-                WHERE
-                  cover.provider = collection_image_assets.provider
-                  AND cover.object_id = collection_image_assets.object_id
-                ORDER BY
-                  CASE WHEN cover.image_role = 'primary' THEN 0 ELSE 1 END,
-                  COALESCE(cover.image_index, 0),
-                  cover.id
-                LIMIT 1
-              ) AS cover_image_asset_id,
-              (
-                SELECT cover.original_width
-                FROM collection_image_assets AS cover
-                WHERE
-                  cover.provider = collection_image_assets.provider
-                  AND cover.object_id = collection_image_assets.object_id
-                ORDER BY
-                  CASE WHEN cover.image_role = 'primary' THEN 0 ELSE 1 END,
-                  COALESCE(cover.image_index, 0),
-                  cover.id
-                LIMIT 1
-              ) AS cover_original_width,
-              (
-                SELECT cover.original_height
-                FROM collection_image_assets AS cover
-                WHERE
-                  cover.provider = collection_image_assets.provider
-                  AND cover.object_id = collection_image_assets.object_id
-                ORDER BY
-                  CASE WHEN cover.image_role = 'primary' THEN 0 ELSE 1 END,
-                  COALESCE(cover.image_index, 0),
-                  cover.id
-                LIMIT 1
-              ) AS cover_original_height,
+              ranked_collection_image_assets.provider,
+              ranked_collection_image_assets.object_id,
+              ranked_collection_image_assets.title,
+              ranked_collection_image_assets.object_name,
+              ranked_collection_image_assets.artist_display_name,
+              ranked_collection_image_assets.image_count,
+              ranked_collection_image_assets.id AS cover_image_asset_id,
+              ranked_collection_image_assets.original_width AS cover_original_width,
+              ranked_collection_image_assets.original_height AS cover_original_height,
               EXISTS (
                 SELECT 1
                 FROM object_favorites
                 WHERE
-                  object_favorites.provider = collection_image_assets.provider
-                  AND object_favorites.object_id = collection_image_assets.object_id
+                  object_favorites.provider = ranked_collection_image_assets.provider
+                  AND object_favorites.object_id = ranked_collection_image_assets.object_id
               ) AS is_favorite,
-              MAX(collection_image_assets.id) AS latest_image_asset_id
-            FROM collection_image_assets
+              ranked_collection_image_assets.latest_image_asset_id
+            FROM ranked_collection_image_assets
             WHERE
-              ? = 0
-              OR EXISTS (
-                SELECT 1
-                FROM object_favorites
-                WHERE
-                  object_favorites.provider = collection_image_assets.provider
-                  AND object_favorites.object_id = collection_image_assets.object_id
+              ranked_collection_image_assets.cover_rank = 1
+              AND (
+                ? = 0
+                OR EXISTS (
+                  SELECT 1
+                  FROM object_favorites
+                  WHERE
+                    object_favorites.provider = ranked_collection_image_assets.provider
+                    AND object_favorites.object_id = ranked_collection_image_assets.object_id
+                )
               )
-            GROUP BY
-              collection_image_assets.provider,
-              collection_image_assets.object_id,
-              collection_image_assets.title,
-              collection_image_assets.object_name,
-              collection_image_assets.artist_display_name
             ORDER BY latest_image_asset_id DESC
             """,
             (

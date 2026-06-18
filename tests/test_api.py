@@ -11,6 +11,7 @@ from PIL import Image
 from anacronia.api import DEFAULT_CANDIDATE_LIMIT, DEFAULT_MAX_IMAGES_PER_OBJECT, create_app
 from anacronia.collection_runs import discover_provider_candidates, get_candidate_run
 from anacronia.curation import ensure_curation_schema
+from anacronia.local_folder_import_progress import start_local_folder_import_progress
 from anacronia.local_folder_picker import (
     LocalFolderPickerCancelled,
     LocalFolderPickerUnavailable,
@@ -252,6 +253,41 @@ def test_health_reports_api_and_idle_worker(tmp_path):
             "status": "idle",
             "active_collect_job_id": None,
         },
+    }
+
+
+def test_health_reports_active_local_folder_import_while_worker_is_idle(tmp_path):
+    storage = initialize_storage(project_root=tmp_path)
+    folder = tmp_path / "incoming"
+    folder.mkdir()
+    start_local_folder_import_progress(
+        database_path=storage.database_path,
+        display_name="Studio Folder",
+        folder_path=folder,
+        search_set_slug="studio-folder",
+    )
+    client = TestClient(
+        create_app(database_path=storage.database_path, data_root=storage.data_root)
+    )
+
+    response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json()["worker"] == {
+        "service": "worker",
+        "status": "idle",
+        "active_collect_job_id": None,
+    }
+    assert response.json()["local_folder_import"] == {
+        "status": "running",
+        "display_name": "Studio Folder",
+        "search_set_slug": "studio-folder",
+        "folder_path": str(folder),
+        "phase": "starting",
+        "discovered_file_count": 0,
+        "processed_file_count": 0,
+        "imported_image_count": 0,
+        "skipped_file_count": 0,
     }
 
 

@@ -18,6 +18,12 @@ from anacronia.local_material import (
     record_local_image_asset,
     upsert_local_museum_object,
 )
+from anacronia.local_folder_import_progress import (
+    complete_local_folder_import_progress,
+    fail_local_folder_import_progress,
+    start_local_folder_import_progress,
+    update_local_folder_import_progress,
+)
 from anacronia.search_sets import (
     create_or_continue_search_set,
     ensure_provider_collection,
@@ -85,159 +91,213 @@ def import_local_image_folder(
 ) -> LocalFolderImportSummary:
     resolved_folder_path = validate_local_folder_path(folder_path)
 
-    all_files = discover_local_files(resolved_folder_path)
-    image_files = [
-        path for path in all_files if path.suffix.casefold() in SUPPORTED_LOCAL_IMAGE_SUFFIXES
-    ]
-    skipped_files = [
-        LocalFolderSkippedFile(path=path, reason="unsupported_file_type")
-        for path in all_files
-        if path.suffix.casefold() not in SUPPORTED_LOCAL_IMAGE_SUFFIXES
-    ]
-    imported_object_ids: list[str] = []
-    imported_image_count = 0
-    seen_object_ids: set[str] = set()
-
     with sqlite3.connect(database_path) as connection:
         ensure_local_material_schema(connection)
         search_set_row = connection.execute(
-            "SELECT id FROM search_sets WHERE slug = ?",
+            "SELECT id, display_name FROM search_sets WHERE slug = ?",
             (search_set_slug,),
         ).fetchone()
         if search_set_row is None:
             raise LookupError(f"Collection not found: {search_set_slug}")
         search_set_id = int(search_set_row[0])
+        search_set_display_name = str(search_set_row[1])
         ensure_provider_collection(
             connection=connection,
             search_set_id=search_set_id,
             provider=LOCAL_FOLDER_PROVIDER,
         )
 
-    for image_path in image_files:
-        try:
-            file_hash = sha256_file(image_path)
-        except OSError:
-            skipped_files.append(
-                LocalFolderSkippedFile(path=image_path, reason="file_read_failed")
-            )
-            continue
+    progress = start_local_folder_import_progress(
+        database_path=database_path,
+        display_name=search_set_display_name,
+        search_set_slug=search_set_slug,
+        folder_path=resolved_folder_path,
+    )
+    discovered_file_count = 0
+    processed_file_count = 0
+    imported_image_count = 0
+    skipped_file_count = 0
+    skipped_files: list[LocalFolderSkippedFile] = []
+    imported_object_ids: list[str] = []
+    seen_object_ids: set[str] = set()
+    image_files: list[Path] = []
 
-        object_id = local_folder_object_id(file_hash)
-        source_image_identity = local_folder_source_image_identity(file_hash)
-        if object_id in seen_object_ids:
-            skipped_files.append(
-                LocalFolderSkippedFile(path=image_path, reason="duplicate_file_content")
-            )
-            continue
-        seen_object_ids.add(object_id)
+    try:
+        all_files = discover_local_files(resolved_folder_path)
+        discovered_file_count = len(all_files)
+        image_files = [
+            path
+            for path in all_files
+            if path.suffix.casefold() in SUPPORTED_LOCAL_IMAGE_SUFFIXES
+        ]
+        skipped_files = [
+            LocalFolderSkippedFile(path=path, reason="unsupported_file_type")
+            for path in all_files
+            if path.suffix.casefold() not in SUPPORTED_LOCAL_IMAGE_SUFFIXES
+        ]
+        skipped_file_count = len(skipped_files)
+        processed_file_count = len(skipped_files)
+        update_local_folder_import_progress(
+            database_path=database_path,
+            progress_id=progress.progress_id,
+            phase="importing",
+            discovered_file_count=discovered_file_count,
+            processed_file_count=processed_file_count,
+            imported_image_count=imported_image_count,
+            skipped_file_count=skipped_file_count,
+        )
 
-        with sqlite3.connect(database_path) as connection:
-            exclusions = get_collection_import_exclusions(
-                connection=connection,
-                search_set_id=search_set_id,
-                provider=LOCAL_FOLDER_PROVIDER,
-                object_id=object_id,
-            )
-        if exclusions.object_excluded:
-            skipped_files.append(
-                LocalFolderSkippedFile(path=image_path, reason="collection_object_excluded")
-            )
-            continue
-        if source_image_identity in exclusions.image_source_urls:
-            skipped_files.append(
-                LocalFolderSkippedFile(path=image_path, reason="collection_image_excluded")
-            )
-            continue
+        for image_path in image_files:
+            imported = False
+            skipped_reason = ""
+            try:
+                file_hash = sha256_file(image_path)
+            except OSError:
+                skipped_reason = "file_read_failed"
+            else:
+                object_id = local_folder_object_id(file_hash)
+                source_image_identity = local_folder_source_image_identity(file_hash)
+                if object_id in seen_object_ids:
+                    skipped_reason = "duplicate_file_content"
+                else:
+                    seen_object_ids.add(object_id)
 
-        try:
-            processed = process_image_derivatives_from_path(
-                source_path=image_path,
-                temporary_original_path=provider_temporary_original_path(
-                    data_root=data_root,
-                    provider=LOCAL_FOLDER_PROVIDER,
-                    object_id=object_id,
-                    image_role="primary",
-                ),
-                standard_path=provider_image_derivative_path(
-                    data_root=data_root,
-                    provider=LOCAL_FOLDER_PROVIDER,
-                    object_id=object_id,
-                    image_role="primary",
-                    derivative="standard-1024",
-                ),
-                thumb_path=provider_image_derivative_path(
-                    data_root=data_root,
-                    provider=LOCAL_FOLDER_PROVIDER,
-                    object_id=object_id,
-                    image_role="primary",
-                    derivative="thumb-256",
-                ),
-            )
-        except (OSError, ValueError):
-            skipped_files.append(
-                LocalFolderSkippedFile(path=image_path, reason="image_processing_failed")
-            )
-            continue
+                if skipped_reason == "":
+                    with sqlite3.connect(database_path) as connection:
+                        exclusions = get_collection_import_exclusions(
+                            connection=connection,
+                            search_set_id=search_set_id,
+                            provider=LOCAL_FOLDER_PROVIDER,
+                            object_id=object_id,
+                        )
+                    if exclusions.object_excluded:
+                        skipped_reason = "collection_object_excluded"
+                    elif source_image_identity in exclusions.image_source_urls:
+                        skipped_reason = "collection_image_excluded"
 
-        if not processed.imported:
-            skipped_files.append(
-                LocalFolderSkippedFile(path=image_path, reason="image_processing_failed")
-            )
-            continue
+                if skipped_reason == "":
+                    try:
+                        processed = process_image_derivatives_from_path(
+                            source_path=image_path,
+                            temporary_original_path=provider_temporary_original_path(
+                                data_root=data_root,
+                                provider=LOCAL_FOLDER_PROVIDER,
+                                object_id=object_id,
+                                image_role="primary",
+                            ),
+                            standard_path=provider_image_derivative_path(
+                                data_root=data_root,
+                                provider=LOCAL_FOLDER_PROVIDER,
+                                object_id=object_id,
+                                image_role="primary",
+                                derivative="standard-1024",
+                            ),
+                            thumb_path=provider_image_derivative_path(
+                                data_root=data_root,
+                                provider=LOCAL_FOLDER_PROVIDER,
+                                object_id=object_id,
+                                image_role="primary",
+                                derivative="thumb-256",
+                            ),
+                        )
+                    except (OSError, ValueError):
+                        skipped_reason = "image_processing_failed"
+                    else:
+                        if not processed.imported:
+                            skipped_reason = "image_processing_failed"
 
-        with sqlite3.connect(database_path) as connection:
-            ensure_local_material_schema(connection)
-            upsert_local_museum_object(
-                connection=connection,
-                museum_object=LocalMuseumObject(
-                    provider=LOCAL_FOLDER_PROVIDER,
-                    object_id=object_id,
-                    title=image_path.stem,
-                    object_name="Local image",
-                    artist_display_name="",
-                    object_url="",
-                    is_public_domain=False,
-                    rights_and_reproduction="",
-                    metadata_date="",
-                    raw_record_path="",
-                ),
-            )
-            record_local_image_asset(
-                connection=connection,
-                image_asset=LocalImageAsset(
-                    provider=LOCAL_FOLDER_PROVIDER,
-                    object_id=object_id,
-                    source_image_url=source_image_identity,
-                    source_image_id=source_image_identity,
-                    image_role="primary",
-                    image_index=None,
-                    primary_image_small_url="",
-                    original_width=processed.original_width,
-                    original_height=processed.original_height,
-                    standard_path=processed.standard_path,
-                    thumb_path=processed.thumb_path,
-                    imported=True,
-                    source_file_path=(
-                        str(image_path.resolve()) if store_source_file_links else ""
-                    ),
-                ),
-            )
-            add_collection_object_membership(
-                connection=connection,
-                search_set_id=search_set_id,
-                provider=LOCAL_FOLDER_PROVIDER,
-                object_id=object_id,
-            )
-            add_collection_image_asset_membership(
-                connection=connection,
-                search_set_id=search_set_id,
-                provider=LOCAL_FOLDER_PROVIDER,
-                object_id=object_id,
-                source_image_url=source_image_identity,
+                if skipped_reason == "":
+                    with sqlite3.connect(database_path) as connection:
+                        ensure_local_material_schema(connection)
+                        upsert_local_museum_object(
+                            connection=connection,
+                            museum_object=LocalMuseumObject(
+                                provider=LOCAL_FOLDER_PROVIDER,
+                                object_id=object_id,
+                                title=image_path.stem,
+                                object_name="Local image",
+                                artist_display_name="",
+                                object_url="",
+                                is_public_domain=False,
+                                rights_and_reproduction="",
+                                metadata_date="",
+                                raw_record_path="",
+                            ),
+                        )
+                        record_local_image_asset(
+                            connection=connection,
+                            image_asset=LocalImageAsset(
+                                provider=LOCAL_FOLDER_PROVIDER,
+                                object_id=object_id,
+                                source_image_url=source_image_identity,
+                                source_image_id=source_image_identity,
+                                image_role="primary",
+                                image_index=None,
+                                primary_image_small_url="",
+                                original_width=processed.original_width,
+                                original_height=processed.original_height,
+                                standard_path=processed.standard_path,
+                                thumb_path=processed.thumb_path,
+                                imported=True,
+                                source_file_path=(
+                                    str(image_path.resolve())
+                                    if store_source_file_links
+                                    else ""
+                                ),
+                            ),
+                        )
+                        add_collection_object_membership(
+                            connection=connection,
+                            search_set_id=search_set_id,
+                            provider=LOCAL_FOLDER_PROVIDER,
+                            object_id=object_id,
+                        )
+                        add_collection_image_asset_membership(
+                            connection=connection,
+                            search_set_id=search_set_id,
+                            provider=LOCAL_FOLDER_PROVIDER,
+                            object_id=object_id,
+                            source_image_url=source_image_identity,
+                        )
+                    imported_object_ids.append(object_id)
+                    imported_image_count += 1
+                    imported = True
+
+            if not imported:
+                skipped_files.append(
+                    LocalFolderSkippedFile(path=image_path, reason=skipped_reason)
+                )
+                skipped_file_count += 1
+            processed_file_count += 1
+            update_local_folder_import_progress(
+                database_path=database_path,
+                progress_id=progress.progress_id,
+                phase="importing",
+                discovered_file_count=discovered_file_count,
+                processed_file_count=processed_file_count,
+                imported_image_count=imported_image_count,
+                skipped_file_count=skipped_file_count,
             )
 
-        imported_object_ids.append(object_id)
-        imported_image_count += 1
+        complete_local_folder_import_progress(
+            database_path=database_path,
+            progress_id=progress.progress_id,
+            discovered_file_count=discovered_file_count,
+            processed_file_count=processed_file_count,
+            imported_image_count=imported_image_count,
+            skipped_file_count=skipped_file_count,
+        )
+    except Exception as error:
+        fail_local_folder_import_progress(
+            database_path=database_path,
+            progress_id=progress.progress_id,
+            discovered_file_count=discovered_file_count,
+            processed_file_count=processed_file_count,
+            imported_image_count=imported_image_count,
+            skipped_file_count=skipped_file_count,
+            error=str(error),
+        )
+        raise
 
     return LocalFolderImportSummary(
         search_set_slug=search_set_slug,

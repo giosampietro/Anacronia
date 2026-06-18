@@ -165,6 +165,30 @@ function SubmitTrajectoryButton({
   );
 }
 
+function LocalFolderImportPendingNotice() {
+  const { pending } = useFormStatus();
+
+  if (!pending) {
+    return null;
+  }
+
+  return (
+    <div
+      aria-live="polite"
+      className="flex items-start gap-2 rounded-lg border bg-muted/40 px-3 py-2 text-sm text-muted-foreground"
+      role="status"
+    >
+      <Spinner className="mt-0.5 size-4" />
+      <span className="grid gap-0.5">
+        <span className="font-medium text-foreground">
+          Local folder import running
+        </span>
+        <span>Keep Anacronia open while this import finishes.</span>
+      </span>
+    </div>
+  );
+}
+
 function localFolderDisplayName(folderPath: string): string {
   const normalizedPath = folderPath.trim();
   const segments = normalizedPath.split(/[\\/]+/).filter((segment) => segment !== "");
@@ -189,8 +213,15 @@ export function NewCollectionForm({
   const [termsText, setTermsText] = useState("");
   const duplicateName = isDuplicateCollectionName(displayName, existingCollections);
   const serverDuplicateName = serverError === "duplicate_name" && displayName.trim() === "";
+  const hasLocalFolderSelection =
+    trajectory === "local-folder" &&
+    folderPath.trim() !== "";
+  const missingLocalFolderName =
+    displayName.trim() === "" && hasLocalFolderSelection;
   const nameError = duplicateName || serverDuplicateName
     ? "A Collection with this name already exists."
+    : missingLocalFolderName
+      ? "Collection name is required."
     : "";
   const canStart = canStartNewCollectionSearch(
     displayName,
@@ -244,7 +275,7 @@ export function NewCollectionForm({
             id="collection_name_entry"
             name="collection_name_entry"
             onChange={(event) => setDisplayName(event.currentTarget.value)}
-            placeholder="Snake studies"
+            placeholder="Collection name"
             required
             spellCheck={false}
             value={displayName}
@@ -341,6 +372,7 @@ export function NewCollectionForm({
                     setFolderPath(event.currentTarget.value);
                     setFolderPathDisplay(event.currentTarget.value);
                   }}
+                  placeholder="/Users/giorgio/Desktop/reference-folder"
                   required
                   spellCheck={false}
                   value={folderPathDisplay}
@@ -353,6 +385,7 @@ export function NewCollectionForm({
                 pendingLabel="Importing..."
               />
             </div>
+            <LocalFolderImportPendingNotice />
           </StepCard>
         </>
       ) : null}

@@ -13,6 +13,10 @@ describe("shouldAutoRefreshDashboard", () => {
     expect(shouldAutoRefreshDashboard("stopping")).toBe(true);
   });
 
+  it("refreshes while a local folder import is active even when the worker is idle", () => {
+    expect(shouldAutoRefreshDashboard("idle", "running")).toBe(true);
+  });
+
   it("does not refresh for stable worker states", () => {
     expect(shouldAutoRefreshDashboard("idle")).toBe(false);
     expect(shouldAutoRefreshDashboard("completed")).toBe(false);
