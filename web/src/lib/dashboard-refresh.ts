@@ -1,5 +1,12 @@
-export function shouldAutoRefreshDashboard(workerStatus: string): boolean {
-  return workerStatus === "running" || workerStatus === "stopping";
+export function shouldAutoRefreshDashboard(
+  workerStatus: string,
+  localFolderImportStatus?: string,
+): boolean {
+  return (
+    workerStatus === "running" ||
+    workerStatus === "stopping" ||
+    localFolderImportStatus === "running"
+  );
 }
 
 export const PROVIDER_SEARCH_REFRESH_STORAGE_KEY =

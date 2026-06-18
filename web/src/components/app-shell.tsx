@@ -92,6 +92,7 @@ function runtimeStatusIcon(state: string) {
 
 function runtimeSummaryRow(rows: StatusRow[]): StatusRow | null {
   return (
+    rows.find((row) => row.state === "running" || row.state === "stopping") ??
     rows.find((row) => row.name.toLowerCase().includes("python")) ??
     rows.find((row) => row.name.toLowerCase().includes("worker")) ??
     rows[0] ??

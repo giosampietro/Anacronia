@@ -855,7 +855,9 @@ export default async function Home({ searchParams }: HomeProps) {
     collectionErrorCode === "duplicate_name" ? "duplicate_name" : null;
   const rows = createStatusRows({ uiPort, apiPort, apiHealth });
   const activeSearchSet = dashboardView.activeSearchSet;
-  const collectAvailable = canStartCollect(dashboardView.workerStatus);
+  const localFolderImportActive = apiHealth.local_folder_import?.status === "running";
+  const collectAvailable =
+    canStartCollect(dashboardView.workerStatus) && !localFolderImportActive;
   const workspaceMode = createWorkspaceMode({
     activeSearchSet,
     modeParam: requestedWorkspaceMode,
@@ -864,7 +866,9 @@ export default async function Home({ searchParams }: HomeProps) {
   const gridViewMode = createGridViewMode(requestedGridViewMode, workspaceMode);
   const activeProviderCollections = activeSearchSet?.providerCollections ?? [];
   const curationActionsDisabled =
-    dashboardView.workerStatus === "running" || dashboardView.workerStatus === "stopping";
+    dashboardView.workerStatus === "running" ||
+    dashboardView.workerStatus === "stopping" ||
+    localFolderImportActive;
   const collectNotice = collectNoticeFromCode(collectNoticeCode, activeProviderCollections);
   const collectionLocalResultSet =
     activeSearchSet === null || workspaceMode !== "search-set"
@@ -1225,7 +1229,12 @@ export default async function Home({ searchParams }: HomeProps) {
       rows={rows}
       workspaceMode={workspaceMode}
     >
-      <DashboardAutoRefresh enabled={shouldAutoRefreshDashboard(dashboardView.workerStatus)} />
+      <DashboardAutoRefresh
+        enabled={shouldAutoRefreshDashboard(
+          dashboardView.workerStatus,
+          apiHealth.local_folder_import?.status,
+        )}
+      />
       <div className="min-w-0 px-5 py-6 md:px-8 lg:px-10 lg:py-9">
         {collectNotice ? (
           <div className="mx-auto mb-5 max-w-7xl">
