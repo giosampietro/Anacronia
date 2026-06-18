@@ -18,7 +18,11 @@ export async function GET(request: NextRequest) {
   const relativePath = request.nextUrl.searchParams.get("path");
 
   if (analysisResultId) {
-    if (!artifactKey || !isLatentMapAtlasManifestKey(artifactKey)) {
+    const expectedTileSize = artifactKey
+      ? getLatentMapAtlasManifestTileSize(artifactKey)
+      : null;
+
+    if (!artifactKey || expectedTileSize === null) {
       return new Response("Latent map atlas manifest not found.", {
         status: 404,
       });
@@ -41,6 +45,8 @@ export async function GET(request: NextRequest) {
     }
 
     return atlasManifestResponse({
+      cacheControl: "private, max-age=3600",
+      expectedTileSize,
       rawText: await artifactResponse.text(),
       thumbnailApiPath: `/api/latent-map/thumbnails?analysisResultId=${encodeURIComponent(
         analysisResultId,
@@ -49,7 +55,11 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  if (!runName || !relativePath || !isLatentMapAtlasManifestKey(relativePath)) {
+  const expectedTileSize = relativePath
+    ? getLatentMapAtlasManifestTileSize(relativePath)
+    : null;
+
+  if (!runName || !relativePath || expectedTileSize === null) {
     return new Response("Missing latent-map atlas manifest configuration.", {
       status: 404,
     });
@@ -72,6 +82,8 @@ export async function GET(request: NextRequest) {
 
   try {
     return atlasManifestResponse({
+      cacheControl: "private, no-store",
+      expectedTileSize,
       rawText: await readFile(/*turbopackIgnore: true*/ manifestPath, "utf-8"),
       thumbnailApiPath: `/api/latent-map/thumbnails?run=${encodeURIComponent(
         runName,
@@ -86,10 +98,14 @@ export async function GET(request: NextRequest) {
 }
 
 function atlasManifestResponse({
+  cacheControl,
+  expectedTileSize,
   rawText,
   thumbnailApiPath,
   thumbnailResourceParamName,
 }: {
+  cacheControl: string;
+  expectedTileSize: number;
   rawText: string;
   thumbnailApiPath: string;
   thumbnailResourceParamName: string;
@@ -105,6 +121,7 @@ function atlasManifestResponse({
   }
 
   const atlas = normalizeExportedLatentMapThumbnailAtlas({
+    expectedTileSize,
     rawAtlas,
     thumbnailApiPath,
     thumbnailResourceParamName,
@@ -118,14 +135,19 @@ function atlasManifestResponse({
 
   return Response.json(atlas, {
     headers: {
-      "Cache-Control": "public, max-age=3600",
+      "Cache-Control": cacheControl,
       "X-Content-Type-Options": "nosniff",
     },
   });
 }
 
-function isLatentMapAtlasManifestKey(artifactKey: string): boolean {
-  return /^viewer\/atlases\/\d+px\/atlas-manifest\.json$/.test(artifactKey);
+function getLatentMapAtlasManifestTileSize(artifactKey: string): number | null {
+  const match = /^viewer\/atlases\/(\d+)px\/atlas-manifest\.json$/.exec(
+    artifactKey,
+  );
+  const tileSize = Number(match?.[1]);
+
+  return Number.isFinite(tileSize) && tileSize > 0 ? tileSize : null;
 }
 
 function apiBaseUrl(): string {

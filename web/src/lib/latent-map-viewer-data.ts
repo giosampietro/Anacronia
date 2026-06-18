@@ -213,15 +213,18 @@ export function normalizeExportedLatentMapViewerData({
 }
 
 export function normalizeExportedLatentMapThumbnailAtlas({
+  expectedTileSize,
   rawAtlas,
   thumbnailApiPath = "/api/latent-map/thumbnails",
   thumbnailResourceParamName = "path",
 }: {
+  expectedTileSize?: number;
   rawAtlas: Partial<LatentMapGeneratedThumbnailAtlas> | undefined;
   thumbnailApiPath?: string;
   thumbnailResourceParamName?: string;
 }): LatentMapGeneratedThumbnailAtlas | undefined {
   return normalizeThumbnailAtlas({
+    expectedTileSize,
     rawAtlas,
     thumbnailApiPath,
     thumbnailResourceParamName,
@@ -467,15 +470,17 @@ function normalizeClusterGroups(groups: unknown[]): LatentMapClusterGroup[] {
 }
 
 function normalizeThumbnailAtlas({
+  expectedTileSize,
   rawAtlas,
   thumbnailApiPath,
   thumbnailResourceParamName,
 }: {
+  expectedTileSize?: number;
   rawAtlas: Partial<LatentMapGeneratedThumbnailAtlas> | undefined;
   thumbnailApiPath: string;
   thumbnailResourceParamName: string;
 }): LatentMapGeneratedThumbnailAtlas | undefined {
-  if (!rawAtlas) {
+  if (!isValidThumbnailAtlas(rawAtlas, expectedTileSize)) {
     return undefined;
   }
 
@@ -519,6 +524,89 @@ function normalizeThumbnailAtlas({
         })
       : [],
   };
+}
+
+function isValidThumbnailAtlas(
+  rawAtlas: Partial<LatentMapGeneratedThumbnailAtlas> | undefined,
+  expectedTileSize?: number,
+): rawAtlas is LatentMapGeneratedThumbnailAtlas {
+  if (!rawAtlas || typeof rawAtlas !== "object") {
+    return false;
+  }
+
+  const tileSize = Number(rawAtlas.tile_size);
+  const atlasSize = Number(rawAtlas.atlas_size);
+  const imageCount = Number(rawAtlas.image_count);
+  const pageCount = Number(rawAtlas.page_count);
+
+  if (
+    rawAtlas.schema_version !== 1 ||
+    rawAtlas.asset_kind !== "latent-map-thumbnail-atlas" ||
+    typeof rawAtlas.run_id !== "string" ||
+    rawAtlas.run_id.length === 0 ||
+    !isPositiveInteger(tileSize) ||
+    !isPositiveInteger(atlasSize) ||
+    !isNonNegativeInteger(imageCount) ||
+    !isNonNegativeInteger(pageCount) ||
+    (expectedTileSize !== undefined && tileSize !== expectedTileSize) ||
+    !Array.isArray(rawAtlas.pages) ||
+    rawAtlas.pages.length !== pageCount ||
+    !Array.isArray(rawAtlas.items)
+  ) {
+    return false;
+  }
+
+  return (
+    rawAtlas.pages.every(isValidThumbnailAtlasPage) &&
+    rawAtlas.items.every(isValidThumbnailAtlasItem)
+  );
+}
+
+function isValidThumbnailAtlasPage(
+  page: LatentMapGeneratedThumbnailAtlas["pages"][number],
+) {
+  return (
+    typeof page.path === "string" &&
+    page.path.length > 0 &&
+    isNonNegativeInteger(Number(page.index)) &&
+    isPositiveInteger(Number(page.width)) &&
+    isPositiveInteger(Number(page.height))
+  );
+}
+
+function isValidThumbnailAtlasItem(
+  item: LatentMapGeneratedThumbnailAtlas["items"][number],
+) {
+  return (
+    typeof item.image_id === "string" &&
+    item.image_id.length > 0 &&
+    typeof item.page_path === "string" &&
+    item.page_path.length > 0 &&
+    typeof item.source_thumbnail_path === "string" &&
+    item.source_thumbnail_path.length > 0 &&
+    isNonNegativeInteger(Number(item.page_index)) &&
+    isPositiveInteger(Number(item.width)) &&
+    isPositiveInteger(Number(item.height)) &&
+    isNumberTuple(item.tile_rect) &&
+    isNumberTuple(item.uv_rect) &&
+    (item.content_rect === undefined || isNumberTuple(item.content_rect))
+  );
+}
+
+function isNumberTuple(value: unknown): value is [number, number, number, number] {
+  return (
+    Array.isArray(value) &&
+    value.length === 4 &&
+    value.every((entry) => Number.isFinite(Number(entry)))
+  );
+}
+
+function isPositiveInteger(value: number) {
+  return Number.isInteger(value) && value > 0;
+}
+
+function isNonNegativeInteger(value: number) {
+  return Number.isInteger(value) && value >= 0;
 }
 
 function normalizeNumberTuple(

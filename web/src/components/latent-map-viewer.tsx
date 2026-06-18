@@ -55,6 +55,7 @@ import {
   getNextLatentMapTextureDetail,
   getNextLatentMapThumbnailSize,
   getLatentMapAvailableTextureDetails,
+  getLatentMapThumbnailAtlasManifestStatus,
   getLatentMapFallbackThumbnailAtlas,
   getNextLatentMapSelection,
   getLatentMapThumbnailAtlasForSize,
@@ -204,6 +205,28 @@ function mergeLazyThumbnailAtlases(
     (left, right) => left.tile_size - right.tile_size,
   );
 }
+
+function mergeUnavailableThumbnailAtlasTileSizes(
+  current: number[],
+  nextTileSizes: number[],
+  loadedAtlases: LatentMapGeneratedThumbnailAtlas[],
+) {
+  const loadedTileSizes = new Set(loadedAtlases.map((atlas) => atlas.tile_size));
+
+  return [...new Set([...current, ...nextTileSizes])]
+    .filter(
+      (tileSize) =>
+        Number.isFinite(tileSize) &&
+        tileSize > 0 &&
+        !loadedTileSizes.has(tileSize),
+    )
+    .sort((left, right) => left - right);
+}
+
+type LazyThumbnailAtlasManifestResult = {
+  atlas?: LatentMapGeneratedThumbnailAtlas;
+  tileSize: number;
+};
 
 function getAppliedThemePreference(): LatentMapRuntimeState["visualTheme"] {
   if (typeof document === "undefined") {
@@ -752,14 +775,23 @@ export function LatentMapViewer({
   const [lazyThumbnailAtlasState, setLazyThumbnailAtlasState] = useState<{
     atlases: LatentMapGeneratedThumbnailAtlas[];
     dataKey: string;
+    unavailableTileSizes: number[];
   }>({
     atlases: [],
     dataKey: initialDataKey,
+    unavailableTileSizes: [],
   });
   const lazyThumbnailAtlases = useMemo(
     () =>
       lazyThumbnailAtlasState.dataKey === initialDataKey
         ? lazyThumbnailAtlasState.atlases
+        : [],
+    [initialDataKey, lazyThumbnailAtlasState],
+  );
+  const unavailableThumbnailAtlasTileSizes = useMemo(
+    () =>
+      lazyThumbnailAtlasState.dataKey === initialDataKey
+        ? lazyThumbnailAtlasState.unavailableTileSizes
         : [],
     [initialDataKey, lazyThumbnailAtlasState],
   );
@@ -1121,34 +1153,30 @@ export function LatentMapViewer({
     () => getLatentMapThumbnailAtlasForSize(data, resolvedTextureDetail),
     [data, resolvedTextureDetail],
   );
+  const thumbnailAtlasManifestStatus = useMemo(
+    () =>
+      getLatentMapThumbnailAtlasManifestStatus({
+        atlases: [
+          ...(data.thumbnail_atlases ?? []),
+          ...(data.thumbnail_atlas ? [data.thumbnail_atlas] : []),
+        ],
+        manifestUrls: initialData.thumbnail_atlas_manifest_urls,
+        unavailableTileSizes: unavailableThumbnailAtlasTileSizes,
+      }),
+    [
+      data.thumbnail_atlas,
+      data.thumbnail_atlases,
+      initialData.thumbnail_atlas_manifest_urls,
+      unavailableThumbnailAtlasTileSizes,
+    ],
+  );
   const thumbnailAtlasManifestPending = useMemo(() => {
     if (renderMode !== "thumbnails") {
       return false;
     }
 
-    const manifestUrls = initialData.thumbnail_atlas_manifest_urls ?? {};
-    const manifestTileSizes = Object.keys(manifestUrls);
-
-    if (manifestTileSizes.length === 0) {
-      return false;
-    }
-
-    const loadedTileSizes = new Set(
-      [
-        ...(data.thumbnail_atlases ?? []),
-        ...(data.thumbnail_atlas ? [data.thumbnail_atlas] : []),
-      ].map((atlas) => atlas.tile_size),
-    );
-
-    return manifestTileSizes.some(
-      (tileSize) => !loadedTileSizes.has(Number(tileSize)),
-    );
-  }, [
-    data.thumbnail_atlas,
-    data.thumbnail_atlases,
-    initialData.thumbnail_atlas_manifest_urls,
-    renderMode,
-  ]);
+    return thumbnailAtlasManifestStatus.pendingTileSizes.length > 0;
+  }, [renderMode, thumbnailAtlasManifestStatus.pendingTileSizes.length]);
   const runtimeRenderMode: LatentMapRenderMode = thumbnailAtlasManifestPending
     ? "points"
     : renderMode;
@@ -1285,15 +1313,19 @@ export function LatentMapViewer({
     }
 
     const manifestUrls = initialData.thumbnail_atlas_manifest_urls ?? {};
-    const loadedTileSizes = new Set(
-      [
-        ...(data.thumbnail_atlases ?? []),
-        ...(data.thumbnail_atlas ? [data.thumbnail_atlas] : []),
-      ].map((atlas) => atlas.tile_size),
-    );
-    const missingManifestUrls = Object.entries(manifestUrls).filter(
-      ([tileSize]) => !loadedTileSizes.has(Number(tileSize)),
-    );
+    const missingManifestUrls = thumbnailAtlasManifestStatus.pendingTileSizes
+      .map((tileSize) => ({
+        manifestUrl: manifestUrls[String(tileSize)],
+        tileSize,
+      }))
+      .filter(
+        (
+          request,
+        ): request is {
+          manifestUrl: string;
+          tileSize: number;
+        } => typeof request.manifestUrl === "string",
+      );
 
     if (missingManifestUrls.length === 0) {
       return;
@@ -1303,41 +1335,78 @@ export function LatentMapViewer({
     let cancelled = false;
 
     void Promise.all(
-      missingManifestUrls.map(async ([, manifestUrl]) => {
-        const response = await fetch(manifestUrl, {
-          cache: "no-store",
-          signal: abortController.signal,
-        });
+      missingManifestUrls.map(
+        async ({
+          manifestUrl,
+          tileSize,
+        }): Promise<LazyThumbnailAtlasManifestResult> => {
+          try {
+            const response = await fetch(manifestUrl, {
+              signal: abortController.signal,
+            });
 
-        if (!response.ok) {
-          return null;
-        }
+            if (!response.ok) {
+              return { tileSize };
+            }
 
-        const atlas = await response.json() as unknown;
+            const atlas = await response.json() as unknown;
 
-        return isLatentMapGeneratedThumbnailAtlas(atlas) ? atlas : null;
-      }),
+            return isLatentMapGeneratedThumbnailAtlas(atlas)
+              ? { atlas, tileSize }
+              : { tileSize };
+          } catch (error: unknown) {
+            if (
+              error instanceof DOMException &&
+              error.name === "AbortError"
+            ) {
+              throw error;
+            }
+
+            return { tileSize };
+          }
+        },
+      ),
     )
-      .then((atlases) => {
+      .then((results) => {
         if (cancelled) {
           return;
         }
 
-        const validAtlases = atlases.filter(
-          (atlas): atlas is LatentMapGeneratedThumbnailAtlas => atlas !== null,
-        );
+        const validAtlases = results
+          .map((result) => result.atlas)
+          .filter((atlas): atlas is LatentMapGeneratedThumbnailAtlas =>
+            Boolean(atlas),
+          );
+        const unavailableTileSizes = results
+          .filter((result) => !result.atlas)
+          .map((result) => result.tileSize);
 
-        if (validAtlases.length === 0) {
+        if (validAtlases.length === 0 && unavailableTileSizes.length === 0) {
           return;
         }
 
-        setLazyThumbnailAtlasState((current) => ({
-          atlases: mergeLazyThumbnailAtlases(
-            current.dataKey === initialDataKey ? current.atlases : [],
+        setLazyThumbnailAtlasState((current) => {
+          const currentAtlases =
+            current.dataKey === initialDataKey ? current.atlases : [];
+          const currentUnavailableTileSizes =
+            current.dataKey === initialDataKey
+              ? current.unavailableTileSizes
+              : [];
+          const atlases = mergeLazyThumbnailAtlases(
+            currentAtlases,
             validAtlases,
-          ),
-          dataKey: initialDataKey,
-        }));
+          );
+
+          return {
+            atlases,
+            dataKey: initialDataKey,
+            unavailableTileSizes: mergeUnavailableThumbnailAtlasTileSizes(
+              currentUnavailableTileSizes,
+              unavailableTileSizes,
+              atlases,
+            ),
+          };
+        });
       })
       .catch((error: unknown) => {
         if (
@@ -1354,11 +1423,10 @@ export function LatentMapViewer({
       abortController.abort();
     };
   }, [
-    data.thumbnail_atlas,
-    data.thumbnail_atlases,
     initialDataKey,
     initialData.thumbnail_atlas_manifest_urls,
     renderMode,
+    thumbnailAtlasManifestStatus.pendingTileSizes,
   ]);
   const runtimeSnapshot = useMemo(
     () =>

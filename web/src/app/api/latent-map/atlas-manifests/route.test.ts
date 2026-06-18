@@ -68,6 +68,45 @@ describe("latent map atlas manifest API", () => {
     expect(response.status).toBe(404);
   });
 
+  it("rejects malformed atlas manifest JSON", async () => {
+    const artifactKey = "viewer/atlases/64px/atlas-manifest.json";
+    const fetchMock = vi.fn(async () => Response.json({}));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await GET(
+      new NextRequest(
+        `http://localhost/api/latent-map/atlas-manifests` +
+          `?analysisResultId=analysis-result-1` +
+          `&artifactKey=${encodeURIComponent(artifactKey)}`,
+      ),
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(response.status).toBe(502);
+  });
+
+  it("rejects atlas manifests whose tile size does not match the artifact key", async () => {
+    const artifactKey = "viewer/atlases/64px/atlas-manifest.json";
+    const fetchMock = vi.fn(async () =>
+      Response.json({
+        ...atlasManifestFixture(),
+        tile_size: 32,
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await GET(
+      new NextRequest(
+        `http://localhost/api/latent-map/atlas-manifests` +
+          `?analysisResultId=analysis-result-1` +
+          `&artifactKey=${encodeURIComponent(artifactKey)}`,
+      ),
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(response.status).toBe(502);
+  });
+
   it("normalizes legacy run atlas manifests during migration", async () => {
     const runsRoot = path.join(tmpdir(), `anacronia-atlas-route-${Date.now()}`);
     const runName = "legacy-run";

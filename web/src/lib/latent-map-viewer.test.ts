@@ -15,6 +15,7 @@ import {
   fitLatentMapPoints,
   getLatentMapAvailableTextureDetails,
   getLatentMapFallbackThumbnailAtlas,
+  getLatentMapThumbnailAtlasManifestStatus,
   getLatentMapThumbnailStateScaleMultiplier,
   getNextLatentMapTextureDetail,
   getNextLatentMapThumbnailSize,
@@ -108,6 +109,34 @@ function createGeneratedAtlas({
 }
 
 describe("latent map viewer model", () => {
+  it("treats failed lazy atlas manifests as unavailable instead of pending", () => {
+    const status = getLatentMapThumbnailAtlasManifestStatus({
+      atlases: [
+        {
+          asset_kind: "latent-map-thumbnail-atlas",
+          atlas_size: 512,
+          image_count: 0,
+          items: [],
+          page_count: 0,
+          pages: [],
+          run_id: "run-1",
+          schema_version: 1,
+          tile_size: 64,
+        },
+      ],
+      manifestUrls: {
+        "32": "/api/latent-map/atlas-manifests?tile=32",
+        "64": "/api/latent-map/atlas-manifests?tile=64",
+        "96": "/api/latent-map/atlas-manifests?tile=96",
+      },
+      unavailableTileSizes: [32, 96],
+    });
+
+    expect(status.loadedTileSizes).toEqual([64]);
+    expect(status.unavailableTileSizes).toEqual([32, 96]);
+    expect(status.pendingTileSizes).toEqual([]);
+  });
+
   it("reports point and cluster counts for exported viewer data", () => {
     expect(createLatentMapStats(latentMapFixture)).toEqual({
       clusterCount: 3,
