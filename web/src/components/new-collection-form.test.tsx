@@ -83,12 +83,13 @@ describe("NewCollectionForm", () => {
     expect(html).not.toContain("name=\"folder_files\"");
     expect(html).not.toContain("webkitdirectory=\"\"");
     expect(html).not.toContain("name=\"folder_upload_manifest\"");
-    expect(html).not.toContain("/Users/giorgio/Desktop/reference-folder");
+    expect(html).toContain("/Users/giorgio/Desktop/reference-folder");
     expect(html).toContain("Import</button>");
     expect(html).not.toContain("Search and import online archive");
     expect(html).not.toContain("Images to find");
     expect(html).not.toContain("Start search");
     expect(html).not.toContain("Folder picker could not open");
+    expect(html).not.toContain("/api/local-folder-picker");
   });
 
   it("renders the Collection name entry without browser autofill history", () => {
@@ -98,8 +99,10 @@ describe("NewCollectionForm", () => {
 
     expect(html).toContain("autoComplete=\"off\"");
     expect(html).toContain("name=\"collection_name_entry\"");
+    expect(html).toContain("placeholder=\"Collection name\"");
     expect(html).toContain("name=\"display_name\"");
     expect(html).not.toContain("name=\"display_name\" id=\"display_name\"");
+    expect(html).not.toContain("Snake studies");
   });
 
   it("shows a duplicate Collection name error when the server redirects back after rejection", () => {

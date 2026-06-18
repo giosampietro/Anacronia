@@ -23,7 +23,7 @@ def completed_process(
     )
 
 
-def test_folder_picker_uses_jxa_selected_path_despite_noisy_stderr(monkeypatch):
+def test_folder_picker_uses_applescript_selected_path_despite_noisy_stderr(monkeypatch):
     calls: list[list[str]] = []
 
     def fake_run(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
@@ -39,15 +39,16 @@ def test_folder_picker_uses_jxa_selected_path_despite_noisy_stderr(monkeypatch):
 
     assert picker.choose_local_folder_path() == Path("/Users/giorgio/Desktop/references")
     assert len(calls) == 1
-    assert calls[0][:4] == ["osascript", "-l", "JavaScript", "-e"]
+    assert calls[0][0] == "osascript"
+    assert "-l" not in calls[0]
 
 
-def test_folder_picker_falls_back_from_jxa_to_applescript(monkeypatch):
+def test_folder_picker_falls_back_from_applescript_to_jxa(monkeypatch):
     calls: list[list[str]] = []
 
     def fake_run(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
         calls.append(command)
-        if "-l" in command:
+        if "-l" not in command:
             return completed_process(
                 command,
                 returncode=1,
@@ -65,9 +66,9 @@ def test_folder_picker_falls_back_from_jxa_to_applescript(monkeypatch):
         "/Users/giorgio/Desktop/fallback-references"
     )
     assert len(calls) == 2
-    assert calls[0][:3] == ["osascript", "-l", "JavaScript"]
-    assert calls[1][0] == "osascript"
-    assert "-l" not in calls[1]
+    assert calls[0][0] == "osascript"
+    assert "-l" not in calls[0]
+    assert calls[1][:3] == ["osascript", "-l", "JavaScript"]
 
 
 def test_folder_picker_never_exposes_native_diagnostics_when_unavailable(monkeypatch):
@@ -90,15 +91,15 @@ def test_folder_picker_never_exposes_native_diagnostics_when_unavailable(monkeyp
     assert "HostCallsAuxiliary" not in str(error.value)
 
 
-def test_folder_picker_cancelled_jxa_panel_does_not_fall_back(monkeypatch):
+def test_folder_picker_cancelled_applescript_panel_does_not_fall_back(monkeypatch):
     calls: list[list[str]] = []
 
     def fake_run(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
         calls.append(command)
         return completed_process(
             command,
-            returncode=2,
-            stdout=f"{picker.PICKER_CANCELLED_MARKER}\n",
+            returncode=1,
+            stderr="User canceled. (-128)",
         )
 
     monkeypatch.setattr(picker.subprocess, "run", fake_run)

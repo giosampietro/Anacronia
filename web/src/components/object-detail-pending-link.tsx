@@ -3,11 +3,10 @@
 import Link from "next/link";
 import type { CSSProperties, MouseEvent, ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import { AlertCircle, Images, X } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatCollectionDisplayName } from "@/lib/collection-display";
 import { cn } from "@/lib/utils";
@@ -121,13 +120,15 @@ function PendingImagePreview({ preview }: { preview: ObjectDetailPreview }) {
 }
 
 function ObjectDetailPendingOverlay({
+  closeHref,
   onClose,
   preview,
 }: {
+  closeHref: string;
   onClose: () => void;
   preview: ObjectDetailPreview;
 }) {
-  const closeRef = useRef<HTMLButtonElement>(null);
+  const closeRef = useRef<HTMLAnchorElement>(null);
 
   useEffect(() => {
     closeRef.current?.focus();
@@ -148,15 +149,14 @@ function ObjectDetailPendingOverlay({
     <div
       aria-label="Loading object detail"
       aria-modal="true"
-      className="fixed inset-0 z-50 overflow-y-auto bg-background/80 p-3 backdrop-blur-sm md:p-5"
+      className="fixed inset-y-0 right-0 left-16 z-50 overflow-y-auto bg-background/80 p-3 backdrop-blur-sm md:p-5"
       role="dialog"
     >
-      <button
+      <a
         aria-hidden="true"
-        className="fixed inset-0 cursor-default"
-        onClick={onClose}
+        className="fixed inset-y-0 right-0 left-16 cursor-default"
+        href={closeHref}
         tabIndex={-1}
-        type="button"
       />
       <div className="relative mx-auto max-w-[1480px] overflow-hidden rounded-lg border bg-background shadow-2xl">
         <header className="relative grid gap-3 border-b p-4 pr-14 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
@@ -183,17 +183,18 @@ function ObjectDetailPendingOverlay({
             <Skeleton className="h-8 w-36 rounded-md" />
             <Skeleton className="h-8 w-28 rounded-md" />
           </div>
-          <Button
+          <a
             aria-label="Close detail"
-            className="absolute right-3 top-3"
-            onClick={onClose}
+            className={buttonVariants({
+              className: "absolute right-3 top-3",
+              size: "icon",
+              variant: "ghost",
+            })}
+            href={closeHref}
             ref={closeRef}
-            size="icon"
-            type="button"
-            variant="ghost"
           >
             <X data-icon="inline-start" />
-          </Button>
+          </a>
         </header>
 
         <PendingImagePreview preview={preview} />
@@ -245,13 +246,12 @@ export function ObjectDetailPendingLink({
   initialPending = false,
   preview,
 }: ObjectDetailPendingLinkProps) {
-  const router = useRouter();
   const [pending, setPending] = useState(initialPending);
 
   const closePendingOverlay = useCallback(() => {
     setPending(false);
-    router.push(closeHref);
-  }, [closeHref, router]);
+    window.location.assign(closeHref);
+  }, [closeHref]);
 
   function handleClick(event: MouseEvent<HTMLAnchorElement>) {
     if (isStandardNavigationClick(event)) {
@@ -272,6 +272,7 @@ export function ObjectDetailPendingLink({
       </Link>
       {pending ? (
         <ObjectDetailPendingOverlay
+          closeHref={closeHref}
           onClose={closePendingOverlay}
           preview={preview}
         />
@@ -285,13 +286,12 @@ export function ObjectDetailErrorOverlay({
   objectLabel,
   returnFocusId,
 }: ObjectDetailErrorOverlayProps) {
-  const router = useRouter();
-  const closeRef = useRef<HTMLButtonElement>(null);
+  const closeRef = useRef<HTMLAnchorElement>(null);
 
   const closeOverlay = useCallback(() => {
     document.getElementById(returnFocusId)?.focus();
-    router.push(closeHref);
-  }, [closeHref, returnFocusId, router]);
+    window.location.assign(closeHref);
+  }, [closeHref, returnFocusId]);
 
   useEffect(() => {
     closeRef.current?.focus();
@@ -312,15 +312,14 @@ export function ObjectDetailErrorOverlay({
     <div
       aria-label="Object detail unavailable"
       aria-modal="true"
-      className="fixed inset-0 z-50 overflow-y-auto bg-background/80 p-3 backdrop-blur-sm md:p-5"
+      className="fixed inset-y-0 right-0 left-16 z-50 overflow-y-auto bg-background/80 p-3 backdrop-blur-sm md:p-5"
       role="dialog"
     >
-      <button
+      <a
         aria-hidden="true"
-        className="fixed inset-0 cursor-default"
-        onClick={closeOverlay}
+        className="fixed inset-y-0 right-0 left-16 cursor-default"
+        href={closeHref}
         tabIndex={-1}
-        type="button"
       />
       <div className="relative mx-auto grid max-w-xl gap-5 rounded-lg border bg-background p-5 shadow-2xl">
         <div className="flex items-start justify-between gap-4">
@@ -333,16 +332,14 @@ export function ObjectDetailErrorOverlay({
               Object detail unavailable
             </h2>
           </div>
-          <Button
+          <a
             aria-label="Close detail"
-            onClick={closeOverlay}
+            className={buttonVariants({ size: "icon", variant: "ghost" })}
+            href={closeHref}
             ref={closeRef}
-            size="icon"
-            type="button"
-            variant="ghost"
           >
             <X data-icon="inline-start" />
-          </Button>
+          </a>
         </div>
         <p className="text-sm text-muted-foreground">
           Anacronia could not load {objectLabel}. Try opening the object again.
