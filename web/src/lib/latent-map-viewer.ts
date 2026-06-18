@@ -36,6 +36,7 @@ export type LatentMapViewerData = {
   neighbor_lookup_path?: string;
   thumbnail_atlas?: LatentMapGeneratedThumbnailAtlas;
   thumbnail_atlases?: LatentMapGeneratedThumbnailAtlas[];
+  thumbnail_atlas_manifest_urls?: Record<string, string>;
   points: LatentMapPoint[];
 };
 

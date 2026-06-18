@@ -103,6 +103,7 @@ export type PinnedLatentMapRunArtifacts = {
 
 export async function loadLatentMapAnalysisResultExportedViewerData({
   analysisResult,
+  loadThumbnailAtlases = true,
   readArtifactText,
   selectedClusterId,
   selectedLayoutId,
@@ -115,6 +116,7 @@ export async function loadLatentMapAnalysisResultExportedViewerData({
     recipes?: unknown;
     scope_label?: unknown;
   };
+  loadThumbnailAtlases?: boolean;
   readArtifactText: (artifactKey: string, artifactRole?: string) => Promise<string>;
   selectedClusterId?: string | null;
   selectedLayoutId?: string | null;
@@ -287,11 +289,13 @@ export async function loadLatentMapAnalysisResultExportedViewerData({
   );
   const thumbnailAtlasManifestPaths =
     selectedRecipeRecord?.thumbnailAtlasManifestPaths ?? {};
-  const thumbnailAtlases = await loadThumbnailAtlasesFromArtifacts({
-    manifestPaths: thumbnailAtlasManifestPaths,
-    readArtifactText,
-    startupRecorder,
-  });
+  const thumbnailAtlases = loadThumbnailAtlases
+    ? await loadThumbnailAtlasesFromArtifacts({
+        manifestPaths: thumbnailAtlasManifestPaths,
+        readArtifactText,
+        startupRecorder,
+      })
+    : [];
   const thumbnailAtlas =
     thumbnailAtlases.find((atlas) => atlas.tile_size === 64) ??
     thumbnailAtlases[0];

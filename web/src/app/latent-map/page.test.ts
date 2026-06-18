@@ -41,6 +41,24 @@ describe("loadLatentMapViewerData", () => {
     expect(data.points[0].thumbnail_path).toBe(
       `/api/latent-map/thumbnails?analysisResultId=${ANALYSIS_RESULT_ID}&artifactKey=thumbnails%2Fimage-asset-1.jpg`,
     );
+    expect(data.thumbnail_atlases).toBeUndefined();
+    expect(data.thumbnail_atlas_manifest_urls?.["64"]).toBe(
+      `/api/latent-map/atlas-manifests?analysisResultId=${ANALYSIS_RESULT_ID}&artifactKey=viewer%2Fatlases%2F64px%2Fatlas-manifest.json`,
+    );
+  });
+
+  it("hydrates Analysis Result atlas manifests when the URL opens in thumbnail mode", async () => {
+    process.env.ANACRONIA_LATENT_MAP_VIEWER_DATA = "/tmp/missing-viewer-data.json";
+    vi.stubGlobal("fetch", vi.fn(fetchAnalysisResultFixture));
+
+    const data = await loadLatentMapViewerData({
+      analysisResultId: ANALYSIS_RESULT_ID,
+      clusterResult: "hdbscan_detail",
+      layout: "umap_a",
+      mode: "thumbnails",
+      recipe: "dinov3_vits_384",
+    });
+
     expect(data.thumbnail_atlases?.map((atlas) => atlas.tile_size)).toEqual([
       64,
     ]);
@@ -101,6 +119,7 @@ describe("loadLatentMapViewerData", () => {
     );
 
     expect(loaded.viewerData.analysis_result_id).toBe(ANALYSIS_RESULT_ID);
+    expect(loaded.viewerData.thumbnail_atlases).toBeUndefined();
     expect(loaded.startupMeasurement).toMatchObject({
       schema_version: 1,
       summary: {
@@ -108,6 +127,13 @@ describe("loadLatentMapViewerData", () => {
         serializationBytes: expect.any(Number),
       },
     });
+    expect(
+      loaded.startupMeasurement?.entries.some(
+        (entry) =>
+          entry.name === "analysis-result-artifact-fetch" &&
+          entry.metadata.artifactRole === "thumbnail-atlas",
+      ),
+    ).toBe(false);
 
     const html = renderToString(
       await LatentMapPage({

@@ -88,7 +88,7 @@ It looked plausible because the route has multiple independent artifact reads. O
 
 ## Recommended Next Routes
 
-1. Add a lazy atlas-manifest contract for point-mode first open.
+1. Add a lazy atlas-manifest contract for point-mode first open. **Follow-up implemented in `codex/lazy-atlas-manifests`.**
    - Do not load atlas manifests in the initial document unless the URL opens directly in thumbnail mode.
    - Add a thumbnail-mode fetch path that loads atlas metadata before using generated atlas rendering.
    - Preserve the current generated-atlas renderer when thumbnails are active.
@@ -106,3 +106,32 @@ It looked plausible because the route has multiple independent artifact reads. O
 - Thumbnail LOD remains parked under the existing LOD planning docs.
 - Image visibility/readability policy remains separate from this first-open payload issue.
 - Renderer changes are not justified by this measurement, because first open is point mode with no thumbnails loaded.
+
+## Follow-up Result: Lazy Atlas Manifests
+
+The lazy atlas-manifest follow-up keeps point-mode first open from reading and serializing generated atlas manifests. The initial document still exposes small atlas manifest URLs so thumbnail mode can fetch atlas metadata on demand.
+
+Real-data point-mode measurement after the follow-up:
+
+```text
+Route: status 200, response 1161.4 ms, first chunk 1166.5 ms, total 1184.4 ms, decoded 2,252,081 bytes
+Startup: total 1002.9 ms, detail fetch 288.8 ms, artifact fetch 942.7 ms, artifact parse 7.2 ms
+Contract: atlas manifests 0 ms, vector validation 0.5 ms, normalization 12.1 ms, serialization 3.5 ms / 2,017,877 bytes
+Artifact bytes: 3,135,504
+```
+
+Comparable pre-follow-up measurement from the same session:
+
+```text
+Route: status 200, response 1933.0 ms, first chunk 1956.8 ms, total 2011.2 ms, decoded 6,919,242 bytes
+Startup: total 1654.5 ms, detail fetch 310.0 ms, artifact fetch 2520.6 ms, artifact parse 20.2 ms
+Contract: atlas manifests 1547.8 ms, vector validation 3.6 ms, normalization 50.0 ms, serialization 20.7 ms / 6,343,005 bytes
+Artifact bytes: 8,597,531
+```
+
+Browser QA verified two thumbnail paths:
+
+- Direct `mode=thumbnails` opens with `generated-atlas`, 4 atlas pages, and 3,504 loaded thumbnails.
+- Point-mode open followed by the `P` shortcut fetches only three atlas manifest JSON files and four 64px atlas page images before reaching `generated-atlas`; it does not burst-request individual thumbnail images.
+
+Next route after this follow-up: choose the default cluster artifact from registry metadata without reading every cluster-result artifact.

@@ -115,7 +115,10 @@ import {
   serializeLatentMapUrlState,
   type LatentMapDurableState,
 } from "@/lib/latent-map-viewer-state";
-import { normalizeLatentMapRelationResponse } from "@/lib/latent-map-viewer-data";
+import {
+  mergeLatentMapViewerDataThumbnailAtlases,
+  normalizeLatentMapRelationResponse,
+} from "@/lib/latent-map-viewer-data";
 import type { LatentMapStartupMeasurement } from "@/lib/latent-map-startup-measurement";
 import {
   createLatentMapWebglRuntime,
@@ -167,6 +170,38 @@ function areLatentMapViewsEqual(
     left.offsetX === right.offsetX &&
     left.offsetY === right.offsetY &&
     left.zoom === right.zoom
+  );
+}
+
+function isLatentMapGeneratedThumbnailAtlas(
+  value: unknown,
+): value is LatentMapGeneratedThumbnailAtlas {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      "tile_size" in value &&
+      typeof value.tile_size === "number" &&
+      "pages" in value &&
+      Array.isArray(value.pages) &&
+      "items" in value &&
+      Array.isArray(value.items),
+  );
+}
+
+function mergeLazyThumbnailAtlases(
+  current: LatentMapGeneratedThumbnailAtlas[],
+  nextAtlases: LatentMapGeneratedThumbnailAtlas[],
+) {
+  const atlasesBySize = new Map<number, LatentMapGeneratedThumbnailAtlas>();
+
+  [...current, ...nextAtlases].forEach((atlas) => {
+    if (!atlasesBySize.has(atlas.tile_size)) {
+      atlasesBySize.set(atlas.tile_size, atlas);
+    }
+  });
+
+  return [...atlasesBySize.values()].sort(
+    (left, right) => left.tile_size - right.tile_size,
   );
 }
 
@@ -701,12 +736,41 @@ function LatentMapHoverAtlasImage({
 
 export function LatentMapViewer({
   className,
-  data,
+  data: initialData,
   initialState,
   initialRenderMode = "points",
   initialSelectedImageId = null,
   startupMeasurement,
 }: LatentMapViewerProps) {
+  const initialDataKey = [
+    initialData.run_id,
+    initialData.embedding_recipe,
+    initialData.layout_id,
+    initialData.cluster_id,
+    initialData.points.length,
+  ].join("|");
+  const [lazyThumbnailAtlasState, setLazyThumbnailAtlasState] = useState<{
+    atlases: LatentMapGeneratedThumbnailAtlas[];
+    dataKey: string;
+  }>({
+    atlases: [],
+    dataKey: initialDataKey,
+  });
+  const lazyThumbnailAtlases = useMemo(
+    () =>
+      lazyThumbnailAtlasState.dataKey === initialDataKey
+        ? lazyThumbnailAtlasState.atlases
+        : [],
+    [initialDataKey, lazyThumbnailAtlasState],
+  );
+  const data = useMemo(
+    () =>
+      mergeLatentMapViewerDataThumbnailAtlases(
+        initialData,
+        lazyThumbnailAtlases,
+      ),
+    [initialData, lazyThumbnailAtlases],
+  );
   const initialDurableState = createInitialDurableState({
     data,
     initialState,
@@ -1057,6 +1121,37 @@ export function LatentMapViewer({
     () => getLatentMapThumbnailAtlasForSize(data, resolvedTextureDetail),
     [data, resolvedTextureDetail],
   );
+  const thumbnailAtlasManifestPending = useMemo(() => {
+    if (renderMode !== "thumbnails") {
+      return false;
+    }
+
+    const manifestUrls = initialData.thumbnail_atlas_manifest_urls ?? {};
+    const manifestTileSizes = Object.keys(manifestUrls);
+
+    if (manifestTileSizes.length === 0) {
+      return false;
+    }
+
+    const loadedTileSizes = new Set(
+      [
+        ...(data.thumbnail_atlases ?? []),
+        ...(data.thumbnail_atlas ? [data.thumbnail_atlas] : []),
+      ].map((atlas) => atlas.tile_size),
+    );
+
+    return manifestTileSizes.some(
+      (tileSize) => !loadedTileSizes.has(Number(tileSize)),
+    );
+  }, [
+    data.thumbnail_atlas,
+    data.thumbnail_atlases,
+    initialData.thumbnail_atlas_manifest_urls,
+    renderMode,
+  ]);
+  const runtimeRenderMode: LatentMapRenderMode = thumbnailAtlasManifestPending
+    ? "points"
+    : renderMode;
   const hoverAtlasPreview = hoveredPoint
     ? getLatentMapHoverAtlasPreview({
         point: hoveredPoint,
@@ -1102,7 +1197,7 @@ export function LatentMapViewer({
         atlasSize: ATLAS_TEXTURE_SIZE,
         fallbackThumbnailAtlas,
         hoverPreviewSize: DEFAULT_LATENT_MAP_HOVER_PREVIEW_SIZE,
-        points: runtimeRenderPoints,
+        points: thumbnailAtlasManifestPending ? [] : runtimeRenderPoints,
         strategy: "all-atlas",
         textureDetail,
         thumbnailAtlas,
@@ -1112,6 +1207,7 @@ export function LatentMapViewer({
     [
       fallbackThumbnailAtlas,
       runtimeRenderPoints,
+      thumbnailAtlasManifestPending,
       textureDetail,
       thumbnailAtlas,
       thumbnailSize,
@@ -1122,7 +1218,7 @@ export function LatentMapViewer({
     () => {
       const nextPointLayer = createLatentMapPointLayerPlan({
         points: runtimeRenderPoints,
-        renderMode,
+        renderMode: runtimeRenderMode,
         thumbnailPlan,
       });
 
@@ -1136,7 +1232,12 @@ export function LatentMapViewer({
 
       return nextPointLayer;
     },
-    [neighborhoodLayoutActive, renderMode, runtimeRenderPoints, thumbnailPlan],
+    [
+      neighborhoodLayoutActive,
+      runtimeRenderMode,
+      runtimeRenderPoints,
+      thumbnailPlan,
+    ],
   );
   const thumbnailRendererComparison = useMemo(
     () => createLatentMapThumbnailRendererComparison(thumbnailPlan),
@@ -1147,7 +1248,7 @@ export function LatentMapViewer({
       neighborhoodPreviewPlan,
       pointLayer,
       points: runtimeRenderPoints,
-      renderMode,
+      renderMode: runtimeRenderMode,
       thumbnailPlan,
       tweenPoints: runtimeRenderPoints,
       visualTheme,
@@ -1155,7 +1256,7 @@ export function LatentMapViewer({
     [
       neighborhoodPreviewPlan,
       pointLayer,
-      renderMode,
+      runtimeRenderMode,
       runtimeRenderPoints,
       thumbnailPlan,
       visualTheme,
@@ -1178,6 +1279,87 @@ export function LatentMapViewer({
       data.run_id,
     ],
   );
+  useEffect(() => {
+    if (renderMode !== "thumbnails") {
+      return;
+    }
+
+    const manifestUrls = initialData.thumbnail_atlas_manifest_urls ?? {};
+    const loadedTileSizes = new Set(
+      [
+        ...(data.thumbnail_atlases ?? []),
+        ...(data.thumbnail_atlas ? [data.thumbnail_atlas] : []),
+      ].map((atlas) => atlas.tile_size),
+    );
+    const missingManifestUrls = Object.entries(manifestUrls).filter(
+      ([tileSize]) => !loadedTileSizes.has(Number(tileSize)),
+    );
+
+    if (missingManifestUrls.length === 0) {
+      return;
+    }
+
+    const abortController = new AbortController();
+    let cancelled = false;
+
+    void Promise.all(
+      missingManifestUrls.map(async ([, manifestUrl]) => {
+        const response = await fetch(manifestUrl, {
+          cache: "no-store",
+          signal: abortController.signal,
+        });
+
+        if (!response.ok) {
+          return null;
+        }
+
+        const atlas = await response.json() as unknown;
+
+        return isLatentMapGeneratedThumbnailAtlas(atlas) ? atlas : null;
+      }),
+    )
+      .then((atlases) => {
+        if (cancelled) {
+          return;
+        }
+
+        const validAtlases = atlases.filter(
+          (atlas): atlas is LatentMapGeneratedThumbnailAtlas => atlas !== null,
+        );
+
+        if (validAtlases.length === 0) {
+          return;
+        }
+
+        setLazyThumbnailAtlasState((current) => ({
+          atlases: mergeLazyThumbnailAtlases(
+            current.dataKey === initialDataKey ? current.atlases : [],
+            validAtlases,
+          ),
+          dataKey: initialDataKey,
+        }));
+      })
+      .catch((error: unknown) => {
+        if (
+          !cancelled &&
+          error instanceof DOMException &&
+          error.name === "AbortError"
+        ) {
+          return;
+        }
+      });
+
+    return () => {
+      cancelled = true;
+      abortController.abort();
+    };
+  }, [
+    data.thumbnail_atlas,
+    data.thumbnail_atlases,
+    initialDataKey,
+    initialData.thumbnail_atlas_manifest_urls,
+    renderMode,
+  ]);
   const runtimeSnapshot = useMemo(
     () =>
       createLatentMapRuntimeSnapshot({
@@ -1185,13 +1367,13 @@ export function LatentMapViewer({
         neighborhoodPreviewTextureInfo: runtimePreviewTextureInfo,
         performanceInfo: runtimePerformanceInfo,
         pointCount: stats.pointCount,
-        renderMode,
+        renderMode: runtimeRenderMode,
         rendererInfo: runtimeRendererInfo,
         thumbnailPlan,
       }),
     [
       loadedThumbnailCount,
-      renderMode,
+      runtimeRenderMode,
       runtimePreviewTextureInfo,
       runtimePerformanceInfo,
       runtimeRendererInfo,
@@ -2802,6 +2984,7 @@ export function LatentMapViewer({
             data-neighborhood-status={neighborhoodRuntimePlan.status}
             data-point-count={stats.pointCount}
             data-render-mode={renderMode}
+            data-runtime-render-mode={runtimeRenderMode}
             data-startup-artifact-fetch-ms={
               startupMeasurement?.summary.artifactFetchMs
             }
@@ -2850,7 +3033,7 @@ export function LatentMapViewer({
             data-point-layer-size={pointLayer.pointSize}
             data-point-layer-visible={pointLayer.visible}
             data-thumbnail-atlas-page-count={
-              renderMode === "thumbnails"
+              runtimeRenderMode === "thumbnails"
                 ? thumbnailPlan.atlasPages.length +
                   thumbnailPlan.fallbackAtlasPages.length
                 : 0
@@ -2858,15 +3041,16 @@ export function LatentMapViewer({
             data-thumbnail-atlas-cache-active={thumbnailPlan.atlasPageCacheActive}
             data-thumbnail-atlas-page-budget={thumbnailPlan.atlasPageBudget ?? 0}
             data-thumbnail-estimated-atlas-texture-bytes={
-              renderMode === "thumbnails"
+              runtimeRenderMode === "thumbnails"
                 ? thumbnailPlan.estimatedAtlasTextureBytes
                 : 0
             }
             data-thumbnail-count={
-              renderMode === "thumbnails"
+              runtimeRenderMode === "thumbnails"
                 ? thumbnailPlan.thumbnailPoints.length
                 : 0
             }
+            data-thumbnail-atlas-manifest-pending={thumbnailAtlasManifestPending}
             data-thumbnail-hover-preview-size={thumbnailPlan.hoverPreviewSize}
             data-thumbnail-atlas-tile-size={thumbnailAtlas?.tile_size ?? 0}
             data-thumbnail-display-size={thumbnailPlan.displayThumbnailSize}
@@ -2880,12 +3064,12 @@ export function LatentMapViewer({
               thumbnailPlan.fallbackResolvedTextureDetail ?? 0
             }
             data-thumbnail-instanced-draw-calls={
-              renderMode === "thumbnails"
+              runtimeRenderMode === "thumbnails"
                 ? thumbnailRendererComparison.instancedAtlas.drawCalls
                 : 0
             }
             data-thumbnail-instanced-textures={
-              renderMode === "thumbnails"
+              runtimeRenderMode === "thumbnails"
                 ? thumbnailRendererComparison.instancedAtlas.gpuTextures
                 : 0
             }
@@ -2901,12 +3085,12 @@ export function LatentMapViewer({
             )}
             data-thumbnail-size={thumbnailPlan.thumbnailSize}
             data-thumbnail-sprite-baseline-draw-calls={
-              renderMode === "thumbnails"
+              runtimeRenderMode === "thumbnails"
                 ? thumbnailRendererComparison.spriteBaseline.drawCalls
                 : 0
             }
             data-thumbnail-sprite-baseline-textures={
-              renderMode === "thumbnails"
+              runtimeRenderMode === "thumbnails"
                 ? thumbnailRendererComparison.spriteBaseline.gpuTextures
                 : 0
             }

@@ -93,12 +93,14 @@ function appendResourceQueryParam({
 }
 
 export function normalizeExportedLatentMapViewerData({
+  atlasManifestApiPath = "/api/latent-map/atlas-manifests",
   rawData,
   neighborApiPath = "/api/latent-map/neighbors",
   sourceFolder,
   thumbnailApiPath = "/api/latent-map/thumbnails",
   thumbnailResourceParamName = "path",
 }: {
+  atlasManifestApiPath?: string;
   neighborApiPath?: string;
   rawData: ExportedLatentMapViewerData;
   sourceFolder: string;
@@ -115,6 +117,11 @@ export function normalizeExportedLatentMapViewerData({
     rawAtlases: rawData.thumbnail_atlases,
     singleAtlas: thumbnailAtlas,
     thumbnailApiPath,
+    thumbnailResourceParamName,
+  });
+  const thumbnailAtlasManifestUrls = normalizeThumbnailAtlasManifestUrls({
+    atlasManifestApiPath,
+    rawData,
     thumbnailResourceParamName,
   });
   const clusterResult = normalizeAvailableCluster(rawData.cluster_result);
@@ -148,6 +155,9 @@ export function normalizeExportedLatentMapViewerData({
     ...(neighborLookupPath ? { neighbor_lookup_path: neighborLookupPath } : {}),
     ...(thumbnailAtlas ? { thumbnail_atlas: thumbnailAtlas } : {}),
     ...(thumbnailAtlases.length > 0 ? { thumbnail_atlases: thumbnailAtlases } : {}),
+    ...(Object.keys(thumbnailAtlasManifestUrls).length > 0
+      ? { thumbnail_atlas_manifest_urls: thumbnailAtlasManifestUrls }
+      : {}),
     points: points.map((point): LatentMapPoint => {
       const thumbnailPath = String(point.thumbnail_path ?? "");
       const rawPreviewPath =
@@ -200,6 +210,109 @@ export function normalizeExportedLatentMapViewerData({
       };
     }),
   };
+}
+
+export function normalizeExportedLatentMapThumbnailAtlas({
+  rawAtlas,
+  thumbnailApiPath = "/api/latent-map/thumbnails",
+  thumbnailResourceParamName = "path",
+}: {
+  rawAtlas: Partial<LatentMapGeneratedThumbnailAtlas> | undefined;
+  thumbnailApiPath?: string;
+  thumbnailResourceParamName?: string;
+}): LatentMapGeneratedThumbnailAtlas | undefined {
+  return normalizeThumbnailAtlas({
+    rawAtlas,
+    thumbnailApiPath,
+    thumbnailResourceParamName,
+  });
+}
+
+export function mergeLatentMapViewerDataThumbnailAtlases(
+  data: LatentMapViewerData,
+  atlases: LatentMapGeneratedThumbnailAtlas[],
+): LatentMapViewerData {
+  if (atlases.length === 0) {
+    return data;
+  }
+
+  const atlasesBySize = new Map<number, LatentMapGeneratedThumbnailAtlas>();
+
+  [
+    ...(data.thumbnail_atlases ?? []),
+    ...(data.thumbnail_atlas ? [data.thumbnail_atlas] : []),
+    ...atlases,
+  ]
+    .filter((atlas) => Number.isFinite(atlas.tile_size) && atlas.tile_size > 0)
+    .forEach((atlas) => {
+      if (!atlasesBySize.has(atlas.tile_size)) {
+        atlasesBySize.set(atlas.tile_size, atlas);
+      }
+    });
+
+  const mergedAtlases = [...atlasesBySize.values()].sort(
+    (left, right) => left.tile_size - right.tile_size,
+  );
+  const primaryAtlas =
+    mergedAtlases.find((atlas) => atlas.tile_size === 64) ?? mergedAtlases[0];
+
+  return {
+    ...data,
+    ...(primaryAtlas ? { thumbnail_atlas: primaryAtlas } : {}),
+    ...(mergedAtlases.length > 0 ? { thumbnail_atlases: mergedAtlases } : {}),
+  };
+}
+
+function normalizeThumbnailAtlasManifestUrls({
+  atlasManifestApiPath,
+  rawData,
+  thumbnailResourceParamName,
+}: {
+  atlasManifestApiPath: string;
+  rawData: ExportedLatentMapViewerData;
+  thumbnailResourceParamName: string;
+}): Record<string, string> {
+  const manifestPaths = normalizeThumbnailAtlasManifestPaths(rawData);
+
+  return Object.fromEntries(
+    Object.entries(manifestPaths).map(([tileSize, manifestPath]) => [
+      tileSize,
+      createResourceUrl({
+        apiPath: atlasManifestApiPath,
+        resourcePath: manifestPath,
+        resourceParamName: thumbnailResourceParamName,
+      }),
+    ]),
+  );
+}
+
+function normalizeThumbnailAtlasManifestPaths(
+  rawData: ExportedLatentMapViewerData,
+): Record<string, string> {
+  if (rawData.thumbnail_atlas_manifest_paths) {
+    return Object.fromEntries(
+      Object.entries(rawData.thumbnail_atlas_manifest_paths).filter(
+        (entry): entry is [string, string] =>
+          entry[0].length > 0 &&
+          typeof entry[1] === "string" &&
+          entry[1].length > 0,
+      ),
+    );
+  }
+
+  if (
+    typeof rawData.thumbnail_atlas_manifest_path === "string" &&
+    rawData.thumbnail_atlas_manifest_path.length > 0
+  ) {
+    const tileSize =
+      /(?:^|\/)(\d+)px\/atlas-manifest\.json$/.exec(
+        rawData.thumbnail_atlas_manifest_path,
+      )?.[1] ?? "64";
+
+    return { [tileSize]: rawData.thumbnail_atlas_manifest_path };
+  }
+
+  return {};
 }
 
 function normalizeThumbnailAtlases({

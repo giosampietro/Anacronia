@@ -47,6 +47,7 @@ type AnalysisResultDetail = {
 
 export async function loadLatentMapAnalysisResultViewerData({
   analysisResultId,
+  loadThumbnailAtlases = true,
   selectedClusterId,
   selectedLayoutId,
   selectedRecipeName,
@@ -54,6 +55,7 @@ export async function loadLatentMapAnalysisResultViewerData({
 }: {
   additionalRunsRoots?: string[];
   analysisResultId: string;
+  loadThumbnailAtlases?: boolean;
   runsRoot?: string;
   selectedClusterId?: string | null;
   selectedLayoutId?: string | null;
@@ -77,6 +79,7 @@ export async function loadLatentMapAnalysisResultViewerData({
         }),
       selectedClusterId,
       selectedLayoutId,
+      loadThumbnailAtlases,
       selectedRecipeName,
       startupRecorder,
     }),
